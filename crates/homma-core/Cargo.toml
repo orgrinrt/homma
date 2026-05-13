@@ -12,3 +12,8 @@ publish = false
 [dependencies]
 mockspace-template = { path = "../../../mockspace/mock/crates/mockspace-template" }
 mockspace-config = { path = "../../../mockspace/mock/crates/mockspace-config" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
