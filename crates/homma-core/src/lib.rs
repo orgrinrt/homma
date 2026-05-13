@@ -1,7 +1,14 @@
 //! `homma-core`: workspace management for multi-repo Rust workspaces.
 //!
-//! Pre-implementation. See the repo README for status. Substantive shape lands
-//! across tasks #446 through #455.
+//! The crate is the engine layer beneath the `homma` CLI. It parses
+//! `homma.toml`, exposes typed config and forge-profile shapes, and re-exports
+//! the mockspace template engine and canonical config schema so consumers can
+//! render templates over homma's workspace context.
 
-pub use mockspace_config as config;
+pub mod config;
+pub mod mapping;
+
+pub use config::{Config, ConfigError, Defaults, ForgeConfig, ForgeKind, RepoConfig, WorkspaceConfig};
+
+pub use mockspace_config as mockspace;
 pub use mockspace_template as template;
