@@ -10,7 +10,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// Parsed `homma.toml` contents.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+///
+/// No `Default` impl: a homma workspace without a name is meaningless, and
+/// silently defaulting `workspace.name` to the empty string would poison
+/// downstream code (mockspace mapping copies it into `project_name`).
+/// Construct via [`Config::parse`] / [`Config::from_path`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub workspace: WorkspaceConfig,
@@ -24,7 +29,11 @@ pub struct Config {
 
 impl Config {
     /// Parse `homma.toml` contents from a string.
-    pub fn from_str(s: &str) -> Result<Self, ConfigError> {
+    ///
+    /// Named `parse` rather than `from_str` to avoid shadowing
+    /// [`core::str::FromStr::from_str`]; a matching `FromStr` impl is also
+    /// provided, so `"...".parse::<Config>()` works too.
+    pub fn parse(s: &str) -> Result<Self, ConfigError> {
         toml::from_str(s).map_err(ConfigError::Parse)
     }
 
@@ -34,7 +43,7 @@ impl Config {
             path: path.to_path_buf(),
             source: e,
         })?;
-        Self::from_str(&s)
+        Self::parse(&s)
     }
 
     /// Look up a repo by name.
@@ -48,22 +57,20 @@ impl Config {
     }
 }
 
-/// `[workspace]` section.
+impl std::str::FromStr for Config {
+    type Err = ConfigError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
+/// `[workspace]` section. `name` is parse-required.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceConfig {
     pub name: String,
     #[serde(default = "default_workspace_path")]
     pub path: PathBuf,
-}
-
-impl Default for WorkspaceConfig {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            path: default_workspace_path(),
-        }
-    }
 }
 
 fn default_workspace_path() -> PathBuf {
@@ -135,6 +142,22 @@ pub struct RepoConfig {
     /// Overrides [`Defaults::working_branch`] when set.
     #[serde(default)]
     pub working_branch: Option<String>,
+}
+
+impl RepoConfig {
+    /// Per-repo public branch override, falling back to `defaults.public_branch`.
+    pub fn resolved_public_branch<'a>(&'a self, defaults: &'a Defaults) -> &'a str {
+        self.public_branch
+            .as_deref()
+            .unwrap_or(&defaults.public_branch)
+    }
+
+    /// Per-repo working branch override, falling back to `defaults.working_branch`.
+    pub fn resolved_working_branch<'a>(&'a self, defaults: &'a Defaults) -> &'a str {
+        self.working_branch
+            .as_deref()
+            .unwrap_or(&defaults.working_branch)
+    }
 }
 
 /// Parse / IO error surfaced by [`Config::from_str`] and [`Config::from_path`].

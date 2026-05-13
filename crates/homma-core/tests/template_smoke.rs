@@ -4,7 +4,7 @@ use homma_core::{template::TemplateEnv, Config};
 
 #[test]
 fn renders_workspace_name_into_template() {
-    let config = Config::from_str(
+    let config = Config::parse(
         r#"
 [workspace]
 name = "clause-dev"
@@ -21,7 +21,7 @@ name = "clause-dev"
 
 #[test]
 fn renders_loop_over_repos() {
-    let config = Config::from_str(
+    let config = Config::parse(
         r#"
 [workspace]
 name = "demo"

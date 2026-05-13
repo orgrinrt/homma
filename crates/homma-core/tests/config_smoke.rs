@@ -11,7 +11,7 @@ fn minimal_parse() {
 [workspace]
 name = "clause-dev"
 "#;
-    let config = Config::from_str(src).unwrap();
+    let config = Config::parse(src).unwrap();
     assert_eq!(config.workspace.name, "clause-dev");
     assert_eq!(config.workspace.path, PathBuf::from("."));
     assert_eq!(config.defaults.license, "MPL-2.0");
@@ -57,7 +57,7 @@ local_path = "arvo"
 public_branch = "main"
 working_branch = "dev"
 "#;
-    let config = Config::from_str(src).unwrap();
+    let config = Config::parse(src).unwrap();
 
     assert_eq!(config.workspace.name, "clause-dev");
     assert_eq!(
@@ -92,7 +92,7 @@ fn unknown_field_rejected() {
 name = "clause-dev"
 nmae = "typo"
 "#;
-    assert!(Config::from_str(src).is_err());
+    assert!(Config::parse(src).is_err());
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn into_mockspace_config_picks_name_and_path() {
 name = "clause-dev"
 path = "/some/path"
 "#;
-    let config = Config::from_str(src).unwrap();
+    let config = Config::parse(src).unwrap();
     let mockspace_cfg = config.into_mockspace_config().unwrap();
 
     assert_eq!(mockspace_cfg.project_name, "clause-dev");
@@ -129,4 +129,48 @@ path = "/some/path"
     assert_eq!(mockspace_cfg.mock_dir, PathBuf::from("mock"));
     assert_eq!(mockspace_cfg.crates_dir, PathBuf::from("mock/crates"));
     assert_eq!(mockspace_cfg.abi_version, 1);
+}
+
+#[test]
+fn repo_branch_resolution() {
+    let src = r#"
+[workspace]
+name = "demo"
+
+[defaults]
+public_branch = "trunk"
+working_branch = "next"
+
+[repos.bare]
+forge = "github"
+owner = "x"
+local_path = "bare"
+
+[repos.overridden]
+forge = "github"
+owner = "x"
+local_path = "overridden"
+public_branch = "release"
+working_branch = "main"
+"#;
+    let config = Config::parse(src).unwrap();
+    let bare = config.repo("bare").unwrap();
+    assert_eq!(bare.resolved_public_branch(&config.defaults), "trunk");
+    assert_eq!(bare.resolved_working_branch(&config.defaults), "next");
+
+    let over = config.repo("overridden").unwrap();
+    assert_eq!(over.resolved_public_branch(&config.defaults), "release");
+    assert_eq!(over.resolved_working_branch(&config.defaults), "main");
+}
+
+#[test]
+fn parse_via_fromstr() {
+    use std::str::FromStr;
+    let config = Config::from_str(
+        r#"[workspace]
+name = "demo"
+"#,
+    )
+    .unwrap();
+    assert_eq!(config.workspace.name, "demo");
 }
