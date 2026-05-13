@@ -1,0 +1,17 @@
+[package]
+name = "homma"
+version = "0.0.0"
+description = "Workspace management CLI for multi-repo Rust workspaces. Native git/forge ops, replaces gh-CLI usage."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "homma"
+path = "src/main.rs"
+
+[dependencies]
+homma-core = { path = "../homma-core" }

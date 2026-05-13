@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+license = "MPL-2.0"
+repository = "https://github.com/orgrinrt/homma"
+authors = ["orgrinrt"]
+rust-version = "1.83"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
