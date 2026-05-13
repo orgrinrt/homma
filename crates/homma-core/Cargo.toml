@@ -1,0 +1,14 @@
+[package]
+name = "homma-core"
+version = "0.0.0"
+description = "Core library for homma: workspace management for multi-repo Rust workspaces."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+mockspace-template = { path = "../../../mockspace/mock/crates/mockspace-template" }
+mockspace-config = { path = "../../../mockspace/mock/crates/mockspace-config" }
