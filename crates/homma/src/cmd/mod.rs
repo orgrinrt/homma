@@ -9,9 +9,11 @@
 use anyhow::{Context, Result};
 use homma_core::Config;
 
-use crate::cli::{Cli, Command, ForgeOp, RepoOp};
+use crate::cli::{AgentOp, Cli, Command, DocsOp, ForgeOp, RepoOp};
 
+pub mod agent;
 pub mod archive;
+pub mod docs;
 pub mod forge;
 pub mod migrate;
 pub mod repo;
@@ -82,6 +84,29 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             archive::run(&cfg, repo, from.as_deref(), owner.as_deref(), cli.output)?;
             Ok(Outcome::Ok)
         }
+        Command::Agent { op } => match op {
+            AgentOp::Status { repo } => {
+                let cfg = load_config(&cli)?;
+                agent::status::run(&cfg, repo.as_deref(), cli.output)?;
+                Ok(Outcome::Ok)
+            }
+            AgentOp::Regen { repo, continue_on_error } => {
+                let cfg = load_config(&cli)?;
+                agent::regen::run(
+                    &cfg,
+                    repo.as_deref(),
+                    *continue_on_error,
+                    cli.output,
+                )
+            }
+        },
+        Command::Docs { op } => match op {
+            DocsOp::Status { repo } => {
+                let cfg = load_config(&cli)?;
+                docs::status::run(&cfg, repo.as_deref(), cli.output)?;
+                Ok(Outcome::Ok)
+            }
+        },
     }
 }
 
