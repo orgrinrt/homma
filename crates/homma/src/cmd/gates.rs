@@ -94,7 +94,10 @@ pub(crate) fn is_workspace_gate_entry(entry: &serde_json::Value) -> bool {
 fn gate_script(repos: &[(String, String)]) -> String {
     let mut repo_table = String::new();
     for (name, path) in repos {
-        repo_table.push_str(&format!("    '{name}|{path}'\n"));
+        // Escape any embedded single quotes so the bash literal stays
+        // well-formed for paths or names containing them.
+        let entry = crate::cmd::aggregate::sh_single_quote_escape(&format!("{name}|{path}"));
+        repo_table.push_str(&format!("    '{entry}'\n"));
     }
 
     format!(
@@ -208,8 +211,11 @@ done
 reason+=$'\n'"Run \`homma agent regen --repo $match_name\` to fix."
 
 # Emit a structured deny so Claude Code surfaces it cleanly.
+# `jq -Rs .` JSON-encodes stdin as a quoted string; trim the outer
+# quotes since our format string already supplies them.
+escaped=$(printf '%s' "$reason" | jq -Rs . | sed 's/^"//;s/"$//')
 printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}}}\n' \
-    "$(printf '%s' "$reason" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')"
+    "$escaped"
 exit 0
 "##,
         repo_table = repo_table.trim_end(),

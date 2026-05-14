@@ -194,7 +194,11 @@ fn rewrite_front_matter_paths(front: &str, local: &str, blanket: &str) -> String
             }
         }
 
-        if line.trim_start().starts_with("paths:") {
+        // Only treat unindented `paths:` as the top-level key. Indented
+        // `paths:` inside a nested mapping (mockspace does not emit
+        // these today, but the structural assumption is worth holding)
+        // passes through untouched.
+        if line.starts_with("paths:") {
             saw_paths = true;
             in_paths_block = true;
             out.push_str("paths:\n");
@@ -347,6 +351,13 @@ fn detect_matchers_from_hook_body(path: &Path) -> Option<Vec<String>> {
     None
 }
 
+/// Escape a string for embedding inside a bash single-quoted literal.
+/// Replaces each `'` with `'\''` so the generated script is safe for
+/// paths or names that happen to contain a single quote.
+pub(crate) fn sh_single_quote_escape(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
 /// Build the wrapper script body for an aggregated hook.
 ///
 /// The wrapper:
@@ -363,6 +374,8 @@ pub(crate) fn wrapper_script(
     repo_abs_path: &str,
     orig_hook_abs_path: &str,
 ) -> String {
+    let repo_root = sh_single_quote_escape(repo_abs_path);
+    let orig_hook = sh_single_quote_escape(orig_hook_abs_path);
     format!(
         r##"#!/usr/bin/env bash
 # Aggregated from `{repo_name}` by `homma agent regen`.
@@ -371,8 +384,8 @@ pub(crate) fn wrapper_script(
 
 set -u
 
-REPO_ROOT='{repo_abs_path}'
-ORIG_HOOK='{orig_hook_abs_path}'
+REPO_ROOT='{repo_root}'
+ORIG_HOOK='{orig_hook}'
 
 INPUT=$(cat)
 
