@@ -11,7 +11,7 @@
 //!
 //! Public surface:
 //! - [`Forge`] trait: operations every concrete client (`ForgejoClient`,
-//!   `GitHubClient`) implements.
+//!   [`GitHubClient`]) implements.
 //! - [`RepoMetadata`], [`CreateRepoSpec`], [`Visibility`]: the value types
 //!   the trait operates on.
 //! - [`ForgeError`]: concrete error type.
@@ -20,9 +20,11 @@
 
 pub mod error;
 pub mod forgejo;
+pub mod github;
 pub mod trait_def;
 pub mod url;
 
 pub use error::ForgeError;
 pub use forgejo::ForgejoClient;
+pub use github::GitHubClient;
 pub use trait_def::{CreateRepoSpec, Forge, OwnerKind, RepoMetadata, Visibility};
