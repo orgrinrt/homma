@@ -21,6 +21,16 @@
 //!
 //! Source-side archival is the separate `homma archive` step (see
 //! [`super::archive`]).
+//!
+//! ## Partial-failure semantics
+//!
+//! If `create_repo` succeeds but the mirror push fails, the destination is
+//! left as an empty repo and the error propagates. This is deliberate. An
+//! automatic teardown step introduces its own failure modes (what if the
+//! delete itself fails? do we report a half-created repo as a clean
+//! failure?) and the operator can dispose of the empty destination
+//! manually before retrying. Future agents: do not add a cleanup-on-push-
+//! failure path without weighing this tradeoff.
 
 use std::io::Write;
 use std::path::Path;
@@ -244,9 +254,15 @@ fn push_mirror(
 /// Paranoid scrub. Current paths never echo the token (it flows via env
 /// vars, not argv), but the diagnostic surface is kept token-free
 /// defensively in case a future git release prints config values on error.
+///
+/// Skips short tokens (under 16 chars) to avoid false-positive redaction
+/// of unrelated short substrings. Real PATs are 40+ high-entropy chars;
+/// anything shorter than 16 is most likely a misconfigured `token_env`
+/// pointing at a placeholder, not a real secret.
 fn scrub_token(s: &str, token: Option<&str>) -> String {
+    const MIN_REDACT_LEN: usize = 16;
     match token {
-        Some(t) if !t.is_empty() => s.replace(t, "<redacted>"),
+        Some(t) if t.len() >= MIN_REDACT_LEN => s.replace(t, "<redacted>"),
         _ => s.to_string(),
     }
 }
@@ -304,11 +320,13 @@ mod tests {
     }
 
     #[test]
-    fn scrub_replaces_token() {
-        let s = "fatal: 401 (token abc123 invalid)";
-        let out = scrub_token(s, Some("abc123"));
+    fn scrub_replaces_realistic_token() {
+        // 40-char hex string, the shape of a real GitHub PAT.
+        let token = "ghp_1234567890abcdef1234567890abcdef1234567";
+        let s = format!("fatal: bad credentials ({token} invalid)");
+        let out = scrub_token(&s, Some(token));
         assert!(out.contains("<redacted>"));
-        assert!(!out.contains("abc123"));
+        assert!(!out.contains(token));
     }
 
     #[test]
@@ -321,6 +339,16 @@ mod tests {
     fn scrub_empty_token_passes_through() {
         let s = "fatal: connection refused";
         assert_eq!(scrub_token(s, Some("")), s);
+    }
+
+    #[test]
+    fn scrub_short_token_does_not_redact() {
+        // A 6-char "token" is below the min-redact length; without the guard
+        // it would false-positive against unrelated short substrings.
+        let s = "fatal: 401 (token abc123 invalid)";
+        let out = scrub_token(s, Some("abc123"));
+        assert_eq!(out, s);
+        assert!(out.contains("abc123"));
     }
 
     #[test]
@@ -369,5 +397,98 @@ mod tests {
         assert_eq!(visibility_str(Visibility::Public), "public");
         assert_eq!(visibility_str(Visibility::Private), "private");
         assert_eq!(visibility_str(Visibility::Internal), "internal");
+    }
+
+    /// Exercise the `git push --mirror` subprocess against a local file://
+    /// destination. Covers argv shape, current_dir, and the no-token path.
+    /// The HTTP `extraheader` auth path is not exercised (file:// has no
+    /// transport); that lands alongside the sanity playground (#456) where
+    /// a real HTTPS push is exercisable.
+    #[test]
+    fn push_mirror_against_local_file_dest_succeeds() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let src_path = tempdir.path().join("src");
+        let mirror_path = tempdir.path().join("mirror.git");
+        let dest_path = tempdir.path().join("dest.git");
+
+        // Source: init + commit one file.
+        let init = Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .current_dir(tempdir.path())
+            .arg(&src_path)
+            .output()
+            .unwrap();
+        assert!(init.status.success(), "git init source failed");
+        std::fs::write(src_path.join("README"), "hello\n").unwrap();
+        // Configure local identity so the commit can be created in CI envs
+        // that lack a global user.name / user.email.
+        for (k, v) in [("user.email", "test@example.test"), ("user.name", "Test")] {
+            Command::new("git")
+                .args(["config", k, v])
+                .current_dir(&src_path)
+                .status()
+                .unwrap();
+        }
+        Command::new("git")
+            .args(["add", "README"])
+            .current_dir(&src_path)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "initial"])
+            .current_dir(&src_path)
+            .status()
+            .unwrap();
+
+        // Mirror clone source → mirror.git.
+        GixRepo::mirror_into(
+            src_path.to_str().unwrap(),
+            &mirror_path,
+            MirrorOpts::default(),
+        )
+        .expect("mirror_into source");
+
+        // Destination: empty bare repo.
+        let init_dest = Command::new("git")
+            .args(["init", "-q", "--bare"])
+            .arg(&dest_path)
+            .output()
+            .unwrap();
+        assert!(init_dest.status.success(), "git init --bare dest failed");
+
+        // Push the mirror to the dest via file://.
+        let dest_url = format!("file://{}", dest_path.display());
+        push_mirror(&mirror_path, &dest_url, ForgeKind::Forgejo, None)
+            .expect("push_mirror to file:// dest");
+
+        // The dest should now carry refs/heads/main.
+        let show_ref = Command::new("git")
+            .args(["show-ref"])
+            .current_dir(&dest_path)
+            .output()
+            .unwrap();
+        let refs = String::from_utf8_lossy(&show_ref.stdout);
+        assert!(
+            refs.contains("refs/heads/main"),
+            "dest missing refs/heads/main; got: {refs}",
+        );
+    }
+
+    #[test]
+    fn push_mirror_against_nonexistent_dest_fails() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mirror_path = tempdir.path().join("mirror.git");
+        // Make a bare repo to act as the "mirror"; push will fail because
+        // the dest does not exist.
+        Command::new("git")
+            .args(["init", "-q", "--bare"])
+            .arg(&mirror_path)
+            .status()
+            .unwrap();
+        let bogus_url = format!("file://{}/does-not-exist", tempdir.path().display());
+        let err = push_mirror(&mirror_path, &bogus_url, ForgeKind::Forgejo, None)
+            .expect_err("push to nonexistent dest must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("git push --mirror failed"), "msg: {msg}");
     }
 }
