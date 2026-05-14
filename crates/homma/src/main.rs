@@ -18,7 +18,8 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     init_logging(cli.verbosity);
     match cmd::run(cli) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(cmd::Outcome::Ok) => ExitCode::SUCCESS,
+        Ok(cmd::Outcome::ReportedFailure) => ExitCode::FAILURE,
         Err(e) => {
             eprintln!("error: {e:#}");
             ExitCode::FAILURE

@@ -5,7 +5,6 @@ use homma_core::Config;
 
 pub mod status {
     use std::io::Write;
-    use std::path::{Path, PathBuf};
 
     use anyhow::{anyhow, Context};
     use homma_core::{GixRepo, RepoOps};
@@ -13,6 +12,7 @@ pub mod status {
 
     use super::*;
     use crate::cli::OutputFormat;
+    use crate::cmd::util;
     use crate::output::{emit, HumanRender};
 
     #[derive(Debug, Serialize)]
@@ -50,7 +50,7 @@ pub mod status {
         let entry = cfg
             .repo(repo_name)
             .ok_or_else(|| anyhow!("repo `{repo_name}` not declared in [repos.*]"))?;
-        let local_path = resolve_path(&cfg.workspace.path, &entry.local_path);
+        let local_path = util::resolve_local_path(&cfg.workspace.path, &entry.local_path);
         let repo = GixRepo::open(&local_path)
             .with_context(|| format!("opening repo at {}", local_path.display()))?;
         let status = repo.status().context("reading worktree status")?;
@@ -66,13 +66,5 @@ pub mod status {
         };
         emit(&report, format)?;
         Ok(())
-    }
-
-    fn resolve_path(workspace_root: &Path, repo_path: &Path) -> PathBuf {
-        if repo_path.is_absolute() {
-            repo_path.to_path_buf()
-        } else {
-            workspace_root.join(repo_path)
-        }
     }
 }

@@ -13,13 +13,14 @@
 //! pass/fail tooling consumers.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 use homma_core::Config;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
+use crate::cmd::{util, Outcome};
 use crate::output::{emit, HumanRender};
 
 #[derive(Debug, Serialize)]
@@ -42,14 +43,11 @@ pub enum Level {
     Error,
 }
 
-pub fn run(cfg: &Config, format: OutputFormat) -> Result<()> {
+pub fn run(cfg: &Config, format: OutputFormat) -> Result<Outcome> {
     let report = check(cfg);
     let ok = report.ok;
     emit(&report, format)?;
-    if !ok {
-        std::process::exit(1);
-    }
-    Ok(())
+    Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
 }
 
 pub(crate) fn check(cfg: &Config) -> VerifyReport {
@@ -78,7 +76,7 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
                 ),
             });
         }
-        let local = resolve_path(workspace_root, &repo.local_path);
+        let local = util::resolve_local_path(workspace_root, &repo.local_path);
         if !local.exists() {
             findings.push(Finding {
                 level: Level::Warn,
@@ -115,14 +113,6 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
 
     let ok = !findings.iter().any(|f| matches!(f.level, Level::Error));
     VerifyReport { ok, findings }
-}
-
-fn resolve_path(workspace_root: &Path, repo_path: &Path) -> PathBuf {
-    if repo_path.is_absolute() {
-        repo_path.to_path_buf()
-    } else {
-        workspace_root.join(repo_path)
-    }
 }
 
 impl HumanRender for VerifyReport {

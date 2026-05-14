@@ -16,14 +16,33 @@ pub mod forge;
 pub mod migrate;
 pub mod repo;
 pub mod status;
+pub(crate) mod util;
 pub mod verify;
 
+/// Outcome of dispatching a command body.
+///
+/// Most commands either succeed or fail outright; some (notably `verify`)
+/// run to completion, emit a structured report, and need the process to
+/// exit non-zero. [`Outcome::ReportedFailure`] is the latter case: the
+/// command already wrote its diagnostic to stdout; `main` translates this
+/// into [`std::process::ExitCode::FAILURE`] without writing anything to
+/// stderr (the report is the message). This keeps every exit through the
+/// `main` return path so destructors and tracing flushes run normally.
+pub enum Outcome {
+    /// Command completed successfully. Exit 0.
+    Ok,
+    /// Command completed, emitted its own diagnostic, and signals a
+    /// non-zero exit. Used by `verify` when checks fail.
+    ReportedFailure,
+}
+
 /// Dispatch the parsed CLI to the right command body.
-pub fn run(cli: Cli) -> Result<()> {
+pub fn run(cli: Cli) -> Result<Outcome> {
     match &cli.command {
         Command::Status => {
             let cfg = load_config(&cli)?;
-            status::run(&cfg, cli.output)
+            status::run(&cfg, cli.output)?;
+            Ok(Outcome::Ok)
         }
         Command::Verify => {
             let cfg = load_config(&cli)?;
@@ -32,22 +51,29 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Repo { op } => match op {
             RepoOp::Status { repo } => {
                 let cfg = load_config(&cli)?;
-                repo::status::run(&cfg, repo, cli.output)
+                repo::status::run(&cfg, repo, cli.output)?;
+                Ok(Outcome::Ok)
             }
         },
         Command::Forge { op } => match op {
             ForgeOp::Show { forge, slug } => {
                 let cfg = load_config(&cli)?;
-                forge::show::run(&cfg, forge, slug, cli.output)
+                forge::show::run(&cfg, forge, slug, cli.output)?;
+                Ok(Outcome::Ok)
             }
             ForgeOp::Exists { forge, slug } => {
                 let cfg = load_config(&cli)?;
-                forge::exists::run(&cfg, forge, slug, cli.output)
+                forge::exists::run(&cfg, forge, slug, cli.output)?;
+                Ok(Outcome::Ok)
             }
         },
-        Command::Migrate { repo, to } => migrate::run(repo, to, cli.output),
+        Command::Migrate { repo, to } => {
+            migrate::run(repo, to, cli.output)?;
+            Ok(Outcome::Ok)
+        }
         Command::Archive { repo, from } => {
-            archive::run(repo, from.as_deref(), cli.output)
+            archive::run(repo, from.as_deref(), cli.output)?;
+            Ok(Outcome::Ok)
         }
     }
 }
