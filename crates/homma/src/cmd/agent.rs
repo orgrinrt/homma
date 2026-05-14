@@ -249,6 +249,7 @@ pub mod status {
 
 pub mod regen {
     use super::*;
+    use crate::cmd::aggregate;
 
     /// Roll-up regen report across all repos.
     #[derive(Debug, Serialize)]
@@ -257,29 +258,48 @@ pub mod regen {
         pub ok: bool,
     }
 
-    /// Per-repo regen outcome.
+    /// Per-repo regen outcome covering both pipeline stages.
     #[derive(Debug, Serialize)]
     pub struct RegenResult {
         pub repo: String,
-        pub status: RegenStatus,
-        /// Last meaningful line from the subprocess output, when relevant.
-        pub message: Option<String>,
+        pub cargo_mock: StageStatus,
+        pub aggregate: StageStatus,
+        pub aggregated_rules: usize,
+        pub aggregated_hooks: usize,
     }
 
-    #[derive(Debug, Clone, Copy, Serialize)]
-    #[serde(rename_all = "snake_case")]
-    pub enum RegenStatus {
+    /// Per-stage status, carrying a one-line reason or message when
+    /// skipped or failed.
+    #[derive(Debug, Clone, Serialize)]
+    #[serde(rename_all = "snake_case", tag = "status", content = "detail")]
+    pub enum StageStatus {
         Success,
-        /// `mock/` not present; no regen attempted. Not an error.
-        Skipped,
-        /// `cargo mock` returned non-zero.
-        Failed,
+        Skipped(String),
+        Failed(String),
     }
 
-    pub fn run(
+    impl StageStatus {
+        fn is_failure(&self) -> bool {
+            matches!(self, StageStatus::Failed(_))
+        }
+    }
+
+    /// Options for the regen pipeline.
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct Opts {
+        pub continue_on_error: bool,
+        pub skip_cargo_mock: bool,
+        pub skip_aggregate: bool,
+    }
+
+    /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
+    /// repo; stage 2 aggregates per-repo rules and hooks into the
+    /// workspace `.claude/`; stage 3 merges hook entries into
+    /// workspace `settings.json`.
+    pub fn run_with(
         cfg: &Config,
         repo: Option<&str>,
-        continue_on_error: bool,
+        opts: Opts,
         format: OutputFormat,
     ) -> Result<Outcome> {
         if let Some(name) = repo {
@@ -287,24 +307,105 @@ pub mod regen {
                 return Err(anyhow!("repo `{name}` not declared in [repos.*]"));
             }
         }
+        if opts.skip_cargo_mock && opts.skip_aggregate {
+            return Err(anyhow!(
+                "`--skip-cargo-mock` and `--skip-aggregate` together would do nothing"
+            ));
+        }
 
+        let workspace = &cfg.workspace.path;
+        let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
         let mut results = Vec::new();
         let mut had_failure = false;
+
         for (name, repo_cfg) in &cfg.repos {
             if let Some(filter) = repo {
                 if filter != name {
                     continue;
                 }
             }
-            let local = util::resolve_local_path(&cfg.workspace.path, &repo_cfg.local_path);
-            let result = regen_one(name, &local);
-            let failed = matches!(result.status, RegenStatus::Failed);
-            results.push(result);
-            if failed {
+            let local = util::resolve_local_path(workspace, &repo_cfg.local_path);
+
+            // Stage 1: cargo mock.
+            let cargo_mock = if opts.skip_cargo_mock {
+                StageStatus::Skipped("--skip-cargo-mock".into())
+            } else if !local.exists() {
+                StageStatus::Failed(format!("local_path {} does not exist", local.display()))
+            } else if !local.join("mock").is_dir() {
+                StageStatus::Skipped("no mock/ directory".into())
+            } else {
+                match invoke_cargo_mock(&local) {
+                    Ok(()) => StageStatus::Success,
+                    Err(e) => StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                }
+            };
+
+            if cargo_mock.is_failure() {
                 had_failure = true;
-                if !continue_on_error {
+                results.push(RegenResult {
+                    repo: name.clone(),
+                    cargo_mock,
+                    aggregate: StageStatus::Skipped("cargo mock failed".into()),
+                    aggregated_rules: 0,
+                    aggregated_hooks: 0,
+                });
+                if !opts.continue_on_error {
                     break;
                 }
+                continue;
+            }
+
+            // Stage 2: aggregate. Only attempt if the repo has a
+            // rendered .claude/ to read from.
+            let claude_present = local.join(".claude").is_dir();
+            let (aggregated_rules, aggregated_hooks, aggregate_stage) =
+                if opts.skip_aggregate {
+                    (0, 0, StageStatus::Skipped("--skip-aggregate".into()))
+                } else if !claude_present {
+                    (0, 0, StageStatus::Skipped("no .claude/ to aggregate".into()))
+                } else {
+                    match aggregate::aggregate_repo(
+                        workspace,
+                        name,
+                        &repo_cfg.local_path,
+                        &local,
+                        &mut settings_entries,
+                    ) {
+                        Ok((r, h)) => (r, h, StageStatus::Success),
+                        Err(e) => {
+                            had_failure = true;
+                            (0, 0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
+                        }
+                    }
+                };
+
+            let stage_failed = aggregate_stage.is_failure();
+            results.push(RegenResult {
+                repo: name.clone(),
+                cargo_mock,
+                aggregate: aggregate_stage,
+                aggregated_rules,
+                aggregated_hooks,
+            });
+            if stage_failed && !opts.continue_on_error {
+                break;
+            }
+        }
+
+        // Stage 3: merge collected entries into workspace settings.json.
+        if !opts.skip_aggregate {
+            let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
+            if let Err(e) =
+                aggregate::merge_settings(workspace, &known_repos, &settings_entries)
+            {
+                had_failure = true;
+                results.push(RegenResult {
+                    repo: "(settings.json)".into(),
+                    cargo_mock: StageStatus::Skipped("not a repo".into()),
+                    aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                    aggregated_rules: 0,
+                    aggregated_hooks: 0,
+                });
             }
         }
 
@@ -315,35 +416,6 @@ pub mod regen {
         } else {
             Outcome::ReportedFailure
         })
-    }
-
-    fn regen_one(name: &str, local: &Path) -> RegenResult {
-        if !local.exists() {
-            return RegenResult {
-                repo: name.into(),
-                status: RegenStatus::Failed,
-                message: Some(format!("local_path {} does not exist", local.display())),
-            };
-        }
-        if !local.join("mock").is_dir() {
-            return RegenResult {
-                repo: name.into(),
-                status: RegenStatus::Skipped,
-                message: Some("no mock/ directory".into()),
-            };
-        }
-        match invoke_cargo_mock(local) {
-            Ok(()) => RegenResult {
-                repo: name.into(),
-                status: RegenStatus::Success,
-                message: None,
-            },
-            Err(e) => RegenResult {
-                repo: name.into(),
-                status: RegenStatus::Failed,
-                message: Some(truncate(format!("{e:#}"), 256)),
-            },
-        }
     }
 
     /// Run `cargo mock` from the repo root. Errors carry the exit status +
@@ -389,19 +461,33 @@ pub mod regen {
         fn render_human(&self, out: &mut dyn Write) -> std::io::Result<()> {
             writeln!(out, "regen: {}", if self.ok { "ok" } else { "FAIL" })?;
             for r in &self.results {
-                let tag = match r.status {
-                    RegenStatus::Success => "ok",
-                    RegenStatus::Skipped => "skip",
-                    RegenStatus::Failed => "fail",
-                };
-                let msg = r.message.as_deref().unwrap_or("");
-                if msg.is_empty() {
-                    writeln!(out, "  [{tag}] {}", r.repo)?;
-                } else {
-                    writeln!(out, "  [{tag}] {}: {msg}", r.repo)?;
+                let mock_tag = stage_tag(&r.cargo_mock);
+                let agg_tag = stage_tag(&r.aggregate);
+                writeln!(
+                    out,
+                    "  {}: cargo_mock={} aggregate={} (rules={} hooks={})",
+                    r.repo,
+                    mock_tag,
+                    agg_tag,
+                    r.aggregated_rules,
+                    r.aggregated_hooks,
+                )?;
+                if let StageStatus::Failed(m) = &r.cargo_mock {
+                    writeln!(out, "    cargo_mock: {m}")?;
+                }
+                if let StageStatus::Failed(m) = &r.aggregate {
+                    writeln!(out, "    aggregate: {m}")?;
                 }
             }
             Ok(())
+        }
+    }
+
+    fn stage_tag(s: &StageStatus) -> &'static str {
+        match s {
+            StageStatus::Success => "ok",
+            StageStatus::Skipped(_) => "skip",
+            StageStatus::Failed(_) => "fail",
         }
     }
 
