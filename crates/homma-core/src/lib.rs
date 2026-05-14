@@ -11,7 +11,9 @@ pub mod mapping;
 pub mod repo;
 
 pub use config::{Config, ConfigError, Defaults, ForgeConfig, ForgeKind, RepoConfig, WorkspaceConfig};
-pub use forge::{CreateRepoSpec, Forge, ForgeError, ForgejoClient, RepoMetadata, Visibility};
+pub use forge::{
+    CreateRepoSpec, Forge, ForgeError, ForgejoClient, GitHubClient, RepoMetadata, Visibility,
+};
 pub use repo::{
     Branch, GixRepo, MirrorOpts, Remote, RepoError, RepoOps, Status, TrackingStatus,
 };
