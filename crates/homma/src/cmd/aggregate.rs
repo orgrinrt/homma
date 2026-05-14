@@ -267,10 +267,14 @@ fn aggregate_hooks(
             Some(m) if !m.is_empty() => m.clone(),
             _ => detect_matchers_from_hook_body(&path).unwrap_or_default(),
         };
+        let abs_command = target_path
+            .to_str()
+            .ok_or_else(|| anyhow!("non-utf8 path: {}", target_path.display()))?
+            .to_string();
         for m in matchers {
             settings_entries.push(HookEntry {
                 matcher: m,
-                command: format!(".claude/hooks/{target_name}"),
+                command: abs_command.clone(),
             });
         }
 
@@ -454,7 +458,10 @@ pub(crate) fn merge_settings(
 }
 
 /// True if `entry` looks like a homma-aggregated hook entry: its
-/// command path stripped of `.claude/hooks/` matches `<known-repo>--`.
+/// command path basename (the filename after the last `/`) starts with
+/// `<known-repo>--`. Basename-matching means the detection works for
+/// both relative paths (legacy / unmanaged entries) and the absolute
+/// paths homma now emits.
 pub(crate) fn is_aggregated_entry(
     entry: &serde_json::Value,
     known_repos: &[&str],
@@ -468,13 +475,10 @@ pub(crate) fn is_aggregated_entry(
             Some(s) => s,
             None => return false,
         };
-        let stripped = match cmd.strip_prefix(".claude/hooks/") {
-            Some(s) => s,
-            None => return false,
-        };
+        let basename = cmd.rsplit('/').next().unwrap_or(cmd);
         known_repos
             .iter()
-            .any(|repo| stripped.starts_with(&format!("{repo}--")))
+            .any(|repo| basename.starts_with(&format!("{repo}--")))
     })
 }
 
@@ -588,7 +592,11 @@ mod tests {
 
         assert_eq!(settings.len(), 1);
         assert_eq!(settings[0].matcher, "Edit");
-        assert_eq!(settings[0].command, ".claude/hooks/arvo--no-alloc.sh");
+        assert!(
+            settings[0].command.ends_with("/.claude/hooks/arvo--no-alloc.sh"),
+            "expected absolute path ending with `.claude/hooks/arvo--no-alloc.sh`, got: {}",
+            settings[0].command,
+        );
 
         merge_settings(workspace, &["arvo"], &settings, None).unwrap();
         let written = fs::read_to_string(workspace.join(".claude/settings.json")).unwrap();
@@ -596,7 +604,11 @@ mod tests {
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["matcher"], "Edit");
-        assert_eq!(arr[0]["hooks"][0]["command"], ".claude/hooks/arvo--no-alloc.sh");
+        let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(
+            cmd.ends_with("/.claude/hooks/arvo--no-alloc.sh"),
+            "expected absolute path, got: {cmd}",
+        );
     }
 
     #[test]

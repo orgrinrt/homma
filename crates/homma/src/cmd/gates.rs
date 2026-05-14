@@ -62,25 +62,30 @@ pub(crate) fn install_workspace_gate(
         perms.set_mode(0o755);
         fs::set_permissions(&target, perms)?;
     }
+    let abs_command = target
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("non-utf8 path: {}", target.display()))?
+        .to_string();
     Ok(HookEntry {
         matcher: "Bash".to_string(),
-        command: format!(".claude/hooks/{GATE_SCRIPT_NAME}"),
+        command: abs_command,
     })
 }
 
 /// True if `entry` looks like the workspace-gate entry homma manages.
-/// Identifying by command path keeps the merge logic idempotent across
-/// regens without needing a sidecar manifest.
+/// Identification is by command-path basename so absolute and relative
+/// path forms both match cleanly across regens.
 pub(crate) fn is_workspace_gate_entry(entry: &serde_json::Value) -> bool {
     let hooks = match entry.get("hooks").and_then(|h| h.as_array()) {
         Some(h) => h,
         None => return false,
     };
     hooks.iter().any(|h| {
-        h.get("command")
-            .and_then(|c| c.as_str())
-            .map(|s| s == format!(".claude/hooks/{GATE_SCRIPT_NAME}"))
-            .unwrap_or(false)
+        let cmd = match h.get("command").and_then(|c| c.as_str()) {
+            Some(s) => s,
+            None => return false,
+        };
+        cmd.rsplit('/').next().unwrap_or(cmd) == GATE_SCRIPT_NAME
     })
 }
 
@@ -153,30 +158,47 @@ if [ -z "$match_path" ]; then
     exit 0
 fi
 
-# Validate the matched repo's mockspace bootstrap.
-problems=()
+# Decide whether the repo has *partially* adopted mockspace.
+# A repo with NO mockspace surface (no mock/, no alias, no
+# core.hooksPath) has not adopted mockspace at all; the gate stays
+# out of the way to avoid enforcing adoption on unrelated repos.
+# Only flag repos where some surfaces exist but others are missing,
+# i.e. actual drift.
+has_mock_dir=0
+has_alias=0
+has_hooks_path=0
 
-if [ ! -d "$match_path/mock" ]; then
-    problems+=("$match_path/mock/ is missing (repo never had mockspace bootstrap)")
+[ -d "$match_path/mock" ] && has_mock_dir=1
+
+if [ -f "$match_path/.cargo/config.toml" ] && \
+   grep -qE '^mock[[:space:]]*=' "$match_path/.cargo/config.toml"; then
+    has_alias=1
 fi
 
-if [ -f "$match_path/.cargo/config.toml" ]; then
-    if ! grep -qE '^mock[[:space:]]*=' "$match_path/.cargo/config.toml"; then
-        problems+=("$match_path/.cargo/config.toml: no [alias] mock entry (run cargo mock inside the repo to install it)")
-    fi
-else
-    problems+=("$match_path/.cargo/config.toml: missing")
+if [ -n "$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)" ]; then
+    has_hooks_path=1
 fi
 
-hooks_path=$(git -C "$match_path" config --get core.hooksPath 2>/dev/null || echo "")
-if [ -z "$hooks_path" ]; then
-    problems+=("$match_path: git config core.hooksPath not set; per-repo git hooks will not fire (run cargo mock inside the repo)")
-fi
+adoption=$((has_mock_dir + has_alias + has_hooks_path))
 
-if [ "${{#problems[@]}}" -eq 0 ]; then
-    # Healthy bootstrap; silent allow.
+# Zero adoption: silent allow. The repo never opted in.
+if [ "$adoption" -eq 0 ]; then
     exit 0
 fi
+
+# Full adoption: silent allow.
+if [ "$adoption" -eq 3 ]; then
+    exit 0
+fi
+
+# Partial adoption: drift detected; build a problems list.
+problems=()
+[ "$has_mock_dir" -eq 0 ] && \
+    problems+=("$match_path/mock/ is missing but other mockspace surfaces are present")
+[ "$has_alias" -eq 0 ] && \
+    problems+=("$match_path/.cargo/config.toml: no [alias] mock entry")
+[ "$has_hooks_path" -eq 0 ] && \
+    problems+=("$match_path: git config core.hooksPath is not set; per-repo git hooks will not fire")
 
 # Build a multi-line reason for the deny payload.
 reason="mockspace bootstrap incomplete for repo \`$match_name\` ($match_path):"
@@ -208,7 +230,11 @@ mod tests {
         ];
         let entry = install_workspace_gate(workspace, &repos).unwrap();
         assert_eq!(entry.matcher, "Bash");
-        assert_eq!(entry.command, ".claude/hooks/_workspace--mockspace-gate.sh");
+        assert!(
+            entry.command.ends_with("/.claude/hooks/_workspace--mockspace-gate.sh"),
+            "expected absolute path, got: {}",
+            entry.command,
+        );
 
         let script = workspace.join(".claude/hooks/_workspace--mockspace-gate.sh");
         assert!(script.exists());
