@@ -72,6 +72,27 @@ pub enum Command {
         op: ForgeOp,
     },
 
+    /// Workspace-level mockspace agent-template orchestration.
+    ///
+    /// Each member repo renders its own `.claude/` and `.github/` from
+    /// `mock/agent/` templates via `cargo mock`. `homma agent` walks the
+    /// workspace and either discovers per-repo state (`status`) or
+    /// drives the regen in each (`regen`).
+    Agent {
+        #[command(subcommand)]
+        op: AgentOp,
+    },
+
+    /// Workspace-level documentation discovery.
+    ///
+    /// Reports which doc surfaces (`README.md`, `docs/`, mockspace
+    /// templates, `CHANGELOG.md`) each member repo currently has. The
+    /// aggregation / render half of #454 lands later.
+    Docs {
+        #[command(subcommand)]
+        op: DocsOp,
+    },
+
     /// Migrate a repo from one configured forge to another.
     ///
     /// Reads source metadata, creates the destination repo (with description,
@@ -130,6 +151,51 @@ pub enum RepoOp {
     Status {
         /// Repo name from `homma.toml`.
         repo: String,
+    },
+}
+
+/// `agent` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum AgentOp {
+    /// Discover per-repo mockspace agent-template state.
+    ///
+    /// For each member repo (or one when `--repo` is set), reports whether
+    /// `mock/`, `.claude/`, `.github/`, and the `cargo mock` alias are
+    /// present.
+    Status {
+        /// Single repo from `homma.toml`. Default: all.
+        #[arg(long)]
+        repo: Option<String>,
+    },
+    /// Run `cargo mock` in each member repo to regenerate the agent
+    /// surfaces (`.claude/`, `.github/`) from the per-repo `mock/`
+    /// templates.
+    ///
+    /// Repos without a `mock/` directory are skipped, not failed. Default
+    /// behaviour stops on the first failure; pass `--continue-on-error`
+    /// to keep going and summarise at the end.
+    Regen {
+        /// Single repo from `homma.toml`. Default: all repos with a `mock/`.
+        #[arg(long)]
+        repo: Option<String>,
+        /// Keep going after a per-repo regen failure.
+        #[arg(long)]
+        continue_on_error: bool,
+    },
+}
+
+/// `docs` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum DocsOp {
+    /// Discover per-repo doc surfaces.
+    ///
+    /// Reports which of `README.md`, `docs/`, `mock/DESIGN.md.tmpl`,
+    /// `mock/PRINCIPLES.md.tmpl`, `mock/WORKFLOW.md.tmpl`, and
+    /// `CHANGELOG.md` each member repo currently ships.
+    Status {
+        /// Single repo from `homma.toml`. Default: all.
+        #[arg(long)]
+        repo: Option<String>,
     },
 }
 
