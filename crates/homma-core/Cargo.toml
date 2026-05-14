@@ -14,6 +14,13 @@ mockspace-template = { path = "../../../mockspace/mock/crates/mockspace-template
 mockspace-config = { path = "../../../mockspace/mock/crates/mockspace-config" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+gix = { version = "0.66", default-features = false, features = [
+    "blocking-network-client",
+    "blocking-http-transport-reqwest-rust-tls",
+    "status",
+    "worktree-mutation",
+    "revision",
+] }
 
 [dev-dependencies]
 tempfile = "3"
