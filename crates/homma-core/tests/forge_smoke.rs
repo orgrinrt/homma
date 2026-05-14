@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use homma_core::{
     CreateRepoSpec, Forge, ForgeError, RepoMetadata, Visibility,
 };
+use homma_core::forge::OwnerKind;
 
 /// In-memory mock Forge. Stores repos in a `(owner, name) -> metadata` map.
 struct MockForge {
@@ -172,6 +173,18 @@ fn archive_unknown_fails() {
     let f = MockForge::new();
     let err = f.archive_repo("orgrinrt", "homma").unwrap_err();
     assert!(matches!(err, ForgeError::RepoNotFound { .. }));
+}
+
+#[test]
+fn create_repo_spec_defaults_to_user_owner() {
+    let spec = CreateRepoSpec::new("homma");
+    assert_eq!(spec.owner_kind, OwnerKind::User);
+}
+
+#[test]
+fn create_repo_spec_in_org_flips_owner_kind() {
+    let spec = CreateRepoSpec::new("homma").in_org();
+    assert_eq!(spec.owner_kind, OwnerKind::Org);
 }
 
 #[test]

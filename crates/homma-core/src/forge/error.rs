@@ -23,6 +23,12 @@ pub enum ForgeError {
     UnexpectedStatus { status: u16, body: String },
     /// Backend-specific transport or parse failure. Concrete clients box their
     /// internal errors into this variant.
+    ///
+    /// Network failures (DNS, TCP) and parse failures (JSON deserialise) both
+    /// land here for now, so callers cannot distinguish "retry-safe transient"
+    /// from "permanent shape mismatch" without inspecting the inner error.
+    /// A future split into `NetworkError` + `RateLimited { retry_after }` is
+    /// tracked for the migrate command's retry path.
     Backend(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 

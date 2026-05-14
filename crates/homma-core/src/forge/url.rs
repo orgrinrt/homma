@@ -24,7 +24,12 @@ pub fn clone_https(forge: &ForgeConfig, owner: &str, name: &str) -> String {
 
 /// SSH clone URL: `git@{host}:{owner}/{name}.git`.
 ///
-/// The host is derived from `forge.base_url` via [`host_of`].
+/// The host is derived from `forge.base_url` via [`host_of`]. Assumes the
+/// SSH endpoint sits at the same host as the HTTP one and at the root of
+/// the namespace. Self-hosted installations behind an HTTP path prefix
+/// (`https://example.com/gitlab/...`) are not supported by this composer;
+/// such installations typically need a separately-configured SSH host
+/// anyway, which is out of scope for the v0 abstract layer.
 pub fn clone_ssh(forge: &ForgeConfig, owner: &str, name: &str) -> String {
     let host = host_of(&forge.base_url);
     format!("git@{host}:{owner}/{name}.git")
@@ -69,6 +74,15 @@ pub fn api_root(forge: &ForgeConfig) -> String {
 /// separator is present (already a bare host). Strips trailing path
 /// segments and trailing slashes.
 ///
+/// Assumes its input is a forge `base_url` as carried in `homma.toml`, i.e.
+/// a `scheme://host` shape. Garbage in produces garbage out; the config
+/// layer is the right place to validate URL shape.
+///
+/// Path-prefixed installations (`https://example.com/gitlab`) have the
+/// path prefix dropped. Such installations are rare for Forgejo / Gitea
+/// (which typically run at host root) and are not supported by the
+/// derived SSH URL anyway; see [`clone_ssh`].
+///
 /// ```ignore
 /// assert_eq!(host_of("https://codeberg.org"), "codeberg.org");
 /// assert_eq!(host_of("https://codeberg.org/"), "codeberg.org");
@@ -80,8 +94,7 @@ pub fn host_of(url: &str) -> &str {
         Some(i) => &url[i + 3..],
         None => url,
     };
-    let host = after_scheme.split('/').next().unwrap_or(after_scheme);
-    host
+    after_scheme.split('/').next().unwrap_or(after_scheme)
 }
 
 fn trim_trailing_slash(s: &str) -> &str {

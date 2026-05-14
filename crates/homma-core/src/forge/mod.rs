@@ -23,4 +23,4 @@ pub mod trait_def;
 pub mod url;
 
 pub use error::ForgeError;
-pub use trait_def::{CreateRepoSpec, Forge, RepoMetadata, Visibility};
+pub use trait_def::{CreateRepoSpec, Forge, OwnerKind, RepoMetadata, Visibility};

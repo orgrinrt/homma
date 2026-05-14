@@ -23,8 +23,11 @@ pub trait Forge {
 
     /// Check whether a repo exists without fetching its metadata.
     ///
-    /// Cheaper than [`Self::fetch_repo`] when the caller only needs the
-    /// existence answer (typical for migrate-idempotence checks).
+    /// A lighter-weight existence probe than [`Self::fetch_repo`] when the
+    /// caller only needs a yes/no answer (typical for migrate-idempotence
+    /// checks). Concrete clients may end up calling the same REST endpoint
+    /// as `fetch_repo` and discarding the body; the trait method still
+    /// reads cleaner at call sites that don't want the metadata.
     fn repo_exists(&self, owner: &str, name: &str) -> Result<bool, ForgeError>;
 
     /// Create a new repo in the named owner namespace.
@@ -92,6 +95,15 @@ pub struct CreateRepoSpec {
     pub name: String,
     pub description: Option<String>,
     pub visibility: Visibility,
+    /// Whether the `owner` namespace is a user account or an organisation.
+    ///
+    /// GitHub's create endpoint (`POST /user/repos`) ignores this because the
+    /// token's user is implied; the field is still required for the Forgejo
+    /// client, which dispatches between `POST /orgs/{owner}/repos` (when
+    /// `Org`) and `POST /user/repos` (when `User`). `homma.toml` carries the
+    /// answer per repo, so the caller passes it through without needing an
+    /// extra probe.
+    pub owner_kind: OwnerKind,
     /// Initial default branch. When `None`, the forge picks (usually `main`).
     pub default_branch: Option<String>,
     /// Skip the forge's auto-init (README / LICENSE / .gitignore generation).
@@ -100,22 +112,46 @@ pub struct CreateRepoSpec {
     pub auto_init: bool,
 }
 
+/// Whether an `owner` namespace is a user account or an organisation.
+///
+/// Used by [`Forge::create_repo`] to dispatch between user-scope and
+/// org-scope create endpoints. GitHub ignores this (the token's user is
+/// always implied); Forgejo / Gitea require the right scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerKind {
+    User,
+    Org,
+}
+
 impl CreateRepoSpec {
     /// New spec with sensible migrate-destination defaults: no auto-init,
-    /// no description, public visibility, forge-default branch.
+    /// no description, public visibility, user-owned, forge-default branch.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             description: None,
             visibility: Visibility::Public,
+            owner_kind: OwnerKind::User,
             default_branch: None,
             auto_init: false,
         }
     }
 
+    /// Mark the spec as targeting an organisation namespace. Builder helper
+    /// for the common case where the caller knows the owner kind at spec-
+    /// construction time.
+    pub fn in_org(mut self) -> Self {
+        self.owner_kind = OwnerKind::Org;
+        self
+    }
+
     /// Copy the migrate-relevant fields from a source repo's metadata onto
     /// this spec. Used by the migrate command to replicate description /
     /// visibility / default branch on the destination.
+    ///
+    /// Does not copy `topics`. Topics are typically set via a separate forge
+    /// endpoint (`PUT /repos/{owner}/{name}/topics`); see the migrate command
+    /// (#452) for the post-create topics-replication step.
     pub fn replicate_from(mut self, source: &RepoMetadata) -> Self {
         self.description = source.description.clone();
         self.visibility = source.visibility;
