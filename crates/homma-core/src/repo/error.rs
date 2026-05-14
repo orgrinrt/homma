@@ -1,4 +1,4 @@
-//! `RepoError` — error type returned by every [`super::RepoOps`] method
+//! `RepoError`: error type returned by every [`super::RepoOps`] method
 //! and by [`super::GixRepo`] constructors.
 //!
 //! Concrete (not associated). Alternative impls wrap their backend errors

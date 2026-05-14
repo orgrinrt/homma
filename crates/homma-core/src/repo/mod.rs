@@ -1,10 +1,10 @@
 //! gix-backed repository operations layer for homma.
 //!
 //! Public surface:
-//! - [`RepoOps`] trait — operations every backend supports.
-//! - [`GixRepo`] — the canonical `gix`-backed impl.
-//! - [`Status`], [`Branch`], [`Remote`], [`TrackingStatus`], [`MirrorOpts`] — value types.
-//! - [`RepoError`] — concrete error type returned by every op.
+//! - [`RepoOps`] trait: operations every backend supports.
+//! - [`GixRepo`]: the canonical `gix`-backed impl.
+//! - [`Status`], [`Branch`], [`Remote`], [`TrackingStatus`], [`MirrorOpts`]: value types.
+//! - [`RepoError`]: concrete error type returned by every op.
 //!
 //! Design rationale lives in the `project-homma-repo-ops-design` memory note.
 

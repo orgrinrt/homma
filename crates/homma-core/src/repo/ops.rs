@@ -44,7 +44,11 @@ pub trait RepoOps {
 pub struct Status {
     pub current_branch: Option<String>,
     pub is_clean: bool,
-    pub uncommitted_changes: usize,
+    /// Count of worktree-vs-index changes (untracked files excluded). Does
+    /// not include staged-but-uncommitted (index-vs-HEAD) changes; the
+    /// `is_clean` flag covers both sides, this counter covers one. Naming
+    /// reflects what is counted, not what callers may casually expect.
+    pub worktree_changes: usize,
     pub tracking: Option<TrackingStatus>,
 }
 

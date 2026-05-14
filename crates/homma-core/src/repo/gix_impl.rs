@@ -1,4 +1,4 @@
-//! `GixRepo` — the [`super::RepoOps`] impl backed by the `gix` crate.
+//! `GixRepo`: the [`super::RepoOps`] impl backed by the `gix` crate.
 //!
 //! Construction surface is impl-specific: [`GixRepo::open`] for an
 //! existing local repo, [`GixRepo::clone_into`] for a default-branch
@@ -99,10 +99,10 @@ impl RepoOps for GixRepo {
             .map_err(|e| RepoError::Status(e.to_string()))
             .map(|dirty| !dirty)?;
 
-        // uncommitted_changes count: drive the status iterator and count entries.
-        // The count is best-effort; if the iterator setup fails we fall back to
-        // a binary clean/dirty result.
-        let uncommitted_changes = if is_clean {
+        // worktree_changes count: drive the status iterator and count
+        // entries. Best-effort; if iterator setup fails we fall back to 0
+        // (the is_clean flag still carries the correct binary signal).
+        let worktree_changes = if is_clean {
             0
         } else {
             self.count_index_worktree_changes().unwrap_or(0)
@@ -113,7 +113,7 @@ impl RepoOps for GixRepo {
         Ok(Status {
             current_branch,
             is_clean,
-            uncommitted_changes,
+            worktree_changes,
             tracking,
         })
     }
@@ -173,14 +173,19 @@ impl RepoOps for GixRepo {
         // would force us to hold an immutable borrow on `self.handle`
         // across the mutable config snapshot; manual section composition
         // sidesteps that constraint and reads cleaner besides.
+        //
+        // CAVEAT: the surrounding `write_config_to_disk` rewrites the
+        // whole config from its parsed form, which does not preserve
+        // comments or whitespace formatting that may have been in the
+        // original `.git/config`. Tracked as follow-up: a no-rewrite
+        // path for repos with hand-curated configs (gix has no
+        // incremental-write API at 0.66).
         gix::remote::name::validated(name)
             .map_err(|e| RepoError::Remote(e.to_string()))?;
         let snapshot = self.handle.config_snapshot_mut();
         let mut file = snapshot.forget();
-        if let Some(existing) = file.remove_section("remote", Some(name.into())) {
-            // Drop any pre-existing block so we don't end up with duplicates.
-            let _ = existing;
-        }
+        // Drop any pre-existing block so we don't end up with duplicates.
+        file.remove_section("remote", Some(name.into()));
         let mut section = file
             .new_section("remote", Some(std::borrow::Cow::Owned(name.into())))
             .map_err(|e| RepoError::Remote(e.to_string()))?;

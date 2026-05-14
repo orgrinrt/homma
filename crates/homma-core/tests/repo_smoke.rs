@@ -85,7 +85,7 @@ fn status_reports_clean_then_dirty() {
     let repo = GixRepo::open(dir.path()).expect("open");
     let clean = repo.status().expect("status clean");
     assert!(clean.is_clean, "freshly committed tree should be clean");
-    assert_eq!(clean.uncommitted_changes, 0);
+    assert_eq!(clean.worktree_changes, 0);
     assert_eq!(clean.current_branch.as_deref(), Some("main"));
 
     // Dirty the tree.
