@@ -398,6 +398,7 @@ pub(crate) fn merge_settings(
     workspace: &Path,
     known_repos: &[&str],
     aggregated_entries: &[HookEntry],
+    gate_entry: Option<&HookEntry>,
 ) -> Result<()> {
     let settings_path = workspace.join(".claude/settings.json");
     fs::create_dir_all(workspace.join(".claude")).ok();
@@ -423,7 +424,19 @@ pub(crate) fn merge_settings(
         .as_array_mut()
         .ok_or_else(|| anyhow!("settings.json `hooks.PreToolUse` is not an array"))?;
 
-    pre_arr.retain(|entry| !is_aggregated_entry(entry, known_repos));
+    pre_arr.retain(|entry| {
+        !is_aggregated_entry(entry, known_repos)
+            && !crate::cmd::gates::is_workspace_gate_entry(entry)
+    });
+
+    if let Some(g) = gate_entry {
+        pre_arr.push(serde_json::json!({
+            "matcher": g.matcher,
+            "hooks": [
+                { "type": "command", "command": g.command }
+            ]
+        }));
+    }
 
     for e in aggregated_entries {
         pre_arr.push(serde_json::json!({
@@ -577,7 +590,7 @@ mod tests {
         assert_eq!(settings[0].matcher, "Edit");
         assert_eq!(settings[0].command, ".claude/hooks/arvo--no-alloc.sh");
 
-        merge_settings(workspace, &["arvo"], &settings).unwrap();
+        merge_settings(workspace, &["arvo"], &settings, None).unwrap();
         let written = fs::read_to_string(workspace.join(".claude/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&written).unwrap();
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
@@ -601,7 +614,7 @@ mod tests {
             matcher: "Edit".into(),
             command: ".claude/hooks/arvo--no-alloc.sh".into(),
         }];
-        merge_settings(workspace, &["arvo"], &entries).unwrap();
+        merge_settings(workspace, &["arvo"], &entries, None).unwrap();
         let v: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
         )
@@ -630,7 +643,7 @@ mod tests {
             matcher: "Write".into(),
             command: ".claude/hooks/arvo--new.sh".into(),
         }];
-        merge_settings(workspace, &["arvo"], &entries).unwrap();
+        merge_settings(workspace, &["arvo"], &entries, None).unwrap();
         let v: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
         )

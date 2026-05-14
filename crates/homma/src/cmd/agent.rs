@@ -392,12 +392,43 @@ pub mod regen {
             }
         }
 
-        // Stage 3: merge collected entries into workspace settings.json.
+        // Stage 3: write the workspace-level mockspace gate hook and
+        // merge all entries (per-repo aggregated + workspace gate) into
+        // settings.json.
         if !opts.skip_aggregate {
             let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
-            if let Err(e) =
-                aggregate::merge_settings(workspace, &known_repos, &settings_entries)
-            {
+            let repo_paths: Vec<(String, String)> = cfg
+                .repos
+                .iter()
+                .map(|(name, rc)| {
+                    let abs = util::resolve_local_path(workspace, &rc.local_path);
+                    (name.clone(), abs.to_string_lossy().to_string())
+                })
+                .collect();
+            let gate_entry = match crate::cmd::gates::install_workspace_gate(
+                workspace,
+                &repo_paths,
+            ) {
+                Ok(e) => Some(e),
+                Err(e) => {
+                    had_failure = true;
+                    results.push(RegenResult {
+                        repo: "(workspace gate)".into(),
+                        cargo_mock: StageStatus::Skipped("not a repo".into()),
+                        aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                        aggregated_rules: 0,
+                        aggregated_hooks: 0,
+                    });
+                    None
+                }
+            };
+
+            if let Err(e) = aggregate::merge_settings(
+                workspace,
+                &known_repos,
+                &settings_entries,
+                gate_entry.as_ref(),
+            ) {
                 had_failure = true;
                 results.push(RegenResult {
                     repo: "(settings.json)".into(),

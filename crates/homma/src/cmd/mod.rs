@@ -16,6 +16,7 @@ pub mod aggregate;
 pub mod archive;
 pub mod docs;
 pub mod forge;
+pub mod gates;
 pub mod migrate;
 pub mod repo;
 pub mod status;
