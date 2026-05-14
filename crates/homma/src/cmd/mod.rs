@@ -67,12 +67,19 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 Ok(Outcome::Ok)
             }
         },
-        Command::Migrate { repo, to } => {
-            migrate::run(repo, to, cli.output)?;
-            Ok(Outcome::Ok)
+        Command::Migrate { repo, to, to_owner, to_org, source, dry_run } => {
+            let cfg = load_config(&cli)?;
+            let opts = migrate::Opts {
+                to_owner: to_owner.as_deref(),
+                to_org: *to_org,
+                source: source.as_deref(),
+                dry_run: *dry_run,
+            };
+            migrate::run(&cfg, repo, to, opts, cli.output)
         }
-        Command::Archive { repo, from } => {
-            archive::run(repo, from.as_deref(), cli.output)?;
+        Command::Archive { repo, from, owner } => {
+            let cfg = load_config(&cli)?;
+            archive::run(&cfg, repo, from.as_deref(), owner.as_deref(), cli.output)?;
             Ok(Outcome::Ok)
         }
     }

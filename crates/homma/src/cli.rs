@@ -72,26 +72,53 @@ pub enum Command {
         op: ForgeOp,
     },
 
-    /// Migrate a repo from one configured forge to another. Stub: substantive
-    /// behaviour lands in #452 alongside the two-phase migrate command.
+    /// Migrate a repo from one configured forge to another.
+    ///
+    /// Reads source metadata, creates the destination repo (with description,
+    /// visibility, and default branch replicated), mirror-clones the source,
+    /// and pushes the mirror to the destination. Does not archive or delete
+    /// the source; that is a deliberate second step via `homma archive`.
+    ///
+    /// The source forge is taken from `[repos.<repo>].forge` unless `--source`
+    /// overrides it. The source owner and repo name come from
+    /// `[repos.<repo>].owner` and `<repo>` respectively unless overridden.
     Migrate {
         /// Repo name from `homma.toml` (the key under `[repos.<name>]`).
         repo: String,
-        /// Target forge profile name from `homma.toml` (the key under
-        /// `[forges.<name>]`).
+        /// Target forge profile name from `homma.toml`.
         #[arg(long)]
         to: String,
+        /// Destination owner. Defaults to the source owner from `[repos.<repo>].owner`.
+        #[arg(long)]
+        to_owner: Option<String>,
+        /// Destination owner is an organisation (not a user account). Drives
+        /// the create-repo endpoint dispatch on Forgejo / Gitea; GitHub
+        /// ignores this (the token's user is implied for `POST /user/repos`).
+        #[arg(long)]
+        to_org: bool,
+        /// Source forge override. Defaults to `[repos.<repo>].forge`.
+        #[arg(long)]
+        source: Option<String>,
+        /// Plan only; do not create the destination or push. Emits the
+        /// migration plan and exits 0.
+        #[arg(long)]
+        dry_run: bool,
     },
 
-    /// Archive a source-side repo after a successful migration. Stub:
-    /// substantive behaviour lands in #452.
+    /// Archive a repo on its source forge after a successful migration.
+    ///
+    /// Issues the forge's archive API (read-only flag). Does not delete; the
+    /// source repo stays visible as a frozen artefact. Run only after the
+    /// destination is verified.
     Archive {
         /// Repo name from `homma.toml`.
         repo: String,
-        /// Source forge profile name. Defaults to the repo's currently
-        /// configured forge.
+        /// Forge profile name. Defaults to `[repos.<repo>].forge`.
         #[arg(long)]
         from: Option<String>,
+        /// Owner override. Defaults to `[repos.<repo>].owner`.
+        #[arg(long)]
+        owner: Option<String>,
     },
 }
 
@@ -245,9 +272,58 @@ mod tests {
     fn cli_parses_migrate() {
         let cli = Cli::try_parse_from(["homma", "migrate", "notko", "--to", "codeberg"]).unwrap();
         match cli.command {
-            Command::Migrate { repo, to } => {
+            Command::Migrate { repo, to, to_owner, to_org, source, dry_run } => {
                 assert_eq!(repo, "notko");
                 assert_eq!(to, "codeberg");
+                assert_eq!(to_owner, None);
+                assert!(!to_org);
+                assert_eq!(source, None);
+                assert!(!dry_run);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_migrate_with_overrides() {
+        let cli = Cli::try_parse_from([
+            "homma",
+            "migrate",
+            "notko",
+            "--to",
+            "codeberg",
+            "--to-owner",
+            "hiisi-digital",
+            "--to-org",
+            "--source",
+            "github",
+            "--dry-run",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Migrate { repo, to, to_owner, to_org, source, dry_run } => {
+                assert_eq!(repo, "notko");
+                assert_eq!(to, "codeberg");
+                assert_eq!(to_owner.as_deref(), Some("hiisi-digital"));
+                assert!(to_org);
+                assert_eq!(source.as_deref(), Some("github"));
+                assert!(dry_run);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_archive_with_overrides() {
+        let cli = Cli::try_parse_from([
+            "homma", "archive", "notko", "--from", "github", "--owner", "orgrinrt",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Archive { repo, from, owner } => {
+                assert_eq!(repo, "notko");
+                assert_eq!(from.as_deref(), Some("github"));
+                assert_eq!(owner.as_deref(), Some("orgrinrt"));
             }
             other => panic!("unexpected command: {other:?}"),
         }

@@ -1,10 +1,11 @@
 //! Smoke tests for the `homma` CLI.
 //!
 //! These cover the wiring of `clap` → command bodies → output: argument
-//! parsing, config loading, JSON vs human format, and the migrate/archive
-//! stubs that #452 will replace. They do not exercise network paths
-//! (`forge show` / `forge exists`); those land alongside #456 when a
-//! sanity playground exists.
+//! parsing, config loading, JSON vs human format, and early-exit error
+//! paths in the migrate / archive commands. They do not exercise live
+//! network paths (`forge show` / `forge exists` / `migrate` / `archive`
+//! end-to-end); the latter two would mutate real repos. Network-touching
+//! smoke tests land alongside the sanity playground (#456).
 
 use std::path::PathBuf;
 
@@ -138,23 +139,47 @@ fn missing_config_errors_cleanly() {
 }
 
 #[test]
-fn migrate_stub_fails_with_pointer_to_452() {
+fn migrate_undeclared_destination_forge_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
         .args(["-c", cfg.to_str().unwrap(), "migrate", "notko", "--to", "codeberg"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("#452"));
+        .stderr(predicate::str::contains("forge `codeberg` not declared"));
 }
 
 #[test]
-fn archive_stub_fails_with_pointer_to_452() {
+fn migrate_undeclared_repo_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "archive", "notko"])
+        .args(["-c", cfg.to_str().unwrap(), "migrate", "missing", "--to", "github"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("#452"));
+        .stderr(predicate::str::contains("repo `missing` not declared"));
+}
+
+#[test]
+fn archive_undeclared_repo_errors_cleanly() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = write_tmp_config(&dir);
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "archive", "missing"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("repo `missing` not declared"));
+}
+
+#[test]
+fn archive_undeclared_forge_override_errors_cleanly() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = write_tmp_config(&dir);
+    bin()
+        .args([
+            "-c", cfg.to_str().unwrap(), "archive", "notko", "--from", "doesnotexist",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("forge `doesnotexist` not declared"));
 }
