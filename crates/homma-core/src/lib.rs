@@ -7,8 +7,12 @@
 
 pub mod config;
 pub mod mapping;
+pub mod repo;
 
 pub use config::{Config, ConfigError, Defaults, ForgeConfig, ForgeKind, RepoConfig, WorkspaceConfig};
+pub use repo::{
+    Branch, GixRepo, MirrorOpts, Remote, RepoError, RepoOps, Status, TrackingStatus,
+};
 
 pub use mockspace_config as mockspace;
 pub use mockspace_template as template;
