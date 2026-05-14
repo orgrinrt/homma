@@ -10,10 +10,12 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-mockspace-template = { path = "../../../mockspace/mock/crates/mockspace-template" }
-mockspace-config = { path = "../../../mockspace/mock/crates/mockspace-config" }
+mockspace-template = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
+mockspace-config = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 gix = { version = "0.66", default-features = false, features = [
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
