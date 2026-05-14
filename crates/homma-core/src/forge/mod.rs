@@ -19,8 +19,10 @@
 //!   migrate command to build URLs without instantiating a client.
 
 pub mod error;
+pub mod forgejo;
 pub mod trait_def;
 pub mod url;
 
 pub use error::ForgeError;
+pub use forgejo::ForgejoClient;
 pub use trait_def::{CreateRepoSpec, Forge, OwnerKind, RepoMetadata, Visibility};
