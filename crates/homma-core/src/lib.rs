@@ -6,10 +6,12 @@
 //! render templates over homma's workspace context.
 
 pub mod config;
+pub mod forge;
 pub mod mapping;
 pub mod repo;
 
 pub use config::{Config, ConfigError, Defaults, ForgeConfig, ForgeKind, RepoConfig, WorkspaceConfig};
+pub use forge::{CreateRepoSpec, Forge, ForgeError, RepoMetadata, Visibility};
 pub use repo::{
     Branch, GixRepo, MirrorOpts, Remote, RepoError, RepoOps, Status, TrackingStatus,
 };
