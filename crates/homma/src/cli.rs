@@ -167,13 +167,20 @@ pub enum AgentOp {
         #[arg(long)]
         repo: Option<String>,
     },
-    /// Run `cargo mock` in each member repo to regenerate the agent
-    /// surfaces (`.claude/`, `.github/`) from the per-repo `mock/`
-    /// templates.
+    /// Regenerate per-repo agent surfaces and aggregate them at the
+    /// workspace level.
     ///
-    /// Repos without a `mock/` directory are skipped, not failed. Default
-    /// behaviour stops on the first failure; pass `--continue-on-error`
-    /// to keep going and summarise at the end.
+    /// Two stages:
+    /// 1. Run `cargo mock` in each member repo with a `mock/`
+    ///    directory, regenerating `.claude/rules/*.md` and
+    ///    `.claude/hooks/*.sh` from `mock/agent/` templates.
+    /// 2. Aggregate per-repo rules and hooks into the workspace
+    ///    `.claude/`, with each repo's rules and hooks scoped to only
+    ///    activate when work touches that repo's tree.
+    ///
+    /// Repos without a `mock/` directory are skipped, not failed. Use
+    /// `--skip-cargo-mock` to re-aggregate without re-rendering
+    /// per-repo, or `--skip-aggregate` to just rerun `cargo mock`.
     Regen {
         /// Single repo from `homma.toml`. Default: all repos with a `mock/`.
         #[arg(long)]
@@ -181,6 +188,14 @@ pub enum AgentOp {
         /// Keep going after a per-repo regen failure.
         #[arg(long)]
         continue_on_error: bool,
+        /// Skip the per-repo `cargo mock` step; only run workspace
+        /// aggregation against the already-rendered per-repo `.claude/`.
+        #[arg(long)]
+        skip_cargo_mock: bool,
+        /// Skip the workspace aggregation step; only run per-repo
+        /// `cargo mock`.
+        #[arg(long)]
+        skip_aggregate: bool,
     },
 }
 

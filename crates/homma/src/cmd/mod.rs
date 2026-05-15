@@ -12,9 +12,11 @@ use homma_core::Config;
 use crate::cli::{AgentOp, Cli, Command, DocsOp, ForgeOp, RepoOp};
 
 pub mod agent;
+pub mod aggregate;
 pub mod archive;
 pub mod docs;
 pub mod forge;
+pub mod gates;
 pub mod migrate;
 pub mod repo;
 pub mod status;
@@ -90,12 +92,21 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 agent::status::run(&cfg, repo.as_deref(), cli.output)?;
                 Ok(Outcome::Ok)
             }
-            AgentOp::Regen { repo, continue_on_error } => {
+            AgentOp::Regen {
+                repo,
+                continue_on_error,
+                skip_cargo_mock,
+                skip_aggregate,
+            } => {
                 let cfg = load_config(&cli)?;
-                agent::regen::run(
+                agent::regen::run_with(
                     &cfg,
                     repo.as_deref(),
-                    *continue_on_error,
+                    agent::regen::Opts {
+                        continue_on_error: *continue_on_error,
+                        skip_cargo_mock: *skip_cargo_mock,
+                        skip_aggregate: *skip_aggregate,
+                    },
                     cli.output,
                 )
             }
