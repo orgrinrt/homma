@@ -1,9 +1,8 @@
-//! Smoke tests for `homma.toml` parsing and the IntoMockspaceConfig bridge.
+//! Smoke tests for `homma.toml` parsing.
 
 use std::path::PathBuf;
 
 use homma_core::{Config, ForgeKind};
-use mockspace_config::IntoMockspaceConfig;
 
 #[test]
 fn minimal_parse() {
@@ -111,24 +110,6 @@ path = "/tmp/demo"
     let config = Config::from_path(&path).unwrap();
     assert_eq!(config.workspace.name, "demo");
     assert_eq!(config.workspace.path, PathBuf::from("/tmp/demo"));
-}
-
-#[test]
-fn into_mockspace_config_picks_name_and_path() {
-    let src = r#"
-[workspace]
-name = "clause-dev"
-path = "/some/path"
-"#;
-    let config = Config::parse(src).unwrap();
-    let mockspace_cfg = config.into_mockspace_config().unwrap();
-
-    assert_eq!(mockspace_cfg.project_name, "clause-dev");
-    assert_eq!(mockspace_cfg.repo_root, PathBuf::from("/some/path"));
-    // Unmapped fields default. Spot-check a few.
-    assert_eq!(mockspace_cfg.mock_dir, PathBuf::from("mock"));
-    assert_eq!(mockspace_cfg.crates_dir, PathBuf::from("mock/crates"));
-    assert_eq!(mockspace_cfg.abi_version, 1);
 }
 
 #[test]

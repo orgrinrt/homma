@@ -1863,7 +1863,7 @@ dependencies = [
 [[package]]
 name = "mockspace-config"
 version = "0.1.0"
-source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#f3fd2eb57db9be8392259d6db4c2fdbb93763322"
+source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#5e72b44606c296f5a8c1748a37a608913ff90117"
 dependencies = [
  "serde",
  "toml",
@@ -1872,10 +1872,11 @@ dependencies = [
 [[package]]
 name = "mockspace-template"
 version = "0.1.0"
-source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#f3fd2eb57db9be8392259d6db4c2fdbb93763322"
+source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#5e72b44606c296f5a8c1748a37a608913ff90117"
 dependencies = [
  "minijinja",
  "serde",
+ "tempfile",
 ]
 
 [[package]]

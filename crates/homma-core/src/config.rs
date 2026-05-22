@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// No `Default` impl: a homma workspace without a name is meaningless, and
 /// silently defaulting `workspace.name` to the empty string would poison
-/// downstream code (mockspace mapping copies it into `project_name`).
+/// downstream code that reads it as a display label.
 /// Construct via [`Config::parse`] / [`Config::from_path`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
