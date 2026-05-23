@@ -1,15 +1,8 @@
-//! Workspace-level aggregation of per-repo mockspace agent surfaces.
+//! Workspace-level aggregation of per-repo mockspace agent hooks.
 //!
-//! For each member repo with rendered `.claude/rules/*.md` and
-//! `.claude/hooks/*.sh`, this module:
+//! For each member repo with rendered `.claude/hooks/*.sh`, this module:
 //!
-//! 1. Copies rules into `<workspace>/.claude/rules/<repo>--<name>.md`,
-//!    rewriting the `paths:` front matter field so the rule only loads
-//!    when files in that repo's tree are touched. Existing `paths:`
-//!    globs get the repo's local path prepended; absent `paths:` blocks
-//!    get one injected matching `<local_path>/**`.
-//!
-//! 2. Writes hook wrapper scripts at
+//! 1. Writes hook wrapper scripts at
 //!    `<workspace>/.claude/hooks/<repo>--<name>.sh`. Each wrapper reads
 //!    the Claude Code tool-input JSON from stdin, extracts a target
 //!    path (or falls back to `$PWD` for Bash calls), silently exits
@@ -19,17 +12,26 @@
 //!    workspace wrapper is a thin scope check, the substantive logic
 //!    still lives in `<repo>/.claude/hooks/<name>.sh`.
 //!
-//! 3. Merges per-repo `settings.json` hook registrations into the
+//! 2. Merges per-repo `settings.json` hook registrations into the
 //!    workspace `.claude/settings.json` with each command path
 //!    rewritten to the workspace wrapper. Previously-aggregated entries
 //!    (identified by `<repo>--` filename prefix matching any known
-//!    workspace repo) are filtered out before fresh entries land, so
-//!    regens are idempotent and hand-authored workspace entries are
-//!    preserved.
+//!    workspace repo, or a legacy `imports/<repo>/` path prefix from
+//!    the pre-homma bash aggregator) are filtered out before fresh
+//!    entries land, so regens are idempotent and hand-authored
+//!    workspace entries are preserved.
 //!
-//! Skills are deliberately NOT aggregated. Claude Code skills do not
-//! support `paths:`-scoped activation, so workspace-level skills would
-//! load unconditionally and the scoping property would not hold.
+//! Rules are deliberately NOT aggregated. Per-repo rules auto-load when
+//! Claude Code is opened with cwd inside the repo; rule aggregation at
+//! the workspace level produced confused doubling (the same rule loading
+//! once from each source). Skills are also not aggregated. Claude Code
+//! skills do not support `paths:`-scoped activation, so workspace-level
+//! skills would load unconditionally and the scoping property would
+//! not hold.
+//!
+//! Legacy aggregated rules at `<workspace>/.claude/rules/<repo>--*.md`
+//! get cleaned on every regen via [`clean_stale`] so upgrades from
+//! older homma versions converge to the current shape automatically.
 
 use std::fs;
 use std::path::Path;
@@ -45,8 +47,14 @@ pub(crate) struct HookEntry {
     pub command: String,
 }
 
-/// Aggregate one repo's rules + hooks into the workspace `.claude/`.
-/// Returns `(rules_written, hooks_written)`.
+/// Aggregate one repo's hooks into the workspace `.claude/`. Returns
+/// the number of hook wrappers written.
+///
+/// Rules are no longer aggregated; per-repo rules auto-load from the
+/// repo's `.claude/rules/` when Claude Code is opened with cwd inside
+/// the repo. Any previously-aggregated rules at
+/// `<workspace>/.claude/rules/<repo>--*.md` get cleaned on every regen
+/// so upgrades from older homma versions converge automatically.
 ///
 /// `settings_entries` accumulates per-hook registrations that
 /// [`merge_settings`] writes into the workspace `settings.json` after
@@ -54,10 +62,9 @@ pub(crate) struct HookEntry {
 pub(crate) fn aggregate_repo(
     workspace: &Path,
     repo_name: &str,
-    repo_local_path: &Path,
     repo_abs_path: &Path,
     settings_entries: &mut Vec<HookEntry>,
-) -> Result<(usize, usize)> {
+) -> Result<usize> {
     let claude_dir = repo_abs_path.join(".claude");
     if !claude_dir.is_dir() {
         return Err(anyhow!(
@@ -71,15 +78,12 @@ pub(crate) fn aggregate_repo(
     fs::create_dir_all(&ws_rules).ok();
     fs::create_dir_all(&ws_hooks).ok();
 
+    // Cleans both prior-homma aggregated rules (kept after retirement
+    // of rule aggregation) and prior-regen hook wrappers (the
+    // idempotency guarantee for hooks).
     clean_stale(&ws_rules, repo_name, ".md")?;
     clean_stale(&ws_hooks, repo_name, ".sh")?;
 
-    let rules_count = aggregate_rules(
-        &claude_dir.join("rules"),
-        &ws_rules,
-        repo_name,
-        repo_local_path,
-    )?;
     let hooks_count = aggregate_hooks(
         &claude_dir,
         &ws_hooks,
@@ -88,7 +92,7 @@ pub(crate) fn aggregate_repo(
         settings_entries,
     )?;
 
-    Ok((rules_count, hooks_count))
+    Ok(hooks_count)
 }
 
 /// Remove previously-aggregated files for `repo_name` so removed
@@ -107,115 +111,6 @@ fn clean_stale(dir: &Path, repo_name: &str, ext: &str) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Walk per-repo `.claude/rules/`, rewrite each rule's front-matter
-/// `paths:` field, write to workspace rules dir.
-fn aggregate_rules(
-    src_dir: &Path,
-    dst_dir: &Path,
-    repo_name: &str,
-    repo_local_path: &Path,
-) -> Result<usize> {
-    if !src_dir.is_dir() {
-        return Ok(0);
-    }
-    let mut count = 0;
-    for entry in fs::read_dir(src_dir).with_context(|| format!("read {}", src_dir.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        let name = match path.file_name().and_then(|s| s.to_str()) {
-            Some(s) if s.ends_with(".md") => s.to_string(),
-            _ => continue,
-        };
-        let content = fs::read_to_string(&path)
-            .with_context(|| format!("read {}", path.display()))?;
-        let rewritten = rewrite_rule_front_matter(&content, repo_local_path);
-        let target = dst_dir.join(format!("{repo_name}--{name}"));
-        fs::write(&target, rewritten)
-            .with_context(|| format!("write {}", target.display()))?;
-        count += 1;
-    }
-    Ok(count)
-}
-
-/// Rewrite the `paths:` block in a rule's YAML-like front matter to
-/// prepend `<repo_local_path>/` to each glob. If no front matter is
-/// present, prepend a fresh one containing `<repo_local_path>/**`. If
-/// front matter is present but lacks a `paths:` block, append one.
-///
-/// Mockspace emits a reliably simple `paths:` block (`paths:` followed
-/// by `  - "..."` lines), so a line-oriented rewrite is enough; no
-/// full YAML parser needed at this layer.
-pub(crate) fn rewrite_rule_front_matter(content: &str, repo_local_path: &Path) -> String {
-    let local = repo_local_path.to_string_lossy();
-    let local = local.trim_end_matches('/');
-    let blanket = format!("{local}/**");
-
-    if let Some(rest) = content.strip_prefix("---\n") {
-        if let Some(end) = rest.find("\n---\n") {
-            let front = &rest[..end];
-            let body = &rest[end + 5..];
-            let new_front = rewrite_front_matter_paths(front, local, &blanket);
-            return format!("---\n{new_front}\n---\n{body}");
-        }
-    }
-
-    format!("---\npaths:\n  - \"{blanket}\"\n---\n{content}")
-}
-
-/// Line-oriented rewriter for the `paths:` block inside YAML-like
-/// front matter. Lines outside the block pass through unchanged. The
-/// block is identified by a `paths:` key at indent zero; continuation
-/// lines start with `- ` (after optional whitespace).
-fn rewrite_front_matter_paths(front: &str, local: &str, blanket: &str) -> String {
-    let mut out = String::new();
-    let mut saw_paths = false;
-    let mut in_paths_block = false;
-
-    for line in front.lines() {
-        if in_paths_block {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("- ") || trimmed.starts_with("-\"") {
-                let value_part = trimmed.trim_start_matches('-').trim_start();
-                let value = value_part
-                    .trim()
-                    .trim_matches('"')
-                    .trim_matches('\'');
-                out.push_str("  - \"");
-                out.push_str(local);
-                out.push('/');
-                out.push_str(value);
-                out.push_str("\"\n");
-                continue;
-            } else {
-                in_paths_block = false;
-            }
-        }
-
-        // Only treat unindented `paths:` as the top-level key. Indented
-        // `paths:` inside a nested mapping (mockspace does not emit
-        // these today, but the structural assumption is worth holding)
-        // passes through untouched.
-        if line.starts_with("paths:") {
-            saw_paths = true;
-            in_paths_block = true;
-            out.push_str("paths:\n");
-            continue;
-        }
-
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    if !saw_paths {
-        out.push_str("paths:\n  - \"");
-        out.push_str(blanket);
-        out.push_str("\"\n");
-    }
-
-    out.trim_end_matches('\n').to_string()
 }
 
 /// Walk per-repo `.claude/hooks/`, write wrapper scripts to workspace
@@ -470,11 +365,18 @@ pub(crate) fn merge_settings(
     Ok(())
 }
 
-/// True if `entry` looks like a homma-aggregated hook entry: its
-/// command path basename (the filename after the last `/`) starts with
-/// `<known-repo>--`. Basename-matching means the detection works for
-/// both relative paths (legacy / unmanaged entries) and the absolute
-/// paths homma now emits.
+/// True if `entry` looks like a homma-aggregated hook entry. Two
+/// patterns count:
+///
+/// - **Current homma shape**: the command path's basename (filename
+///   after the last `/`) starts with `<known-repo>--`. Matches both
+///   relative and absolute paths the current aggregator emits.
+/// - **Legacy bash-aggregator shape**: the command path contains the
+///   segment `imports/<known-repo>/`. The pre-homma bash script
+///   organised its output under per-repo subdirectories; these
+///   entries linger in workspace `settings.json` after the bash
+///   aggregator retired. Detecting them here lets every regen sweep
+///   them out idempotently.
 pub(crate) fn is_aggregated_entry(
     entry: &serde_json::Value,
     known_repos: &[&str],
@@ -489,41 +391,18 @@ pub(crate) fn is_aggregated_entry(
             None => return false,
         };
         let basename = cmd.rsplit('/').next().unwrap_or(cmd);
-        known_repos
-            .iter()
-            .any(|repo| basename.starts_with(&format!("{repo}--")))
+        known_repos.iter().any(|repo| {
+            let legacy_segment = format!("imports/{repo}/");
+            basename.starts_with(&format!("{repo}--"))
+                || cmd.contains(&format!("/{legacy_segment}"))
+                || cmd.starts_with(&legacy_segment)
+        })
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn rewrite_inserts_paths_when_absent() {
-        let content = "# Some rule\n\nContents.\n";
-        let out = rewrite_rule_front_matter(content, Path::new("arvo"));
-        assert!(out.starts_with("---\npaths:\n  - \"arvo/**\"\n---\n"));
-        assert!(out.contains("Contents."));
-    }
-
-    #[test]
-    fn rewrite_prepends_repo_path_to_existing_paths() {
-        let content = "---\npaths:\n  - \"crates/**/*.rs\"\n  - \"src/**/*.rs\"\n---\nBody.\n";
-        let out = rewrite_rule_front_matter(content, Path::new("arvo"));
-        assert!(out.contains("- \"arvo/crates/**/*.rs\""), "got: {out}");
-        assert!(out.contains("- \"arvo/src/**/*.rs\""), "got: {out}");
-        assert!(out.contains("Body."));
-    }
-
-    #[test]
-    fn rewrite_preserves_other_front_matter_fields() {
-        let content = "---\ntitle: foo\npaths:\n  - \"x.rs\"\nname: bar\n---\nBody.\n";
-        let out = rewrite_rule_front_matter(content, Path::new("arvo"));
-        assert!(out.contains("title: foo"), "got: {out}");
-        assert!(out.contains("name: bar"), "got: {out}");
-        assert!(out.contains("- \"arvo/x.rs\""), "got: {out}");
-    }
 
     #[test]
     fn wrapper_script_contains_scope_check_and_handoff() {
@@ -554,6 +433,52 @@ mod tests {
     }
 
     #[test]
+    fn legacy_imports_path_detected_as_aggregated() {
+        // Pre-homma bash aggregator wrote per-repo hooks under
+        // `imports/<repo>/<name>.sh` rather than the current flat
+        // `<repo>--<name>.sh` convention. Entries left over from that
+        // era must still get swept out on regen.
+        let entry = serde_json::json!({
+            "matcher": "Edit",
+            "hooks": [{
+                "type": "command",
+                "command": ".claude/hooks/imports/arvo/no-alloc-guard.sh"
+            }]
+        });
+        assert!(is_aggregated_entry(&entry, &["arvo", "hilavitkutin"]));
+    }
+
+    #[test]
+    fn legacy_imports_at_path_start_detected_as_aggregated() {
+        // Relative path starting with `imports/<repo>/` (no leading
+        // separator). Must still match the legacy pattern.
+        let entry = serde_json::json!({
+            "matcher": "Edit",
+            "hooks": [{
+                "type": "command",
+                "command": "imports/arvo/no-alloc-guard.sh"
+            }]
+        });
+        assert!(is_aggregated_entry(&entry, &["arvo"]));
+    }
+
+    #[test]
+    fn imports_substring_not_at_path_boundary_not_detected() {
+        // A command that happens to contain the substring `imports/arvo/`
+        // in the middle of a longer path component must NOT be flagged.
+        // Path-component anchoring prevents false positives on
+        // e.g. user-authored paths like `myimports/arvo/foo.sh`.
+        let entry = serde_json::json!({
+            "matcher": "Edit",
+            "hooks": [{
+                "type": "command",
+                "command": ".claude/hooks/myimports/arvo/foo.sh"
+            }]
+        });
+        assert!(!is_aggregated_entry(&entry, &["arvo"]));
+    }
+
+    #[test]
     fn matcher_detection_from_hook_body_directive() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("hook.sh");
@@ -570,11 +495,22 @@ mod tests {
     fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path();
-        let repo_local = Path::new("arvo");
-        let repo_abs = workspace.join(repo_local);
+        let repo_abs = workspace.join("arvo");
         fs::create_dir_all(repo_abs.join(".claude/rules")).unwrap();
         fs::create_dir_all(repo_abs.join(".claude/hooks")).unwrap();
 
+        // Stale aggregated rule from a prior homma version: must get
+        // swept out on regen even though no new rule is being written.
+        fs::create_dir_all(workspace.join(".claude/rules")).unwrap();
+        fs::write(
+            workspace.join(".claude/rules/arvo--stale-rule.md"),
+            "---\npaths:\n  - \"arvo/**\"\n---\nLeftover.\n",
+        )
+        .unwrap();
+
+        // Per-repo source rules still live in the repo; homma no longer
+        // copies them. Verify by writing one and checking it does NOT
+        // appear in the workspace .claude/rules/ post-aggregate.
         fs::write(
             repo_abs.join(".claude/rules/type-surface.md"),
             "---\npaths:\n  - \"crates/**/*.rs\"\n---\nBody.\n",
@@ -592,12 +528,19 @@ mod tests {
         .unwrap();
 
         let mut settings = Vec::new();
-        let (r, h) = aggregate_repo(workspace, "arvo", repo_local, &repo_abs, &mut settings).unwrap();
-        assert_eq!(r, 1);
+        let h = aggregate_repo(workspace, "arvo", &repo_abs, &mut settings).unwrap();
         assert_eq!(h, 1);
 
-        let rule = fs::read_to_string(workspace.join(".claude/rules/arvo--type-surface.md")).unwrap();
-        assert!(rule.contains("- \"arvo/crates/**/*.rs\""), "got: {rule}");
+        // Stale aggregated rule was cleaned.
+        assert!(
+            !workspace.join(".claude/rules/arvo--stale-rule.md").exists(),
+            "stale aggregated rule should have been cleaned by clean_stale"
+        );
+        // Repo-side rule was NOT propagated.
+        assert!(
+            !workspace.join(".claude/rules/arvo--type-surface.md").exists(),
+            "homma no longer aggregates per-repo rules"
+        );
 
         let hook = fs::read_to_string(workspace.join(".claude/hooks/arvo--no-alloc.sh")).unwrap();
         assert!(hook.contains("REPO_ROOT='"));
