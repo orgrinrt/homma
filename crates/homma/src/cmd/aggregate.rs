@@ -342,7 +342,11 @@ pub(crate) fn merge_settings(
     // hand-authored hooks bundled alongside aggregated ones. The
     // current shape walks each entry's hook array, drops only managed
     // hooks within it, and retains the entry when any non-managed
-    // hooks remain.
+    // hooks remain. Side effect: entries with a missing or non-array
+    // `hooks` field (malformed) now get swept instead of preserved.
+    // The previous per-entry shape returned `false` on bad shape and
+    // retained such entries; the per-hook shape's empty-array check
+    // drops them. Preferable: malformed state should not be load-bearing.
     for entry in pre_arr.iter_mut() {
         if let Some(hooks) = entry
             .get_mut("hooks")
