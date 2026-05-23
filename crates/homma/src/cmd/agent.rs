@@ -264,7 +264,6 @@ pub mod regen {
         pub repo: String,
         pub cargo_mock: StageStatus,
         pub aggregate: StageStatus,
-        pub aggregated_rules: usize,
         pub aggregated_hooks: usize,
     }
 
@@ -346,7 +345,6 @@ pub mod regen {
                     repo: name.clone(),
                     cargo_mock,
                     aggregate: StageStatus::Skipped("cargo mock failed".into()),
-                    aggregated_rules: 0,
                     aggregated_hooks: 0,
                 });
                 if !opts.continue_on_error {
@@ -358,23 +356,22 @@ pub mod regen {
             // Stage 2: aggregate. Only attempt if the repo has a
             // rendered .claude/ to read from.
             let claude_present = local.join(".claude").is_dir();
-            let (aggregated_rules, aggregated_hooks, aggregate_stage) =
+            let (aggregated_hooks, aggregate_stage) =
                 if opts.skip_aggregate {
-                    (0, 0, StageStatus::Skipped("--skip-aggregate".into()))
+                    (0, StageStatus::Skipped("--skip-aggregate".into()))
                 } else if !claude_present {
-                    (0, 0, StageStatus::Skipped("no .claude/ to aggregate".into()))
+                    (0, StageStatus::Skipped("no .claude/ to aggregate".into()))
                 } else {
                     match aggregate::aggregate_repo(
                         workspace,
                         name,
-                        &repo_cfg.local_path,
                         &local,
                         &mut settings_entries,
                     ) {
-                        Ok((r, h)) => (r, h, StageStatus::Success),
+                        Ok(h) => (h, StageStatus::Success),
                         Err(e) => {
                             had_failure = true;
-                            (0, 0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
+                            (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
                         }
                     }
                 };
@@ -384,7 +381,6 @@ pub mod regen {
                 repo: name.clone(),
                 cargo_mock,
                 aggregate: aggregate_stage,
-                aggregated_rules,
                 aggregated_hooks,
             });
             if stage_failed && !opts.continue_on_error {
@@ -416,7 +412,6 @@ pub mod regen {
                         repo: "(workspace gate)".into(),
                         cargo_mock: StageStatus::Skipped("not a repo".into()),
                         aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
-                        aggregated_rules: 0,
                         aggregated_hooks: 0,
                     });
                     None
@@ -434,7 +429,6 @@ pub mod regen {
                     repo: "(settings.json)".into(),
                     cargo_mock: StageStatus::Skipped("not a repo".into()),
                     aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
-                    aggregated_rules: 0,
                     aggregated_hooks: 0,
                 });
             }
@@ -496,11 +490,10 @@ pub mod regen {
                 let agg_tag = stage_tag(&r.aggregate);
                 writeln!(
                     out,
-                    "  {}: cargo_mock={} aggregate={} (rules={} hooks={})",
+                    "  {}: cargo_mock={} aggregate={} (hooks={})",
                     r.repo,
                     mock_tag,
                     agg_tag,
-                    r.aggregated_rules,
                     r.aggregated_hooks,
                 )?;
                 if let StageStatus::Failed(m) = &r.cargo_mock {
