@@ -62,11 +62,9 @@ pub(crate) struct HookEntry {
 pub(crate) fn aggregate_repo(
     workspace: &Path,
     repo_name: &str,
-    repo_local_path: &Path,
     repo_abs_path: &Path,
     settings_entries: &mut Vec<HookEntry>,
 ) -> Result<usize> {
-    let _ = repo_local_path;
     let claude_dir = repo_abs_path.join(".claude");
     if !claude_dir.is_dir() {
         return Err(anyhow!(
@@ -394,8 +392,10 @@ pub(crate) fn is_aggregated_entry(
         };
         let basename = cmd.rsplit('/').next().unwrap_or(cmd);
         known_repos.iter().any(|repo| {
+            let legacy_segment = format!("imports/{repo}/");
             basename.starts_with(&format!("{repo}--"))
-                || cmd.contains(&format!("imports/{repo}/"))
+                || cmd.contains(&format!("/{legacy_segment}"))
+                || cmd.starts_with(&legacy_segment)
         })
     })
 }
@@ -449,6 +449,36 @@ mod tests {
     }
 
     #[test]
+    fn legacy_imports_at_path_start_detected_as_aggregated() {
+        // Relative path starting with `imports/<repo>/` (no leading
+        // separator). Must still match the legacy pattern.
+        let entry = serde_json::json!({
+            "matcher": "Edit",
+            "hooks": [{
+                "type": "command",
+                "command": "imports/arvo/no-alloc-guard.sh"
+            }]
+        });
+        assert!(is_aggregated_entry(&entry, &["arvo"]));
+    }
+
+    #[test]
+    fn imports_substring_not_at_path_boundary_not_detected() {
+        // A command that happens to contain the substring `imports/arvo/`
+        // in the middle of a longer path component must NOT be flagged.
+        // Path-component anchoring prevents false positives on
+        // e.g. user-authored paths like `myimports/arvo/foo.sh`.
+        let entry = serde_json::json!({
+            "matcher": "Edit",
+            "hooks": [{
+                "type": "command",
+                "command": ".claude/hooks/myimports/arvo/foo.sh"
+            }]
+        });
+        assert!(!is_aggregated_entry(&entry, &["arvo"]));
+    }
+
+    #[test]
     fn matcher_detection_from_hook_body_directive() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("hook.sh");
@@ -465,8 +495,7 @@ mod tests {
     fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path();
-        let repo_local = Path::new("arvo");
-        let repo_abs = workspace.join(repo_local);
+        let repo_abs = workspace.join("arvo");
         fs::create_dir_all(repo_abs.join(".claude/rules")).unwrap();
         fs::create_dir_all(repo_abs.join(".claude/hooks")).unwrap();
 
@@ -499,7 +528,7 @@ mod tests {
         .unwrap();
 
         let mut settings = Vec::new();
-        let h = aggregate_repo(workspace, "arvo", repo_local, &repo_abs, &mut settings).unwrap();
+        let h = aggregate_repo(workspace, "arvo", &repo_abs, &mut settings).unwrap();
         assert_eq!(h, 1);
 
         // Stale aggregated rule was cleaned.

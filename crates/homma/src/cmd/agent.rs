@@ -365,7 +365,6 @@ pub mod regen {
                     match aggregate::aggregate_repo(
                         workspace,
                         name,
-                        &repo_cfg.local_path,
                         &local,
                         &mut settings_entries,
                     ) {
