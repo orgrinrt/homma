@@ -405,26 +405,8 @@ pub(crate) fn merge_settings(
 ///   entries linger in workspace `settings.json` after the bash
 ///   aggregator retired. Detecting them here lets every regen sweep
 ///   them out idempotently.
-pub(crate) fn is_aggregated_entry(
-    entry: &serde_json::Value,
-    known_repos: &[&str],
-) -> bool {
-    let hooks = match entry.get("hooks").and_then(|h| h.as_array()) {
-        Some(h) => h,
-        None => return false,
-    };
-    hooks.iter().any(|h| {
-        let cmd = h
-            .get("command")
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-        is_aggregated_command(cmd, known_repos)
-    })
-}
-
-/// True if a single hook command string looks aggregated. The per-hook
-/// flavour of [`is_aggregated_entry`], used by `merge_settings` to
-/// strip individual hooks without dropping the surrounding entry.
+/// True if a single hook command string looks aggregated. Used by
+/// `merge_settings` to strip individual hooks within an entry.
 pub(crate) fn is_aggregated_command(cmd: &str, known_repos: &[&str]) -> bool {
     let basename = cmd.rsplit('/').next().unwrap_or(cmd);
     known_repos.iter().any(|repo| {
@@ -450,21 +432,15 @@ mod tests {
     }
 
     #[test]
-    fn aggregated_entry_detected_by_command_prefix() {
-        let entry = serde_json::json!({
-            "matcher": "Edit",
-            "hooks": [{ "type": "command", "command": ".claude/hooks/arvo--no-alloc-guard.sh" }]
-        });
-        assert!(is_aggregated_entry(&entry, &["arvo", "hilavitkutin"]));
+    fn aggregated_command_detected_by_prefix() {
+        let cmd = ".claude/hooks/arvo--no-alloc-guard.sh";
+        assert!(is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
     }
 
     #[test]
-    fn non_aggregated_entry_not_detected() {
-        let entry = serde_json::json!({
-            "matcher": "Edit",
-            "hooks": [{ "type": "command", "command": ".claude/hooks/workspace-only.sh" }]
-        });
-        assert!(!is_aggregated_entry(&entry, &["arvo"]));
+    fn non_aggregated_command_not_detected() {
+        let cmd = ".claude/hooks/workspace-only.sh";
+        assert!(!is_aggregated_command(cmd, &["arvo"]));
     }
 
     #[test]
@@ -473,28 +449,16 @@ mod tests {
         // `imports/<repo>/<name>.sh` rather than the current flat
         // `<repo>--<name>.sh` convention. Entries left over from that
         // era must still get swept out on regen.
-        let entry = serde_json::json!({
-            "matcher": "Edit",
-            "hooks": [{
-                "type": "command",
-                "command": ".claude/hooks/imports/arvo/no-alloc-guard.sh"
-            }]
-        });
-        assert!(is_aggregated_entry(&entry, &["arvo", "hilavitkutin"]));
+        let cmd = ".claude/hooks/imports/arvo/no-alloc-guard.sh";
+        assert!(is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
     }
 
     #[test]
     fn legacy_imports_at_path_start_detected_as_aggregated() {
         // Relative path starting with `imports/<repo>/` (no leading
         // separator). Must still match the legacy pattern.
-        let entry = serde_json::json!({
-            "matcher": "Edit",
-            "hooks": [{
-                "type": "command",
-                "command": "imports/arvo/no-alloc-guard.sh"
-            }]
-        });
-        assert!(is_aggregated_entry(&entry, &["arvo"]));
+        let cmd = "imports/arvo/no-alloc-guard.sh";
+        assert!(is_aggregated_command(cmd, &["arvo"]));
     }
 
     #[test]
@@ -503,14 +467,8 @@ mod tests {
         // in the middle of a longer path component must NOT be flagged.
         // Path-component anchoring prevents false positives on
         // e.g. user-authored paths like `myimports/arvo/foo.sh`.
-        let entry = serde_json::json!({
-            "matcher": "Edit",
-            "hooks": [{
-                "type": "command",
-                "command": ".claude/hooks/myimports/arvo/foo.sh"
-            }]
-        });
-        assert!(!is_aggregated_entry(&entry, &["arvo"]));
+        let cmd = ".claude/hooks/myimports/arvo/foo.sh";
+        assert!(!is_aggregated_command(cmd, &["arvo"]));
     }
 
     #[test]
