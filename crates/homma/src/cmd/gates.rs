@@ -72,26 +72,11 @@ pub(crate) fn install_workspace_gate(
     })
 }
 
-/// True if `entry` looks like the workspace-gate entry homma manages.
-/// Identification is by command-path basename so absolute and relative
-/// path forms both match cleanly across regens.
-pub(crate) fn is_workspace_gate_entry(entry: &serde_json::Value) -> bool {
-    let hooks = match entry.get("hooks").and_then(|h| h.as_array()) {
-        Some(h) => h,
-        None => return false,
-    };
-    hooks.iter().any(|h| {
-        let cmd = h
-            .get("command")
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-        is_workspace_gate_command(cmd)
-    })
-}
-
 /// True if a single hook command string points at the workspace-gate
-/// script. The per-hook flavour of [`is_workspace_gate_entry`]; used
-/// when filtering hooks individually within a multi-hook entry.
+/// script. Used by `merge_settings` when filtering hooks individually
+/// within a multi-hook entry. Identification is by command-path
+/// basename so absolute and relative path forms both match cleanly
+/// across regens.
 pub(crate) fn is_workspace_gate_command(cmd: &str) -> bool {
     cmd.rsplit('/').next().unwrap_or(cmd) == GATE_SCRIPT_NAME
 }
@@ -180,9 +165,19 @@ has_hooks_path=0
 
 [ -d "$match_path/mock" ] && has_mock_dir=1
 
-if [ -f "$match_path/.cargo/config.toml" ] && \
-   grep -qE '^mock[[:space:]]*=' "$match_path/.cargo/config.toml"; then
-    has_alias=1
+if [ -f "$match_path/.cargo/config.toml" ]; then
+    # Section-aware: only count `mock = ...` lines that appear under
+    # the `[alias]` table header. A bare `mock = ...` under any other
+    # section (e.g. `[envs]`) is not the cargo alias the bootstrap
+    # writes and should not satisfy the adoption check. awk's state
+    # machine handles the section tracking cleanly without pulling
+    # in a TOML parser.
+    alias_hit=$(awk '
+        /^\[alias\][[:space:]]*$/ {{ in_alias=1; next }}
+        /^\[[^]]+\][[:space:]]*$/ {{ in_alias=0; next }}
+        in_alias && /^[[:space:]]*mock[[:space:]]*=/ {{ print "1"; exit }}
+    ' "$match_path/.cargo/config.toml")
+    [ "$alias_hit" = "1" ] && has_alias=1
 fi
 
 if [ -n "$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)" ]; then
@@ -267,21 +262,15 @@ mod tests {
     }
 
     #[test]
-    fn is_workspace_gate_entry_matches_managed_path() {
-        let e = serde_json::json!({
-            "matcher": "Bash",
-            "hooks": [{ "type": "command", "command": ".claude/hooks/_workspace--mockspace-gate.sh" }]
-        });
-        assert!(is_workspace_gate_entry(&e));
+    fn is_workspace_gate_command_matches_managed_path() {
+        assert!(is_workspace_gate_command(
+            ".claude/hooks/_workspace--mockspace-gate.sh"
+        ));
     }
 
     #[test]
-    fn is_workspace_gate_entry_rejects_other_paths() {
-        let e = serde_json::json!({
-            "matcher": "Bash",
-            "hooks": [{ "type": "command", "command": ".claude/hooks/arvo--no-alloc.sh" }]
-        });
-        assert!(!is_workspace_gate_entry(&e));
+    fn is_workspace_gate_command_rejects_other_paths() {
+        assert!(!is_workspace_gate_command(".claude/hooks/arvo--no-alloc.sh"));
     }
 
     #[test]
@@ -300,5 +289,245 @@ mod tests {
         let body = gate_script(&[]);
         assert!(body.contains("REPOS=("));
         assert!(body.contains("git commit"));
+    }
+
+    // -------------------------------------------------------------------
+    // End-to-end bash-execution tests for the rendered gate script. The
+    // script reads JSON from stdin via `jq`, walks the workspace's
+    // member-repo table to find a covering repo, then probes that
+    // repo's mockspace adoption surfaces (`mock/` dir, `cargo mock`
+    // alias under `[alias]` in `.cargo/config.toml`, and
+    // `core.hooksPath` git config). All exit codes are 0; the
+    // allow/deny signal travels through stdout's JSON payload.
+    //
+    // Each test renders the script via gate_script(), writes it to a
+    // temp file, builds a synthetic repo tree with whichever surfaces
+    // the case wants present, then invokes `bash <script>` with
+    // synthesised INPUT JSON. Tests skip cleanly when bash or jq are
+    // not on PATH (CI machines and developer boxes that lack them).
+    // -------------------------------------------------------------------
+
+    /// Synthesise an INPUT JSON payload matching the Claude Code Bash
+    /// tool-call shape the gate script parses.
+    fn input_json(command: &str, cwd: &str) -> String {
+        serde_json::json!({
+            "tool_input": {
+                "command": command,
+                "cwd": cwd,
+            }
+        })
+        .to_string()
+    }
+
+    /// Run the gate script with the given INPUT and return stdout.
+    /// Returns `None` when bash or jq are not available; callers
+    /// should skip the assertion in that case.
+    fn run_gate(repos: &[(String, String)], input: &str) -> Option<String> {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        if Command::new("bash").arg("--version").output().is_err() {
+            return None;
+        }
+        if Command::new("jq").arg("--version").output().is_err() {
+            return None;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let script_path = dir.path().join("gate.sh");
+        fs::write(&script_path, gate_script(repos)).unwrap();
+
+        let mut child = Command::new("bash")
+            .arg(&script_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .ok()?;
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().ok()?;
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    /// Build a fake repo tree with a tunable set of mockspace surfaces.
+    /// Returns the repo's absolute path.
+    fn fake_repo(
+        parent: &Path,
+        name: &str,
+        with_mock_dir: bool,
+        alias_shape: AliasShape,
+        with_hooks_path: bool,
+    ) -> std::path::PathBuf {
+        let repo = parent.join(name);
+        fs::create_dir_all(&repo).unwrap();
+
+        if with_mock_dir {
+            fs::create_dir_all(repo.join("mock")).unwrap();
+        }
+
+        match alias_shape {
+            AliasShape::None => {}
+            AliasShape::UnderAlias => {
+                let cfg = repo.join(".cargo/config.toml");
+                fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+                fs::write(&cfg, "[alias]\nmock = \"run -p mock-cli --\"\n").unwrap();
+            }
+            AliasShape::UnderOtherSection => {
+                let cfg = repo.join(".cargo/config.toml");
+                fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+                // `mock = ...` at top-level outside any section AND
+                // `mock = ...` under an unrelated section. Neither
+                // satisfies the section-aware alias check.
+                fs::write(&cfg, "[envs]\nmock = \"some-other-value\"\n").unwrap();
+            }
+        }
+
+        if with_hooks_path {
+            std::process::Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+            std::process::Command::new("git")
+                .args(["config", "core.hooksPath", "mock/target/hooks"])
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+        }
+
+        repo
+    }
+
+    enum AliasShape {
+        None,
+        UnderAlias,
+        UnderOtherSection,
+    }
+
+    #[test]
+    fn gate_e2e_full_adoption_emits_no_deny() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(
+            dir.path(),
+            "arvo",
+            true,
+            AliasShape::UnderAlias,
+            true,
+        );
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let Some(out) = run_gate(&repos, &input) else {
+            return; // bash or jq missing; skip
+        };
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "full adoption should not deny; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_partial_adoption_emits_deny() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(
+            dir.path(),
+            "arvo",
+            true,
+            AliasShape::None,
+            false,
+        );
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let Some(out) = run_gate(&repos, &input) else {
+            return;
+        };
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "partial adoption (mock/ only) should deny; got: {out}",
+        );
+        assert!(
+            out.contains("no [alias] mock entry"),
+            "deny reason should name the missing alias; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_zero_adoption_emits_no_deny() {
+        // No mock/, no alias, no hooksPath. The gate stays out of the
+        // way to avoid enforcing adoption on unrelated repos.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(
+            dir.path(),
+            "arvo",
+            false,
+            AliasShape::None,
+            false,
+        );
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let Some(out) = run_gate(&repos, &input) else {
+            return;
+        };
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "zero adoption should be a silent allow; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_alias_under_other_section_does_not_satisfy_check() {
+        // The `.cargo/config.toml` has a `mock = ...` line, but it
+        // appears under `[envs]` rather than `[alias]`. The
+        // section-aware check should NOT count this as the cargo
+        // alias the bootstrap writes. With mock/ + hooksPath both
+        // present, this leaves the alias slot empty (adoption=2/3,
+        // partial) and the gate should deny.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(
+            dir.path(),
+            "arvo",
+            true,
+            AliasShape::UnderOtherSection,
+            true,
+        );
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let Some(out) = run_gate(&repos, &input) else {
+            return;
+        };
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "alias under non-[alias] section should not count; got: {out}",
+        );
+        assert!(
+            out.contains("no [alias] mock entry"),
+            "deny reason should name the missing alias; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_non_git_command_is_silent_allow() {
+        // Out of scope: command is not git commit / git push.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(
+            dir.path(),
+            "arvo",
+            true,
+            AliasShape::None,
+            false,
+        );
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("ls -la", &repo.to_string_lossy());
+        let Some(out) = run_gate(&repos, &input) else {
+            return;
+        };
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "non-git command should be silent allow; got: {out}",
+        );
     }
 }
