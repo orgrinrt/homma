@@ -81,12 +81,19 @@ pub(crate) fn is_workspace_gate_entry(entry: &serde_json::Value) -> bool {
         None => return false,
     };
     hooks.iter().any(|h| {
-        let cmd = match h.get("command").and_then(|c| c.as_str()) {
-            Some(s) => s,
-            None => return false,
-        };
-        cmd.rsplit('/').next().unwrap_or(cmd) == GATE_SCRIPT_NAME
+        let cmd = h
+            .get("command")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        is_workspace_gate_command(cmd)
     })
+}
+
+/// True if a single hook command string points at the workspace-gate
+/// script. The per-hook flavour of [`is_workspace_gate_entry`]; used
+/// when filtering hooks individually within a multi-hook entry.
+pub(crate) fn is_workspace_gate_command(cmd: &str) -> bool {
+    cmd.rsplit('/').next().unwrap_or(cmd) == GATE_SCRIPT_NAME
 }
 
 /// Render the gate script body with the workspace's member-repo list

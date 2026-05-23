@@ -336,9 +336,37 @@ pub(crate) fn merge_settings(
         .as_array_mut()
         .ok_or_else(|| anyhow!("settings.json `hooks.PreToolUse` is not an array"))?;
 
+    // Per-hook filtering. Earlier homma versions filtered per-entry via
+    // `.any()`, which would drop an entire entry when any single hook in
+    // its `hooks[]` array matched a managed pattern. That cost
+    // hand-authored hooks bundled alongside aggregated ones. The
+    // current shape walks each entry's hook array, drops only managed
+    // hooks within it, and retains the entry when any non-managed
+    // hooks remain. Side effect: entries with a missing or non-array
+    // `hooks` field (malformed) now get swept instead of preserved.
+    // The previous per-entry shape returned `false` on bad shape and
+    // retained such entries; the per-hook shape's empty-array check
+    // drops them. Preferable: malformed state should not be load-bearing.
+    for entry in pre_arr.iter_mut() {
+        if let Some(hooks) = entry
+            .get_mut("hooks")
+            .and_then(|h| h.as_array_mut())
+        {
+            hooks.retain(|h| {
+                let cmd = h
+                    .get("command")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                !is_aggregated_command(cmd, known_repos)
+                    && !crate::cmd::gates::is_workspace_gate_command(cmd)
+            });
+        }
+    }
     pre_arr.retain(|entry| {
-        !is_aggregated_entry(entry, known_repos)
-            && !crate::cmd::gates::is_workspace_gate_entry(entry)
+        entry
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .is_some_and(|a| !a.is_empty())
     });
 
     if let Some(g) = gate_entry {
@@ -386,17 +414,24 @@ pub(crate) fn is_aggregated_entry(
         None => return false,
     };
     hooks.iter().any(|h| {
-        let cmd = match h.get("command").and_then(|c| c.as_str()) {
-            Some(s) => s,
-            None => return false,
-        };
-        let basename = cmd.rsplit('/').next().unwrap_or(cmd);
-        known_repos.iter().any(|repo| {
-            let legacy_segment = format!("imports/{repo}/");
-            basename.starts_with(&format!("{repo}--"))
-                || cmd.contains(&format!("/{legacy_segment}"))
-                || cmd.starts_with(&legacy_segment)
-        })
+        let cmd = h
+            .get("command")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        is_aggregated_command(cmd, known_repos)
+    })
+}
+
+/// True if a single hook command string looks aggregated. The per-hook
+/// flavour of [`is_aggregated_entry`], used by `merge_settings` to
+/// strip individual hooks without dropping the surrounding entry.
+pub(crate) fn is_aggregated_command(cmd: &str, known_repos: &[&str]) -> bool {
+    let basename = cmd.rsplit('/').next().unwrap_or(cmd);
+    known_repos.iter().any(|repo| {
+        let legacy_segment = format!("imports/{repo}/");
+        basename.starts_with(&format!("{repo}--"))
+            || cmd.contains(&format!("/{legacy_segment}"))
+            || cmd.starts_with(&legacy_segment)
     })
 }
 
@@ -621,5 +656,80 @@ mod tests {
         assert!(!arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh"));
         assert!(arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
         assert!(arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh"));
+    }
+
+    #[test]
+    fn merge_settings_preserves_mixed_hook_entries() {
+        // An entry with one aggregated hook AND one hand-authored hook
+        // in the same `hooks[]` array. Per-hook filtering must strip
+        // only the aggregated hook and keep the entry intact with the
+        // hand-authored hook surviving.
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+        fs::create_dir_all(workspace.join(".claude")).unwrap();
+        fs::write(
+            workspace.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[
+                {"matcher":"Edit","hooks":[
+                    {"type":"command","command":".claude/hooks/arvo--old.sh"},
+                    {"type":"command","command":".claude/hooks/workspace-handauthored.sh"}
+                ]}
+            ]}}"#,
+        )
+        .unwrap();
+
+        let entries = vec![HookEntry {
+            matcher: "Write".into(),
+            command: ".claude/hooks/arvo--new.sh".into(),
+        }];
+        merge_settings(workspace, &["arvo"], &entries, None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
+        )
+        .unwrap();
+        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
+        // Original Edit entry preserved, with `arvo--old.sh` stripped
+        // and `workspace-handauthored.sh` surviving. Plus the freshly
+        // pushed `arvo--new.sh`.
+        assert_eq!(arr.len(), 2);
+        let edit = arr.iter().find(|e| e["matcher"] == "Edit").unwrap();
+        let edit_hooks = edit["hooks"].as_array().unwrap();
+        assert_eq!(edit_hooks.len(), 1, "aggregated hook should be stripped, hand-authored preserved");
+        assert_eq!(
+            edit_hooks[0]["command"], ".claude/hooks/workspace-handauthored.sh"
+        );
+        let write = arr.iter().find(|e| e["matcher"] == "Write").unwrap();
+        assert_eq!(write["hooks"][0]["command"], ".claude/hooks/arvo--new.sh");
+    }
+
+    #[test]
+    fn merge_settings_drops_entry_when_all_hooks_aggregated() {
+        // Inverse of the mixed-hook test: when every hook in an entry
+        // is aggregated, the entry collapses to empty and gets dropped.
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+        fs::create_dir_all(workspace.join(".claude")).unwrap();
+        fs::write(
+            workspace.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[
+                {"matcher":"Edit","hooks":[
+                    {"type":"command","command":".claude/hooks/arvo--old1.sh"},
+                    {"type":"command","command":".claude/hooks/arvo--old2.sh"}
+                ]},
+                {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}
+            ]}}"#,
+        )
+        .unwrap();
+
+        merge_settings(workspace, &["arvo"], &[], None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
+        )
+        .unwrap();
+        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
+        // Edit entry collapsed (all hooks were aggregated); Bash entry
+        // survives.
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["matcher"], "Bash");
     }
 }
