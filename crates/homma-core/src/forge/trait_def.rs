@@ -35,11 +35,7 @@ pub trait Forge {
     /// Returns the metadata of the newly created repo. Returns
     /// [`ForgeError::RepoAlreadyExists`] when a repo with the same name
     /// already lives under the owner.
-    fn create_repo(
-        &self,
-        owner: &str,
-        spec: &CreateRepoSpec,
-    ) -> Result<RepoMetadata, ForgeError>;
+    fn create_repo(&self, owner: &str, spec: &CreateRepoSpec) -> Result<RepoMetadata, ForgeError>;
 
     /// Mark a repo as archived (read-only). Used as the final step of a
     /// migration when the source is to be retained as a frozen artefact

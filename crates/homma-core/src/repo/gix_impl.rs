@@ -35,7 +35,8 @@ impl GixRepo {
     /// Standard clone: fetch the default branch and check it out at `dest`.
     pub fn clone_into(url: &str, dest: &Path) -> Result<Self, RepoError> {
         let interrupt = AtomicBool::new(false);
-        let mut prepare = gix::prepare_clone(url, dest).map_err(|e| RepoError::Clone(Box::new(e)))?;
+        let mut prepare =
+            gix::prepare_clone(url, dest).map_err(|e| RepoError::Clone(Box::new(e)))?;
         let (mut checkout, _outcome) = prepare
             .fetch_then_checkout(Discard, &interrupt)
             .map_err(|e| RepoError::Fetch(Box::new(e)))?;
@@ -180,8 +181,7 @@ impl RepoOps for GixRepo {
         // original `.git/config`. Tracked as follow-up: a no-rewrite
         // path for repos with hand-curated configs (gix has no
         // incremental-write API at 0.66).
-        gix::remote::name::validated(name)
-            .map_err(|e| RepoError::Remote(e.to_string()))?;
+        gix::remote::name::validated(name).map_err(|e| RepoError::Remote(e.to_string()))?;
         let snapshot = self.handle.config_snapshot_mut();
         let mut file = snapshot.forget();
         // Drop any pre-existing block so we don't end up with duplicates.

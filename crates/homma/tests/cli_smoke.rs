@@ -43,7 +43,11 @@ fn write_tmp_config(dir: &tempfile::TempDir) -> PathBuf {
 
 #[test]
 fn version_flag_prints_version() {
-    bin().arg("--version").assert().success().stdout(predicate::str::contains("homma"));
+    bin()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("homma"));
 }
 
 #[test]
@@ -143,7 +147,14 @@ fn migrate_undeclared_destination_forge_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "migrate", "notko", "--to", "codeberg"])
+        .args([
+            "-c",
+            cfg.to_str().unwrap(),
+            "migrate",
+            "notko",
+            "--to",
+            "codeberg",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains("forge `codeberg` not declared"));
@@ -154,7 +165,14 @@ fn migrate_undeclared_repo_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "migrate", "missing", "--to", "github"])
+        .args([
+            "-c",
+            cfg.to_str().unwrap(),
+            "migrate",
+            "missing",
+            "--to",
+            "github",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains("repo `missing` not declared"));
@@ -177,9 +195,16 @@ fn archive_undeclared_forge_override_errors_cleanly() {
     let cfg = write_tmp_config(&dir);
     bin()
         .args([
-            "-c", cfg.to_str().unwrap(), "archive", "notko", "--from", "doesnotexist",
+            "-c",
+            cfg.to_str().unwrap(),
+            "archive",
+            "notko",
+            "--from",
+            "doesnotexist",
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("forge `doesnotexist` not declared"));
+        .stderr(predicate::str::contains(
+            "forge `doesnotexist` not declared",
+        ));
 }

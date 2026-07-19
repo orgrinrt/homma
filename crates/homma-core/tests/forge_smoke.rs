@@ -7,10 +7,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use homma_core::{
-    CreateRepoSpec, Forge, ForgeError, RepoMetadata, Visibility,
-};
 use homma_core::forge::OwnerKind;
+use homma_core::{CreateRepoSpec, Forge, ForgeError, RepoMetadata, Visibility};
 
 /// In-memory mock Forge. Stores repos in a `(owner, name) -> metadata` map.
 struct MockForge {
@@ -19,11 +17,15 @@ struct MockForge {
 
 impl MockForge {
     fn new() -> Self {
-        Self { repos: RefCell::new(HashMap::new()) }
+        Self {
+            repos: RefCell::new(HashMap::new()),
+        }
     }
 
     fn with_repo(self, m: RepoMetadata) -> Self {
-        self.repos.borrow_mut().insert((m.owner.clone(), m.name.clone()), m);
+        self.repos
+            .borrow_mut()
+            .insert((m.owner.clone(), m.name.clone()), m);
         self
     }
 }
@@ -47,11 +49,7 @@ impl Forge for MockForge {
             .contains_key(&(owner.to_string(), name.to_string())))
     }
 
-    fn create_repo(
-        &self,
-        owner: &str,
-        spec: &CreateRepoSpec,
-    ) -> Result<RepoMetadata, ForgeError> {
+    fn create_repo(&self, owner: &str, spec: &CreateRepoSpec) -> Result<RepoMetadata, ForgeError> {
         let key = (owner.to_string(), spec.name.clone());
         let mut repos = self.repos.borrow_mut();
         if repos.contains_key(&key) {
@@ -89,7 +87,11 @@ impl Forge for MockForge {
     }
 
     fn delete_repo(&self, owner: &str, name: &str) -> Result<(), ForgeError> {
-        match self.repos.borrow_mut().remove(&(owner.to_string(), name.to_string())) {
+        match self
+            .repos
+            .borrow_mut()
+            .remove(&(owner.to_string(), name.to_string()))
+        {
             Some(_) => Ok(()),
             None => Err(ForgeError::RepoNotFound {
                 owner: owner.into(),

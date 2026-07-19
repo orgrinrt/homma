@@ -116,7 +116,12 @@ fn create_branch_from_main() {
     let dir = init_with_one_commit();
     let mut repo = GixRepo::open(dir.path()).expect("open");
     repo.create_branch("feat/y", "main").expect("create_branch");
-    let names: Vec<String> = repo.branches().expect("branches").into_iter().map(|b| b.name).collect();
+    let names: Vec<String> = repo
+        .branches()
+        .expect("branches")
+        .into_iter()
+        .map(|b| b.name)
+        .collect();
     assert!(names.contains(&"feat/y".to_string()));
 }
 

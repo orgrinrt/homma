@@ -47,7 +47,11 @@ pub fn run(cfg: &Config, format: OutputFormat) -> Result<Outcome> {
     let report = check(cfg);
     let ok = report.ok;
     emit(&report, format)?;
-    Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
+    Ok(if ok {
+        Outcome::Ok
+    } else {
+        Outcome::ReportedFailure
+    })
 }
 
 pub(crate) fn check(cfg: &Config) -> VerifyReport {

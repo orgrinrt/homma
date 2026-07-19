@@ -29,7 +29,10 @@ pub enum RepoError {
     /// The requested branch was not found locally.
     BranchNotFound(String),
     /// Generic IO error tied to a path.
-    Io { path: PathBuf, source: std::io::Error },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     /// Alternative-impl backend error pass-through.
     Backend(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
