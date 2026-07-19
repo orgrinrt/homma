@@ -134,7 +134,13 @@ pub fn run(
     );
 
     if opts.dry_run {
-        emit(&MigrateReport { plan, result: MigrateResult::DryRun }, format)?;
+        emit(
+            &MigrateReport {
+                plan,
+                result: MigrateResult::DryRun,
+            },
+            format,
+        )?;
         return Ok(Outcome::Ok);
     }
 
@@ -167,7 +173,9 @@ pub fn run(
     emit(
         &MigrateReport {
             plan,
-            result: MigrateResult::Migrated { dest_clone_url: created.clone_url_https },
+            result: MigrateResult::Migrated {
+                dest_clone_url: created.clone_url_https,
+            },
         },
         format,
     )?;
@@ -209,7 +217,10 @@ fn build_create_spec(dst_name: &str, meta: &RepoMetadata, to_org: bool) -> Creat
 
 /// Read the token for a forge via its `token_env` name, if set.
 fn read_token(forge: &ForgeConfig) -> Option<String> {
-    forge.token_env.as_deref().and_then(|name| std::env::var(name).ok())
+    forge
+        .token_env
+        .as_deref()
+        .and_then(|name| std::env::var(name).ok())
 }
 
 /// Run `git push --mirror` from `mirror_dir` to `dest_url`.
@@ -389,7 +400,10 @@ mod tests {
         assert_eq!(plan.default_branch, "dev");
         assert_eq!(plan.visibility, "public");
         assert_eq!(plan.topic_count, 2);
-        assert_eq!(plan.source_clone_url, "https://github.com/orgrinrt/notko.git");
+        assert_eq!(
+            plan.source_clone_url,
+            "https://github.com/orgrinrt/notko.git"
+        );
     }
 
     #[test]

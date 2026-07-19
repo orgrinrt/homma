@@ -130,8 +130,7 @@ fn aggregate_hooks(
     let per_repo_settings = read_settings_hooks(&repo_claude_dir.join("settings.json"));
 
     let mut count = 0;
-    for entry in fs::read_dir(&src_dir).with_context(|| format!("read {}", src_dir.display()))?
-    {
+    for entry in fs::read_dir(&src_dir).with_context(|| format!("read {}", src_dir.display()))? {
         let entry = entry?;
         let path = entry.path();
         let name = match path.file_name().and_then(|s| s.to_str()) {
@@ -348,15 +347,9 @@ pub(crate) fn merge_settings(
     // retained such entries; the per-hook shape's empty-array check
     // drops them. Preferable: malformed state should not be load-bearing.
     for entry in pre_arr.iter_mut() {
-        if let Some(hooks) = entry
-            .get_mut("hooks")
-            .and_then(|h| h.as_array_mut())
-        {
+        if let Some(hooks) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) {
             hooks.retain(|h| {
-                let cmd = h
-                    .get("command")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("");
+                let cmd = h.get("command").and_then(|c| c.as_str()).unwrap_or("");
                 !is_aggregated_command(cmd, known_repos)
                     && !crate::cmd::gates::is_workspace_gate_command(cmd)
             });
@@ -531,7 +524,9 @@ mod tests {
         );
         // Repo-side rule was NOT propagated.
         assert!(
-            !workspace.join(".claude/rules/arvo--type-surface.md").exists(),
+            !workspace
+                .join(".claude/rules/arvo--type-surface.md")
+                .exists(),
             "homma no longer aggregates per-repo rules"
         );
 
@@ -542,7 +537,9 @@ mod tests {
         assert_eq!(settings.len(), 1);
         assert_eq!(settings[0].matcher, "Edit");
         assert!(
-            settings[0].command.ends_with("/.claude/hooks/arvo--no-alloc.sh"),
+            settings[0]
+                .command
+                .ends_with("/.claude/hooks/arvo--no-alloc.sh"),
             "expected absolute path ending with `.claude/hooks/arvo--no-alloc.sh`, got: {}",
             settings[0].command,
         );
@@ -582,8 +579,12 @@ mod tests {
         .unwrap();
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        assert!(arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
-        assert!(arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--no-alloc.sh"));
+        assert!(arr
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
+        assert!(arr
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--no-alloc.sh"));
     }
 
     #[test]
@@ -611,9 +612,15 @@ mod tests {
         .unwrap();
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        assert!(!arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh"));
-        assert!(arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
-        assert!(arr.iter().any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh"));
+        assert!(!arr
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh"));
+        assert!(arr
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
+        assert!(arr
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh"));
     }
 
     #[test]
@@ -652,9 +659,14 @@ mod tests {
         assert_eq!(arr.len(), 2);
         let edit = arr.iter().find(|e| e["matcher"] == "Edit").unwrap();
         let edit_hooks = edit["hooks"].as_array().unwrap();
-        assert_eq!(edit_hooks.len(), 1, "aggregated hook should be stripped, hand-authored preserved");
         assert_eq!(
-            edit_hooks[0]["command"], ".claude/hooks/workspace-handauthored.sh"
+            edit_hooks.len(),
+            1,
+            "aggregated hook should be stripped, hand-authored preserved"
+        );
+        assert_eq!(
+            edit_hooks[0]["command"],
+            ".claude/hooks/workspace-handauthored.sh"
         );
         let write = arr.iter().find(|e| e["matcher"] == "Write").unwrap();
         assert_eq!(write["hooks"][0]["command"], ".claude/hooks/arvo--new.sh");

@@ -105,11 +105,15 @@ impl GitHubClient {
     }
 
     fn auth_header(&self) -> Option<(&str, String)> {
-        self.token.as_ref().map(|t| ("Authorization", format!("Bearer {t}")))
+        self.token
+            .as_ref()
+            .map(|t| ("Authorization", format!("Bearer {t}")))
     }
 
     fn apply_common_headers(&self, mut req: ureq::Request) -> ureq::Request {
-        req = req.set("Accept", ACCEPT).set("X-GitHub-Api-Version", API_VERSION);
+        req = req
+            .set("Accept", ACCEPT)
+            .set("X-GitHub-Api-Version", API_VERSION);
         if let Some((k, v)) = self.auth_header() {
             req = req.set(k, &v);
         }
@@ -126,11 +130,7 @@ impl GitHubClient {
         req.send_json(body)
     }
 
-    fn patch_json<T: Serialize>(
-        &self,
-        url: &str,
-        body: &T,
-    ) -> Result<ureq::Response, ureq::Error> {
+    fn patch_json<T: Serialize>(&self, url: &str, body: &T) -> Result<ureq::Response, ureq::Error> {
         let req = self.apply_common_headers(self.agent.request("PATCH", url));
         req.send_json(body)
     }
@@ -174,11 +174,7 @@ impl Forge for GitHubClient {
     /// visibility on Enterprise installations requires a follow-up PATCH that
     /// sets `visibility = "internal"`; github.com Free plans have no internal
     /// concept and the collapse is the correct mapping there.
-    fn create_repo(
-        &self,
-        owner: &str,
-        spec: &CreateRepoSpec,
-    ) -> Result<RepoMetadata, ForgeError> {
+    fn create_repo(&self, owner: &str, spec: &CreateRepoSpec) -> Result<RepoMetadata, ForgeError> {
         let url = self.create_path(owner, spec.owner_kind);
         let body = GitHubCreateBody::from_spec(spec);
         match self.post_json(&url, &body) {
@@ -198,7 +194,10 @@ impl Forge for GitHubClient {
                         name: spec.name.clone(),
                     })
                 } else {
-                    Err(ForgeError::UnexpectedStatus { status: 422, body: truncate(body, 512) })
+                    Err(ForgeError::UnexpectedStatus {
+                        status: 422,
+                        body: truncate(body, 512),
+                    })
                 }
             }
             Err(e) => Err(map_ureq_error(e, owner, &spec.name)),
@@ -207,7 +206,10 @@ impl Forge for GitHubClient {
 
     fn archive_repo(&self, owner: &str, name: &str) -> Result<(), ForgeError> {
         let url = self.repo_path(owner, name);
-        let body = GitHubPatchBody { archived: Some(true), default_branch: None };
+        let body = GitHubPatchBody {
+            archived: Some(true),
+            default_branch: None,
+        };
         match self.patch_json(&url, &body) {
             Ok(_) => Ok(()),
             Err(e) => Err(map_ureq_error(e, owner, name)),
@@ -348,9 +350,15 @@ pub(crate) fn map_ureq_error(e: ureq::Error, owner: &str, name: &str) -> ForgeEr
 /// treat unmatched 422s as `UnexpectedStatus`.
 pub(crate) fn map_status(status: u16, owner: &str, name: &str, body: String) -> ForgeError {
     match status {
-        404 => ForgeError::RepoNotFound { owner: owner.into(), name: name.into() },
+        404 => ForgeError::RepoNotFound {
+            owner: owner.into(),
+            name: name.into(),
+        },
         401 | 403 => ForgeError::Unauthorized { reason: body },
-        _ => ForgeError::UnexpectedStatus { status, body: truncate(body, 512) },
+        _ => ForgeError::UnexpectedStatus {
+            status,
+            body: truncate(body, 512),
+        },
     }
 }
 
@@ -488,7 +496,10 @@ mod tests {
         // needs inspection to disambiguate "duplicate name" from other 422
         // causes (invalid name, missing required field, etc.).
         let e = map_status(422, "o", "n", "Validation Failed".into());
-        assert!(matches!(e, ForgeError::UnexpectedStatus { status: 422, .. }));
+        assert!(matches!(
+            e,
+            ForgeError::UnexpectedStatus { status: 422, .. }
+        ));
     }
 
     #[test]
@@ -522,7 +533,9 @@ mod tests {
     fn github_repo_into_metadata_public() {
         let wire = GitHubRepo {
             name: "homma".into(),
-            owner: GitHubOwner { login: "orgrinrt".into() },
+            owner: GitHubOwner {
+                login: "orgrinrt".into(),
+            },
             description: Some("workspace tooling".into()),
             default_branch: "dev".into(),
             private: false,
@@ -675,7 +688,10 @@ mod tests {
 
     #[test]
     fn github_patch_body_serializes_only_set_fields() {
-        let body = GitHubPatchBody { archived: Some(true), default_branch: None };
+        let body = GitHubPatchBody {
+            archived: Some(true),
+            default_branch: None,
+        };
         let json = serde_json::to_string(&body).unwrap();
         assert!(json.contains("\"archived\":true"));
         assert!(!json.contains("default_branch"));
@@ -683,7 +699,10 @@ mod tests {
 
     #[test]
     fn github_patch_body_can_carry_default_branch_only() {
-        let body = GitHubPatchBody { archived: None, default_branch: Some("dev".into()) };
+        let body = GitHubPatchBody {
+            archived: None,
+            default_branch: Some("dev".into()),
+        };
         let json = serde_json::to_string(&body).unwrap();
         assert!(json.contains("\"default_branch\":\"dev\""));
         assert!(!json.contains("archived"));

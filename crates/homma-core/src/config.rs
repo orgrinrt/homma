@@ -164,7 +164,10 @@ impl RepoConfig {
 #[derive(Debug)]
 pub enum ConfigError {
     Parse(toml::de::Error),
-    Io { path: PathBuf, source: std::io::Error },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl std::fmt::Display for ConfigError {

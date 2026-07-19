@@ -239,8 +239,14 @@ impl ForgeOp {
     /// Split a `<owner>/<name>` string into its parts.
     pub fn parse_slug(slug: &str) -> Result<(&str, &str), SlugError> {
         let mut parts = slug.splitn(2, '/');
-        let owner = parts.next().filter(|s| !s.is_empty()).ok_or(SlugError::Empty)?;
-        let name = parts.next().filter(|s| !s.is_empty()).ok_or(SlugError::Missing)?;
+        let owner = parts
+            .next()
+            .filter(|s| !s.is_empty())
+            .ok_or(SlugError::Empty)?;
+        let name = parts
+            .next()
+            .filter(|s| !s.is_empty())
+            .ok_or(SlugError::Missing)?;
         if name.contains('/') {
             return Err(SlugError::TooManyParts);
         }
@@ -293,7 +299,10 @@ mod tests {
 
     #[test]
     fn parse_slug_no_separator_fails() {
-        assert!(matches!(ForgeOp::parse_slug("homma"), Err(SlugError::Missing)));
+        assert!(matches!(
+            ForgeOp::parse_slug("homma"),
+            Err(SlugError::Missing)
+        ));
     }
 
     #[test]
@@ -330,18 +339,21 @@ mod tests {
         .unwrap();
         assert_eq!(cli.verbosity, 2);
         assert_eq!(cli.output, OutputFormat::Json);
-        assert_eq!(cli.config.as_deref().map(|p| p.to_str().unwrap()), Some("alt.toml"));
+        assert_eq!(
+            cli.config.as_deref().map(|p| p.to_str().unwrap()),
+            Some("alt.toml")
+        );
         assert!(matches!(cli.command, Command::Verify));
     }
 
     #[test]
     fn cli_parses_forge_show() {
-        let cli = Cli::try_parse_from([
-            "homma", "forge", "show", "github", "orgrinrt/homma",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["homma", "forge", "show", "github", "orgrinrt/homma"]).unwrap();
         match cli.command {
-            Command::Forge { op: ForgeOp::Show { forge, slug } } => {
+            Command::Forge {
+                op: ForgeOp::Show { forge, slug },
+            } => {
                 assert_eq!(forge, "github");
                 assert_eq!(slug, "orgrinrt/homma");
             }
@@ -353,7 +365,14 @@ mod tests {
     fn cli_parses_migrate() {
         let cli = Cli::try_parse_from(["homma", "migrate", "notko", "--to", "codeberg"]).unwrap();
         match cli.command {
-            Command::Migrate { repo, to, to_owner, to_org, source, dry_run } => {
+            Command::Migrate {
+                repo,
+                to,
+                to_owner,
+                to_org,
+                source,
+                dry_run,
+            } => {
                 assert_eq!(repo, "notko");
                 assert_eq!(to, "codeberg");
                 assert_eq!(to_owner, None);
@@ -382,7 +401,14 @@ mod tests {
         ])
         .unwrap();
         match cli.command {
-            Command::Migrate { repo, to, to_owner, to_org, source, dry_run } => {
+            Command::Migrate {
+                repo,
+                to,
+                to_owner,
+                to_org,
+                source,
+                dry_run,
+            } => {
                 assert_eq!(repo, "notko");
                 assert_eq!(to, "codeberg");
                 assert_eq!(to_owner.as_deref(), Some("hiisi-digital"));
@@ -414,6 +440,9 @@ mod tests {
     fn cli_rejects_unknown_subcommand() {
         let err = Cli::try_parse_from(["homma", "nope"]).unwrap_err();
         let s = err.to_string();
-        assert!(s.contains("unrecognized") || s.contains("invalid"), "got: {s}");
+        assert!(
+            s.contains("unrecognized") || s.contains("invalid"),
+            "got: {s}"
+        );
     }
 }

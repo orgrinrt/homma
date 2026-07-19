@@ -71,7 +71,14 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 Ok(Outcome::Ok)
             }
         },
-        Command::Migrate { repo, to, to_owner, to_org, source, dry_run } => {
+        Command::Migrate {
+            repo,
+            to,
+            to_owner,
+            to_org,
+            source,
+            dry_run,
+        } => {
             let cfg = load_config(&cli)?;
             let opts = migrate::Opts {
                 to_owner: to_owner.as_deref(),
@@ -127,6 +134,5 @@ pub(crate) fn load_config(cli: &Cli) -> Result<Config> {
         .config
         .clone()
         .unwrap_or_else(|| std::path::PathBuf::from("homma.toml"));
-    Config::from_path(&path)
-        .with_context(|| format!("loading config from {}", path.display()))
+    Config::from_path(&path).with_context(|| format!("loading config from {}", path.display()))
 }

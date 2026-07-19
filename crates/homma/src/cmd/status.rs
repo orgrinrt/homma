@@ -84,7 +84,11 @@ fn build_report(cfg: &Config) -> StatusReport {
             working_branch: r.resolved_working_branch(&cfg.defaults).to_string(),
         })
         .collect();
-    StatusReport { workspace, forges, repos }
+    StatusReport {
+        workspace,
+        forges,
+        repos,
+    }
 }
 
 fn forge_kind_str(kind: ForgeKind) -> &'static str {

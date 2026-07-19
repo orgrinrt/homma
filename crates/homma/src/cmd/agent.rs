@@ -117,10 +117,7 @@ pub mod status {
         if !s.mock_dir {
             return AgentState::NotConfigured;
         }
-        let core = s.mock_agent_dir
-            && s.claude_dir
-            && s.github_instructions
-            && s.cargo_mock_alias;
+        let core = s.mock_agent_dir && s.claude_dir && s.github_instructions && s.cargo_mock_alias;
         if core {
             AgentState::Configured
         } else {
@@ -356,25 +353,19 @@ pub mod regen {
             // Stage 2: aggregate. Only attempt if the repo has a
             // rendered .claude/ to read from.
             let claude_present = local.join(".claude").is_dir();
-            let (aggregated_hooks, aggregate_stage) =
-                if opts.skip_aggregate {
-                    (0, StageStatus::Skipped("--skip-aggregate".into()))
-                } else if !claude_present {
-                    (0, StageStatus::Skipped("no .claude/ to aggregate".into()))
-                } else {
-                    match aggregate::aggregate_repo(
-                        workspace,
-                        name,
-                        &local,
-                        &mut settings_entries,
-                    ) {
-                        Ok(h) => (h, StageStatus::Success),
-                        Err(e) => {
-                            had_failure = true;
-                            (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
-                        }
+            let (aggregated_hooks, aggregate_stage) = if opts.skip_aggregate {
+                (0, StageStatus::Skipped("--skip-aggregate".into()))
+            } else if !claude_present {
+                (0, StageStatus::Skipped("no .claude/ to aggregate".into()))
+            } else {
+                match aggregate::aggregate_repo(workspace, name, &local, &mut settings_entries) {
+                    Ok(h) => (h, StageStatus::Success),
+                    Err(e) => {
+                        had_failure = true;
+                        (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
                     }
-                };
+                }
+            };
 
             let stage_failed = aggregate_stage.is_failure();
             results.push(RegenResult {
@@ -401,10 +392,8 @@ pub mod regen {
                     (name.clone(), abs.to_string_lossy().to_string())
                 })
                 .collect();
-            let gate_entry = match crate::cmd::gates::install_workspace_gate(
-                workspace,
-                &repo_paths,
-            ) {
+            let gate_entry = match crate::cmd::gates::install_workspace_gate(workspace, &repo_paths)
+            {
                 Ok(e) => Some(e),
                 Err(e) => {
                     had_failure = true;
@@ -491,10 +480,7 @@ pub mod regen {
                 writeln!(
                     out,
                     "  {}: cargo_mock={} aggregate={} (hooks={})",
-                    r.repo,
-                    mock_tag,
-                    agg_tag,
-                    r.aggregated_hooks,
+                    r.repo, mock_tag, agg_tag, r.aggregated_hooks,
                 )?;
                 if let StageStatus::Failed(m) = &r.cargo_mock {
                     writeln!(out, "    cargo_mock: {m}")?;
