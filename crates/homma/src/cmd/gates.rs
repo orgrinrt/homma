@@ -14,9 +14,10 @@
 //!    not look like `git commit` or `git push` (out-of-scope call).
 //! 3. Resolves the active repo from `tool_input.cwd` (or `$PWD` as
 //!    fallback); exits 0 silently if no member repo's tree covers it.
-//! 4. Verifies the repo has `mock/`, a `cargo mock` alias in
-//!    `.cargo/config.toml`, and a `core.hooksPath` set so per-repo
-//!    git hooks fire.
+//! 4. Verifies the repo has `mock/`, a config marker (a launcher pin in
+//!    `mockspace.toml`, or the legacy `cargo mock` alias in
+//!    `.cargo/config.toml`), and a `core.hooksPath` set so per-repo git
+//!    hooks fire.
 //! 5. If healthy: silent allow. If anything is missing: structured deny
 //!    with a hookSpecificOutput payload pointing at the fix.
 //!
@@ -53,8 +54,7 @@ pub(crate) fn install_workspace_gate(
     fs::create_dir_all(&hooks_dir).ok();
     let target = hooks_dir.join(GATE_SCRIPT_NAME);
     let body = gate_script(repos);
-    fs::write(&target, body)
-        .with_context(|| format!("writing {}", target.display()))?;
+    fs::write(&target, body).with_context(|| format!("writing {}", target.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -161,6 +161,7 @@ fi
 # i.e. actual drift.
 has_mock_dir=0
 has_alias=0
+has_pin=0
 has_hooks_path=0
 
 [ -d "$match_path/mock" ] && has_mock_dir=1
@@ -184,7 +185,20 @@ if [ -n "$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)" ]; the
     has_hooks_path=1
 fi
 
-adoption=$((has_mock_dir + has_alias + has_hooks_path))
+# The launcher+pin model has no `[alias] mock`; its config marker is a
+# top-level `mockspace_*` pin in a root or mock/ mockspace.toml. Either the
+# legacy alias OR a launcher pin satisfies the "config present" surface.
+for cfg in "$match_path/mockspace.toml" "$match_path/mock/mockspace.toml"; do
+    [ -f "$cfg" ] || continue
+    pin_hit=$(awk '
+        /^\[/ {{ exit }}
+        /^[[:space:]]*mockspace_(version|branch|rev|tag)[[:space:]]*=/ {{ print "1"; exit }}
+    ' "$cfg")
+    [ "$pin_hit" = "1" ] && {{ has_pin=1; break; }}
+done
+if [ "$has_alias" -eq 1 ] || [ "$has_pin" -eq 1 ]; then has_config=1; else has_config=0; fi
+
+adoption=$((has_mock_dir + has_config + has_hooks_path))
 
 # Zero adoption: silent allow. The repo never opted in.
 if [ "$adoption" -eq 0 ]; then
@@ -200,8 +214,8 @@ fi
 problems=()
 [ "$has_mock_dir" -eq 0 ] && \
     problems+=("$match_path/mock/ is missing but other mockspace surfaces are present")
-[ "$has_alias" -eq 0 ] && \
-    problems+=("$match_path/.cargo/config.toml: no [alias] mock entry")
+[ "$has_config" -eq 0 ] && \
+    problems+=("$match_path: no launcher pin (mockspace_* in mockspace.toml) and no legacy [alias] mock entry")
 [ "$has_hooks_path" -eq 0 ] && \
     problems+=("$match_path: git config core.hooksPath is not set; per-repo git hooks will not fire")
 
@@ -233,13 +247,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path();
         let repos = vec![
-            ("arvo".to_string(), "/Users/x/Dev/clause-dev/arvo".to_string()),
-            ("notko".to_string(), "/Users/x/Dev/clause-dev/notko".to_string()),
+            (
+                "arvo".to_string(),
+                "/Users/x/Dev/clause-dev/arvo".to_string(),
+            ),
+            (
+                "notko".to_string(),
+                "/Users/x/Dev/clause-dev/notko".to_string(),
+            ),
         ];
         let entry = install_workspace_gate(workspace, &repos).unwrap();
         assert_eq!(entry.matcher, "Bash");
         assert!(
-            entry.command.ends_with("/.claude/hooks/_workspace--mockspace-gate.sh"),
+            entry
+                .command
+                .ends_with("/.claude/hooks/_workspace--mockspace-gate.sh"),
             "expected absolute path, got: {}",
             entry.command,
         );
@@ -270,7 +292,9 @@ mod tests {
 
     #[test]
     fn is_workspace_gate_command_rejects_other_paths() {
-        assert!(!is_workspace_gate_command(".claude/hooks/arvo--no-alloc.sh"));
+        assert!(!is_workspace_gate_command(
+            ".claude/hooks/arvo--no-alloc.sh"
+        ));
     }
 
     #[test]
@@ -412,13 +436,7 @@ mod tests {
     #[test]
     fn gate_e2e_full_adoption_emits_no_deny() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = fake_repo(
-            dir.path(),
-            "arvo",
-            true,
-            AliasShape::UnderAlias,
-            true,
-        );
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::UnderAlias, true);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let Some(out) = run_gate(&repos, &input) else {
@@ -431,15 +449,32 @@ mod tests {
     }
 
     #[test]
+    fn gate_e2e_launcher_pin_counts_as_config_marker() {
+        // launcher+pin model: no `[alias] mock`, but a root mockspace.toml with
+        // a `mockspace_branch` pin. With mock/ + hooksPath present, that is full
+        // adoption and must not deny.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, true);
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mock_dir = \"mock\"\nmockspace_branch = \"dev\"\n",
+        )
+        .unwrap();
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let Some(out) = run_gate(&repos, &input) else {
+            return;
+        };
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "launcher pin + mock/ + hooks is full adoption; should not deny; got: {out}",
+        );
+    }
+
+    #[test]
     fn gate_e2e_partial_adoption_emits_deny() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = fake_repo(
-            dir.path(),
-            "arvo",
-            true,
-            AliasShape::None,
-            false,
-        );
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, false);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let Some(out) = run_gate(&repos, &input) else {
@@ -450,8 +485,8 @@ mod tests {
             "partial adoption (mock/ only) should deny; got: {out}",
         );
         assert!(
-            out.contains("no [alias] mock entry"),
-            "deny reason should name the missing alias; got: {out}",
+            out.contains("[alias] mock entry"),
+            "deny reason should name the missing config marker; got: {out}",
         );
     }
 
@@ -460,13 +495,7 @@ mod tests {
         // No mock/, no alias, no hooksPath. The gate stays out of the
         // way to avoid enforcing adoption on unrelated repos.
         let dir = tempfile::tempdir().unwrap();
-        let repo = fake_repo(
-            dir.path(),
-            "arvo",
-            false,
-            AliasShape::None,
-            false,
-        );
+        let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, false);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let Some(out) = run_gate(&repos, &input) else {
@@ -504,8 +533,8 @@ mod tests {
             "alias under non-[alias] section should not count; got: {out}",
         );
         assert!(
-            out.contains("no [alias] mock entry"),
-            "deny reason should name the missing alias; got: {out}",
+            out.contains("[alias] mock entry"),
+            "deny reason should name the missing config marker; got: {out}",
         );
     }
 
@@ -513,13 +542,7 @@ mod tests {
     fn gate_e2e_non_git_command_is_silent_allow() {
         // Out of scope: command is not git commit / git push.
         let dir = tempfile::tempdir().unwrap();
-        let repo = fake_repo(
-            dir.path(),
-            "arvo",
-            true,
-            AliasShape::None,
-            false,
-        );
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, false);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("ls -la", &repo.to_string_lossy());
         let Some(out) = run_gate(&repos, &input) else {

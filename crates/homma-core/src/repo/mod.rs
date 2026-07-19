@@ -14,6 +14,4 @@ pub mod ops;
 
 pub use error::RepoError;
 pub use gix_impl::GixRepo;
-pub use ops::{
-    canonical_refspecs, Branch, MirrorOpts, Remote, RepoOps, Status, TrackingStatus,
-};
+pub use ops::{canonical_refspecs, Branch, MirrorOpts, Remote, RepoOps, Status, TrackingStatus};

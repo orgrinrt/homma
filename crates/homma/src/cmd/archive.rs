@@ -28,7 +28,11 @@ pub struct ArchiveReport {
 
 impl HumanRender for ArchiveReport {
     fn render_human(&self, out: &mut dyn Write) -> std::io::Result<()> {
-        writeln!(out, "archived {}/{} on {}", self.owner, self.name, self.forge)
+        writeln!(
+            out,
+            "archived {}/{} on {}",
+            self.owner, self.name, self.forge
+        )
     }
 }
 

@@ -54,9 +54,7 @@ pub mod status {
         let repo = GixRepo::open(&local_path)
             .with_context(|| format!("opening repo at {}", local_path.display()))?;
         let status = repo.status().context("reading worktree status")?;
-        let current_branch = repo
-            .current_branch()
-            .context("reading current branch")?;
+        let current_branch = repo.current_branch().context("reading current branch")?;
         let report = RepoStatusReport {
             repo: repo_name.into(),
             local_path: local_path.display().to_string(),

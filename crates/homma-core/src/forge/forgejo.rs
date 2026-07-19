@@ -80,7 +80,9 @@ impl ForgejoClient {
     }
 
     fn auth_header(&self) -> Option<(&str, String)> {
-        self.token.as_ref().map(|t| ("Authorization", format!("token {t}")))
+        self.token
+            .as_ref()
+            .map(|t| ("Authorization", format!("token {t}")))
     }
 
     fn get(&self, url: &str) -> Result<ureq::Response, ureq::Error> {
@@ -145,11 +147,7 @@ impl Forge for ForgejoClient {
     /// visibility must follow up with a `PATCH /repos/{owner}/{name}` that
     /// sets `internal = true` once the repo exists. The migrate command
     /// (#452) handles this when source-side visibility is Internal.
-    fn create_repo(
-        &self,
-        owner: &str,
-        spec: &CreateRepoSpec,
-    ) -> Result<RepoMetadata, ForgeError> {
+    fn create_repo(&self, owner: &str, spec: &CreateRepoSpec) -> Result<RepoMetadata, ForgeError> {
         let url = self.create_path(owner, spec.owner_kind);
         let body = ForgejoCreateBody::from_spec(spec);
         match self.post_json(&url, &body) {
@@ -167,7 +165,9 @@ impl Forge for ForgejoClient {
 
     fn archive_repo(&self, owner: &str, name: &str) -> Result<(), ForgeError> {
         let url = self.repo_path(owner, name);
-        let body = ForgejoPatchBody { archived: Some(true) };
+        let body = ForgejoPatchBody {
+            archived: Some(true),
+        };
         match self.patch_json(&url, &body) {
             Ok(_) => Ok(()),
             Err(e) => Err(map_ureq_error(e, owner, name)),
@@ -280,10 +280,19 @@ pub(crate) fn map_ureq_error(e: ureq::Error, owner: &str, name: &str) -> ForgeEr
 /// can exercise the error matrix without spinning up a real client.
 pub(crate) fn map_status(status: u16, owner: &str, name: &str, body: String) -> ForgeError {
     match status {
-        404 => ForgeError::RepoNotFound { owner: owner.into(), name: name.into() },
+        404 => ForgeError::RepoNotFound {
+            owner: owner.into(),
+            name: name.into(),
+        },
         401 | 403 => ForgeError::Unauthorized { reason: body },
-        409 => ForgeError::RepoAlreadyExists { owner: owner.into(), name: name.into() },
-        _ => ForgeError::UnexpectedStatus { status, body: truncate(body, 512) },
+        409 => ForgeError::RepoAlreadyExists {
+            owner: owner.into(),
+            name: name.into(),
+        },
+        _ => ForgeError::UnexpectedStatus {
+            status,
+            body: truncate(body, 512),
+        },
     }
 }
 
@@ -455,7 +464,9 @@ mod tests {
     fn forgejo_repo_into_metadata_public() {
         let wire = ForgejoRepo {
             name: "homma".into(),
-            owner: ForgejoOwner { login: "orgrinrt".into() },
+            owner: ForgejoOwner {
+                login: "orgrinrt".into(),
+            },
             description: Some("workspace tooling".into()),
             default_branch: "dev".into(),
             private: false,

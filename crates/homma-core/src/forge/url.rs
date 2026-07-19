@@ -154,7 +154,10 @@ mod tests {
     #[test]
     fn web_url_omits_dot_git() {
         let f = cfg("https://codeberg.org", "https://codeberg.org/api/v1");
-        assert_eq!(web(&f, "orgrinrt", "homma"), "https://codeberg.org/orgrinrt/homma");
+        assert_eq!(
+            web(&f, "orgrinrt", "homma"),
+            "https://codeberg.org/orgrinrt/homma"
+        );
     }
 
     #[test]
