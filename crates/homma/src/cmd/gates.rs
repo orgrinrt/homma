@@ -153,6 +153,15 @@ if [ -z "$match_path" ]; then
     exit 0
 fi
 
+# The mockspace tool repo is not a mockspace *consumer*. Its mock/ is v2
+# self-hosting and its v1 src is intentionally ungated (no core.hooksPath),
+# so it always scores partial adoption by design, not drift. Skip the gate
+# for it, identified by its own Cargo package name.
+if [ "$match_name" = "mockspace" ] \
+    && grep -qE '^name[[:space:]]*=[[:space:]]*"mockspace"[[:space:]]*$' "$match_path/Cargo.toml" 2>/dev/null; then
+    exit 0
+fi
+
 # Decide whether the repo has *partially* adopted mockspace.
 # A repo with NO mockspace surface (no mock/, no alias, no
 # core.hooksPath) has not adopted mockspace at all; the gate stays
