@@ -1,4 +1,4 @@
-# homma — the mockspace config.
+# homma ,  the mockspace config.
 #
 # At the repo root rather than inside `mock/`: a repo has exactly one of these, and the root is
 # where it belongs. `mock_dir` maps it to the workspace it governs.
