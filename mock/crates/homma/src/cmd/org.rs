@@ -20,6 +20,10 @@ already in the tree over inventing a convention.
 
 Work happens in your own workspace. The central clone is for reading.
 
+Never commit to a trunk. Branch first, always: `dev` and `main` are landed \
+through review, never written to directly. If you find yourself on one, you are \
+one command away from a mistake nobody can undo cleanly.
+
 Name the paths on a commit rather than relying on what you staged, because a \
 commit takes the whole index.
 
@@ -123,6 +127,16 @@ handle = "nameless"
 
     fn ws() -> Workspace {
         Workspace::parse(ORG).unwrap()
+    }
+
+    #[test]
+    fn the_standing_instruction_forbids_committing_to_a_trunk() {
+        // Found end to end: the first Hand stood up committed straight to main,
+        // because nothing in what it was given said not to. It had not pushed,
+        // so nothing was lost, and the gap was in the instruction rather than
+        // in the Hand.
+        assert!(DISCIPLINE.contains("Never commit to a trunk"));
+        assert!(DISCIPLINE.contains("Branch first"));
     }
 
     #[test]
