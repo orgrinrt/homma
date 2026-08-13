@@ -1,0 +1,16 @@
+[package]
+name = "homma-org"
+version = "0.0.0"
+description = "The registry, the workspace lifecycle, and the generation pass"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+homma-api = { path = "../homma-api" }
+
+[dev-dependencies]
+tempfile = "3"

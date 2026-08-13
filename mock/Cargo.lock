@@ -1391,6 +1391,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "homma-api"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "homma-core"
 version = "0.0.0"
 dependencies = [
@@ -1402,6 +1411,23 @@ dependencies = [
  "tempfile",
  "toml",
  "ureq",
+]
+
+[[package]]
+name = "homma-org"
+version = "0.0.0"
+dependencies = [
+ "homma-api",
+ "tempfile",
+]
+
+[[package]]
+name = "homma-store"
+version = "0.0.0"
+dependencies = [
+ "homma-api",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
