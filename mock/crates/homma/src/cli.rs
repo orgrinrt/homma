@@ -55,6 +55,16 @@ pub enum Command {
     /// forges, default-branch resolution.
     Status,
 
+    /// The registry: who exists, and standing them up.
+    ///
+    /// Reads the identities from the workspace configuration. Standing one up
+    /// creates its directories, links its memory where the agent harness looks
+    /// for it, and generates the definitions it and its twin run under.
+    Org {
+        #[command(subcommand)]
+        op: OrgOp,
+    },
+
     /// Sanity-check `homma.toml`: parses, repo `local_path`s exist (when
     /// the workspace root is present), forge `token_env` vars resolve.
     /// Exits non-zero with a per-finding diagnostic list when checks fail.
@@ -445,4 +455,25 @@ mod tests {
             "got: {s}"
         );
     }
+}
+
+/// `homma org` operations.
+#[derive(Debug, Subcommand)]
+pub enum OrgOp {
+    /// List every identity, with what any incomplete entry is missing.
+    List,
+
+    /// Create an identity's workspace directories, memory link and definitions.
+    ///
+    /// Idempotent: running it again against a workspace that already has them
+    /// changes nothing and does not clear what is remembered.
+    Up {
+        /// The handle to stand up.
+        handle: String,
+
+        /// The workspace root to stand it up in. Defaults to the current
+        /// directory, which is the workspace homma was invoked from.
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
 }

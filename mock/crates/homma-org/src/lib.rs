@@ -4,9 +4,11 @@
 //! a session ends is a transcript; what the entry describes is still true, so
 //! starting it again restores a participant rather than creating a new one.
 
+pub mod generate;
 pub mod workspace;
 
-pub use workspace::{Layout, Prepared};
+pub use generate::{definition, write_definitions, Form, Generated};
+pub use workspace::{prepare, Layout, Prepared};
 
 use homma_api::{Identity, Role, Workspace};
 

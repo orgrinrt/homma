@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use homma_core::Config;
 
-use crate::cli::{AgentOp, Cli, Command, DocsOp, ForgeOp, RepoOp};
+use crate::cli::{AgentOp, Cli, Command, DocsOp, ForgeOp, OrgOp, RepoOp};
 
 pub mod agent;
 pub mod aggregate;
@@ -18,6 +18,7 @@ pub mod docs;
 pub mod forge;
 pub mod gates;
 pub mod migrate;
+pub mod org;
 pub mod repo;
 pub mod status;
 pub(crate) mod util;
@@ -46,6 +47,41 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         Command::Status => {
             let cfg = load_config(&cli)?;
             status::run(&cfg, cli.output)?;
+            Ok(Outcome::Ok)
+        }
+        Command::Org { op } => {
+            let path = cli
+                .config
+                .clone()
+                .unwrap_or_else(|| std::path::PathBuf::from("homma.toml"));
+            let ws = org::load(&path)?;
+            match op {
+                OrgOp::List => {
+                    for line in org::list(&ws) {
+                        let gaps = if line.gaps.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  missing: {}", line.gaps.join(", "))
+                        };
+                        println!(
+                            "{:<12} {:<8} {}{}",
+                            line.handle,
+                            format!("{:?}", line.role).to_lowercase(),
+                            line.domain,
+                            gaps
+                        );
+                    }
+                }
+                OrgOp::Up { handle, root } => {
+                    let root = root
+                        .clone()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let out = org::stand_up(&ws, &root, handle)?;
+                    println!("{} {}", out.handle, out.home.display());
+                    println!("  definition {}", out.definition.display());
+                    println!("  twin       {}", out.twin_definition.display());
+                }
+            }
             Ok(Outcome::Ok)
         }
         Command::Verify => {
