@@ -1,0 +1,29 @@
+# homma — the mockspace config.
+#
+# At the repo root rather than inside `mock/`: a repo has exactly one of these, and the root is
+# where it belongs. `mock_dir` maps it to the workspace it governs.
+
+# The engine pin. mockspace has cut no release yet, so this tracks the working trunk. The launcher
+# re-resolves the branch head hourly.
+mockspace_branch = "dev"
+
+project_name = "homma"
+crate_prefix = "homma"
+abi_version = 1
+mock_dir = "mock"
+
+proc_macro_crates = []
+module_crates = []
+
+# Layer labels by depth index. Placeholder until the taxonomy round settles them: the current two
+# crates predate mockspace and their split was never designed, only inherited.
+layers = [
+    "L0 core",
+    "L1 surface",
+]
+
+[domain_kinds]
+
+[known_macros]
+
+[crate_colors]

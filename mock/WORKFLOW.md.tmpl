@@ -1,0 +1,53 @@
+# Workflow
+
+Design work in this repository runs through mockspace. A change to source is
+preceded by a design round that says what the change is and why, and the gate
+enforces the order rather than trusting anyone to remember it.
+
+## The round
+
+A round walks five phases, and the phase is derived from which files exist in
+`mock/design_rounds/` rather than stored anywhere.
+
+**TOPIC.** Only topic and research files. This is where a subject is argued
+before anything is written down as a decision.
+
+**DOC.** A doc changelist exists and is unlocked, which opens the document
+templates for editing. The changelist says which templates change and what each
+change is for.
+
+**DRAFT.** The doc changelist is locked. Nothing is editable; the only move is to
+open a source changelist.
+
+**IMPL.** A source changelist exists and is unlocked, which opens the Rust
+sources.
+
+**CLOSED.** Both changelists are locked. `cargo mock close` archives the round.
+
+Transitions are `cargo mock lock`, `cargo mock unlock`, `cargo mock deprecate` and
+`cargo mock close`. Files are authored by hand; the transitions go through the
+tool so its bookkeeping stays correct.
+
+## A moved file is a modified file
+
+The gate reads the staged and unstaged state of every source file, and a
+relocation counts. Nothing about a wholesale move is free just because no line
+changed: paths in tooling break and anything holding a path into the old location
+is wrong afterwards.
+
+## A note on coding agents
+
+We do not recommend using coding agents with this codebase.
+
+If you still choose to use a coding agent:
+
+- Be aware of the environmental and social impact of large-scale model inference.
+  Minimise agent use where it is not needed. Be responsible.
+- Only use an agent if you yourself understand the architecture. Do not use an
+  agent because you do not understand; you will waste time and energy, both yours
+  and the planet's.
+- This repository provides agent instructions that help, but they do not eliminate
+  the problem. You will still need to correct the agent frequently.
+
+The recommendation stands: do this work yourself unless you know what you are
+doing and why.
