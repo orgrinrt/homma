@@ -61,6 +61,16 @@ pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) 
     if let Some(domain) = &id.domain {
         body.push_str(&format!("Domain: {domain}.\n\n"));
     }
+    // Tell it who it is. Without this a Hand answers questions about its own
+    // identity from the global git config it can see, which is the human's, and
+    // is wrong in the one place being wrong matters.
+    if let (Some(name), Some(email)) = (&id.git_name, &id.git_email) {
+        body.push_str(&format!(
+            "You commit as `{name} <{email}>`, set in this workspace's own git \
+             config and nowhere else. The global identity on this machine belongs \
+             to someone else and is not yours.\n\n"
+        ));
+    }
     match form {
         Form::Prime => {
             body.push_str(
@@ -235,6 +245,29 @@ mod tests {
         assert!(!twin_text.contains("memory:"));
         assert!(prime_text.contains("Terse."));
         assert!(twin_text.contains("Terse."), "a twin is the same colleague");
+    }
+
+    #[test]
+    fn a_hand_is_told_which_git_identity_is_its_own() {
+        // Found end to end: a Hand asked for its git email answered with the
+        // machine's global one, because nothing had told it otherwise. The
+        // commits were correct; the Hand's belief about itself was not.
+        let id = hand();
+        let body = definition(&id, Form::Prime, DISCIPLINE, "").body;
+        assert!(body.contains("paja@example.invalid"));
+        assert!(
+            body.contains("belongs"),
+            "and that the global one is not its own"
+        );
+    }
+
+    #[test]
+    fn an_identity_with_no_git_name_gets_no_claim_about_one() {
+        let mut id = hand();
+        id.git_name = None;
+        id.git_email = None;
+        let body = definition(&id, Form::Prime, DISCIPLINE, "").body;
+        assert!(!body.contains("You commit as"));
     }
 
     #[test]
