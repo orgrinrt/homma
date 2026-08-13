@@ -77,6 +77,17 @@ pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) 
                 "You keep your own memory. Read it before you start and write to it \
                  what will still be true next week.\n\n",
             );
+            // Stated because the Hand answered this wrongly when asked. The
+            // twin's definition genuinely carries no memory key, so the
+            // mechanism was right and the belief was not, which is a thing it
+            // would have told a peer.
+            body.push_str(
+                "**Your twin cannot write memory.** Its definition carries no \
+                 memory key at all, so this is structural rather than a request. \
+                 What it learns goes to your notes, and you decide what becomes \
+                 memory. It does not write to channels either: it answers whoever \
+                 dispatched it, and they speak in their own name.\n\n",
+            );
         }
         Form::Twin => {
             body.push_str(
@@ -226,6 +237,20 @@ mod tests {
                 "the shared part cannot drift between forms because neither owns it"
             );
         }
+    }
+
+    #[test]
+    fn a_prime_is_told_what_its_twin_cannot_do() {
+        // Third of three defects found by asking a standing Hand about itself.
+        // Each time the mechanism was correct and the belief was wrong, because
+        // nothing had said so. A mechanism nobody is told about works and
+        // misleads.
+        let body = definition(&hand(), Form::Prime, DISCIPLINE, "").body;
+        assert!(body.contains("twin cannot write memory"));
+        assert!(
+            body.contains("structural"),
+            "and why it cannot, not just that"
+        );
     }
 
     #[test]
