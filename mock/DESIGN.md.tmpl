@@ -69,5 +69,7 @@ homma sauna    correspondence and work
 homma serve    the daemon and its surfaces
 ```
 
-A call with a terminal attached prints for a human. A call without one prints its
-result and nothing else, because something is parsing it.
+A call with a terminal attached should print for a human, and a call without one
+should print its result and nothing else, because something is parsing it. That
+split is decided and **not yet built**: nothing in the tree senses a terminal, and
+`homma org` prints the same way either way.
