@@ -45,3 +45,17 @@ An index over the store is derivable from it and is rebuildable at any time, so 
 is not part of the store and is not committed. Queries at present volume read the
 files. When that stops being adequate, the index arrives without the store
 changing shape.
+
+## The surface
+
+**`Store`** is a directory of records, opened at a root. Two operations enter
+anything: `append`, which is how everything arrives, and `replace`, which is
+refused unless the kind declares itself mutable. `read` returns a kind's records
+in the order they were written.
+
+**`Error`** says why something did not happen, and the variants are the reasons
+worth distinguishing: a kind that is append-only being asked to rewrite, an id
+that is not there, a record that does not satisfy its kind, and the ordinary
+failures of disk and encoding. The immutability refusal names the record and
+suggests superseding it, because that is the correct move and a bare refusal
+would leave the caller to guess it.

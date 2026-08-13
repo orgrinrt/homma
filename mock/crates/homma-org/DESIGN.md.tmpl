@@ -40,3 +40,15 @@ The same pass writes the settings and hooks that constrain a workspace. It is th
 sole writer of the agent configuration directory in every workspace it manages,
 which is what makes the constraints uniform and what makes a workspace it did not
 create simply not have them.
+
+## The surface
+
+**`Registry`** reads the identities out of a workspace's configuration. It
+answers who exists, who holds a role, and which entries cannot yet be stood up,
+with what each is missing. That last one exists so a gap is reported before a
+clone starts rather than discovered halfway through one.
+
+**`Layout`** answers where things sit for a given identity, and **`prepare`**
+creates them: the directories, and the memory link into the path the harness
+expects. Both are relative to a workspace root, so nothing about where a
+workspace lives is compiled in.
