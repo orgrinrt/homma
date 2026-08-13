@@ -2,18 +2,22 @@
 
 Records on disk, and the only code that writes them.
 
-## One engine
+## One vocabulary, and an open question about engines
 
-There is one store, and correspondence lives in it beside everything else. A
-message is a record whose kind is `message`; a channel is a namespace over
-records; append-only is what that kind declares about itself rather than a
-property of a separate system.
+Everything here is a record: an id, a kind, a provenance reference, and whatever
+attributes its kind declares. A message is a record whose kind is `message`, and a
+channel is a namespace over records.
 
-The alternative, a message log beside a record store, was considered and rejected
-before anything was built. It costs two persistence layers, two write paths, two
-places for a reference graph to be extracted, and a second argument about who may
-write when the second one arrives. What it would have bought is nothing that a
-per-kind flag does not.
+**Whether correspondence and structural records share one physical engine is not
+settled.** One reading says append-only is a flag a kind declares and one write
+path serves both. Another says append-only is not a spare bit but the reason the
+sole-writer machinery exists at all, that a mutable task has none of that problem,
+and that a flag forking the whole write path is two engines sharing a door. Both
+readings are recorded in the round; the question belongs to the workspace's owner.
+
+What is not in question, and what this crate is built around, is that the
+**vocabulary** is one. Provenance resolution, reference extraction and date typing
+are storage-agnostic functions written once, whatever ends up writing the bytes.
 
 ## The file shape
 
