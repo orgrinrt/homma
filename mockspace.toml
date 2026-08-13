@@ -15,11 +15,14 @@ mock_dir = "mock"
 proc_macro_crates = []
 module_crates = []
 
-# Layer labels by depth index. Placeholder until the taxonomy round settles them: the current two
-# crates predate mockspace and their split was never designed, only inherited.
+# Layer labels by depth index, settled by the taxonomy round.
 layers = [
-    "L0 core",
-    "L1 surface",
+    "L0 contracts",
+    "L1 mechanism",
+    "L2 store",
+    "L3 domain",
+    "L4 service",
+    "L5 surface",
 ]
 
 [domain_kinds]

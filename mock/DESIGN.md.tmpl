@@ -1,47 +1,73 @@
 # homma
 
-homma orchestrates a multi-repository workspace. It knows which repositories the
-workspace contains, where they live, which forge holds each, and what branch
-policy governs them, and it acts across all of them from one place.
+homma orchestrates a multi-repository workspace: it knows which repositories the
+workspace contains, who works in it, where each participant's work happens, and
+how they correspond.
 
-It is deliberately small. The work of designing and building inside a repository
-belongs to that repository's own mockspace; homma's job is everything that spans
-repositories and everything that is true of the workspace rather than of any one
-member.
+It is deliberately small. Designing and building inside a repository belongs to
+that repository's own tooling; homma's job is what spans repositories and what is
+true of the workspace rather than of any one member.
 
-## What it does today
+## What it must be
 
-**Status.** `homma status` lists every member with its forge mapping and resolved
-branch defaults. `homma repo status` reports one repository's worktree state
-without changing directory into it.
+**General.** homma runs against a workspace it has never seen. One required key
+names the content repository; every path has a default it will create and an
+override for a workspace whose convention differs. Nothing about the workspace it
+was born in is compiled in, which is why layout, roles and record kinds are data
+rather than code.
 
-**Agent surfaces.** `homma agent status` discovers which members carry a mockspace
-and whether their hooks are installed. `homma agent regen` runs each member's
-generation and aggregates the results into the workspace's own agent
-configuration.
+**Minimal, and delegating.** Where a member repository has its own tooling, homma
+drives it rather than reimplementing it.
 
-**Forge operations.** Reading repository metadata, migrating a repository between
-forges, and marking one archived after a verified migration.
+## The four primitives
 
-**Verification.** `homma verify` checks the workspace configuration and exits
-non-zero with structured findings.
+Everything else is a view over these, a kind declared in configuration, or prose
+in a generated file.
 
-## What it is made of
+**The record store.** One engine for everything homma persists. Kinds declare
+what attributes a record has and whether it may be edited, so correspondence and
+structural work share a write path and differ by a flag.
 
-Two crates, split before this repository adopted mockspace and before the
-workspace had a stated opinion about layering.
+**The daemon.** Sole writer of the store, sole waker of participants, sole arbiter
+of who may act on whose behalf. Three verbs: append a record, deliver what is
+waiting, grant a dispatch.
 
-**`homma-core`** holds configuration parsing, forge clients, and repository
-operations over `gix`.
+**The registry.** Identity as configuration rather than as a process, so a
+participant outlives whatever was running it.
 
-**`homma`** holds the command-line surface: argument parsing, the command
-implementations, and output rendering.
+**The generation pass.** Configuration and templates into definitions, settings,
+hooks and links; the sole writer of the agent configuration in every workspace it
+manages.
 
-Whether that is the right split is the subject of the taxonomy round, and this
-section is written to be replaced by it.
+## The layers
 
-## Configuration
+```
+L0 contracts     types and traits, no I/O
+L1 mechanism     git, forge, filesystem. things with side effects
+L2 store         records and their persistence
+L3 domain        registry, correspondence, work
+L4 service       the daemon and its surfaces
+L5 surface       what a human or an agent drives
+```
 
-One file at the workspace root enumerates the members, the forge profiles and the
-branch policy. A repository is named, mapped to a forge, and given whatever
-defaults differ from the workspace's own.
+Crates arrive when something needs them. An empty crate holding a name is a
+directory pretending to be a decision.
+
+## What exists
+
+`homma-api` carries the vocabulary. `homma-store` persists records.
+`homma-org` holds the registry, the workspace lifecycle and generation. `homma` is
+the command surface. `homma-core` still holds forge clients and git operations in
+a pre-adoption split that a later round dissolves.
+
+## The command surface
+
+```
+homma org      who exists
+homma work     workspaces and what is in them
+homma sauna    correspondence and work
+homma serve    the daemon and its surfaces
+```
+
+A call with a terminal attached prints for a human. A call without one prints its
+result and nothing else, because something is parsing it.

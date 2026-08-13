@@ -1,0 +1,42 @@
+# homma-org
+
+Who exists, where their work happens, and what is generated for them.
+
+## The registry
+
+Identity is a configuration entry, never a running process. An entry carries the
+handle everything else addresses, the role that says what kind of participant it
+is, and whatever that role requires: a git name and email, a workspace path, a
+pinned session, the repositories it holds, the path to its generated definition.
+
+Because identity is configuration, a participant survives its process dying. What
+is lost when a session ends is a transcript; what the entry describes is still
+true, and starting it again restores a participant rather than creating a new one.
+
+## The workspace lifecycle
+
+A workspace is a clone of the content repository with member repositories inside
+it, and it belongs to exactly one identity. Creating one is: clone, set the git
+identity in that clone's own configuration, link the memory directory into the
+place the agent harness expects, and generate the definition.
+
+The memory link is worth stating because it is load-bearing and non-obvious. The
+harness writes agent memory to a path it chooses; the layout wants it beside
+everything else belonging to that identity. A relative symlink from the harness's
+path to the layout's satisfies both, survives cloning to any machine, and is
+carried by version control as a link rather than a copy.
+
+Repositories are added when work needs them rather than up front, so a workspace
+describes what its owner actually does.
+
+## Generation
+
+The definition an agent runs under is generated from the registry entry plus a
+shared template plus a hand-written character fragment that is never regenerated.
+The shared part cannot drift between participants because none of them owns it;
+the character is authored once and belongs to whoever it describes.
+
+The same pass writes the settings and hooks that constrain a workspace. It is the
+sole writer of the agent configuration directory in every workspace it manages,
+which is what makes the constraints uniform and what makes a workspace it did not
+create simply not have them.

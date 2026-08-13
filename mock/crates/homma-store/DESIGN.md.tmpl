@@ -1,0 +1,43 @@
+# homma-store
+
+Records on disk, and the only code that writes them.
+
+## One engine
+
+There is one store, and correspondence lives in it beside everything else. A
+message is a record whose kind is `message`; a channel is a namespace over
+records; append-only is what that kind declares about itself rather than a
+property of a separate system.
+
+The alternative, a message log beside a record store, was considered and rejected
+before anything was built. It costs two persistence layers, two write paths, two
+places for a reference graph to be extracted, and a second argument about who may
+write when the second one arrives. What it would have bought is nothing that a
+per-kind flag does not.
+
+## The file shape
+
+Newline-delimited records, one per line, in files namespaced by kind and
+addressed within it. Appending is the common operation and the format makes it
+cheap; a reader that wants the tail reads the tail.
+
+Records whose kind declares them mutable are rewritten in place. Records whose
+kind declares them append-only never are, and a correction to one is another
+record that supersedes it rather than an edit that erases it.
+
+## The sole writer
+
+Every write goes through one process. This is not a convention: a command-line
+tool invoked by several agents is several processes appending to one file, and
+that is the multi-writer problem regardless of the binary they share. The daemon
+owning the store is what makes serialised appends true.
+
+Readers are unrestricted. A record on disk is readable by anything, and nothing
+about the format requires the daemon to interpret it.
+
+## Derived, and therefore absent
+
+An index over the store is derivable from it and is rebuildable at any time, so it
+is not part of the store and is not committed. Queries at present volume read the
+files. When that stops being adequate, the index arrives without the store
+changing shape.
