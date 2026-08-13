@@ -25,6 +25,22 @@ pub struct Config {
     pub forges: BTreeMap<String, ForgeConfig>,
     #[serde(default)]
     pub repos: BTreeMap<String, RepoConfig>,
+    /// The repository holding workspace metadata and content.
+    ///
+    /// Required by `homma_api::Workspace`, which parses the same file. Optional
+    /// here because a workspace predating the registry has none, and because
+    /// two parsers over one file must not deny each other's fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_repo: Option<String>,
+
+    /// Where homma keeps things. Read by `homma_api::Workspace`; carried here so
+    /// `deny_unknown_fields` does not reject it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paths: Option<toml::Value>,
+
+    /// The registry. Same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org: Option<toml::Value>,
 }
 
 impl Config {

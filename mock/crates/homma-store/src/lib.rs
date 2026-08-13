@@ -31,6 +31,13 @@ pub enum Error {
         kind: String,
         id: String,
     },
+    /// The kind's name would address a file outside the store.
+    UnsafeKind(String),
+    /// Something already carries that id under this kind.
+    Duplicate {
+        kind: String,
+        id: String,
+    },
     /// The record does not satisfy the kind it claims.
     Invalid(homma_api::record::Invalid),
     Io(std::io::Error),
@@ -46,6 +53,17 @@ impl std::fmt::Display for Error {
                  Append a record that supersedes it instead."
             ),
             Error::NotFound { kind, id } => write!(f, "no record `{id}` of kind `{kind}`"),
+            Error::UnsafeKind(k) => write!(
+                f,
+                "kind name `{k}` would address a file outside the store; a kind \
+                 name carries no path separator and no parent component"
+            ),
+            Error::Duplicate { kind, id } => write!(
+                f,
+                "kind `{kind}` already carries a record `{id}`. Appending a second \
+                 under one id lets an append-only kind be contradicted without \
+                 ever rewriting anything."
+            ),
             Error::Invalid(e) => write!(f, "{e}"),
             Error::Io(e) => write!(f, "{e}"),
             Error::Encoding(e) => write!(f, "{e}"),
@@ -88,9 +106,35 @@ impl Store {
         self.root.join(format!("{kind}.ndjson"))
     }
 
+    /// A kind name is configuration, so it is attacker-reachable and is checked
+    /// rather than trusted. `create_dir_all` would otherwise make traversal
+    /// succeed rather than fail.
+    fn check_kind_name(kind: &str) -> Result<(), Error> {
+        let bad = kind.is_empty()
+            || kind.contains('/')
+            || kind.contains('\\')
+            || kind.split(['/', '\\']).any(|c| c == "..")
+            || kind == ".."
+            || kind.contains('\0');
+        if bad {
+            return Err(Error::UnsafeKind(kind.to_string()));
+        }
+        Ok(())
+    }
+
     /// Add a record. The only way anything enters the store.
     pub fn append(&self, kind: &Kind, record: &Record) -> Result<(), Error> {
+        Self::check_kind_name(&kind.name)?;
         record.check(kind).map_err(Error::Invalid)?;
+        // Without this, a second record under an existing id lets an
+        // append-only kind be contradicted without ever calling `replace`,
+        // which is the only path the immutability guard covers.
+        if self.read(&kind.name)?.iter().any(|r| r.id == record.id) {
+            return Err(Error::Duplicate {
+                kind: kind.name.clone(),
+                id: record.id.clone(),
+            });
+        }
         if let Some(parent) = self.path_for(&kind.name).parent() {
             fs::create_dir_all(parent)?;
         }
@@ -106,6 +150,7 @@ impl Store {
 
     /// Every record of a kind, in the order it was written.
     pub fn read(&self, kind: &str) -> Result<Vec<Record>, Error> {
+        Self::check_kind_name(kind)?;
         let path = self.path_for(kind);
         if !path.exists() {
             return Ok(Vec::new());
@@ -268,6 +313,49 @@ mod tests {
         let bad = Record::new("m1", "message", &Reference::org("paja"));
         assert!(matches!(s.append(&message(), &bad), Err(Error::Invalid(_))));
         assert!(s.read("message").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_kind_name_cannot_address_a_file_outside_the_store() {
+        let (d, s) = store();
+        let evil = Kind::new("../../escaped", Mutability::Mutable)
+            .with_attr("title", AttrType::Text)
+            .requiring("title");
+        let r = Record::new("x", "../../escaped", &Reference::org("paja"))
+            .with("title", Attr::Text("out".into()));
+        assert!(matches!(s.append(&evil, &r), Err(Error::UnsafeKind(_))));
+        let outside = d
+            .path()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("escaped.ndjson");
+        assert!(!outside.exists(), "nothing may be written outside the root");
+    }
+
+    #[test]
+    fn a_second_record_under_one_id_is_refused_for_both_mutabilities() {
+        // Otherwise an append-only kind is contradicted by appending, without
+        // ever touching the guard that refuses rewrites.
+        let (_d, s) = store();
+        s.append(&message(), &msg("m1", "as said")).unwrap();
+        assert!(matches!(
+            s.append(&message(), &msg("m1", "as i wish")),
+            Err(Error::Duplicate { .. })
+        ));
+        let all = s.read("message").unwrap();
+        assert_eq!(all.len(), 1);
+        match &all[0].attrs["body"] {
+            Attr::Text(t) => assert_eq!(t, "as said"),
+            _ => unreachable!(),
+        }
+
+        s.append(&task(), &tsk("t1", "a")).unwrap();
+        assert!(matches!(
+            s.append(&task(), &tsk("t1", "b")),
+            Err(Error::Duplicate { .. })
+        ));
     }
 
     #[test]

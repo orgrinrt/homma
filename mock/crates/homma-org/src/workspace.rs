@@ -104,16 +104,20 @@ pub fn prepare(layout: &Layout<'_>, id: &Identity) -> io::Result<Prepared> {
     let home = layout.home(id);
     let memory = layout.memory(id);
     let notes = layout.notes(id);
-    fs::create_dir_all(&memory)?;
+    if id.role.has_memory() {
+        fs::create_dir_all(&memory)?;
+    }
     if id.role.has_workspace() {
         fs::create_dir_all(&notes)?;
     }
 
     let link = layout.harness_memory(id);
-    if let Some(parent) = link.parent() {
-        fs::create_dir_all(parent)?;
+    if id.role.has_memory() {
+        if let Some(parent) = link.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        link_memory(&link, &memory)?;
     }
-    link_memory(&link, &memory)?;
 
     if let Some(parent) = layout.definition(id).parent() {
         fs::create_dir_all(parent)?;
@@ -244,7 +248,8 @@ mod tests {
         let first = prepare(&l, &id).unwrap();
         fs::write(first.harness_link.join("MEMORY.md"), "kept").unwrap();
         let second = prepare(&l, &id).unwrap();
-        assert_eq!(first, second);
+        // Comparing the two Prepared values would pass with prepare a no-op,
+        // since they are built from path arithmetic. The content is the test.
         assert_eq!(
             fs::read_to_string(l.memory(&id).join("MEMORY.md")).unwrap(),
             "kept",
@@ -267,6 +272,16 @@ mod tests {
             link.join("someones-notes.md").exists(),
             "refusing must not be a euphemism for deleting"
         );
+    }
+
+    #[test]
+    fn a_role_that_does_not_remember_gets_no_memory_directory() {
+        let (d, p) = fixture();
+        let l = Layout::new(d.path(), &p);
+        let general = Identity::new(Role::General, "runner");
+        let done = prepare(&l, &general).unwrap();
+        assert!(!done.memory.exists(), "labour accumulates nothing");
+        assert!(!done.harness_link.exists());
     }
 
     #[test]

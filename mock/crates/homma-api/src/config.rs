@@ -95,6 +95,14 @@ impl Identity {
     /// A role that owns no workspace requires none of them.
     pub fn missing(&self) -> Vec<&'static str> {
         let mut gaps = Vec::new();
+        if !self.role.has_workspace() {
+            // Not a gap that filling fields would close: this role has no
+            // workspace to stand up at all. Reported so a caller refuses rather
+            // than building one anyway, which under the king's handle would
+            // manufacture a dispatchable agent for the human.
+            gaps.push("a role that owns no workspace");
+            return gaps;
+        }
         if self.role.has_workspace() {
             if self.git_name.is_none() {
                 gaps.push("git_name");
@@ -160,6 +168,34 @@ impl Workspace {
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
     }
+
+    /// Registry strings that would inject structure into anything generated
+    /// from them.
+    ///
+    /// A generated agent definition puts these into YAML frontmatter, so a
+    /// newline in a nickname writes an arbitrary key. That is how a Hand could
+    /// grant its own twin the memory key the design withholds structurally, by
+    /// editing its own entry in a file every participant can write.
+    pub fn unsafe_strings(&self) -> Vec<(String, &'static str)> {
+        let mut bad = Vec::new();
+        for (handle, id) in &self.org {
+            for (field, value) in [
+                ("handle", Some(&id.handle)),
+                ("nickname", id.nickname.as_ref()),
+                ("full_name", id.full_name.as_ref()),
+                ("domain", id.domain.as_ref()),
+                ("git_name", id.git_name.as_ref()),
+                ("git_email", id.git_email.as_ref()),
+            ] {
+                if let Some(v) = value {
+                    if v.chars().any(|c| c.is_control()) {
+                        bad.push((handle.clone(), field));
+                    }
+                }
+            }
+        }
+        bad
+    }
 }
 
 #[cfg(test)]
@@ -222,7 +258,10 @@ handle = "proof"
         let proof = &w.org["proof"];
         assert_eq!(proof.role, Role::Expert);
         assert!(proof.workspace.is_none());
-        assert!(proof.missing().is_empty());
+        assert!(proof.git_name.is_none());
+        // It is complete as an entry, and there is still nothing to stand up,
+        // which is a different statement and is what `missing` now reports.
+        assert_eq!(proof.missing(), vec!["a role that owns no workspace"]);
     }
 
     #[test]
@@ -238,13 +277,38 @@ handle = "proof"
     }
 
     #[test]
-    fn only_a_hand_owns_a_workspace_and_only_hands_and_experts_remember() {
-        assert!(Role::Hand.has_workspace());
-        assert!(!Role::Expert.has_workspace());
-        assert!(!Role::King.has_workspace());
-        assert!(Role::Hand.has_memory());
-        assert!(Role::Expert.has_memory());
-        assert!(!Role::General.has_memory());
+    fn a_role_that_owns_no_workspace_reports_that_rather_than_nothing() {
+        // It reported nothing, so a caller checking for gaps found none and
+        // stood one up anyway. Under the king's handle that manufactured a
+        // dispatchable agent for the human.
+        for role in [Role::King, Role::Expert, Role::General] {
+            let id = Identity::new(role, "someone");
+            assert_eq!(
+                id.missing(),
+                vec!["a role that owns no workspace"],
+                "{role:?} must report that it cannot be stood up"
+            );
+        }
+    }
+
+    #[test]
+    fn a_control_character_in_any_registry_string_is_reported() {
+        // A newline here becomes an arbitrary key in generated frontmatter.
+        let mut w = Workspace::parse(MINIMAL).unwrap();
+        let mut id = Identity::new(Role::Hand, "paja");
+        id.nickname = Some("Paja\nmemory: project".into());
+        w.org.insert("paja".into(), id);
+        let bad = w.unsafe_strings();
+        assert_eq!(bad.len(), 1);
+        assert_eq!(bad[0], ("paja".to_string(), "nickname"));
+    }
+
+    #[test]
+    fn a_clean_registry_reports_nothing_unsafe() {
+        assert!(Workspace::parse(WITH_ORG)
+            .unwrap()
+            .unsafe_strings()
+            .is_empty());
     }
 
     #[test]

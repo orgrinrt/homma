@@ -79,11 +79,31 @@ pub fn stand_up(ws: &Workspace, root: &Path, handle: &str) -> Result<StoodUp> {
         .get(handle)
         .with_context(|| format!("no identity `{handle}` in the registry"))?;
 
+    anyhow::ensure!(
+        id.role.has_workspace(),
+        "`{handle}` holds a role that owns no workspace, so there is nothing to \
+         stand up. Generating one anyway would manufacture a dispatchable agent \
+         for someone who is not one."
+    );
+
     let gaps = id.missing();
     anyhow::ensure!(
         gaps.is_empty(),
         "`{handle}` cannot be stood up: its entry is missing {}",
         gaps.join(", ")
+    );
+
+    // A registry string carrying a control character writes arbitrary keys into
+    // generated frontmatter, which is how a twin could be granted memory.
+    let unsafe_fields = ws.unsafe_strings();
+    anyhow::ensure!(
+        unsafe_fields.is_empty(),
+        "the registry carries control characters in {}",
+        unsafe_fields
+            .iter()
+            .map(|(h, f)| format!("`{h}`.{f}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     let layout = Layout::new(root, &ws.paths);
@@ -158,6 +178,25 @@ handle = "nameless"
             !d.path().join(".shared/hands/nameless").exists(),
             "a refusal must not leave half a workspace behind"
         );
+    }
+
+    #[test]
+    fn standing_up_the_king_is_refused_rather_than_manufacturing_an_agent_for_him() {
+        // It succeeded, producing .claude/agents/op.md with memory: project,
+        // under the one handle whose provenance derives a ratified standing.
+        let d = tempfile::tempdir().unwrap();
+        let err = stand_up(&ws(), d.path(), "op").unwrap_err();
+        assert!(err.to_string().contains("owns no workspace"), "{err}");
+        assert!(!d.path().join(".claude/agents/op.md").exists());
+    }
+
+    #[test]
+    fn a_registry_carrying_a_control_character_is_refused_before_generating() {
+        let mut w = ws();
+        w.org.get_mut("paja").unwrap().nickname = Some("Paja\nmemory: project".into());
+        let d = tempfile::tempdir().unwrap();
+        let err = stand_up(&w, d.path(), "paja").unwrap_err();
+        assert!(err.to_string().contains("control characters"), "{err}");
     }
 
     #[test]

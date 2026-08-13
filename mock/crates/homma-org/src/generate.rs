@@ -127,7 +127,13 @@ pub fn write_definitions(
     id: &Identity,
     discipline: &str,
 ) -> io::Result<(std::path::PathBuf, std::path::PathBuf)> {
-    let character = fs::read_to_string(layout.character(id)).unwrap_or_default();
+    // Only absence is absence. Swallowing every error shipped a Hand without
+    // its voice and reported nothing.
+    let character = match fs::read_to_string(layout.character(id)) {
+        Ok(t) => t,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e),
+    };
     let prime = layout.definition(id);
     let twin = layout.twin_definition(id);
     if let Some(parent) = prime.parent() {
@@ -268,6 +274,21 @@ mod tests {
         id.git_email = None;
         let body = definition(&id, Form::Prime, DISCIPLINE, "").body;
         assert!(!body.contains("You commit as"));
+    }
+
+    #[test]
+    fn a_character_that_cannot_be_read_is_reported_rather_than_swallowed() {
+        let d = tempfile::tempdir().unwrap();
+        let p = Paths::default();
+        let l = Layout::new(d.path(), &p);
+        let id = hand();
+        crate::workspace::prepare(&l, &id).unwrap();
+        // A directory where the file belongs is not absence.
+        std::fs::create_dir_all(l.character(&id)).unwrap();
+        assert!(
+            write_definitions(&l, &id, DISCIPLINE).is_err(),
+            "shipping a voiceless Hand silently is the failure this prevents"
+        );
     }
 
     #[test]

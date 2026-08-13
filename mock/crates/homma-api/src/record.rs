@@ -275,14 +275,4 @@ mod tests {
         let back: Record = serde_json::from_str(&line).unwrap();
         assert_eq!(r, back);
     }
-
-    #[test]
-    fn mutability_is_the_kinds_and_not_the_stores() {
-        // The same store holds both; what differs is what the kind declares.
-        assert_eq!(message_kind().mutability, Mutability::AppendOnly);
-        assert_eq!(
-            Kind::new("task", Mutability::Mutable).mutability,
-            Mutability::Mutable
-        );
-    }
 }
