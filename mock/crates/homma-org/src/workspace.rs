@@ -467,6 +467,51 @@ mod tests {
         );
     }
 
+    // The twelfth review's second unpinned guard, twenty lines below the one the
+    // eleventh round pinned, in the round named for pinning it. Deleting the
+    // definition-parent containment check left all 339 tests green.
+    //
+    // **The agents directory is moved off `.claude` for this test and that is
+    // the whole difficulty.** By default it is `.claude/agents` while the memory
+    // link is `.claude/agent-memory/<handle>`, so a symlink at `.claude` trips
+    // the memory-link guard first and `prepare` never reaches this one. A first
+    // version of this test did exactly that: it passed, and it passed with the
+    // guard it claimed to pin deleted, because a different guard was producing
+    // the refusal.
+    #[test]
+    fn a_definition_parent_that_leaves_is_refused_even_when_the_files_return() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        let outside = d.path().join("outside");
+        std::fs::create_dir_all(root_dir.join(".shared/hands/paja")).unwrap();
+        std::fs::create_dir_all(outside.join("agents")).unwrap();
+
+        // Only the agents chain leaves. `.claude` is untouched, so the memory
+        // link is created normally and this guard is the one under test.
+        std::os::unix::fs::symlink("../outside", root_dir.join("elsewhere")).unwrap();
+        // And the files under it point back in, so each alone looks contained.
+        for leaf in ["paja.md", "paja-twin.md"] {
+            std::os::unix::fs::symlink(
+                root_dir.join(".shared/hands/paja").join(leaf),
+                outside.join("agents").join(leaf),
+            )
+            .unwrap();
+        }
+
+        let p = Paths {
+            agents: homma_api::path::RelPath::new("elsewhere/agents")
+                .expect("a relative contained path"),
+            ..Paths::default()
+        };
+        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let err = prepare(&l, &hand())
+            .expect_err("the directory the definitions are written in has left the root");
+        assert!(
+            err.to_string().contains("outside the workspace root"),
+            "must refuse for the right reason: {err}"
+        );
+    }
+
     #[test]
     fn a_real_directory_where_the_link_belongs_is_refused_rather_than_deleted() {
         let (d, p) = fixture();

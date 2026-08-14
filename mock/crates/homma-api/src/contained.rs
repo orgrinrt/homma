@@ -221,6 +221,57 @@ mod tests {
         AbsPath::new(p).expect("a tempdir path is absolute")
     }
 
+    // The twelfth review's reproduction. `create_dir_all` creates every missing
+    // ancestor, so a missing root takes its own ancestors with it, and those are
+    // above the root by definition. With the root under a home directory this
+    // created directories inside `~/.claude/`, which the record forbids.
+    #[test]
+    fn a_root_whose_parent_does_not_exist_is_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let deep = abs(d.path().join("a").join("b").join("newroot"));
+        let err = Root::new(&deep).expect_err("homma creates the root, never the path to it");
+        assert!(
+            err.to_string().contains("does not exist"),
+            "the message has to say what is missing: {err}"
+        );
+        assert!(
+            !d.path().join("a").exists(),
+            "and refusing must not have created it on the way"
+        );
+    }
+
+    #[test]
+    fn a_root_that_does_not_exist_but_whose_parent_does_is_allowed() {
+        // Creating the root itself is intended: `content_repo = "local"` relies
+        // on it. Only the path to it is refused.
+        let d = tempfile::tempdir().unwrap();
+        assert!(Root::new(&abs(d.path().join("newroot"))).is_ok());
+    }
+
+    // The guard here was live and pinned by nothing: replacing the tail of
+    // `create_dir_all` with `Ok(())` left the whole suite green, in a file whose
+    // header sells that guard as turning a silent escape into a loud one.
+    #[test]
+    fn creating_a_directory_reports_a_link_planted_after_the_proof() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        let outside = d.path().join("outside");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let root = Root::new(&abs(&root_dir)).unwrap();
+        let target = root.contain(&root.as_abs().join("planted")).unwrap();
+
+        // Between the proof and the creation, which is the window the type
+        // documents as open rather than closed.
+        std::os::unix::fs::symlink(&outside, root_dir.join("planted")).unwrap();
+
+        assert!(
+            root.create_dir_all(&target).is_err(),
+            "a link planted after the proof must be reported, not followed silently"
+        );
+    }
+
     #[test]
     fn a_path_under_the_root_is_proven() {
         let d = tempfile::tempdir().unwrap();
