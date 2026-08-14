@@ -229,3 +229,64 @@ fn standing_up_into_a_root_whose_parent_is_missing_creates_nothing_above_it() {
         "nothing above the root may be created on the way to standing one up"
     );
 }
+
+#[test]
+fn a_workspace_cannot_build_a_path_of_directories_to_reach_itself() {
+    // The thirteenth review's reproduction. The workspace is required to sit
+    // outside the containment root, so no `Root` covers it and none can; its
+    // only guard asks whether it is inside a git repository, and a home
+    // directory is not one.
+    //
+    // `create_dir_all` on its parent built whatever chain the configured path
+    // implied, so a workspace at `somewhere/.claude/hands/paja` created
+    // `somewhere/` and `somewhere/.claude/` on the way. That is deny item three.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    let home = dir.path().join("fakehome");
+    add_hand(
+        &cfg,
+        "r",
+        home.join(".claude")
+            .join("hands")
+            .join("r")
+            .to_str()
+            .unwrap(),
+    );
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure();
+
+    assert!(
+        !home.exists(),
+        "homma must not build a path of directories into a home to reach a workspace"
+    );
+}
+
+#[test]
+fn a_workspace_reached_by_climbing_out_cannot_build_its_path_either() {
+    // The same defect spelled with `..` rather than absolutely, which is the
+    // other spelling this branch has been closing since its first round.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("deep").join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    add_hand(&cfg, "r", "../../victimhome/.claude/hands/r");
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure();
+
+    assert!(
+        !dir.path().join("victimhome").exists(),
+        "climbing out must not create the tree it climbs into"
+    );
+}
