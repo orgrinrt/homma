@@ -62,7 +62,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             "{:<12} {:<8} {:<28} {}",
                             line.handle,
                             format!("{:?}", line.role).to_lowercase(),
-                            org::describe(&line.standing),
+                            org::describe(&line.staffing),
                             line.domain,
                         );
                     }
@@ -87,24 +87,28 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     id.git_name = git_name.clone();
                     id.git_email = git_email.clone();
                     id.workspace = workspace.clone();
-                    let standing = id.standing();
+                    let staffing = id.staffing();
                     org::add(&mut ws, id.clone())?;
 
                     // Appended, so every comment and every hand-chosen ordering
-                    // in the registry survives being added to.
-                    let block = org::render_entry(&id)?;
-                    let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
-                    use std::io::Write as _;
-                    file.write_all(block.as_bytes())?;
+                    // in the registry survives being added to. Written through a
+                    // temporary and renamed, so a short write cannot leave a
+                    // registry nothing can parse.
+                    org::append_entry(&path, &id)?;
 
-                    println!("{} {}", id.handle, org::describe(&standing));
+                    println!("{} {}", id.handle, org::describe(&staffing));
                 }
                 OrgOp::Up { handle, root } => {
                     let root = root
                         .clone()
                         .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let out = org::stand_up(&ws, &root, handle)?;
+                    let out = org::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
                     println!("{} {}", out.handle, out.home.display());
+                    println!(
+                        "  workspace  {} ({})",
+                        out.workspace.display(),
+                        if out.cloned { "cloned" } else { "already there" }
+                    );
                     println!("  definition {}", out.definition.display());
                     println!("  twin       {}", out.twin_definition.display());
                 }

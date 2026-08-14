@@ -36,6 +36,14 @@ pub trait Git {
     /// commits carrying the wrong author are already made.
     fn set_identity(&self, path: &Path, name: &str, email: &str) -> Result<(), Self::Error>;
 
+    /// The URL `path`'s `origin` remote points at, if it has one.
+    ///
+    /// This is where a content repository's clone URL comes from. homma runs
+    /// inside a clone of it, so the URL is already on disk and correct; a
+    /// configuration key for it would be a second place for one fact to live
+    /// and therefore a second place for it to be wrong.
+    fn origin_url(&self, path: &Path) -> Result<Option<String>, Self::Error>;
+
     /// The author identity `path`'s own configuration carries, if any.
     ///
     /// Present so setting it can be asserted rather than assumed. A write with

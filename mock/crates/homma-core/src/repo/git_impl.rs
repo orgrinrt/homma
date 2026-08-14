@@ -47,6 +47,15 @@ impl Git for GixGit {
         })
     }
 
+    fn origin_url(&self, path: &Path) -> Result<Option<String>, Self::Error> {
+        let file = local_config(path)?;
+        Ok(file
+            .raw_value("remote.origin.url")
+            .ok()
+            .map(|v| v.to_string())
+            .filter(|s| !s.is_empty()))
+    }
+
     fn identity(&self, path: &Path) -> Result<Option<(String, String)>, Self::Error> {
         // Deliberately the local file rather than the merged view. A merged
         // read would report the machine's global identity as though it were
@@ -136,6 +145,13 @@ mod tests {
     fn the_identity_is_written_to_the_local_config_file_and_nowhere_else() {
         // Reading it back through gix would pass even if it had been written
         // globally, because gix reads the merged view. The file is the test.
+        // Snapshotted rather than redirected. Mutating the environment to
+        // point the global config elsewhere is racy across test threads and
+        // needs an unsafe call; the requirement is that the real global file
+        // does not change, so that is what is asserted, directly.
+        let globals = global_config_paths();
+        let before: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
+
         let src = tempfile::tempdir().unwrap();
         source_repo(src.path());
         let dest = tempfile::tempdir().unwrap();
@@ -151,6 +167,57 @@ mod tests {
             local.contains("paja@example.invalid"),
             "the identity must be in the clone's own config, got:\n{local}"
         );
+
+        // The half the name claimed and the body did not check. "Never
+        // globally" is the entire content of the requirement, and reading the
+        // local file says nothing about whether a global one was also written.
+        let after: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
+        assert_eq!(
+            before,
+            after,
+            "no global git configuration may change: {globals:?}"
+        );
+    }
+
+    /// Every place git would look for a global configuration.
+    fn global_config_paths() -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+            out.push(Path::new(&xdg).join("git").join("config"));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            out.push(Path::new(&home).join(".gitconfig"));
+            out.push(Path::new(&home).join(".config").join("git").join("config"));
+        }
+        out
+    }
+
+    #[test]
+    fn the_origin_url_is_read_from_the_clone() {
+        // This is where a content repository's clone URL comes from, so a wrong
+        // answer here sends every later workspace to the wrong remote.
+        let src = tempfile::tempdir().unwrap();
+        source_repo(src.path());
+        let dest = tempfile::tempdir().unwrap();
+        let into = dest.path().join("clone");
+
+        let git = GixGit;
+        git.clone_repo(src.path().to_str().unwrap(), &into).unwrap();
+        let url = git.origin_url(&into).unwrap().expect("a clone has an origin");
+        // Canonicalised on both sides: the temp directory resolves through a
+        // symlink on macOS, and comparing the two spellings tests the platform
+        // rather than the function.
+        assert_eq!(
+            std::fs::canonicalize(&url).unwrap(),
+            std::fs::canonicalize(src.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_repository_with_no_origin_reports_none_rather_than_guessing() {
+        let d = tempfile::tempdir().unwrap();
+        source_repo(d.path());
+        assert_eq!(GixGit.origin_url(d.path()).unwrap(), None);
     }
 
     #[test]

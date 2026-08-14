@@ -5,12 +5,14 @@
 //! starting it again restores a participant rather than creating a new one.
 
 pub mod generate;
+pub mod provision;
 pub mod workspace;
 
 pub use generate::{definition, write_definitions, Form, Generated};
-pub use workspace::{prepare, provision, Layout, Prepared, ProvisionError, Provisioned};
+pub use provision::{provision, ProvisionError, Provisioned};
+pub use workspace::{prepare, Layout, Prepared};
 
-use homma_api::{Identity, Role, Standing, Workspace};
+use homma_api::{Identity, Role, Staffing, Workspace};
 
 /// The registry, read from a workspace's configuration.
 pub struct Registry<'a> {
@@ -53,8 +55,8 @@ impl<'a> Registry<'a> {
         self.workspace
             .org
             .values()
-            .filter_map(|i| match i.standing() {
-                Standing::Incomplete(gaps) => Some((i, gaps)),
+            .filter_map(|i| match i.staffing() {
+                Staffing::Incomplete(gaps) => Some((i, gaps)),
                 _ => None,
             })
             .collect()
@@ -66,7 +68,7 @@ impl<'a> Registry<'a> {
         self.workspace
             .org
             .values()
-            .filter(|i| i.standing() == Standing::Mapped)
+            .filter(|i| i.staffing() == Staffing::Mapped)
             .collect()
     }
 }

@@ -38,14 +38,18 @@ impl Role {
     }
 }
 
-/// Where an identity that could own a workspace stands.
+/// Whether an identity that could own a workspace has somebody on it.
 ///
-/// The distinction between [`Standing::Mapped`] and [`Standing::Incomplete`] is
+/// Named staffing rather than standing because *standing* already means what a
+/// reference derives, one module over, and a vocabulary crate using one word for
+/// two concepts has failed at its only job.
+///
+/// The distinction between [`Staffing::Mapped`] and [`Staffing::Incomplete`] is
 /// the whole reason this is an enum rather than a list of absent fields: a mapped
 /// entry lacks exactly the fields an unfinished one lacks, so any answer of the
 /// shape "here is what is missing" conflates a decision with a mistake.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Standing {
+pub enum Staffing {
     /// The role owns no workspace at all, so there is nothing to stand up and no
     /// set of fields that would change that.
     NoWorkspace,
@@ -58,10 +62,10 @@ pub enum Standing {
     Staffed,
 }
 
-impl Standing {
+impl Staffing {
     /// Whether a workspace may be created for this identity.
     pub fn can_stand_up(&self) -> bool {
-        matches!(self, Standing::Staffed)
+        matches!(self, Staffing::Staffed)
     }
 }
 
@@ -124,21 +128,22 @@ impl Identity {
         }
     }
 
-    /// Where this identity stands, and therefore whether it can be stood up.
+    /// Whether this identity has somebody on it, and therefore whether it can
+    /// be stood up.
     ///
     /// Replaces an earlier `missing()` that returned a list of absent fields.
     /// That shape cannot express the distinction that matters, because an entry
     /// which is mapped on purpose lacks exactly the fields an unfinished one
     /// lacks, so an empty-or-not answer reports a decision as a mistake.
-    pub fn standing(&self) -> Standing {
+    pub fn staffing(&self) -> Staffing {
         if !self.role.has_workspace() {
             // Not a gap that filling fields would close. Reported so a caller
             // refuses rather than building one anyway, which under the king's
             // handle would manufacture a dispatchable agent for the human.
-            return Standing::NoWorkspace;
+            return Staffing::NoWorkspace;
         }
         if !self.staffed {
-            return Standing::Mapped;
+            return Staffing::Mapped;
         }
         let mut gaps = Vec::new();
         if self.git_name.is_none() {
@@ -151,9 +156,9 @@ impl Identity {
             gaps.push("workspace");
         }
         if gaps.is_empty() {
-            Standing::Staffed
+            Staffing::Staffed
         } else {
-            Standing::Incomplete(gaps)
+            Staffing::Incomplete(gaps)
         }
     }
 }
@@ -226,12 +231,20 @@ impl Workspace {
                 ("domain", id.domain.as_ref()),
                 ("git_name", id.git_name.as_ref()),
                 ("git_email", id.git_email.as_ref()),
+                // Unreachable from the command line until `org add` existed.
+                // A surface that can write a field is a surface that can write
+                // a bad one into it.
+                ("workspace", id.workspace.as_ref()),
+                ("session", id.session.as_ref()),
             ] {
                 if let Some(v) = value {
                     if v.chars().any(|c| c.is_control()) {
                         bad.push((handle.clone(), field));
                     }
                 }
+            }
+            if id.repos.iter().any(|r| r.chars().any(|c| c.is_control())) {
+                bad.push((handle.clone(), "repos"));
             }
         }
         bad
@@ -307,7 +320,7 @@ handle = "proof"
         assert!(proof.git_name.is_none());
         // Complete as an entry, and still nothing to stand up, which is a
         // different statement and is what standing reports.
-        assert_eq!(proof.standing(), Standing::NoWorkspace);
+        assert_eq!(proof.staffing(), Staffing::NoWorkspace);
     }
 
     #[test]
@@ -315,16 +328,16 @@ handle = "proof"
         let mut bare = Identity::new(Role::Hand, "nameless");
         bare.staffed = true;
         assert_eq!(
-            bare.standing(),
-            Standing::Incomplete(vec!["git_name", "git_email", "workspace"])
+            bare.staffing(),
+            Staffing::Incomplete(vec!["git_name", "git_email", "workspace"])
         );
     }
 
     #[test]
     fn a_complete_hand_is_staffed() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.org["paja"].standing(), Standing::Staffed);
-        assert!(w.org["paja"].standing().can_stand_up());
+        assert_eq!(w.org["paja"].staffing(), Staffing::Staffed);
+        assert!(w.org["paja"].staffing().can_stand_up());
     }
 
     #[test]
@@ -335,8 +348,8 @@ handle = "proof"
         // reports a dozen broken ones.
         let w = Workspace::parse(WITH_ORG).unwrap();
         let mapped = &w.org["rendering"];
-        assert_eq!(mapped.standing(), Standing::Mapped);
-        assert!(!mapped.standing().can_stand_up());
+        assert_eq!(mapped.staffing(), Staffing::Mapped);
+        assert!(!mapped.staffing().can_stand_up());
     }
 
     #[test]
@@ -344,9 +357,10 @@ handle = "proof"
         // The default has to fall this way: a roster is mapped first and
         // staffed later, so silence means the boundary is drawn and nobody has
         // been put on it.
-        let id = Identity::new(Role::Hand, "quiet");
-        assert!(!id.staffed);
-        assert_eq!(id.standing(), Standing::Mapped);
+        // Via TOML, because the property claimed is serde's default and a
+        // constructor literal asserted against itself would say nothing.
+        let w = Workspace::parse(WITH_ORG).unwrap();
+        assert_eq!(w.org["rendering"].staffing(), Staffing::Mapped);
     }
 
     #[test]
@@ -357,8 +371,8 @@ handle = "proof"
         for role in [Role::King, Role::Expert, Role::General] {
             let id = Identity::new(role, "someone");
             assert_eq!(
-                id.standing(),
-                Standing::NoWorkspace,
+                id.staffing(),
+                Staffing::NoWorkspace,
                 "{role:?} must report that it cannot be stood up"
             );
         }
@@ -371,7 +385,7 @@ handle = "proof"
         // all and the flag only says whether one is intended.
         let mut king = Identity::new(Role::King, "op");
         king.staffed = true;
-        assert_eq!(king.standing(), Standing::NoWorkspace);
+        assert_eq!(king.staffing(), Staffing::NoWorkspace);
     }
 
     #[test]

@@ -317,3 +317,136 @@ fn adding_a_handle_that_would_escape_its_directory_is_refused_at_the_cli() {
         "a refused entry must not reach the file:\n{text}"
     );
 }
+
+/// A content repository with one commit, and a clone of it to run homma from.
+///
+/// Built with the git binary because it is scaffolding, not the thing tested.
+fn content_repo_and_root(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+    let run = |args: &[&str], at: &std::path::Path| {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(at)
+            .status()
+            .expect("git should run")
+            .success();
+        assert!(ok, "git {args:?} failed");
+    };
+    let src = dir.join("content");
+    std::fs::create_dir_all(&src).unwrap();
+    run(&["init", "-q", "-b", "main"], &src);
+    run(&["config", "user.name", "src"], &src);
+    run(&["config", "user.email", "src@example.invalid"], &src);
+    std::fs::write(src.join("README.md"), "content").unwrap();
+    run(&["add", "README.md"], &src);
+    run(&["commit", "-q", "-m", "initial", "--no-gpg-sign"], &src);
+
+    let root = dir.join("root");
+    run(
+        &["clone", "-q", src.to_str().unwrap(), root.to_str().unwrap()],
+        dir,
+    );
+    std::fs::write(root.join("homma.toml"), "content_repo = \"content\"\n").unwrap();
+    (src, root)
+}
+
+/// The exit test for standing an identity up, end to end against a real
+/// repository.
+///
+/// This is the test whose absence let a round ship where `provision` had no
+/// caller: `org up` exited 0, created directories, cloned nothing, set no
+/// identity, and generated a definition telling the Hand it commits as an
+/// identity nothing had configured. Every unit test passed, because each tested
+/// a function nothing called.
+#[test]
+fn standing_up_clones_the_workspace_and_sets_the_identity_in_that_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_src, root) = content_repo_and_root(dir.path());
+    let cfg = root.join("homma.toml");
+    let ws = dir.path().join("ws").join("fresh");
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
+        .args(["--workspace", ws.to_str().unwrap()])
+        .assert()
+        .success();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
+        .current_dir(&root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cloned"));
+
+    assert!(
+        ws.join(".git").exists(),
+        "the workspace must actually be a clone"
+    );
+
+    // The identity in that clone's own config, which is the requirement.
+    let local = std::fs::read_to_string(ws.join(".git/config")).unwrap();
+    assert!(
+        local.contains("fresh@example.invalid"),
+        "the identity must be in the clone's own config:\n{local}"
+    );
+}
+
+#[test]
+fn standing_up_twice_reports_the_workspace_was_already_there() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_src, root) = content_repo_and_root(dir.path());
+    let cfg = root.join("homma.toml");
+    let ws = dir.path().join("ws").join("fresh");
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
+        .args(["--workspace", ws.to_str().unwrap()])
+        .assert()
+        .success();
+
+    for _ in 0..2 {
+        bin()
+            .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
+            .current_dir(&root)
+            .assert()
+            .success();
+    }
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
+        .current_dir(&root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already there"));
+}
+
+#[test]
+fn standing_up_from_a_root_that_is_not_a_clone_is_refused() {
+    // The clone URL comes from the root's own origin. A root with none has
+    // nothing to derive it from, and guessing would clone the wrong thing.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("bare");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"content\"\n").unwrap();
+    let ws = dir.path().join("ws").join("fresh");
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
+        .args(["--workspace", ws.to_str().unwrap()])
+        .assert()
+        .success();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
+        .current_dir(&root)
+        .assert()
+        .failure();
+
+    assert!(!ws.exists(), "a refusal must leave nothing behind");
+}
