@@ -70,9 +70,14 @@ against the filesystem, and it is the only thing that can produce the
 **The proven surface is stated rather than assumed**, because ten review rounds
 each closed one route while a sentence here claimed the class was shut:
 
+- `Root::create_dir_all` and `link_memory` take a proven path, so neither can be
+  called without one. That is the whole of what the types enforce. An earlier
+  version of this bullet said a write computed from an unchecked path does not
+  compile, and a reviewer compiled a counterexample in one line: `std::fs`
+  accepts anything that is `AsRef<Path>`, which every path type here satisfies.
 - Every path `Layout` hands out is proven, and `prepare` and `write_definitions`
-  accept nothing else, so a write computed from an unchecked path does not
-  compile.
+  take those. That is a fact about these functions and not a property of the
+  crate, because nothing stops a new function taking a bare path.
 - The **body** of the memory symlink is proven too. It is a path the kernel
   follows, it was computed lexically between as-written paths while the link was
   created at its resolved location, and a link in the chain made the two disagree
@@ -87,6 +92,14 @@ creating one component at a time with the check between each, which is a larger
 change than any round so far has carried. Creation re-proves afterwards, which
 turns a silent escape into a loud one and is half of an answer rather than an
 answer.
+
+**What is closed, and the argument has been owed for three rounds.** Creating a
+directory cannot make a prefix outside the root, because a prefix is only created
+when it does not exist, and a path that does not exist resolves as its parent's
+resolution plus the remainder as written. So if the full path resolves inside the
+root, every prefix that gets created does too. The residue above is a race with a
+concurrent writer and nothing else, which is worth knowing, because the paragraph
+alone reads as though it were the only thing standing.
 
 **A workspace is refused when it sits inside another repository.** Not "under
 the workspace root", which is false: a workspace legitimately lives outside the
