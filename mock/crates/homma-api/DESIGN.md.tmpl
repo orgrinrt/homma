@@ -52,8 +52,11 @@ pushed on.
 
 ## Configuration
 
-One required key names the content repository. Everything else has a default
-homma will create and an override for a workspace whose convention differs.
+**No key is required.** The content repository defaults to `local`, meaning the
+configuration's own directory, which homma initialises if it is not a repository
+yet; a git URI names one elsewhere. Every path likewise has a default homma will
+create and an override for a workspace whose convention differs, so a directory
+holding an empty registry is already a workspace.
 Identities are blocks: a role, a handle, and whatever that role needs. A person
 needs a git identity and a workspace; a consultant needs neither.
 

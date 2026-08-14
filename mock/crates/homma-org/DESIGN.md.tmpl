@@ -36,12 +36,22 @@ as one clones an arbitrary repository and writes a participant's directories int
 whatever tree the operator was in. An explicit root still overrides, because
 standing a workspace up elsewhere on purpose is a real thing to do.
 
-**The clone URL comes from that root's `origin`, verified against
-`content_repo`.** Both facts exist, so both are used and a disagreement is refused
-naming each. A root whose origin does not name the content repository is not the
-workspace this configuration describes, and cloning from it is the defect the
-verification exists to catch. Where the root is not a repository at all there is
-nothing to derive from, and standing up is refused rather than guessed at.
+**The content repository is configured as a git URI, or as `local`, which is the
+default.** A URI because that is what a workspace is cloned from; configuring a
+name instead means resolving it into one, and the resolution has to come from
+somewhere, which the round that tried took from the root's own remote, a fact
+about the operator's shell rather than about the workspace.
+
+**`local` means the configuration's own directory is the content repository**,
+initialised if it is not one yet. That is the shape a workspace starts in before
+it has a remote, and it is why the key can be omitted entirely: a fresh directory
+with a registry in it is already a workspace. An existing repository is left
+alone rather than re-initialised, since standing up twice is the same answer.
+
+**The root's remote is then a cross-check rather than a source.** Two independent
+facts say which repository this is, so both are used and a disagreement is
+refused naming each. A root that is a clone of something else is not the
+workspace this configuration describes, and its tree is not ours to write in.
 
 **An existing workspace has its remote checked before it is skipped.** Standing up
 twice is the same answer only when what is already there is the right thing; a
