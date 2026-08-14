@@ -1,0 +1,58 @@
+# homma-api
+
+The vocabulary every other crate speaks. Types and the traits over them, and no
+I/O of any kind.
+
+## A record
+
+Everything homma stores is a record. A message, a task, a delivery cursor, an
+entry in a monitoring log: one shape, distinguished by what its kind says about
+it.
+
+Three fields are required of every record, because homma's own machinery reads
+them.
+
+**`id`** addresses it. **`kind`** names the declaration that governs it.
+**`provenance`** is a reference to whoever created it, and the standing of a
+record is derived from what that reference points at rather than stored beside it:
+a person's own reference is ratified, an agent's is agent output, a forge's is
+mapped and read-only. Storing the standing as well would let the two disagree,
+which is the whole reason it is derived.
+
+Everything else a record carries is declared by its kind.
+
+## A kind
+
+A kind is configuration, not code. It names the attributes a record of that kind
+has, their types, which are required, and whether records of that kind may be
+edited after they are written.
+
+That last flag is what lets correspondence and structural work share one engine.
+Messages declare themselves append-only and are never edited; tasks declare
+themselves mutable and change as work moves. Nothing about the store knows which
+is which, and a workspace that wants a third behaviour declares a third kind.
+
+## Attribute types
+
+Present, because something uses each:
+
+**`text`**, with a hint saying whether it is plain or carries markup.
+**`instant`**, a point in time. **`ref<ns>`**, a reference into a namespace, which
+is the one type that collapses several: a handle is a reference into the
+registry's namespace, a link to another record is a reference into that record's
+kind, and a forge reference is a reference into a forge's.
+
+Deliberately absent, and each for a reason rather than an oversight: a date
+distinct from an instant, a duration, a number, a decimal with declared precision,
+a recurrence, a fractional rank, and an ordered workflow with terminal and
+off-path states. Each is designed and none is needed by the first records that
+exist. Kinds being configuration means every one of them is additive when it
+arrives, so building them ahead of a consumer would fix a shape nothing has
+pushed on.
+
+## Configuration
+
+One required key names the content repository. Everything else has a default
+homma will create and an override for a workspace whose convention differs.
+Identities are blocks: a role, a handle, and whatever that role needs. A person
+needs a git identity and a workspace; a consultant needs neither.

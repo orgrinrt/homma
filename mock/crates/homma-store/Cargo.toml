@@ -1,0 +1,17 @@
+[package]
+name = "homma-store"
+version = "0.0.0"
+description = "Records on disk, and the only code that writes them"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+homma-api = { path = "../homma-api" }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
