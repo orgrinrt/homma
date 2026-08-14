@@ -58,6 +58,17 @@ twice is the same answer only when what is already there is the right thing; a
 workspace cloned from the wrong repository would otherwise be permanent, since a
 later run reports it already present and succeeds.
 
+**Two remotes name the same repository when their host, owner and name agree.**
+Comparing the last path segment alone treats a fork as its upstream and a mirror
+as the thing it mirrors, which is the ordinary case in a workspace keeping a
+public repository and a private one. A local path is compared as a path, resolved
+first, because two spellings of one directory are one directory.
+
+**A `local` root inside another repository's working tree is refused.** Nothing
+would otherwise stop a nested repository being initialised there, with a
+participant's directories landing in a tree belonging to somebody else, which the
+deny list forbids outright.
+
 **Setting the git identity in that clone's own configuration is the step whose
 absence is invisible.** Nothing fails, no test goes red, and the first sign is a
 commit landing under whoever the machine's global configuration names. So it is
