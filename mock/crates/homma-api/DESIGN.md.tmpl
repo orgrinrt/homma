@@ -62,11 +62,18 @@ needs a git identity and a workspace; a consultant needs neither.
 
 ## What the git contract promises
 
-**Every path handed to it is absolute.** A relative path resolves against
-whatever directory the process happens to be in, and the workspace root already
-stopped being derived from that for the same reason. A guard that walks upward
-from a relative path walks up from the process's directory instead of the
-intended one, and passes.
+**Every path handed to it is an `AbsPath`, a type that cannot be relative.** A
+relative path resolves against whatever directory the process happens to be in,
+so a guard walking upward from one walks up from the process's directory and
+passes, and a clone target that is one lands wherever the operator was standing.
+
+**The type is the point, and prose was tried first.** Stating the precondition in
+a comment means re-checking it at every call. Checking it at runtime in one
+implementation leaves the other six unchecked, which is what happened: three
+consecutive rounds each closed the route they were shown and left the next one
+open, and the runtime check that was added turned out to be unreachable in both
+fakes. A precondition in the signature is checked once, by the compiler, for every
+caller that will ever exist.
 
 **Absence is `None`, not an error.** Asked what a remote points at, a directory
 that is not a repository points at nothing; that is an answer, not a failure. An
