@@ -275,9 +275,10 @@ mod tests {
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
-        git.remotes
-            .borrow_mut()
-            .push((ws.clone(), "git@example.invalid:someone-else/content.git".into()));
+        git.remotes.borrow_mut().push((
+            ws.clone(),
+            "git@example.invalid:someone-else/content.git".into(),
+        ));
 
         let err = provision(&id, CONTENT, &git).unwrap_err();
         match err {

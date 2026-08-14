@@ -107,10 +107,9 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
             // Initialising there puts a repository inside a repository and
             // lands a participant's directories in a tree that is not ours,
             // which the deny list forbids outright.
-            if let Some(enclosing) = git
-                .enclosing_repo(root)
-                .map_err(|e| anyhow::anyhow!("looking for a repository above {}: {e}", root.display()))?
-            {
+            if let Some(enclosing) = git.enclosing_repo(root).map_err(|e| {
+                anyhow::anyhow!("looking for a repository above {}: {e}", root.display())
+            })? {
                 anyhow::bail!(
                     "{} sits inside the repository at {}. `content_repo = \"local\"` \
                      would initialise a repository inside that one and write \
