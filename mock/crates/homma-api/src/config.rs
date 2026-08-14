@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 pub enum Role {
     /// The human. The only source of ratification.
     King,
-    /// A staffing agent with a workspace, a memory and an identity of its own.
+    /// A standing agent with a workspace, a memory and an identity of its own.
     Hand,
     /// Dispatched for a question, never resident. Has memory, no workspace.
     Expert,
@@ -40,9 +40,13 @@ impl Role {
 
 /// Whether an identity that could own a workspace has somebody on it.
 ///
-/// Named staffing rather than staffing because *staffing* already means what a
-/// reference derives, one module over, and a vocabulary crate using one word for
-/// two concepts has failed at its only job.
+/// Named staffing rather than **standing**, because *standing* already means
+/// what a reference derives, one module over, and a vocabulary crate using one
+/// word for two concepts has failed at its only job.
+///
+/// The blind global replace that performed that rename corrupted this very
+/// comment into "named staffing rather than staffing because staffing already
+/// means", three words after the sentence above.
 ///
 /// The distinction between [`Staffing::Mapped`] and [`Staffing::Incomplete`] is
 /// the whole reason this is an enum rather than a list of absent fields: a mapped
@@ -435,7 +439,9 @@ handle = "silent"
         // left the whole suite green, so the fix for that finding was an
         // assertion with no measurement behind it. One case per field.
         let base = Workspace::parse(MINIMAL).unwrap();
-        let cases: Vec<(&str, fn(&mut Identity))> = vec![
+        /// A field's name, and the way to put a control character in it.
+        type Case = (&'static str, fn(&mut Identity));
+        let cases: Vec<Case> = vec![
             ("handle", |i| i.handle = "a\nb".into()),
             ("nickname", |i| i.nickname = Some("a\nb".into())),
             ("full_name", |i| i.full_name = Some("a\nb".into())),

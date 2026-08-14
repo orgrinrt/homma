@@ -4,6 +4,7 @@
 //! landed. The two are different jobs: that one arranges directories homma owns,
 //! this one runs git against a tree it does not.
 
+use crate::remote::same_repo;
 use homma_api::{Git, Identity};
 use std::path::PathBuf;
 
@@ -135,24 +136,6 @@ pub fn provision<G: Git>(
     Ok(Provisioned { root, cloned })
 }
 
-/// Whether two remote URLs name the same repository.
-///
-/// Compared by trailing path segment rather than textually, because the same
-/// repository is reachable as `git@host:owner/name.git`, `https://host/owner/name`
-/// and a local path, and refusing on spelling would refuse correct workspaces.
-pub fn same_repo(a: &str, b: &str) -> bool {
-    repo_name(a) == repo_name(b)
-}
-
-/// The repository's own name, from any URL shape.
-pub fn repo_name(url: &str) -> &str {
-    url.trim_end_matches('/')
-        .trim_end_matches(".git")
-        .rsplit(['/', ':'])
-        .next()
-        .unwrap_or(url)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +155,10 @@ mod tests {
     /// lives, because a fake would answer that question by construction.
     #[derive(Default)]
     struct FakeGit {
+        /// What `origin_url` answers for a given path. A fake answering one URL
+        /// for every path cannot enter the refusing arm, which is why the guard
+        /// shipped with no test.
+        remotes: std::cell::RefCell<Vec<(PathBuf, String)>>,
         existing: std::cell::RefCell<Vec<PathBuf>>,
         clones: std::cell::RefCell<Vec<(String, PathBuf)>>,
         identities: std::cell::RefCell<Vec<(PathBuf, String, String)>>,
@@ -209,8 +196,19 @@ mod tests {
         fn init(&self, _path: &Path) -> Result<(), Never> {
             Ok(())
         }
-        fn origin_url(&self, _path: &Path) -> Result<Option<String>, Never> {
-            Ok(Some("git@example.invalid:orgrinrt/content.git".into()))
+        fn enclosing_repo(&self, _path: &Path) -> Result<Option<PathBuf>, Never> {
+            Ok(None)
+        }
+        fn origin_url(&self, path: &Path) -> Result<Option<String>, Never> {
+            if let Some((_, url)) = self.remotes.borrow().iter().find(|(p, _)| p == path) {
+                return Ok(Some(url.clone()));
+            }
+            Ok(self
+                .clones
+                .borrow()
+                .iter()
+                .find(|(_, p)| p == path)
+                .map(|(u, _)| u.clone()))
         }
         fn identity(&self, path: &Path) -> Result<Option<(String, String)>, Never> {
             Ok(self
@@ -264,6 +262,75 @@ mod tests {
         );
     }
 
+    const CONTENT: &str = "git@example.invalid:orgrinrt/content.git";
+
+    #[test]
+    fn a_workspace_cloned_from_the_wrong_repository_is_refused_not_skipped() {
+        // The guard this round is named for. Deleting it entirely left the
+        // whole suite green, because the only test touching the skip path used
+        // a fake that answered the matching URL for every path, so the refusing
+        // arm was unreachable.
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().join("paja");
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+        git.existing.borrow_mut().push(ws.clone());
+        git.remotes
+            .borrow_mut()
+            .push((ws.clone(), "git@example.invalid:someone-else/content.git".into()));
+
+        let err = provision(&id, CONTENT, &git).unwrap_err();
+        match err {
+            ProvisionError::WrongRemote { expected, found } => {
+                assert_eq!(expected, CONTENT);
+                assert_eq!(
+                    found.as_deref(),
+                    Some("git@example.invalid:someone-else/content.git")
+                );
+            }
+            other => panic!("must refuse with the remote it found, got {other:?}"),
+        }
+        assert!(
+            git.identities.borrow().is_empty(),
+            "a refused workspace must not have an identity written into it"
+        );
+    }
+
+    #[test]
+    fn a_same_named_repository_under_another_owner_is_still_the_wrong_one() {
+        // Comparing the last path segment made these equal. For a fork or a
+        // mirror this is the ordinary case.
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().join("paja");
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+        git.existing.borrow_mut().push(ws.clone());
+        git.remotes
+            .borrow_mut()
+            .push((ws.clone(), "git@example.invalid:a-fork/content.git".into()));
+
+        assert!(matches!(
+            provision(&id, CONTENT, &git).unwrap_err(),
+            ProvisionError::WrongRemote { .. }
+        ));
+    }
+
+    #[test]
+    fn a_workspace_with_no_remote_at_all_is_refused_rather_than_adopted() {
+        // An existing directory that is a repository and points nowhere is not
+        // the content repository, and adopting it would be a guess.
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().join("paja");
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+        git.existing.borrow_mut().push(ws.clone());
+
+        match provision(&id, CONTENT, &git).unwrap_err() {
+            ProvisionError::WrongRemote { found, .. } => assert!(found.is_none()),
+            other => panic!("got {other:?}"),
+        }
+    }
+
     #[test]
     fn provisioning_a_workspace_that_already_has_the_repo_does_not_clone_over_it() {
         // Standing up twice is the same answer, and this is the half of that
@@ -273,8 +340,9 @@ mod tests {
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
+        git.remotes.borrow_mut().push((ws.clone(), CONTENT.into()));
 
-        let done = provision(&id, "git@example.invalid:orgrinrt/content.git", &git).unwrap();
+        let done = provision(&id, CONTENT, &git).unwrap();
         assert!(!done.cloned);
         assert!(
             git.clones.borrow().is_empty(),

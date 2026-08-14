@@ -43,6 +43,15 @@ pub trait Git {
     /// there to clone from until one exists.
     fn init(&self, path: &Path) -> Result<(), Self::Error>;
 
+    /// The repository whose working tree `path` sits inside, if any, found by
+    /// walking upward.
+    ///
+    /// `is_repo` only answers whether a path is itself a repository root, so a
+    /// directory nested inside somebody else's checkout looks free. Initialising
+    /// there produces a repository inside a repository and lands a participant's
+    /// directories in a tree that is not ours.
+    fn enclosing_repo(&self, path: &Path) -> Result<Option<std::path::PathBuf>, Self::Error>;
+
     /// The URL `path`'s `origin` remote points at, if it has one.
     ///
     /// This is where a content repository's clone URL comes from. homma runs

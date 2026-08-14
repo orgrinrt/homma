@@ -102,6 +102,24 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
         // The root itself is the content repository. On a fresh workspace it is
         // not a repository yet, and there is nothing to clone from until it is.
         if !git.is_repo(root) {
+            // `is_repo` answers only whether this path is a repository root, so
+            // a directory nested in somebody else's checkout looks free.
+            // Initialising there puts a repository inside a repository and
+            // lands a participant's directories in a tree that is not ours,
+            // which the deny list forbids outright.
+            if let Some(enclosing) = git
+                .enclosing_repo(root)
+                .map_err(|e| anyhow::anyhow!("looking for a repository above {}: {e}", root.display()))?
+            {
+                anyhow::bail!(
+                    "{} sits inside the repository at {}. `content_repo = \"local\"` \
+                     would initialise a repository inside that one and write \
+                     `{handle}`'s directories into its tree. Move the registry \
+                     out, or name a content repository explicitly.",
+                    root.display(),
+                    enclosing.display()
+                );
+            }
             git.init(root)
                 .map_err(|e| anyhow::anyhow!("initialising {}: {e}", root.display()))?;
         }
@@ -116,14 +134,14 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
             .map_err(|e| anyhow::anyhow!("reading the origin of {}: {e}", root.display()))?
         {
             anyhow::ensure!(
-                homma_org::provision::same_repo(&origin, &ws.content_repo),
+                homma_org::same_repo(&origin, &ws.content_repo),
                 "{} is a clone of `{}`, and this configuration describes the \
                  workspace for `{}`. Standing `{handle}` up here would write into \
                  the wrong tree. Run against the content repository's own clone, \
                  or pass --root.",
                 root.display(),
-                homma_org::provision::repo_name(&origin),
-                homma_org::provision::repo_name(&ws.content_repo)
+                homma_org::repo_name(&origin),
+                homma_org::repo_name(&ws.content_repo)
             );
         }
         ws.content_repo.clone()
@@ -166,6 +184,12 @@ pub fn append_entry(path: &Path, id: &Identity) -> Result<()> {
             id.handle
         )
     })?;
+
+    // Resolved first, because renaming over a symlink replaces the link with a
+    // regular file: the entry lands on the link, the file it pointed at never
+    // sees it, and the operator is left maintaining a registry that is silently
+    // stale beside a divergent copy.
+    let path = &std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
 
     // Write beside and rename. **This is not pinned by a test and cannot be at
     // this level**: what the rename buys is that a crash between the two leaves
@@ -283,6 +307,9 @@ domain = "rendering"
         }
         fn init(&self, _path: &Path) -> Result<(), Never> {
             Ok(())
+        }
+        fn enclosing_repo(&self, _path: &Path) -> Result<Option<PathBuf>, Never> {
+            Ok(None)
         }
         fn origin_url(&self, path: &Path) -> Result<Option<String>, Never> {
             // A cloned workspace reports what it was cloned from; anything else

@@ -668,3 +668,70 @@ fn a_local_root_that_is_already_a_repository_is_not_reinitialised() {
         "an existing repository must not be re-initialised"
     );
 }
+
+#[test]
+fn a_symlinked_registry_is_written_through_rather_than_replaced() {
+    // Renaming over a symlink replaces the link with a regular file: the entry
+    // lands on the link, the file it pointed at never sees it, and the operator
+    // maintains a registry that is silently stale beside a divergent copy.
+    let dir = tempfile::tempdir().unwrap();
+    let real_dir = dir.path().join("real");
+    let link_dir = dir.path().join("link");
+    std::fs::create_dir_all(&real_dir).unwrap();
+    std::fs::create_dir_all(&link_dir).unwrap();
+
+    let real = real_dir.join("homma.toml");
+    std::fs::write(&real, "content_repo = \"local\"\n").unwrap();
+    let link = link_dir.join("homma.toml");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    bin()
+        .args(["--config", link.to_str().unwrap(), "org", "add", "victim"])
+        .args(["--role", "hand"])
+        .assert()
+        .success();
+
+    assert!(
+        std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(),
+        "the link must survive being written through"
+    );
+    assert!(
+        std::fs::read_to_string(&real).unwrap().contains("org.victim"),
+        "the entry must reach the file the link points at"
+    );
+}
+
+#[test]
+fn a_local_root_inside_another_repository_is_refused() {
+    // Otherwise `local` initialises a repository inside somebody else's
+    // checkout and writes a participant's directories into their tree, which
+    // the deny list forbids outright.
+    let dir = tempfile::tempdir().unwrap();
+    let (_src, outer) = content_repo_and_root(dir.path());
+
+    let nested = outer.join("sub");
+    std::fs::create_dir_all(&nested).unwrap();
+    let cfg = nested.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    let ws = dir.path().join("hands").join("h");
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "h"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "h", "--git-email", "h@example.invalid"])
+        .args(["--workspace", ws.to_str().unwrap()])
+        .assert()
+        .success();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "h"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sits inside the repository"));
+
+    assert!(
+        !nested.join(".git").exists(),
+        "no repository may be initialised inside another one"
+    );
+    assert!(!ws.exists(), "and nothing may be cloned");
+}

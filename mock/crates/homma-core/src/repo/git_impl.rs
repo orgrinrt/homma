@@ -57,6 +57,21 @@ impl Git for GixGit {
             .map_err(|e| RepoError::Config(e.to_string()))
     }
 
+    fn enclosing_repo(&self, path: &Path) -> Result<Option<std::path::PathBuf>, Self::Error> {
+        // Walk upward from the first existing ancestor. The path itself may not
+        // exist yet, which is the ordinary case when standing one up.
+        let mut at = path.to_path_buf();
+        loop {
+            if at.join(".git").exists() {
+                return Ok(Some(at));
+            }
+            match at.parent() {
+                Some(p) if p != at => at = p.to_path_buf(),
+                _ => return Ok(None),
+            }
+        }
+    }
+
     fn origin_url(&self, path: &Path) -> Result<Option<String>, Self::Error> {
         let file = local_config(path)?;
         Ok(file
@@ -163,9 +178,12 @@ mod tests {
         // An empty list compares equal to an empty list, so the assertion below
         // would pass having checked nothing. Reported ok under
         // `env -u HOME -u XDG_CONFIG_HOME` before this line existed.
+        // Non-empty is not enough: `/etc/gitconfig` is pushed unconditionally
+        // and does not exist here, so the comparison ran over `[None]` and
+        // passed having checked nothing. At least one has to be a real file.
         assert!(
-            !globals.is_empty(),
-            "the comparison must have something to compare"
+            globals.iter().any(|p| p.exists()),
+            "no global configuration exists to compare against: {globals:?}"
         );
         let before: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
 
@@ -241,6 +259,36 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         source_repo(d.path());
         assert_eq!(GixGit.origin_url(d.path()).unwrap(), None);
+    }
+
+    #[test]
+    fn a_directory_inside_a_repository_reports_the_repository_above_it() {
+        let d = tempfile::tempdir().unwrap();
+        source_repo(d.path());
+        let nested = d.path().join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert_eq!(
+            GixGit.enclosing_repo(&nested).unwrap(),
+            Some(d.path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn a_directory_outside_any_repository_reports_none() {
+        let d = tempfile::tempdir().unwrap();
+        let free = d.path().join("free");
+        std::fs::create_dir_all(&free).unwrap();
+        assert_eq!(GixGit.enclosing_repo(&free).unwrap(), None);
+    }
+
+    #[test]
+    fn a_repository_root_reports_itself() {
+        let d = tempfile::tempdir().unwrap();
+        source_repo(d.path());
+        assert_eq!(
+            GixGit.enclosing_repo(d.path()).unwrap(),
+            Some(d.path().to_path_buf())
+        );
     }
 
     #[test]
