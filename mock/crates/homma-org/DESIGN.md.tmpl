@@ -106,10 +106,24 @@ holds, while the call it described does not stop there.
 
 **A workspace is refused when it sits inside another repository.** Not "under
 the workspace root", which is false: a workspace legitimately lives outside the
-content repository, and `~/Dev/clause-crew/paja` is the ordinary case. The
-property that matters is that creating one never writes into a tree belonging to
-somebody else, which is what the deny list forbids and what a relative `..` or a
-plainly absolute path both reach.
+content repository, and `~/Dev/clause-crew/paja` is the ordinary case.
+
+**And homma creates the workspace's own parent, never a chain of them.** One
+level is required, because gix will not create it and a clone into a path with no
+parent fails with an error that reads as a network fault. A chain was never
+required, and `create_dir_all` supplied one: a workspace configured at
+`somewhere/.claude/hands/paja` built `somewhere/.claude` on the way, three levels
+above the root when spelled with `..`.
+
+That is the same rule as the root, stated for the other directory homma creates.
+The two are separate because the workspace is deliberately outside the
+containment root, so no `Root` covers it and none can.
+
+**What neither rule reaches**, said here because an earlier version of this
+section claimed the deny list was satisfied and it was not: a workspace pointed
+at a directory that **already exists** inside somebody's home is still accepted.
+Refusing to build a path into a home is not the same as refusing to write into
+one, and the second wants a guard that knows where home is.
 
 The same question already had an answer, `enclosing_repo`, and it was being asked
 about the root instead of about the thing being created.
