@@ -13,7 +13,9 @@ use homma_api::{AbsPath, Root};
 
 fn main() {
     let root = Root::new(&AbsPath::new("/srv/ws").unwrap()).unwrap();
-    let proven = root.contain(&AbsPath::new("/srv/ws/hands").unwrap()).unwrap();
+    let proven = root
+        .contain(&AbsPath::new("/srv/ws/hands").unwrap())
+        .unwrap();
 
     // Each of these compiled through `Deref` and produced an unproven path.
     let _ = proven.join("escape");
