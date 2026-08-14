@@ -47,6 +47,16 @@ impl Git for GixGit {
         })
     }
 
+    fn init(&self, path: &Path) -> Result<(), Self::Error> {
+        std::fs::create_dir_all(path).map_err(|e| RepoError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+        gix::init(path)
+            .map(|_| ())
+            .map_err(|e| RepoError::Config(e.to_string()))
+    }
+
     fn origin_url(&self, path: &Path) -> Result<Option<String>, Self::Error> {
         let file = local_config(path)?;
         Ok(file
@@ -150,6 +160,13 @@ mod tests {
         // needs an unsafe call; the requirement is that the real global file
         // does not change, so that is what is asserted, directly.
         let globals = global_config_paths();
+        // An empty list compares equal to an empty list, so the assertion below
+        // would pass having checked nothing. Reported ok under
+        // `env -u HOME -u XDG_CONFIG_HOME` before this line existed.
+        assert!(
+            !globals.is_empty(),
+            "the comparison must have something to compare"
+        );
         let before: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
 
         let src = tempfile::tempdir().unwrap();
@@ -178,9 +195,13 @@ mod tests {
         );
     }
 
-    /// Every place git would look for a global configuration.
+    /// Every place git would look for a configuration that is not a
+    /// repository's own.
     fn global_config_paths() -> Vec<std::path::PathBuf> {
-        let mut out = Vec::new();
+        let mut out = vec![std::path::PathBuf::from("/etc/gitconfig")];
+        if let Ok(explicit) = std::env::var("GIT_CONFIG_GLOBAL") {
+            out.push(std::path::PathBuf::from(explicit));
+        }
         if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
             out.push(Path::new(&xdg).join("git").join("config"));
         }

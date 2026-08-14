@@ -28,6 +28,13 @@ pub enum ProvisionError<E> {
     Git(E),
     /// The workspace's parent directory could not be created.
     Parent(std::io::Error),
+    /// A workspace already exists and was cloned from something else.
+    WrongRemote {
+        expected: String,
+        found: Option<String>,
+    },
+    /// The identity did not survive being written.
+    IdentityNotSet { found: Option<(String, String)> },
 }
 
 impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
@@ -37,6 +44,21 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
             ProvisionError::NoIdentity => write!(f, "the entry carries no git identity"),
             ProvisionError::Git(e) => write!(f, "git: {e}"),
             ProvisionError::Parent(e) => write!(f, "creating the parent directory: {e}"),
+            ProvisionError::WrongRemote { expected, found } => write!(
+                f,
+                "the workspace is already a clone of {}, not of {expected}. \
+                 Standing up again will not fix it; move or remove that \
+                 workspace first.",
+                found.as_deref().unwrap_or("nothing with an origin")
+            ),
+            ProvisionError::IdentityNotSet { found } => write!(
+                f,
+                "the identity did not survive being written; the clone reports {}",
+                match found {
+                    Some((n, e)) => format!("{n} <{e}>"),
+                    None => "none".to_string(),
+                }
+            ),
         }
     }
 }
@@ -73,7 +95,19 @@ pub fn provision<G: Git>(
     };
 
     let cloned = if git.is_repo(&root) {
-        false
+        // Checked rather than trusted. A workspace cloned from the wrong
+        // repository is otherwise permanent: a later run reports it already
+        // present and exits 0, so the mistake never surfaces again.
+        let found = git.origin_url(&root).map_err(ProvisionError::Git)?;
+        match found {
+            Some(ref url) if same_repo(url, content_repo_url) => false,
+            other => {
+                return Err(ProvisionError::WrongRemote {
+                    expected: content_repo_url.to_string(),
+                    found: other,
+                })
+            }
+        }
     } else {
         // gix will not create the parent, and a clone into a path whose parent
         // is missing fails with an error about opening data, which reads as a
@@ -88,7 +122,35 @@ pub fn provision<G: Git>(
     };
     git.set_identity(&root, name, email)
         .map_err(ProvisionError::Git)?;
+
+    // Read back, because the design says a stood-up clone reports its own email
+    // and nothing was checking. `Git::identity` existed for exactly this and had
+    // no caller outside its own tests, which is how a write that never reached
+    // disk survived a round.
+    match git.identity(&root).map_err(ProvisionError::Git)? {
+        Some((ref n, ref e)) if n == name && e == email => {}
+        found => return Err(ProvisionError::IdentityNotSet { found }),
+    }
+
     Ok(Provisioned { root, cloned })
+}
+
+/// Whether two remote URLs name the same repository.
+///
+/// Compared by trailing path segment rather than textually, because the same
+/// repository is reachable as `git@host:owner/name.git`, `https://host/owner/name`
+/// and a local path, and refusing on spelling would refuse correct workspaces.
+pub fn same_repo(a: &str, b: &str) -> bool {
+    repo_name(a) == repo_name(b)
+}
+
+/// The repository's own name, from any URL shape.
+pub fn repo_name(url: &str) -> &str {
+    url.trim_end_matches('/')
+        .trim_end_matches(".git")
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or(url)
 }
 
 #[cfg(test)]
@@ -142,6 +204,9 @@ mod tests {
                 name.to_string(),
                 email.to_string(),
             ));
+            Ok(())
+        }
+        fn init(&self, _path: &Path) -> Result<(), Never> {
             Ok(())
         }
         fn origin_url(&self, _path: &Path) -> Result<Option<String>, Never> {

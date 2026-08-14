@@ -36,6 +36,13 @@ pub trait Git {
     /// commits carrying the wrong author are already made.
     fn set_identity(&self, path: &Path, name: &str, email: &str) -> Result<(), Self::Error>;
 
+    /// Create a repository at `path`, which is not one yet.
+    ///
+    /// Used when the content repository is configured as `local`: the workspace
+    /// is its own content repository, and on a fresh machine there is nothing
+    /// there to clone from until one exists.
+    fn init(&self, path: &Path) -> Result<(), Self::Error>;
+
     /// The URL `path`'s `origin` remote points at, if it has one.
     ///
     /// This is where a content repository's clone URL comes from. homma runs

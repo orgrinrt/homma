@@ -78,7 +78,7 @@ mod tests {
     use super::*;
 
     const ORG: &str = r#"
-content_repo = "clause-dev"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 
 [org.op]
 role = "king"

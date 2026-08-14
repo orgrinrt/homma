@@ -20,6 +20,7 @@ pub mod gates;
 pub mod migrate;
 pub mod org;
 pub mod repo;
+pub mod stand;
 pub mod status;
 pub(crate) mod util;
 pub mod verify;
@@ -94,15 +95,23 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // in the registry survives being added to. Written through a
                     // temporary and renamed, so a short write cannot leave a
                     // registry nothing can parse.
-                    org::append_entry(&path, &id)?;
+                    stand::append_entry(&path, &id)?;
 
                     println!("{} {}", id.handle, org::describe(&staffing));
                 }
                 OrgOp::Up { handle, root } => {
-                    let root = root
-                        .clone()
-                        .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let out = org::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
+                    // The configuration file's own directory, never the current
+                    // one. The current directory says where somebody happened to
+                    // be standing; treating that as the workspace cloned an
+                    // arbitrary repository and wrote a participant's directories
+                    // into whatever tree the operator was in.
+                    let root = root.clone().unwrap_or_else(|| {
+                        path.parent()
+                            .filter(|p| !p.as_os_str().is_empty())
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    });
+                    let out = stand::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
                     println!("{} {}", out.handle, out.home.display());
                     println!(
                         "  workspace  {} ({})",

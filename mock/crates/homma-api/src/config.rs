@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 pub enum Role {
     /// The human. The only source of ratification.
     King,
-    /// A standing agent with a workspace, a memory and an identity of its own.
+    /// A staffing agent with a workspace, a memory and an identity of its own.
     Hand,
     /// Dispatched for a question, never resident. Has memory, no workspace.
     Expert,
@@ -40,7 +40,7 @@ impl Role {
 
 /// Whether an identity that could own a workspace has somebody on it.
 ///
-/// Named staffing rather than standing because *standing* already means what a
+/// Named staffing rather than staffing because *staffing* already means what a
 /// reference derives, one module over, and a vocabulary crate using one word for
 /// two concepts has failed at its only job.
 ///
@@ -190,12 +190,30 @@ impl Default for Paths {
     }
 }
 
-/// The one thing homma requires of a workspace.
+/// The literal meaning "this directory is the content repository".
+pub const LOCAL: &str = "local";
+
+fn local() -> String {
+    LOCAL.to_string()
+}
+
+/// What homma needs of a workspace, all of which has a default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
-    /// The repository holding workspace metadata and content. The only required
-    /// key: homma cares about neither its identity nor its contents, only that
-    /// it is named.
+    /// Where the repository holding workspace metadata and content lives.
+    ///
+    /// A git URI, or the literal `local`, which is the default.
+    ///
+    /// A URI rather than a name, because it is what a workspace is cloned from.
+    /// A name would have to be resolved into one, and the round that tried
+    /// resolved it from whatever repository the operator happened to be standing
+    /// in, which cloned that repository instead.
+    ///
+    /// `local` means the configuration's own directory **is** the content
+    /// repository, initialised if it is not one yet. That is the shape a
+    /// workspace starts in before it has a remote, so it is the default and
+    /// needs no key at all.
+    #[serde(default = "local")]
     pub content_repo: String,
     #[serde(default)]
     pub paths: Paths,
@@ -256,11 +274,11 @@ mod tests {
     use super::*;
 
     const MINIMAL: &str = r#"
-content_repo = "clause-dev"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 "#;
 
     const WITH_ORG: &str = r#"
-content_repo = "clause-dev"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 
 [paths]
 hands = "custom/hands"
@@ -292,7 +310,10 @@ handle = "proof"
     #[test]
     fn one_key_is_enough() {
         let w = Workspace::parse(MINIMAL).expect("should parse");
-        assert_eq!(w.content_repo, "clause-dev");
+        assert_eq!(
+            w.content_repo,
+            "git@example.invalid:orgrinrt/clause-dev.git"
+        );
         assert!(w.org.is_empty());
     }
 
@@ -319,7 +340,7 @@ handle = "proof"
         assert!(proof.workspace.is_none());
         assert!(proof.git_name.is_none());
         // Complete as an entry, and still nothing to stand up, which is a
-        // different statement and is what standing reports.
+        // different statement and is what staffing reports.
         assert_eq!(proof.staffing(), Staffing::NoWorkspace);
     }
 
@@ -342,7 +363,7 @@ handle = "proof"
 
     #[test]
     fn a_mapped_hand_is_not_reported_as_incomplete() {
-        // The whole reason standing is an enum. A mapped entry lacks exactly
+        // The whole reason staffing is an enum. A mapped entry lacks exactly
         // the fields an unfinished one lacks, so a list of gaps reports a
         // decision as a mistake, and a registry of a dozen mapped entries
         // reports a dozen broken ones.
@@ -354,13 +375,21 @@ handle = "proof"
 
     #[test]
     fn an_entry_that_says_nothing_about_staffing_is_mapped_rather_than_broken() {
-        // The default has to fall this way: a roster is mapped first and
-        // staffed later, so silence means the boundary is drawn and nobody has
-        // been put on it.
-        // Via TOML, because the property claimed is serde's default and a
-        // constructor literal asserted against itself would say nothing.
-        let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.org["rendering"].staffing(), Staffing::Mapped);
+        // Through TOML, over an entry no other test touches, because the
+        // property claimed is serde's default and both a constructor literal
+        // and a fixture another test already asserts on would say nothing.
+        let w = Workspace::parse(
+            r#"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+
+[org.silent]
+role = "hand"
+handle = "silent"
+"#,
+        )
+        .unwrap();
+        assert!(!w.org["silent"].staffed, "the default must be unstaffed");
+        assert_eq!(w.org["silent"].staffing(), Staffing::Mapped);
     }
 
     #[test]
@@ -380,7 +409,7 @@ handle = "proof"
 
     #[test]
     fn staffing_a_role_that_owns_no_workspace_changes_nothing() {
-        // Setting the flag on a King must not manufacture a path to standing
+        // Setting the flag on a King must not manufacture a path to staffing
         // one up, since the role is what decides whether a workspace exists at
         // all and the flag only says whether one is intended.
         let mut king = Identity::new(Role::King, "op");
@@ -398,6 +427,36 @@ handle = "proof"
         let bad = w.unsafe_strings();
         assert_eq!(bad.len(), 1);
         assert_eq!(bad[0], ("paja".to_string(), "nickname"));
+    }
+
+    #[test]
+    fn every_field_that_reaches_generated_output_is_checked() {
+        // Dropping `workspace`, `session` and the `repos` loop from the check
+        // left the whole suite green, so the fix for that finding was an
+        // assertion with no measurement behind it. One case per field.
+        let base = Workspace::parse(MINIMAL).unwrap();
+        let cases: Vec<(&str, fn(&mut Identity))> = vec![
+            ("handle", |i| i.handle = "a\nb".into()),
+            ("nickname", |i| i.nickname = Some("a\nb".into())),
+            ("full_name", |i| i.full_name = Some("a\nb".into())),
+            ("domain", |i| i.domain = Some("a\nb".into())),
+            ("git_name", |i| i.git_name = Some("a\nb".into())),
+            ("git_email", |i| i.git_email = Some("a\nb".into())),
+            ("workspace", |i| i.workspace = Some("a\nb".into())),
+            ("session", |i| i.session = Some("a\nb".into())),
+            ("repos", |i| i.repos = vec!["a\nb".into()]),
+        ];
+        for (field, break_it) in cases {
+            let mut w = base.clone();
+            let mut id = Identity::new(Role::Hand, "victim");
+            break_it(&mut id);
+            w.org.insert("victim".into(), id);
+            let bad = w.unsafe_strings();
+            assert!(
+                bad.iter().any(|(_, f)| *f == field),
+                "`{field}` reaches generated output and is not checked"
+            );
+        }
     }
 
     #[test]
