@@ -363,6 +363,45 @@ mod tests {
     }
 
     #[test]
+    fn descending_cannot_leave_the_path_it_descends_from() {
+        // `join` inherited `PathBuf::join`, where an absolute argument discards
+        // the receiver and `..` climbs past it, which is how a configured
+        // `hands = "../victim/stolen"` wrote into another repository's tree.
+        //
+        // **This needs its own test and a measurement is why.** `RelPath`
+        // refuses such a value at the configuration boundary, so loosening this
+        // back to `PathBuf::join` fails nothing else in the suite: it is defence
+        // in depth, and defence nothing pins is defence somebody deletes.
+        let base = AbsPath::new("/srv/ws").unwrap();
+        assert_eq!(
+            base.join("../escape").as_path(),
+            Path::new("/srv/ws/escape")
+        );
+        assert_eq!(
+            base.join("../../../etc").as_path(),
+            Path::new("/srv/ws/etc")
+        );
+        assert_eq!(
+            base.join("/etc/passwd").as_path(),
+            Path::new("/srv/ws/etc/passwd")
+        );
+        assert_eq!(base.join("a/../../b").as_path(), Path::new("/srv/ws/b"));
+    }
+
+    #[test]
+    fn anchoring_may_leave_because_that_is_what_it_is_for() {
+        // The other half of the split, asserted so nobody closes it by
+        // symmetry. A workspace legitimately lives outside the content
+        // repository, so climbing here is correct; what guards it is the
+        // containment check against the filesystem, not the arithmetic.
+        let base = AbsPath::new("/srv/ws").unwrap();
+        assert_eq!(
+            AbsPath::resolve(&base, "../out/paja").as_path(),
+            Path::new("/srv/out/paja")
+        );
+    }
+
+    #[test]
     fn a_current_directory_component_is_dropped() {
         assert_eq!(AbsPath::new("/a/./b").unwrap().as_path(), Path::new("/a/b"));
     }
