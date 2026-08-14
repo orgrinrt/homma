@@ -104,7 +104,8 @@ fn a_relative_workspace_anchors_at_the_root_and_not_at_the_process() {
 fn a_workspace_inside_the_content_repository_is_refused() {
     // A workspace is a clone of the content repository, so it cannot live in
     // its working tree: that is a repository inside a repository, which is the
-    // thing the deny list forbids and which `..` reached from the other side.
+    // thing every guard here exists to stop, and which `..` reached from the
+    // other side.
     let dir = tempfile::tempdir().unwrap();
     let (_src, root) = content_repo_and_root(dir.path());
     let cfg = root.join("homma.toml");
@@ -122,9 +123,42 @@ fn a_workspace_inside_the_content_repository_is_refused() {
         .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("sits inside the repository"));
+        // Refused lexically now, before `git.init` makes the root a repository.
+        // The previous wording came from the repository check, which only fired
+        // after that initialisation had already happened.
+        .stderr(predicate::str::contains("inside the workspace root"));
 
     assert!(!root.join("hands").exists(), "and nothing is created");
+}
+
+#[test]
+fn a_refusal_does_not_initialise_the_root_on_its_way_out() {
+    // With `content_repo = "local"` the root becomes a repository partway
+    // through, and the workspace check ran afterwards: it refused correctly,
+    // having already created the `.git` that made the refusal true, against the
+    // comment three lines above it saying a refusal leaves nothing half-built.
+    //
+    // A plain directory as the root, so an initialisation would show.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    add_hand(&cfg, "r", root.join("hands").join("rel").to_str().unwrap());
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("inside the workspace root"));
+
+    assert!(
+        !root.join(".git").exists(),
+        "nothing may be created on the way to a refusal"
+    );
+    assert!(!root.join("hands").exists());
+    assert!(!root.join(".shared").exists());
 }
 
 #[test]
@@ -343,4 +377,48 @@ fn a_bare_repository_ancestor_is_seen() {
 
     assert!(!root.join(".shared").exists());
     assert!(!root.join("hand").exists());
+}
+
+#[test]
+fn a_configured_path_cannot_write_outside_the_workspace() {
+    // The seventh instance of one class. The guard was on the root, and the
+    // writes are at `root.join(paths.hands)` and `root.join(paths.agents)`,
+    // where `paths` was unvalidated configuration. Both an escaping and an
+    // absolute value put a Hand's directories and definitions into an unrelated
+    // repository's tree, exit 0.
+    let dir = tempfile::tempdir().unwrap();
+    let victim = dir.path().join("victim");
+    repo_at(&victim);
+
+    for bad in [
+        "../victim/stolen-hands".to_string(),
+        victim.join("abs-hands").to_string_lossy().into_owned(),
+    ] {
+        let root = dir.path().join(format!("root{}", bad.len()));
+        std::fs::create_dir_all(&root).unwrap();
+        let cfg = root.join("homma.toml");
+        std::fs::write(
+            &cfg,
+            format!("content_repo = \"local\"\n\n[paths]\nhands = \"{bad}\"\n"),
+        )
+        .unwrap();
+
+        // Refused when the configuration is parsed, so every command fails,
+        // not only the one that would have written.
+        bin()
+            .args(["--config", cfg.to_str().unwrap(), "org", "list"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("leaves the workspace"));
+    }
+
+    assert!(
+        std::fs::read_dir(&victim).unwrap().count() <= 2,
+        "nothing may be written into the victim: {:?}",
+        std::fs::read_dir(&victim)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .collect::<Vec<_>>()
+    );
 }

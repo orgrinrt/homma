@@ -142,7 +142,7 @@ fn a_local_root_that_is_already_a_repository_is_not_reinitialised() {
 fn a_local_root_inside_another_repository_is_refused() {
     // Otherwise `local` initialises a repository inside somebody else's
     // checkout and writes a participant's directories into their tree, which
-    // the deny list forbids outright.
+    // every guard here exists to stop.
     let dir = tempfile::tempdir().unwrap();
     let (_src, outer) = content_repo_and_root(dir.path());
 

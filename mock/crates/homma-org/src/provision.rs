@@ -60,7 +60,7 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
                 f,
                 "{workspace} sits inside the repository at {enclosing}. Creating \
                  a workspace there would write into a tree that is not ours, \
-                 which the deny list forbids. Name a workspace outside it."
+                 Name a workspace outside it."
             ),
             ProvisionError::IdentityNotSet { found } => write!(
                 f,

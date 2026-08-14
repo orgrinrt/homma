@@ -17,9 +17,10 @@
 //! What a relative path costs, concretely: it resolves against whatever
 //! directory the process happens to be in. A guard walking upward from one walks
 //! up from there and finds the wrong answer; a clone target that is one lands in
-//! whatever repository the operator was standing in, which the deny list
-//! forbids outright.
+//! whatever repository the operator was standing in, which is what every guard
+//! in this crate exists to stop.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -60,7 +61,12 @@ impl AbsPath {
     /// The process's own directory, for the one place a caller genuinely means
     /// "here".
     pub fn cwd() -> std::io::Result<Self> {
-        std::env::current_dir().map(Self)
+        // Through the same constructor as everything else. It skipped both the
+        // check and the normalisation, which is harmless on every system that
+        // returns a resolved absolute path and is still a hole in the perimeter
+        // of the one guarantee this type carries.
+        let here = std::env::current_dir()?;
+        Self::new(here).map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     pub fn as_path(&self) -> &Path {
@@ -71,14 +77,75 @@ impl AbsPath {
         self.0
     }
 
-    /// Joining keeps it absolute, so a child never has to be re-checked.
+    /// Descend into this path. **The result is always underneath it.**
+    ///
+    /// A parent component clamps here rather than at the filesystem root, and an
+    /// absolute argument is treated as relative rather than replacing the
+    /// receiver, which is what `Path::join` does and what let a configured
+    /// `hands = "../victim/stolen"` write into another repository's tree.
+    ///
+    /// This is descending, not anchoring. Anchoring a path the caller is
+    /// entitled to put anywhere is [`AbsPath::resolve`], which may leave and is
+    /// guarded against the filesystem instead.
     pub fn join(&self, path: impl AsRef<Path>) -> Self {
-        Self(normalise(&self.0.join(path)))
+        use std::path::Component;
+        let mut out = self.0.clone();
+        for c in path.as_ref().components() {
+            match c {
+                Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+                Component::ParentDir => {
+                    // Clamped at the receiver. Popping past it is what leaving
+                    // means, and nothing descending has business doing it.
+                    if out != self.0 {
+                        out.pop();
+                    }
+                }
+                Component::Normal(n) => out.push(n),
+            }
+        }
+        Self(out)
     }
 
     /// The parent, still absolute. `None` at the filesystem root.
     pub fn parent(&self) -> Option<Self> {
         self.0.parent().map(|p| Self(p.to_path_buf()))
+    }
+
+    /// This path with its **existing prefix** resolved and the rest left as
+    /// written.
+    ///
+    /// `canonical` fails on a path that does not exist, and a path being created
+    /// never does, so comparing one against a resolved path never matches: on a
+    /// system where `/var` is a symlink to `/private/var`, a canonical root and
+    /// an unresolved target are never in a containment relation even when one
+    /// plainly contains the other. That mismatch has now produced the same
+    /// defect twice, so the resolution lives here rather than in whichever
+    /// caller last needed it.
+    pub fn resolved(&self) -> std::io::Result<Self> {
+        let mut existing = self.clone();
+        let mut rest: Vec<std::ffi::OsString> = Vec::new();
+        loop {
+            if existing.exists() {
+                break;
+            }
+            match (
+                existing.file_name().map(|n| n.to_os_string()),
+                existing.parent(),
+            ) {
+                (Some(name), Some(parent)) => {
+                    rest.push(name);
+                    existing = parent;
+                }
+                // Nothing on the way up exists, which an absolute path with a
+                // root cannot manage, but is not worth an unwrap.
+                _ => return Ok(self.clone()),
+            }
+        }
+        let mut out = existing.canonical()?;
+        for name in rest.into_iter().rev() {
+            out = out.join(name);
+        }
+        Ok(out)
     }
 
     /// Symlinks and `..` resolved.
@@ -146,6 +213,83 @@ impl fmt::Display for AbsPath {
         write!(f, "{}", self.0.display())
     }
 }
+
+/// A relative path that cannot escape whatever it is joined to.
+///
+/// Configuration supplies these, and configuration is the surface an escape
+/// arrives on: `hands = "../victim/stolen"` and `hands = "/etc"` both reached
+/// another tree before this existed. Refused **when the configuration is
+/// parsed**, so the failure is reported where somebody can act on it rather than
+/// where a file lands.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct RelPath(PathBuf);
+
+impl RelPath {
+    pub fn new(path: impl Into<PathBuf>) -> Result<Self, NotContained> {
+        let path = path.into();
+        if path.is_absolute() {
+            return Err(NotContained(path));
+        }
+        // Not merely "contains no `..`": `a/../b` is fine and stays inside.
+        // What is refused is a path whose normalisation leaves.
+        let mut depth: i32 = 0;
+        for c in path.components() {
+            match c {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    depth -= 1;
+                    if depth < 0 {
+                        return Err(NotContained(path));
+                    }
+                }
+                std::path::Component::Normal(_) => depth += 1,
+                _ => return Err(NotContained(path)),
+            }
+        }
+        Ok(Self(path))
+    }
+
+    pub fn as_path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for RelPath {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl fmt::Display for RelPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.display())
+    }
+}
+
+impl<'de> Deserialize<'de> for RelPath {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(d)?;
+        RelPath::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A configured path that would leave the tree it is joined to.
+#[derive(Debug, PartialEq, Eq)]
+pub struct NotContained(pub PathBuf);
+
+impl fmt::Display for NotContained {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} leaves the workspace it would be joined to. A configured path \
+             is relative and stays inside; an absolute one, or one climbing past \
+             the root with `..`, addresses a tree that is not ours",
+            self.0.display()
+        )
+    }
+}
+
+impl std::error::Error for NotContained {}
 
 /// The one way building an [`AbsPath`] fails.
 #[derive(Debug, PartialEq, Eq)]

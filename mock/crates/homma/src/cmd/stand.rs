@@ -25,8 +25,7 @@ fn refuse_if_nested<G: Git>(git: &G, path: &AbsPath, what: &str) -> Result<()> {
     if let Some(enclosing) = enclosing {
         anyhow::bail!(
             "{path} sits inside the repository at {enclosing}, and it is the \
-             {what}. Writing there would put files in a tree that is not ours, \
-             which the deny list forbids."
+             {what}. Writing there would put files in a tree that is not ours."
         );
     }
     Ok(())
@@ -106,6 +105,32 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // workspace: `prepare` and `write_definitions` both write here.
     refuse_if_nested(git, root, "workspace root")?;
 
+    // Lexically, and before `git.init` rather than after. A workspace is a
+    // clone of the content repository and cannot live inside it, and with
+    // `content_repo = "local"` the root becomes a repository partway through:
+    // checking afterwards refused correctly, having already created the `.git`
+    // that made the refusal true, against the comment below saying a refusal
+    // leaves nothing half-built.
+    let workspace = AbsPath::resolve(
+        root,
+        id.workspace
+            .as_ref()
+            .expect("a staffed identity carries a workspace"),
+    );
+    // Both sides resolved, because one of them is canonical and the other is
+    // whatever the registry said. Comparing those directly is what let this
+    // check fall through to the repository check, which only fires after the
+    // root has been initialised.
+    let resolved_workspace = workspace
+        .resolved()
+        .with_context(|| format!("resolving {workspace}"))?;
+    anyhow::ensure!(
+        !resolved_workspace.starts_with(root.as_path()),
+        "{workspace} is inside the workspace root at {root}. A workspace is a \
+         clone of the content repository and cannot live in its tree; name one \
+         outside it."
+    );
+
     let url = if ws.content_repo == homma_api::config::LOCAL {
         // The root itself is the content repository. On a fresh workspace it is
         // not a repository yet, and there is nothing to clone from until it is.
@@ -114,7 +139,7 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
             // a directory nested in somebody else's checkout looks free.
             // Initialising there puts a repository inside a repository and
             // lands a participant's directories in a tree that is not ours,
-            // which the deny list forbids outright.
+            // which is what every guard here exists to stop.
             git.init(root)
                 .map_err(|e| anyhow::anyhow!("initialising {}: {e}", root.display()))?;
         }
@@ -141,17 +166,6 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
         }
         ws.content_repo.clone()
     };
-
-    // Resolved against the root, which is what a registry saying
-    // `workspace = "hands/rel"` always meant. Used raw it was a path relative to
-    // whatever directory the process happened to be in, so the clone landed
-    // there and wrote a nested repository into that tree.
-    let workspace = AbsPath::resolve(
-        root,
-        id.workspace
-            .as_ref()
-            .expect("a staffed identity carries a workspace"),
-    );
 
     // Before the directories, so a refusal here leaves nothing half-built.
     let provisioned = provision(id, &workspace, &url, git)
@@ -242,7 +256,7 @@ domain = "rendering"
         // Reproduced before this existed: standing up from an unrelated member
         // clone cloned that member repository into the Hand's workspace and
         // wrote the Hand's directories into the member clone's own tree, which
-        // deny item 2 forbids outright. It exited 0.
+        // every guard here exists to stop. It exited 0.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::somewhere_else();
         let err = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap_err();

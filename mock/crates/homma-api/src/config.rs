@@ -4,6 +4,7 @@
 //! outlives whatever was running it, so starting one again restores a
 //! participant rather than creating a new one.
 
+use crate::path::RelPath;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -175,21 +176,25 @@ impl Identity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Paths {
-    pub hands: String,
-    pub experts: String,
-    pub channels: String,
-    pub agents: String,
-    pub index: String,
+    pub hands: RelPath,
+    pub experts: RelPath,
+    pub channels: RelPath,
+    pub agents: RelPath,
+    pub index: RelPath,
 }
 
 impl Default for Paths {
     fn default() -> Self {
+        // Every one of these is a literal in this file, so `expect` here says
+        // "this source is wrong" rather than "the configuration is wrong",
+        // which is the only way it can fail.
+        let rel = |s: &str| RelPath::new(s).expect("a default path is relative and contained");
         Self {
-            hands: ".shared/hands".into(),
-            experts: ".shared/experts".into(),
-            channels: ".shared/channels".into(),
-            agents: ".claude/agents".into(),
-            index: ".shared/.index".into(),
+            hands: rel(".shared/hands"),
+            experts: rel(".shared/experts"),
+            channels: rel(".shared/channels"),
+            agents: rel(".claude/agents"),
+            index: rel(".shared/.index"),
         }
     }
 }
@@ -324,16 +329,41 @@ handle = "proof"
     #[test]
     fn every_path_defaults_and_creating_none_of_them_is_valid() {
         let w = Workspace::parse(MINIMAL).unwrap();
-        assert_eq!(w.paths.hands, ".shared/hands");
-        assert_eq!(w.paths.channels, ".shared/channels");
+        assert_eq!(w.paths.hands.as_path(), std::path::Path::new(".shared/hands"));
+        assert_eq!(w.paths.channels.as_path(), std::path::Path::new(".shared/channels"));
     }
 
     #[test]
     fn an_override_replaces_only_what_it_names() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.paths.hands, "custom/hands");
+        assert_eq!(w.paths.hands.as_path(), std::path::Path::new("custom/hands"));
         // The others keep their defaults rather than vanishing.
-        assert_eq!(w.paths.experts, ".shared/experts");
+        assert_eq!(w.paths.experts.as_path(), std::path::Path::new(".shared/experts"));
+    }
+
+    #[test]
+    fn a_configured_path_that_leaves_the_workspace_is_refused_when_parsed() {
+        // The seventh instance of one class: `hands` and `agents` are joined
+        // onto the workspace root and were unvalidated strings, so both an
+        // escaping and an absolute value wrote a Hand's directories and
+        // definitions into an unrelated repository's tree, exit 0.
+        for bad in ["../victim/stolen", "/etc/passwd-ish", "a/../../out"] {
+            let toml = format!(
+                "content_repo = \"local\"\n\n[paths]\nhands = \"{bad}\"\n"
+            );
+            assert!(
+                Workspace::parse(&toml).is_err(),
+                "`{bad}` must be refused where somebody can act on it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_configured_path_that_stays_inside_is_accepted() {
+        // Including one that climbs and comes back, which is contained.
+        let toml = "content_repo = \"local\"\n\n[paths]\nhands = \"a/../b/hands\"\n";
+        let w = Workspace::parse(toml).expect("contained paths are fine");
+        assert_eq!(w.paths.hands.as_path(), std::path::Path::new("a/../b/hands"));
     }
 
     #[test]

@@ -63,7 +63,10 @@ impl Git for GixGit {
         // repository above it, and the walk answers about a place nobody asked
         // about. The path being created does not exist yet, so what is resolved
         // is the longest prefix that does, and the rest is re-appended.
-        let subject = resolved_prefix(path)?;
+        let subject = path.resolved().map_err(|e| RepoError::Io {
+            path: path.clone().into_path_buf(),
+            source: e,
+        })?;
         let mut at = subject.clone();
         loop {
             // A path that is itself a repository is not inside one. Compared
@@ -126,41 +129,6 @@ fn is_repo_dir(path: &AbsPath) -> bool {
     path.join("HEAD").exists() && path.join("objects").is_dir() && path.join("refs").is_dir()
 }
 
-/// The path with its existing prefix resolved, and the rest left as written.
-///
-/// `canonicalize` fails outright on a path that does not exist, and the path
-/// being created never does. Walking up to the first ancestor that exists,
-/// resolving that, and re-appending the remainder gives the real ancestry
-/// without requiring the target to be there.
-fn resolved_prefix(path: &AbsPath) -> Result<AbsPath, RepoError> {
-    let mut existing = path.clone();
-    let mut rest: Vec<std::ffi::OsString> = Vec::new();
-    loop {
-        if existing.exists() {
-            break;
-        }
-        match (
-            existing.file_name().map(|n| n.to_os_string()),
-            existing.parent(),
-        ) {
-            (Some(name), Some(parent)) => {
-                rest.push(name);
-                existing = parent;
-            }
-            // Nothing on the way up exists, which cannot happen for an absolute
-            // path with a root, but is not worth an unwrap.
-            _ => return Ok(path.clone()),
-        }
-    }
-    let mut out = existing.canonical().map_err(|e| RepoError::Io {
-        path: existing.clone().into_path_buf(),
-        source: e,
-    })?;
-    for name in rest.into_iter().rev() {
-        out = out.join(name);
-    }
-    Ok(out)
-}
 
 /// Where a repository keeps its own configuration.
 fn config_path(repo: &AbsPath) -> AbsPath {
