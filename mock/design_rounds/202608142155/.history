@@ -1,0 +1,50 @@
+487d329 chore: lock the src changelist
+37b9c67 fix: prove the symlink body, which the kernel follows like any other path
+19e8581 test: the link body escapes a root carrying a symlink, red
+86b6097 src: open the changelist for the link body
+34344ec chore: lock the doc changelist
+d6a294c docs: state which surfaces are proven instead of claiming all are
+0c5c74e doc: open the changelist for the totality claim
+c6f5fac topic: a link body is a path and nothing proved it
+321e56b chore: close the dangling-link round
+4a84753 chore: lock the src changelist
+c7c4baa test: reformat the compile-fail case and re-record its diagnostic
+eccd6ca fix: follow a dangling symlink instead of taking it as an absent path
+6067aee test: the dangling-symlink case, red
+501bd6f src: open the changelist for link resolution
+099d815 chore: lock the doc changelist
+8e65c91 doc: open and close an empty doc phase
+ab4e4bd topic: a dangling symlink is not an absent path
+7737677 chore: close the containment round
+52ea8c9 chore: lock the src changelist
+2a25f1c fix: prove containment on the write rather than on a path passed in
+7c0c24d src: open the changelist for the containment type
+7914332 chore: lock the doc changelist
+46c6dc6 doc: open and close an empty doc phase
+b883c06 topic: the guard belongs on the write
+fdee2d3 chore: close the pin round
+ceabaf8 chore: lock the src changelist
+ef993fd test: pin the join clamp, which only defence in depth guarded
+d55c5d1 chore: open the src changelist
+caab422 chore: lock the doc changelist
+73d35aa chore: open an empty doc changelist
+8a86489 chore: open a round for the unpinned join clamp
+898020f chore: close the join round
+4c09fc4 chore: lock the src changelist
+9477b09 style: land the formatting from the same round
+535d2f1 fix: a configured path cannot leave the workspace it is joined to
+9bda969 chore: open the src changelist
+97f1e89 chore: lock the doc changelist
+2f02bfd docs: descending and anchoring are different operations
+aff46eb chore: open the doc changelist
+47a7303 chore: open a round for the join and resolve split
+f4d3897 chore: close the filesystem round
+d3d63f0 chore: lock the src changelist
+2602bc9 style: land the formatting from the same round
+00cbc89 fix: ask the filesystem about containment, on every path that writes
+ac08664 chore: open the src changelist
+e77fce9 chore: lock the doc changelist
+2a69130 docs: containment is asked of the filesystem
+6269668 chore: open the doc changelist
+810387f chore: open a round for filesystem containment
+edcfe1d chore: close the containment round
