@@ -318,7 +318,6 @@ fn standing_up_changes_no_global_git_configuration() {
     assert_eq!(before, after, "no global git configuration may change");
 }
 
-
 #[test]
 fn a_symlinked_registry_is_written_through_rather_than_replaced() {
     // Renaming over a symlink replaces the link with a regular file: the entry
@@ -355,6 +354,3 @@ fn a_symlinked_registry_is_written_through_rather_than_replaced() {
         "the entry must reach the file the link points at"
     );
 }
-
-
-

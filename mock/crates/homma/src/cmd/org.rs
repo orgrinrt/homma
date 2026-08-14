@@ -42,8 +42,7 @@ pub fn load(path: &Path) -> Result<Workspace> {
     // route `add` never saw, and a handle is a directory name: one carrying
     // `..` reaches the layout and addresses a tree outside the workspace.
     for handle in ws.org.keys() {
-        check_handle(handle)
-            .with_context(|| format!("in {}: `[org.{handle}]`", path.display()))?;
+        check_handle(handle).with_context(|| format!("in {}: `[org.{handle}]`", path.display()))?;
     }
     for (key, id) in &ws.org {
         anyhow::ensure!(

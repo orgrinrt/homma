@@ -164,7 +164,6 @@ mod tests {
     use super::*;
     use crate::cmd::fake_git::{abs, FakeGit, CONTENT};
 
-
     const ORG: &str = r#"
 content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 

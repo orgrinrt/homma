@@ -300,7 +300,9 @@ mod tests {
         let ws = abs(d.path().join("victim").join("stolen"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
-        git.enclosures.borrow_mut().push((ws.clone(), victim.clone()));
+        git.enclosures
+            .borrow_mut()
+            .push((ws.clone(), victim.clone()));
 
         match provision(&id, &ws, CONTENT, &git).unwrap_err() {
             ProvisionError::InsideAnotherRepo {

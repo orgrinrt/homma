@@ -215,18 +215,12 @@ mod tests {
             AbsPath::resolve(&base, "../out/rel").as_path(),
             Path::new("/srv/out/rel")
         );
-        assert_eq!(
-            base.join("a/../b").as_path(),
-            Path::new("/srv/ws/b")
-        );
+        assert_eq!(base.join("a/../b").as_path(), Path::new("/srv/ws/b"));
     }
 
     #[test]
     fn a_current_directory_component_is_dropped() {
-        assert_eq!(
-            AbsPath::new("/a/./b").unwrap().as_path(),
-            Path::new("/a/b")
-        );
+        assert_eq!(AbsPath::new("/a/./b").unwrap().as_path(), Path::new("/a/b"));
     }
 
     #[test]
