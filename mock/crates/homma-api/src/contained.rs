@@ -215,6 +215,63 @@ mod tests {
         );
     }
 
+    // The ninth review's reproduction, and the shape the test above does not
+    // reach. A link whose target does not exist is not an absent path: every
+    // std write API opens with `O_CREAT` and follows it, so the write lands at
+    // the target. `Path::exists()` answers `false` here, which is what made the
+    // old resolution take the path as written.
+    #[test]
+    fn a_dangling_symlink_is_resolved_rather_than_taken_as_written() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        let victim = d.path().join("victim");
+        std::fs::create_dir_all(root_dir.join("agents")).unwrap();
+        std::fs::create_dir_all(&victim).unwrap();
+        // The target does not exist. The link does.
+        std::os::unix::fs::symlink("../../victim/r.md", root_dir.join("agents").join("r.md"))
+            .unwrap();
+
+        let root = Root::new(&abs(&root_dir)).unwrap();
+        let through = root.as_abs().join("agents").join("r.md");
+
+        let err = root
+            .contain(&through)
+            .expect_err("a dangling link still redirects the write that follows it");
+        assert!(
+            err.to_string().contains("outside the workspace root"),
+            "the message has to say what happened: {err}"
+        );
+    }
+
+    #[test]
+    fn a_dangling_symlink_with_an_absolute_target_is_resolved_too() {
+        // The worse half: an absolute target reaches anywhere, including the
+        // paths the deny list names.
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        let elsewhere = d.path().join("elsewhere");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("gone.md"), root_dir.join("r.md")).unwrap();
+
+        let root = Root::new(&abs(&root_dir)).unwrap();
+        assert!(root.contain(&root.as_abs().join("r.md")).is_err());
+    }
+
+    #[test]
+    fn a_symlink_cycle_is_reported_rather_than_looped() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        std::os::unix::fs::symlink("b", root_dir.join("a")).unwrap();
+        std::os::unix::fs::symlink("a", root_dir.join("b")).unwrap();
+
+        let root = Root::new(&abs(&root_dir)).unwrap();
+        // Either answer is acceptable except hanging, so the assertion is that
+        // it returns at all. A cycle inside the root is not an escape.
+        let _ = root.contain(&root.as_abs().join("a"));
+    }
+
     #[test]
     fn a_root_that_does_not_exist_yet_still_contains_its_own_children() {
         let d = tempfile::tempdir().unwrap();

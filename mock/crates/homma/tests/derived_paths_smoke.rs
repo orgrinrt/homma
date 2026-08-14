@@ -114,3 +114,40 @@ fn a_workspace_inside_an_unrelated_repository_leaves_no_git_behind() {
         "and nothing may be created in the stranger's tree"
     );
 }
+
+#[test]
+fn a_dangling_symlink_on_a_definition_path_cannot_carry_the_write_out() {
+    // The ninth review's reproduction, through the shipped binary. The shape the
+    // test above does not reach: the link's *target* does not exist, so
+    // `Path::exists()` on the link answers false and the old resolution took the
+    // path as written. `fs::write` opens with `O_CREAT` and follows the link
+    // anyway, so the definition landed in the other tree.
+    //
+    // With an absolute target this reaches another Hand's workspace, which is
+    // deny item two, or `~/.claude`, which is item three.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    let victim = dir.path().join("victim");
+    std::fs::create_dir_all(root.join(".claude").join("agents")).unwrap();
+    std::fs::create_dir_all(&victim).unwrap();
+    std::os::unix::fs::symlink(
+        victim.join("r.md"),
+        root.join(".claude").join("agents").join("r.md"),
+    )
+    .unwrap();
+
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("outside the workspace root"));
+
+    assert!(
+        !victim.join("r.md").exists(),
+        "the definition must not be written through the dangling link"
+    );
+}
