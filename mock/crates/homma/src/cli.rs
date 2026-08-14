@@ -457,11 +457,76 @@ mod tests {
     }
 }
 
+/// The roles, at the command line.
+///
+/// A separate enum from the registry's own so that the command surface can name
+/// them without the vocabulary crate depending on clap.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+#[value(rename_all = "lower")]
+pub enum RoleArg {
+    King,
+    Hand,
+    Expert,
+    General,
+}
+
+impl From<RoleArg> for homma_api::Role {
+    fn from(r: RoleArg) -> Self {
+        match r {
+            RoleArg::King => homma_api::Role::King,
+            RoleArg::Hand => homma_api::Role::Hand,
+            RoleArg::Expert => homma_api::Role::Expert,
+            RoleArg::General => homma_api::Role::General,
+        }
+    }
+}
+
 /// `homma org` operations.
 #[derive(Debug, Subcommand)]
 pub enum OrgOp {
-    /// List every identity, with what any incomplete entry is missing.
+    /// List every identity, with where each stands.
     List,
+
+    /// Add an identity to the registry.
+    ///
+    /// Written **mapped** by default: an entry records that a domain is taken
+    /// before anybody is put on it. `--staffed`, with a workspace and a git
+    /// identity, is what says somebody has been.
+    Add {
+        /// What everything else addresses it by. Becomes a directory name and a
+        /// file name, so it is restricted to `[a-z0-9-_]`.
+        handle: String,
+
+        /// king, hand, expert or general.
+        #[arg(long)]
+        role: RoleArg,
+
+        /// The short name a human uses.
+        #[arg(long)]
+        nickname: Option<String>,
+
+        /// The full form, for when the short one is too familiar.
+        #[arg(long)]
+        full_name: Option<String>,
+
+        /// What it is good at. A default for routing, never a partition.
+        #[arg(long)]
+        domain: Option<String>,
+
+        /// Meant to have a workspace. Without this the entry is mapped.
+        #[arg(long)]
+        staffed: bool,
+
+        #[arg(long)]
+        git_name: Option<String>,
+
+        #[arg(long)]
+        git_email: Option<String>,
+
+        /// Where its work happens.
+        #[arg(long)]
+        workspace: Option<String>,
+    },
 
     /// Create an identity's workspace directories, memory link and definitions.
     ///

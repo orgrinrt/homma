@@ -9,9 +9,11 @@
 //! Design rationale lives in the `project-homma-repo-ops-design` memory note.
 
 pub mod error;
+pub mod git_impl;
 pub mod gix_impl;
 pub mod ops;
 
 pub use error::RepoError;
+pub use git_impl::GixGit;
 pub use gix_impl::GixRepo;
 pub use ops::{canonical_refspecs, Branch, MirrorOpts, Remote, RepoOps, Status, TrackingStatus};

@@ -1,0 +1,37 @@
+2560aa9 chore: lock the src changelist
+220fc7b style: land the formatting from the same round
+22ba8fd fix: wire the clone and identity into standing up
+40bb303 chore: open the src changelist
+7b7205e docs: say where the clone url comes from
+37c86a5 chore: open the doc changelist
+f3f51f2 chore: open a round for the unwired mechanism
+358f178 chore: close the autofix round
+88b9f74 chore: lock the src changelist
+4d2e7ff style: land the formatting the commit hook produced
+3bce1fe chore: open the src changelist
+5359559 chore: lock the doc changelist
+0d47253 chore: open a round for the autofix output
+b38ffbd chore: close the round
+d8d4b0c chore: lock the src changelist
+5df85a2 feat: distinguish mapped from staffed, and add an identity by command
+6d134ac docs: state mapped versus staffed and what standing up owns
+adce3a2 chore: adopt mockspace and add the record vocabulary, store and registry
+4fc3a78 fix: exempt the mockspace tool repo from the adoption gate
+9360863 feat: accept launcher pin as mockspace adoption marker
+285f645 chore: pin nightly toolchain to nightly-2026-05-28
+6b0feb2 chore: add restrict-main-merges workflow
+b728cb7 feat: section-aware alias detection and bash e2e tests
+051deb5 feat: harden multi-hook filter to preserve hand-authored hooks
+6cb03c8 feat: drop per-repo rule aggregation; keep hook aggregation only
+b2be8a6 refactor: drop IntoMockspaceConfig bridge per mockspace v2 schema split
+2cfd575 feat(homma): workspace .claude aggregation + git-ops gate (#454 phase 2 + 3) (#10)
+5463978 feat(homma): agent + docs commands phase 1 (#454) (#9)
+12876f3 feat(homma): migrate + archive commands (#452) (#8)
+574981e feat(homma): CLI shape with status, verify, repo, forge commands (#7)
+536901c feat(homma-core): GitHubClient impl (REST v3) (#6)
+9c4b008 feat(homma-core): ForgejoClient + switch mockspace deps to git refs (#5)
+9f13181 feat(homma-core): Forge trait + URL composition (#448) (#4)
+bd57ec7 feat(homma-core): gix-backed RepoOps with clone/mirror/branch/status (#447) (#3)
+1bea055 feat: homma.toml schema, serde parser, IntoMockspaceConfig bridge (#2)
+7af0059 feat: bootstrap homma cargo workspace (#1)
+2c613b2 Initial commit
