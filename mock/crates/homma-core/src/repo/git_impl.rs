@@ -139,7 +139,10 @@ fn resolved_prefix(path: &AbsPath) -> Result<AbsPath, RepoError> {
         if existing.exists() {
             break;
         }
-        match (existing.file_name().map(|n| n.to_os_string()), existing.parent()) {
+        match (
+            existing.file_name().map(|n| n.to_os_string()),
+            existing.parent(),
+        ) {
             (Some(name), Some(parent)) => {
                 rest.push(name);
                 existing = parent;
@@ -324,7 +327,10 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
         // Resolved on both sides: on macOS the tempdir is reached through a
         // symlink, so comparing the spellings would test the platform.
-        let found = GixGit.enclosing_repo(&abs(nested.clone())).unwrap().unwrap();
+        let found = GixGit
+            .enclosing_repo(&abs(nested.clone()))
+            .unwrap()
+            .unwrap();
         assert_eq!(
             std::fs::canonicalize(found).unwrap(),
             std::fs::canonicalize(d.path()).unwrap()
