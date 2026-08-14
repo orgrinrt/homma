@@ -21,6 +21,19 @@
 
 use crate::path::AbsPath;
 
+/// What a clone is configured to commit as.
+///
+/// Named `CommitIdentity` rather than `Identity` because `config::Identity` is
+/// the registry entry and these are different things: one is who a participant
+/// is, the other is what a particular clone will stamp on a commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitIdentity {
+    pub author_name: String,
+    pub author_email: String,
+    pub committer_name: String,
+    pub committer_email: String,
+}
+
 /// The git operations a workspace lifecycle performs.
 pub trait Git {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -35,25 +48,29 @@ pub trait Git {
     /// Clone `url` into `dest`, which does not yet exist as a repository.
     fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Self::Error>;
 
-    /// Set the author identity in **`path`'s own configuration**.
+    /// Set the clone's own author and committer, name and address for each.
     ///
-    /// Never the global one. An identity written globally is invisible until a
-    /// commit lands under whoever the machine belongs to, by which point the
-    /// commits carrying the wrong author are already made.
-    /// Set the clone's own author and committer.
+    /// **Two identities, because one clone legitimately carries two.** The
+    /// record settles it for Vouti: the author stays op, and the committer is a
+    /// tagged address on op's own so it "just works" while distinguishing what
+    /// the crew wrote.
     ///
-    /// **Two addresses, because one clone legitimately carries two identities.**
-    /// The record settles it for Vouti: the author stays op, and the committer is
-    /// a tagged address on op's own so it "just works" while distinguishing what
-    /// the crew wrote. Git expresses that as `author.email` and `committer.email`
-    /// separately, and a single-email signature cannot say it.
+    /// **Six keys, and the names are not optional extras.** Git resolves an
+    /// identity from `author.name`, `author.email`, `committer.name` and
+    /// `committer.email`, falling back to `user.name` and `user.email` for
+    /// whichever is unset, and it does so **across scopes**: a global
+    /// `author.name` beats a local `user.name`. Writing only the `user.*` pair
+    /// therefore left a provisioned workspace committing under whatever the
+    /// machine's global configuration said, on any machine that has one.
     ///
-    /// `committer` equal to `author` is the ordinary case and every other entry.
+    /// A committer equal to the author is the ordinary case and every entry but
+    /// one.
     fn set_identity(
         &self,
         path: &AbsPath,
         name: &str,
         author: &str,
+        committer_name: &str,
         committer: &str,
     ) -> Result<(), Self::Error>;
 
@@ -94,5 +111,11 @@ pub trait Git {
     ///
     /// Present so setting it can be asserted rather than assumed. A write with
     /// no read is a write nobody checks.
-    fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Self::Error>;
+    /// The clone's configured author and committer, read back.
+    ///
+    /// **Four values, not two.** It returned the author alone, so a
+    /// `set_identity` that wrote the committer nowhere passed the guard that
+    /// exists because a write which never reached disk survived a round. The
+    /// write half was widened and the read half was not.
+    fn identity(&self, path: &AbsPath) -> Result<Option<CommitIdentity>, Self::Error>;
 }

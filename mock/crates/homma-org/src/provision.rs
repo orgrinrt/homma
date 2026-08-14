@@ -40,7 +40,9 @@ pub enum ProvisionError<E> {
         found: Option<String>,
     },
     /// The identity did not survive being written.
-    IdentityNotSet { found: Option<(String, String)> },
+    IdentityNotSet {
+        found: Option<homma_api::CommitIdentity>,
+    },
     /// The workspace would sit inside a repository that is not it.
     InsideAnotherRepo {
         workspace: homma_api::AbsPath,
@@ -81,7 +83,10 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
                 f,
                 "the identity did not survive being written; the clone reports {}",
                 match found {
-                    Some((n, e)) => format!("{n} <{e}>"),
+                    Some(i) => format!(
+                        "author {} <{}>, committer {} <{}>",
+                        i.author_name, i.author_email, i.committer_name, i.committer_email
+                    ),
                     None => "none".to_string(),
                 }
             ),
@@ -194,15 +199,27 @@ pub fn provision<G: Git>(
     // fallback lives here rather than in the type so that "the same" and
     // "deliberately the same" stay distinguishable in the registry file.
     let committer = id.committer_email.as_deref().unwrap_or(email);
-    git.set_identity(&root, name, email, committer)
+    let committer_name = id.committer_name.as_deref().unwrap_or(name);
+    git.set_identity(&root, name, email, committer_name, committer)
         .map_err(ProvisionError::Git)?;
 
     // Read back, because the design says a stood-up clone reports its own email
     // and nothing was checking. `Git::identity` existed for exactly this and had
     // no caller outside its own tests, which is how a write that never reached
     // disk survived a round.
+    //
+    // **All four, not the author's two.** The comparison checked the author and
+    // ignored the committer, so a `set_identity` that wrote the committer
+    // nowhere passed the guard whose entire purpose is that a write which never
+    // landed does not.
+    let want = homma_api::CommitIdentity {
+        author_name: name.to_string(),
+        author_email: email.to_string(),
+        committer_name: committer_name.to_string(),
+        committer_email: committer.to_string(),
+    };
     match git.identity(&root).map_err(ProvisionError::Git)? {
-        Some((ref n, ref e)) if n == name && e == email => {}
+        Some(ref got) if *got == want => {}
         found => return Err(ProvisionError::IdentityNotSet { found }),
     }
 
@@ -240,7 +257,13 @@ mod tests {
         enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
         existing: std::cell::RefCell<Vec<AbsPath>>,
         clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
-        identities: std::cell::RefCell<Vec<(AbsPath, String, String, String)>>,
+        identities: std::cell::RefCell<Vec<(AbsPath, String, String, String, String)>>,
+        /// When set, `set_identity` records the author and drops the committer.
+        ///
+        /// The shape the widened read-back exists for. Without it, narrowing the
+        /// comparison back to the author failed no test, which is the same
+        /// unpinned-guard class the widening was fixing.
+        committer_writes_vanish: std::cell::Cell<bool>,
         /// When set, `set_identity` reports success and records nothing.
         ///
         /// The read-back exists precisely because a write that never reached
@@ -277,8 +300,20 @@ mod tests {
             path: &AbsPath,
             name: &str,
             email: &str,
+            committer_name: &str,
             committer: &str,
         ) -> Result<(), Never> {
+            if self.committer_writes_vanish.get() {
+                // Reports success, records the author, loses the committer.
+                self.identities.borrow_mut().push((
+                    path.clone(),
+                    name.to_string(),
+                    email.to_string(),
+                    name.to_string(),
+                    email.to_string(),
+                ));
+                return Ok(());
+            }
             if self.identity_writes_vanish.get() {
                 // Reports success, records nothing. Exactly the shape the
                 // read-back was written for.
@@ -288,6 +323,7 @@ mod tests {
                 path.clone(),
                 name.to_string(),
                 email.to_string(),
+                committer_name.to_string(),
                 committer.to_string(),
             ));
             Ok(())
@@ -317,14 +353,19 @@ mod tests {
                 .find(|(_, p)| p == path)
                 .map(|(u, _)| u.clone()))
         }
-        fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Never> {
+        fn identity(&self, path: &AbsPath) -> Result<Option<homma_api::CommitIdentity>, Never> {
             Ok(self
                 .identities
                 .borrow()
                 .iter()
                 .rev()
-                .find(|(p, _, _, _)| p == path)
-                .map(|(_, n, e, _)| (n.clone(), e.clone())))
+                .find(|(p, _, _, _, _)| p == path)
+                .map(|(_, n, e, cn, ce)| homma_api::CommitIdentity {
+                    author_name: n.clone(),
+                    author_email: e.clone(),
+                    committer_name: cn.clone(),
+                    committer_email: ce.clone(),
+                }))
         }
     }
 
@@ -347,7 +388,12 @@ mod tests {
         assert_eq!(git.clones.borrow().len(), 1);
         assert_eq!(
             git.identity(&ws).unwrap(),
-            Some(("paja".into(), "paja@example.invalid".into()))
+            Some(homma_api::CommitIdentity {
+                author_name: "paja".into(),
+                author_email: "paja@example.invalid".into(),
+                committer_name: "paja".into(),
+                committer_email: "paja@example.invalid".into(),
+            })
         );
     }
 
@@ -444,12 +490,17 @@ mod tests {
         provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
 
         let written = git.identities.borrow();
-        let (_, name, author, committer) = written.last().expect("an identity was set");
+        let (_, name, author, committer_name, committer) =
+            written.last().expect("an identity was set");
         assert_eq!(name, "Onni Armas");
         assert_eq!(author, "ort@hiisi.digital", "the author stays op");
         assert_eq!(
             committer, "orgrinrt+vouti@ikiuni.dev",
             "and the committer is what distinguishes the crew's writes"
+        );
+        assert_eq!(
+            committer_name, "Onni Armas",
+            "the committer name defaults to the author's when the entry names none"
         );
     }
 
@@ -466,8 +517,30 @@ mod tests {
         provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
 
         let written = git.identities.borrow();
-        let (_, _, author, committer) = written.last().expect("an identity was set");
+        let (_, _, author, _, committer) = written.last().expect("an identity was set");
         assert_eq!(author, committer);
+    }
+
+    // Pins the widened read-back. Narrowing the comparison back to the author
+    // failed nothing before this existed, which is the same class the widening
+    // was written to close: a guard improved and left unpinned.
+    #[test]
+    fn a_committer_that_never_reached_the_clone_is_caught() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("vouti"));
+        let mut id = staffed_hand(&ws);
+        id.git_name = Some("Onni Armas".into());
+        id.git_email = Some("ort@hiisi.digital".into());
+        id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+        let git = FakeGit::default();
+        git.committer_writes_vanish.set(true);
+
+        let err = provision(&id, &ws, "git@example.invalid:x/y.git", &git)
+            .expect_err("a committer the clone never received is a write that did not land");
+        assert!(
+            matches!(err, ProvisionError::IdentityNotSet { .. }),
+            "must refuse for the right reason: {err}"
+        );
     }
 
     #[test]

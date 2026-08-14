@@ -361,7 +361,12 @@ domain = "rendering"
         assert_eq!(git.cloned.borrow().len(), 1);
         assert_eq!(
             git.identity(&out.workspace).unwrap(),
-            Some(("paja".into(), "paja@example.invalid".into())),
+            Some(homma_api::CommitIdentity {
+                author_name: "paja".into(),
+                author_email: "paja@example.invalid".into(),
+                committer_name: "paja".into(),
+                committer_email: "paja@example.invalid".into(),
+            }),
             "the identity must be set in the clone, or the Hand commits as the machine's owner"
         );
     }

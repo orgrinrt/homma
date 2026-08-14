@@ -118,6 +118,14 @@ pub struct Identity {
     /// indistinguishable in the file, and the file is what a human reads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub committer_email: Option<String>,
+    /// The name commits are *committed* by, when it differs from the author's.
+    ///
+    /// Shipped a round late. U-3.2 names an optional committer name and email;
+    /// only the email arrived, and git treats `committer.name` as a first-class
+    /// key that a global one can override, so the omission was a hole rather
+    /// than a simplification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub committer_name: Option<String>,
     /// Where its work happens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
@@ -141,6 +149,7 @@ impl Identity {
             git_name: None,
             git_email: None,
             committer_email: None,
+            committer_name: None,
             workspace: None,
             session: None,
             repos: Vec::new(),
@@ -262,33 +271,62 @@ impl Workspace {
     /// newline in a nickname writes an arbitrary key. That is how a Hand could
     /// grant its own twin the memory key the design withholds structurally, by
     /// editing its own entry in a file every participant can write.
-    pub fn unsafe_strings(&self) -> Vec<(String, &'static str)> {
+    pub fn unsafe_strings(&self) -> Vec<(String, String)> {
         let mut bad = Vec::new();
         for (handle, id) in &self.org {
-            for (field, value) in [
-                ("handle", Some(&id.handle)),
-                ("nickname", id.nickname.as_ref()),
-                ("full_name", id.full_name.as_ref()),
-                ("domain", id.domain.as_ref()),
-                ("git_name", id.git_name.as_ref()),
-                ("git_email", id.git_email.as_ref()),
-                // Unreachable from the command line until `org add` existed.
-                // A surface that can write a field is a surface that can write
-                // a bad one into it.
-                ("workspace", id.workspace.as_ref()),
-                ("session", id.session.as_ref()),
-            ] {
-                if let Some(v) = value {
-                    if v.chars().any(|c| c.is_control()) {
-                        bad.push((handle.clone(), field));
-                    }
-                }
-            }
-            if id.repos.iter().any(|r| r.chars().any(|c| c.is_control())) {
-                bad.push((handle.clone(), "repos"));
-            }
+            // **Derived from the serialised form rather than enumerated.**
+            //
+            // The list used to be written out field by field, and the field
+            // added in the round before this one did not reach it. So did the
+            // one before that: the test guarding against the first omission,
+            // `every_field_that_reaches_generated_output_is_checked`, is itself
+            // a hand-written list and could not see the second.
+            //
+            // Serialising sees every field, including the ones nobody has added
+            // yet, which is the only version of this that does not need somebody
+            // to remember. It costs one serialisation per entry on a file read.
+            let Ok(value) = toml::Value::try_from(id) else {
+                // A value that will not serialise cannot be written to the
+                // registry either, so there is nothing here to check. The
+                // failure surfaces where the file is written.
+                continue;
+            };
+            walk_for_control_characters(&value, "", &mut |field| {
+                bad.push((handle.clone(), field.to_string()));
+            });
         }
         bad
+    }
+}
+
+/// Every string anywhere in a serialised value, with its dotted path, reported
+/// when it carries a control character.
+///
+/// Recursive because a field may be a table or an array, and a check that
+/// handled only the flat case would be the same omission one level down.
+fn walk_for_control_characters(value: &toml::Value, path: &str, found: &mut impl FnMut(&str)) {
+    match value {
+        toml::Value::String(s) => {
+            if s.chars().any(|c| c.is_control()) {
+                found(path);
+            }
+        }
+        toml::Value::Table(t) => {
+            for (k, v) in t {
+                let next = if path.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{path}.{k}")
+                };
+                walk_for_control_characters(v, &next, found);
+            }
+        }
+        toml::Value::Array(a) => {
+            for v in a {
+                walk_for_control_characters(v, path, found);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -487,39 +525,58 @@ handle = "silent"
         w.org.insert("paja".into(), id);
         let bad = w.unsafe_strings();
         assert_eq!(bad.len(), 1);
-        assert_eq!(bad[0], ("paja".to_string(), "nickname"));
+        assert_eq!(bad[0], ("paja".to_string(), "nickname".to_string()));
     }
 
     #[test]
-    fn every_field_that_reaches_generated_output_is_checked() {
-        // Dropping `workspace`, `session` and the `repos` loop from the check
-        // left the whole suite green, so the fix for that finding was an
-        // assertion with no measurement behind it. One case per field.
-        let base = Workspace::parse(MINIMAL).unwrap();
-        /// A field's name, and the way to put a control character in it.
-        type Case = (&'static str, fn(&mut Identity));
-        let cases: Vec<Case> = vec![
-            ("handle", |i| i.handle = "a\nb".into()),
-            ("nickname", |i| i.nickname = Some("a\nb".into())),
-            ("full_name", |i| i.full_name = Some("a\nb".into())),
-            ("domain", |i| i.domain = Some("a\nb".into())),
-            ("git_name", |i| i.git_name = Some("a\nb".into())),
-            ("git_email", |i| i.git_email = Some("a\nb".into())),
-            ("workspace", |i| i.workspace = Some("a\nb".into())),
-            ("session", |i| i.session = Some("a\nb".into())),
-            ("repos", |i| i.repos = vec!["a\nb".into()]),
-        ];
-        for (field, break_it) in cases {
-            let mut w = base.clone();
-            let mut id = Identity::new(Role::Hand, "victim");
-            break_it(&mut id);
-            w.org.insert("victim".into(), id);
-            let bad = w.unsafe_strings();
-            assert!(
-                bad.iter().any(|(_, f)| *f == field),
-                "`{field}` reaches generated output and is not checked"
-            );
-        }
+    fn every_string_field_is_checked_including_ones_nobody_has_added() {
+        // **This replaces a hand-written enumeration**, which is the defect it
+        // was written to prevent, one iteration later. The old version listed
+        // the fields it expected `unsafe_strings` to cover; `committer_email`
+        // was added without reaching either the check or the list, and the test
+        // stayed green because it could only see what somebody had typed into
+        // it.
+        //
+        // The property asserted here has no list in it: **corrupt every
+        // free-form string on an entry, then require that the set reported is
+        // exactly the set corrupted**, with both sides derived from the entry's
+        // own serialisation. A field added later is corrupted by the same code
+        // that finds it, so it cannot be missed by forgetting to mention it.
+        //
+        // `role` is deliberately not corrupted: it is a closed vocabulary that
+        // serialises as a string and cannot carry one.
+        let mut bad = Identity::new(Role::Hand, "pa\nja");
+        bad.nickname = Some("a\nb".into());
+        bad.full_name = Some("a\nb".into());
+        bad.domain = Some("a\nb".into());
+        bad.git_name = Some("a\nb".into());
+        bad.git_email = Some("a\nb".into());
+        bad.committer_email = Some("a\nb".into());
+        bad.committer_name = Some("a\nb".into());
+        bad.workspace = Some("a\nb".into());
+        bad.session = Some("a\nb".into());
+        bad.repos = vec!["a\nb".into()];
+
+        // What is actually bad, read off the value rather than remembered.
+        let value = toml::Value::try_from(&bad).expect("an entry serialises");
+        let mut corrupted = std::collections::BTreeSet::new();
+        walk_for_control_characters(&value, "", &mut |field| {
+            corrupted.insert(field.to_string());
+        });
+        assert!(
+            corrupted.len() >= 10,
+            "the entry should carry at least ten corruptible strings, found {corrupted:?}"
+        );
+
+        let mut ws = Workspace::parse(MINIMAL).expect("the minimal fixture parses");
+        ws.org.insert("paja".into(), bad);
+        let reported: std::collections::BTreeSet<String> =
+            ws.unsafe_strings().into_iter().map(|(_, f)| f).collect();
+
+        assert_eq!(
+            reported, corrupted,
+            "every corrupted field must be reported, and nothing else"
+        );
     }
 
     #[test]

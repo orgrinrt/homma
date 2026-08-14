@@ -15,7 +15,7 @@ pub mod reference;
 pub use config::{Identity, Paths, Role, Staffing, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden};
-pub use git::Git;
+pub use git::{CommitIdentity, Git};
 pub use path::{AbsPath, NotAbsolute};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
 pub use reference::{Namespace, NotAReference, Reference, Rung};

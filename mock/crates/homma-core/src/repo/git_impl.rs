@@ -8,7 +8,7 @@
 
 use super::gix_impl::GixRepo;
 use crate::repo::error::RepoError;
-use homma_api::{AbsPath, Git};
+use homma_api::{AbsPath, CommitIdentity, Git};
 
 /// Git as gix performs it.
 #[derive(Debug, Default, Clone, Copy)]
@@ -32,6 +32,7 @@ impl Git for GixGit {
         path: &AbsPath,
         name: &str,
         author: &str,
+        committer_name: &str,
         committer: &str,
     ) -> Result<(), Self::Error> {
         // The repository's own config file, edited in place. `gix`'s snapshot
@@ -42,7 +43,20 @@ impl Git for GixGit {
         // commit` reads.
         let file = local_config(path)?;
         let mut file = file;
+        // All six keys, and the names are not optional extras: a **global**
+        // `author.name` overrides a **local** `user.name`, so writing only
+        // `user.name` left a provisioned workspace committing under a name homma
+        // never configured, on any machine carrying one. The same holds for
+        // `author.email` against `user.email`.
+        //
+        // `user.name` and `user.email` are written as well as the specific four,
+        // because git falls back to them for anything unset and a later tool
+        // reading only those keys would otherwise see nothing.
         file.set_raw_value(&"user.name", name)
+            .map_err(|e| RepoError::Config(e.to_string()))?;
+        file.set_raw_value(&"author.name", name)
+            .map_err(|e| RepoError::Config(e.to_string()))?;
+        file.set_raw_value(&"committer.name", committer_name)
             .map_err(|e| RepoError::Config(e.to_string()))?;
         // All three, and `user.email` as well as the two specific ones. Git
         // falls back to `user.email` for whichever of author or committer is
@@ -116,21 +130,27 @@ impl Git for GixGit {
             .filter(|s| !s.is_empty()))
     }
 
-    fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Self::Error> {
-        // Deliberately the local file rather than the merged view. A merged
-        // read would report the machine's global identity as though it were
-        // this repository's, which is precisely the confusion being prevented.
+    fn identity(&self, path: &AbsPath) -> Result<Option<CommitIdentity>, Self::Error> {
         let file = local_config(path)?;
-        let get = |k: &str| {
-            file.raw_value(k)
+        let get = |section: &str, key: &str| {
+            file.raw_value(&format!("{section}.{key}"))
                 .ok()
                 .map(|v| v.to_string())
-                .filter(|s| !s.is_empty())
         };
-        Ok(match (get("user.name"), get("user.email")) {
-            (Some(n), Some(e)) => Some((n, e)),
-            _ => None,
-        })
+        // The author's own keys first, falling back to `user.*` the way git
+        // does. Reading only `user.*` is what let a write that dropped the
+        // committer pass the guard downstream.
+        let author_name = get("author", "name").or_else(|| get("user", "name"));
+        let author_email = get("author", "email").or_else(|| get("user", "email"));
+        match (author_name, author_email) {
+            (Some(an), Some(ae)) => Ok(Some(CommitIdentity {
+                committer_name: get("committer", "name").unwrap_or_else(|| an.clone()),
+                committer_email: get("committer", "email").unwrap_or_else(|| ae.clone()),
+                author_name: an,
+                author_email: ae,
+            })),
+            _ => Ok(None),
+        }
     }
 }
 
@@ -235,6 +255,7 @@ mod tests {
             &at,
             "Onni Armas",
             "ort@hiisi.digital",
+            "Onni Armas",
             "orgrinrt+vouti@ikiuni.dev",
         )
         .unwrap();
@@ -296,12 +317,18 @@ mod tests {
             &abs_into,
             "paja",
             "paja@example.invalid",
+            "paja",
             "paja@example.invalid",
         )
         .unwrap();
         assert_eq!(
             git.identity(&abs_into).unwrap(),
-            Some(("paja".to_string(), "paja@example.invalid".to_string()))
+            Some(CommitIdentity {
+                author_name: "paja".to_string(),
+                author_email: "paja@example.invalid".to_string(),
+                committer_name: "paja".to_string(),
+                committer_email: "paja@example.invalid".to_string(),
+            })
         );
     }
 
@@ -339,6 +366,7 @@ mod tests {
             &abs_into,
             "paja",
             "paja@example.invalid",
+            "paja",
             "paja@example.invalid",
         )
         .unwrap();
