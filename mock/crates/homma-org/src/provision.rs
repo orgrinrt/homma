@@ -26,6 +26,14 @@ pub enum ProvisionError<E> {
     Git(E),
     /// The workspace's parent directory could not be created.
     Parent(std::io::Error),
+    /// The directory above the workspace's parent does not exist.
+    ///
+    /// Its own variant because `io::Error` from `create_dir` carries neither the
+    /// path nor a remedy, and the bare message is "No such file or directory
+    /// (os error 2)". The whole reason one level is created here is that the
+    /// alternative error read as a network fault; an unreadable message at this
+    /// layer would be the same defect one layer up.
+    ParentMissing { parent: AbsPath, workspace: AbsPath },
     /// A workspace already exists and was cloned from something else.
     WrongRemote {
         expected: String,
@@ -46,6 +54,13 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
             ProvisionError::NoIdentity => write!(f, "the entry carries no git identity"),
             ProvisionError::Git(e) => write!(f, "git: {e}"),
             ProvisionError::Parent(e) => write!(f, "creating the parent directory: {e}"),
+            ProvisionError::ParentMissing { parent, workspace } => write!(
+                f,
+                "{parent} does not exist, so the workspace {workspace} cannot be \
+                 created without building the path to it. homma creates the \
+                 workspace's own parent and never a chain of them; make {parent} \
+                 first."
+            ),
             ProvisionError::WrongRemote { expected, found } => write!(
                 f,
                 "the workspace is already a clone of {}, not of {expected}. \
@@ -79,6 +94,7 @@ impl<E: std::error::Error + 'static> std::error::Error for ProvisionError<E> {
         match self {
             ProvisionError::Git(e) => Some(e),
             ProvisionError::Parent(e) => Some(e),
+            ProvisionError::ParentMissing { .. } => None,
             _ => None,
         }
     }
@@ -161,6 +177,12 @@ pub fn provision<G: Git>(
             match std::fs::create_dir(&parent) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Err(ProvisionError::ParentMissing {
+                        parent: parent.clone(),
+                        workspace: root.clone(),
+                    })
+                }
                 Err(e) => return Err(ProvisionError::Parent(e)),
             }
         }
@@ -215,6 +237,14 @@ mod tests {
         existing: std::cell::RefCell<Vec<AbsPath>>,
         clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
         identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
+        /// When set, `set_identity` reports success and records nothing.
+        ///
+        /// The read-back exists precisely because a write that never reached
+        /// disk survived a round, and no fake could express that, so the guard
+        /// shipped pinned by nothing: replacing it with a discard left the whole
+        /// suite green. A double that cannot fail the way production fails is a
+        /// double that certifies nothing.
+        identity_writes_vanish: std::cell::Cell<bool>,
     }
 
     #[derive(Debug)]
@@ -239,6 +269,11 @@ mod tests {
             Ok(())
         }
         fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
+            if self.identity_writes_vanish.get() {
+                // Reports success, records nothing. Exactly the shape the
+                // read-back was written for.
+                return Ok(());
+            }
             self.identities
                 .borrow_mut()
                 .push((path.clone(), name.to_string(), email.to_string()));
@@ -371,6 +406,31 @@ mod tests {
         );
     }
 
+    // The fourth live-but-unpinned guard found on this branch. Replacing the
+    // read-back with a discard left 348 tests green, and
+    // `ProvisionError::IdentityNotSet` was constructed at one site, asserted by
+    // nothing, with a `Display` arm that never executed.
+    //
+    // Its own comment says it exists because a write that never reached disk
+    // survived a round. No fake could express that until now, which is the
+    // reason rather than an excuse: a double that cannot fail the way production
+    // fails certifies nothing.
+    #[test]
+    fn an_identity_write_that_reports_success_and_lands_nowhere_is_caught() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("paja"));
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+        git.identity_writes_vanish.set(true);
+
+        let err = provision(&id, &ws, "git@example.invalid:x/y.git", &git)
+            .expect_err("a Hand that commits as the machine's owner is the failure this stops");
+        assert!(
+            matches!(err, ProvisionError::IdentityNotSet { .. }),
+            "must refuse for the right reason: {err}"
+        );
+    }
+
     #[test]
     fn provisioning_refuses_to_build_a_chain_of_directories_to_the_workspace() {
         // **This asserts the opposite of what this test's sibling asserted one
@@ -387,8 +447,13 @@ mod tests {
         let err = provision(&id, &ws, "git@example.invalid:x/y.git", &git)
             .expect_err("two missing levels is a chain, and homma does not build one");
         assert!(
-            matches!(err, ProvisionError::Parent(_)),
+            matches!(err, ProvisionError::ParentMissing { .. }),
             "must refuse for the right reason: {err}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nested") && msg.contains("make"),
+            "a refusal has to name the directory and say what to do: {msg}"
         );
         assert!(
             !d.path().join("nested").exists(),

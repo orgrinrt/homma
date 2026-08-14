@@ -1,11 +1,11 @@
 error[E0599]: no method named `join` found for struct `ContainedPath` in the current scope
-  --> tests/compile_fail/a_proven_path_cannot_derive_another.rs:26:20
+  --> tests/compile_fail/a_proven_path_cannot_derive_another.rs:27:20
    |
-26 |     let _ = proven.join("escape");
+27 |     let _ = proven.join("escape");
    |                    ^^^^ method not found in `ContainedPath`
 
 error[E0599]: no method named `parent` found for struct `ContainedPath` in the current scope
-  --> tests/compile_fail/a_proven_path_cannot_derive_another.rs:27:20
+  --> tests/compile_fail/a_proven_path_cannot_derive_another.rs:28:20
    |
-27 |     let _ = proven.parent();
+28 |     let _ = proven.parent();
    |                    ^^^^^^ method not found in `ContainedPath`

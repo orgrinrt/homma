@@ -274,7 +274,12 @@ mod tests {
     fn both_definitions_land_on_disk() {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::default();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         crate::workspace::prepare(&l, &id).unwrap();
         std::fs::write(l.character(&id).unwrap(), "Terse.").unwrap();
@@ -345,7 +350,12 @@ mod tests {
                 .expect("a relative contained path"),
             ..Paths::default()
         };
-        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let l = Layout::new(
+            &abs(&root_dir),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         // `prepare` is not called: it would refuse first, and then this test
         // would be measuring that instead.
@@ -361,7 +371,12 @@ mod tests {
     fn a_character_that_cannot_be_read_is_reported_rather_than_swallowed() {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::default();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         crate::workspace::prepare(&l, &id).unwrap();
         // A directory where the file belongs is not absence.

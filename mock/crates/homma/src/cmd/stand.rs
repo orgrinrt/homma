@@ -101,6 +101,30 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
             .join(", ")
     );
 
+    // **Before everything, because this is a different question from
+    // containment and no amount of containment answers it.** Containment asks
+    // whether a write stays inside a root the operator named. This asks whether
+    // that root is somewhere the record forbids, and a home directory contains
+    // itself perfectly.
+    //
+    // Thirteen review rounds closed the first question and never asked the
+    // second, which left `org up --root ~/.claude/crewroot` succeeding at exit 0
+    // with every containment proof satisfied.
+    //
+    // Deny item two is every other participant's workspace, and the registry is
+    // the thing that knows where those are.
+    let mut denied = homma_api::Denied::from_env();
+    for (other, entry) in ws.org.iter() {
+        if other == handle {
+            continue;
+        }
+        if let Some(w) = entry.workspace.as_ref() {
+            denied = denied.and(
+                AbsPath::resolve(root, w),
+                "it is another participant's workspace",
+            );
+        }
+    }
     // Before `git.init`, which is what actually creates the root under
     // `content_repo = "local"` and creates every missing ancestor with it. Those
     // sit above the root, where containment cannot reach, and with the missing
@@ -109,7 +133,8 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // `Root::new` carries the rule and refuses the same thing, so this is the
     // same check placed where it fires first rather than a second one: by the
     // time `Layout` is built the root already exists and the question is moot.
-    homma_api::Root::new(root).with_context(|| format!("standing `{handle}` up at {root}"))?;
+    homma_api::Root::new(root, denied.clone())
+        .with_context(|| format!("standing `{handle}` up at {root}"))?;
 
     // The content repository is configuration, because that is what a workspace
     // is cloned from. An earlier round derived it from the root's own `origin`
@@ -154,6 +179,8 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
          outside it."
     );
 
+    denied.check(&workspace, "workspace")?;
+
     // And the workspace against the filesystem, not only lexically, and still
     // before anything is initialised. The lexical check above only catches a
     // workspace inside the root; a workspace nested in some *other* repository
@@ -162,6 +189,25 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // create. `provision` still makes the same check, and keeps it: it is the
     // one that holds when provision is called from anywhere else.
     refuse_if_nested(git, &workspace, "workspace")?;
+
+    // The same rule `provision` enforces, asked here so the refusal happens
+    // before `git.init` rather than after it. `provision` keeps its own check,
+    // because it is called from elsewhere and a guard that only exists in one
+    // caller is a guard the next caller does not get; this one exists so the
+    // comment below saying a refusal leaves nothing half-built is true.
+    // The **grandparent**, not the parent: `provision` creates the workspace's
+    // own parent, which is one level and is required because gix will not. What
+    // must already exist is the level above that, or creating one level would be
+    // creating a chain.
+    if let Some(grandparent) = workspace.parent().and_then(|p| p.parent()) {
+        if !grandparent.as_path().exists() {
+            anyhow::bail!(
+                "{grandparent} does not exist, so the workspace {workspace} cannot be \
+                 created without building the path to it. homma creates the workspace's \
+                 own parent and never a chain of them; make {grandparent} first."
+            );
+        }
+    }
 
     let url = if ws.content_repo == homma_api::config::LOCAL {
         // The root itself is the content repository. On a fresh workspace it is
@@ -203,7 +249,7 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     let provisioned = provision(id, &workspace, &url, git)
         .map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
 
-    let layout = Layout::new(root, &ws.paths)
+    let layout = Layout::new(root, &ws.paths, denied.clone())
         .with_context(|| format!("resolving the workspace root at {root}"))?;
     let prepared =
         prepare(&layout, id).with_context(|| format!("preparing the workspace for `{handle}`"))?;

@@ -290,3 +290,154 @@ fn a_workspace_reached_by_climbing_out_cannot_build_its_path_either() {
         "climbing out must not create the tree it climbs into"
     );
 }
+
+/// A home with a live `.claude/` in it, which is every machine that runs an
+/// agent. The previous tests built a home that did not exist, which is the one
+/// configuration where the parent guard fires and therefore the one that hid
+/// this.
+fn a_home_with_a_real_claude(dir: &std::path::Path) -> std::path::PathBuf {
+    let home = dir.join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    std::fs::write(home.join(".claude").join("settings.json"), "{}").unwrap();
+    home
+}
+
+#[test]
+fn a_root_inside_the_operators_claude_directory_is_refused() {
+    // The fourteenth review's reproduction, and the first defect on this branch
+    // that containment could never have caught: the root contained every write
+    // correctly, and the root was the problem.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    let inside = home.join(".claude").join("crewroot");
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", inside.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing may be written there"));
+
+    assert!(!inside.exists(), "and the root must not have been created");
+}
+
+#[test]
+fn a_root_that_is_the_home_itself_is_refused_once_it_writes_into_claude() {
+    // The shape where `.claude` already exists and homma writes its definitions
+    // and memory link straight into it, beside the operator's settings. Every
+    // write passed containment, because a home contains itself.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let cfg = home.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing may be written there"));
+
+    assert!(
+        !home.join(".claude").join("agents").exists(),
+        "no definition may land beside the operator's own settings"
+    );
+    assert!(!home.join(".claude").join("agent-memory").exists());
+}
+
+#[test]
+fn a_workspace_under_an_existing_claude_directory_is_refused() {
+    // The `.claude`-present variant of the path-building test above. There the
+    // home was absent so the parent guard fired; here it exists, which is the
+    // real case, and only the deny list stops it.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(
+        &cfg,
+        "r",
+        home.join(".claude")
+            .join("hands")
+            .join("r")
+            .to_str()
+            .unwrap(),
+    );
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing may be written there"));
+
+    assert!(
+        !home.join(".claude").join("hands").exists(),
+        "not even the one level `create_dir` would make"
+    );
+}
+
+#[test]
+fn a_root_in_the_central_clone_is_refused() {
+    // Deny item one, which has the same shape and had the same absence of a
+    // mechanism.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let central = home.join("Dev").join("clause-dev");
+    std::fs::create_dir_all(&central).unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", central.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("read, never written"));
+}
+
+#[test]
+fn a_workspace_whose_path_is_missing_leaves_no_git_behind() {
+    // `containment_smoke.rs` asserts this property for the sibling lexical
+    // refusal. The parent refusal was added a round later without one, and it
+    // fired inside `provision`, which runs after `git.init` creates the root, so
+    // it left a `.git` against the comment three lines above it.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(
+        &cfg,
+        "r",
+        dir.path()
+            .join("nested")
+            .join("deeper")
+            .join("r")
+            .to_str()
+            .unwrap(),
+    );
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("make"));
+
+    assert!(
+        !root.join(".git").exists(),
+        "a refusal must leave nothing half-built, which is what the code claims"
+    );
+    assert!(!dir.path().join("nested").exists());
+}

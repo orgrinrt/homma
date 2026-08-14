@@ -37,6 +37,14 @@ pub struct Root {
     as_written: AbsPath,
     /// Symlinks and `..` resolved, which is what containment compares against.
     resolved: AbsPath,
+    /// The absolute places nothing may be written, whatever the root is.
+    ///
+    /// **Held here rather than checked by the caller**, because a caller that
+    /// has to remember a second check is a caller that forgets it. Checking the
+    /// root and the workspace was not enough: with the root set to a home
+    /// directory, every derived path passed containment and landed in
+    /// `~/.claude` anyway, since a home contains itself.
+    denied: crate::Denied,
 }
 
 impl Root {
@@ -55,7 +63,7 @@ impl Root {
     /// So the rule is that homma creates the root and never the path to it.
     /// Creating the root is intended and `content_repo = "local"` relies on it;
     /// making the road to it is not, and nothing ever asked for it.
-    pub fn new(root: &AbsPath) -> std::io::Result<Self> {
+    pub fn new(root: &AbsPath, denied: crate::Denied) -> std::io::Result<Self> {
         if let Some(parent) = root.parent() {
             if !parent.as_path().exists() {
                 return Err(std::io::Error::other(format!(
@@ -65,10 +73,17 @@ impl Root {
                 )));
             }
         }
-        Ok(Self {
+        let me = Self {
             as_written: root.clone(),
             resolved: root.resolved()?,
-        })
+            denied,
+        };
+        // The root itself, so a root that *is* a denied place is refused here
+        // rather than at whichever derived path happened to be built first.
+        me.denied
+            .check(root, "workspace root")
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        Ok(me)
     }
 
     pub fn as_abs(&self) -> &AbsPath {
@@ -95,6 +110,14 @@ impl Root {
             why: Why::Unresolvable(e.to_string()),
         })?;
         if resolved.as_path().starts_with(self.resolved.as_path()) {
+            // Inside the root is necessary and not sufficient. A root that is a
+            // home contains `~/.claude` perfectly, and the record denies it
+            // absolutely rather than relative to anything.
+            self.denied.check(path, "path").map_err(|e| Escapes {
+                path: path.clone(),
+                root: self.as_written.clone(),
+                why: Why::Unresolvable(e.to_string()),
+            })?;
             Ok(ContainedPath(path.clone()))
         } else {
             Err(Escapes {
@@ -249,7 +272,11 @@ mod tests {
     fn a_root_whose_parent_does_not_exist_is_refused() {
         let d = tempfile::tempdir().unwrap();
         let deep = abs(d.path().join("a").join("b").join("newroot"));
-        let err = Root::new(&deep).expect_err("homma creates the root, never the path to it");
+        let err = Root::new(
+            &deep,
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .expect_err("homma creates the root, never the path to it");
         assert!(
             err.to_string().contains("does not exist"),
             "the message has to say what is missing: {err}"
@@ -265,7 +292,11 @@ mod tests {
         // Creating the root itself is intended: `content_repo = "local"` relies
         // on it. Only the path to it is refused.
         let d = tempfile::tempdir().unwrap();
-        assert!(Root::new(&abs(d.path().join("newroot"))).is_ok());
+        assert!(Root::new(
+            &abs(d.path().join("newroot")),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap())
+        )
+        .is_ok());
     }
 
     // The guard here was live and pinned by nothing: replacing the tail of
@@ -279,7 +310,11 @@ mod tests {
         std::fs::create_dir_all(&root_dir).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
 
-        let root = Root::new(&abs(&root_dir)).unwrap();
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let target = root.contain(&root.as_abs().join("planted")).unwrap();
 
         // Between the proof and the creation, which is the window the type
@@ -295,7 +330,11 @@ mod tests {
     #[test]
     fn a_path_under_the_root_is_proven() {
         let d = tempfile::tempdir().unwrap();
-        let root = Root::new(&abs(d.path())).unwrap();
+        let root = Root::new(
+            &abs(d.path()),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let inside = root.as_abs().join("hands").join("paja");
         assert!(root.contain(&inside).is_ok());
     }
@@ -306,7 +345,11 @@ mod tests {
         let root_dir = d.path().join("root");
         std::fs::create_dir_all(&root_dir).unwrap();
         std::fs::create_dir_all(d.path().join("sibling")).unwrap();
-        let root = Root::new(&abs(&root_dir)).unwrap();
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         assert!(root.contain(&abs(d.path().join("sibling"))).is_err());
     }
 
@@ -324,7 +367,11 @@ mod tests {
         // tree, which a clone is expected to carry.
         std::os::unix::fs::symlink("../victim", root_dir.join("shared")).unwrap();
 
-        let root = Root::new(&abs(&root_dir)).unwrap();
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let through_the_link = root.as_abs().join("shared").join("hands").join("paja");
 
         let err = root
@@ -352,7 +399,11 @@ mod tests {
         std::os::unix::fs::symlink("../../victim/r.md", root_dir.join("agents").join("r.md"))
             .unwrap();
 
-        let root = Root::new(&abs(&root_dir)).unwrap();
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let through = root.as_abs().join("agents").join("r.md");
 
         let err = root
@@ -375,7 +426,11 @@ mod tests {
         std::fs::create_dir_all(&elsewhere).unwrap();
         std::os::unix::fs::symlink(elsewhere.join("gone.md"), root_dir.join("r.md")).unwrap();
 
-        let root = Root::new(&abs(&root_dir)).unwrap();
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         assert!(root.contain(&root.as_abs().join("r.md")).is_err());
     }
 
@@ -387,7 +442,11 @@ mod tests {
         std::os::unix::fs::symlink("b", root_dir.join("a")).unwrap();
         std::os::unix::fs::symlink("a", root_dir.join("b")).unwrap();
 
-        let root = Root::new(&abs(&root_dir)).unwrap();
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         // Either answer is acceptable except hanging, so the assertion is that
         // it returns at all. A cycle inside the root is not an escape.
         let _ = root.contain(&root.as_abs().join("a"));
@@ -450,14 +509,22 @@ mod tests {
     fn a_root_that_does_not_exist_yet_still_contains_its_own_children() {
         let d = tempfile::tempdir().unwrap();
         let unborn = abs(d.path().join("not-yet"));
-        let root = Root::new(&unborn).unwrap();
+        let root = Root::new(
+            &unborn,
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         assert!(root.contain(&unborn.join("hands")).is_ok());
     }
 
     #[test]
     fn creating_a_directory_proves_it_again_afterwards() {
         let d = tempfile::tempdir().unwrap();
-        let root = Root::new(&abs(d.path())).unwrap();
+        let root = Root::new(
+            &abs(d.path()),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let target = root.contain(&root.as_abs().join("a").join("b")).unwrap();
         root.create_dir_all(&target).unwrap();
         assert!(target.as_path().exists());
@@ -468,7 +535,11 @@ mod tests {
         // Otherwise the root cannot be prepared, and a boundary that excludes
         // its own edge tends to be discovered by a caller rather than a test.
         let d = tempfile::tempdir().unwrap();
-        let root = Root::new(&abs(d.path())).unwrap();
+        let root = Root::new(
+            &abs(d.path()),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         assert!(root.contain(root.as_abs()).is_ok());
     }
 }

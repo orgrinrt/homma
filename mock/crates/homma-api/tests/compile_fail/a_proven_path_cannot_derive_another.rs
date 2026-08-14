@@ -14,10 +14,11 @@
 //! rather than something that happened, and `Root::contain_under` exists so the
 //! ordinary case never writes it at all.
 
-use homma_api::{AbsPath, Root};
+use homma_api::{AbsPath, Denied, Root};
 
 fn main() {
-    let root = Root::new(&AbsPath::new("/srv/ws").unwrap()).unwrap();
+    let denied = Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap());
+    let root = Root::new(&AbsPath::new("/srv/ws").unwrap(), denied).unwrap();
     let proven = root
         .contain(&AbsPath::new("/srv/ws/hands").unwrap())
         .unwrap();

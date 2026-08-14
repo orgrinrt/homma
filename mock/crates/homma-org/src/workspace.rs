@@ -11,7 +11,7 @@
 //! through it land in the layout's directory, and version control carries it as
 //! a link rather than a copy, so it survives cloning to any machine.
 
-use homma_api::{AbsPath, ContainedPath, Escapes, Identity, Paths, Root};
+use homma_api::{AbsPath, ContainedPath, Denied, Escapes, Identity, Paths, Root};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -36,9 +36,16 @@ pub struct Layout<'a> {
 }
 
 impl<'a> Layout<'a> {
-    pub fn new(root: &AbsPath, paths: &'a Paths) -> io::Result<Self> {
+    /// A layout over a root, with the places nothing may be written.
+    ///
+    /// **The deny list is a parameter rather than something read here**, so a
+    /// caller cannot get a `Layout` without saying which places are forbidden,
+    /// and a test can hand over a home that is not the machine's. It is not
+    /// defaulted: a default would be the empty list, which is the answer that
+    /// silently reintroduces the defect.
+    pub fn new(root: &AbsPath, paths: &'a Paths, denied: Denied) -> io::Result<Self> {
         Ok(Self {
-            root: Root::new(root)?,
+            root: Root::new(root, denied)?,
             paths,
         })
     }
@@ -301,7 +308,12 @@ mod tests {
     #[test]
     fn a_hand_and_a_consultant_live_under_different_roots() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         assert!(l.home(&hand()).unwrap().as_path().ends_with("hands/paja"));
         assert!(l
             .home(&expert())
@@ -313,7 +325,12 @@ mod tests {
     #[test]
     fn the_harness_link_lands_where_the_harness_looks() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         assert!(l
             .harness_memory(&hand())
             .unwrap()
@@ -327,7 +344,12 @@ mod tests {
     #[test]
     fn memory_is_linked_relatively_and_writes_through_to_the_layout() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         let done = prepare(&l, &id).unwrap();
 
@@ -352,7 +374,12 @@ mod tests {
     #[test]
     fn preparing_twice_changes_nothing() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         let first = prepare(&l, &id).unwrap();
         fs::write(first.harness_link.as_path().join("MEMORY.md"), "kept").unwrap();
@@ -395,7 +422,12 @@ mod tests {
         // `cmd/mod.rs` canonicalises before `Layout` ever sees the root.
         let root_dir = std::fs::canonicalize(&root_dir).unwrap();
         let p = Paths::default();
-        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let l = Layout::new(
+            &abs(&root_dir),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         let done = prepare(&l, &id).expect("preparing must succeed, the link is contained");
 
@@ -447,7 +479,12 @@ mod tests {
         .unwrap();
 
         let p = Paths::default();
-        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let l = Layout::new(
+            &abs(&root_dir),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let err = prepare(&l, &hand())
             .expect_err("the parent chain leaves the root, whatever the last component does");
         assert!(
@@ -503,7 +540,12 @@ mod tests {
                 .expect("a relative contained path"),
             ..Paths::default()
         };
-        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let l = Layout::new(
+            &abs(&root_dir),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let err = prepare(&l, &hand())
             .expect_err("the directory the definitions are written in has left the root");
         assert!(
@@ -515,7 +557,12 @@ mod tests {
     #[test]
     fn a_real_directory_where_the_link_belongs_is_refused_rather_than_deleted() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         let link = l.harness_memory(&id).unwrap();
         fs::create_dir_all(&link).unwrap();
@@ -536,7 +583,12 @@ mod tests {
     #[test]
     fn a_role_that_does_not_remember_gets_no_memory_directory() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let general = Identity::new(Role::General, "runner");
         let done = prepare(&l, &general).unwrap();
         assert!(
@@ -551,7 +603,12 @@ mod tests {
         // Notes are a twin's staging area, and a consultant has no prime to
         // triage them.
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let done = prepare(&l, &expert()).unwrap();
         assert!(done.memory.as_path().exists());
         assert!(!done.notes.as_path().exists());
@@ -560,7 +617,12 @@ mod tests {
     #[test]
     fn the_twin_definition_is_a_different_file_from_the_primes() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         assert_ne!(l.definition(&id).unwrap(), l.twin_definition(&id).unwrap());
     }

@@ -61,8 +61,12 @@ impl Git for GixGit {
         // filesystem and the path together, and five rounds computed it from
         // the path alone. A symlink anywhere in the chain then hides the
         // repository above it, and the walk answers about a place nobody asked
-        // about. The path being created does not exist yet, so what is resolved
-        // is the longest prefix that does, and the rest is re-appended.
+        // about. The path being created does not exist yet, so resolution walks
+        // the components and follows each link it meets, dangling or not, and
+        // takes what is left as written. An earlier comment here described
+        // resolving the longest existing prefix, which is what `resolved` did
+        // until a review found that `Path::exists()` follows a link and a
+        // dangling one therefore read as absent.
         let subject = path.resolved().map_err(|e| RepoError::Io {
             path: path.clone().into_path_buf(),
             source: e,

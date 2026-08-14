@@ -250,10 +250,12 @@ fn normalise(path: &Path) -> PathBuf {
             Component::CurDir => {}
             Component::ParentDir => {
                 // Popping past the root leaves the root, which is what every
-                // filesystem does with `/..`.
-                if out.parent().is_some() {
-                    out.pop();
-                }
+                // filesystem does with `/..`, and `PathBuf::pop` already does
+                // exactly that: it returns false and changes nothing when there
+                // is no parent. There was an `if out.parent().is_some()` here
+                // and it could not be false in any way that mattered, which
+                // makes it a condition that reads as a guard and is not one.
+                out.pop();
             }
             other => out.push(other.as_os_str()),
         }
