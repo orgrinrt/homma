@@ -129,7 +129,6 @@ fn is_repo_dir(path: &AbsPath) -> bool {
     path.join("HEAD").exists() && path.join("objects").is_dir() && path.join("refs").is_dir()
 }
 
-
 /// Where a repository keeps its own configuration.
 fn config_path(repo: &AbsPath) -> AbsPath {
     repo.join(".git").join("config")

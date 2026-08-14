@@ -329,16 +329,28 @@ handle = "proof"
     #[test]
     fn every_path_defaults_and_creating_none_of_them_is_valid() {
         let w = Workspace::parse(MINIMAL).unwrap();
-        assert_eq!(w.paths.hands.as_path(), std::path::Path::new(".shared/hands"));
-        assert_eq!(w.paths.channels.as_path(), std::path::Path::new(".shared/channels"));
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new(".shared/hands")
+        );
+        assert_eq!(
+            w.paths.channels.as_path(),
+            std::path::Path::new(".shared/channels")
+        );
     }
 
     #[test]
     fn an_override_replaces_only_what_it_names() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.paths.hands.as_path(), std::path::Path::new("custom/hands"));
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new("custom/hands")
+        );
         // The others keep their defaults rather than vanishing.
-        assert_eq!(w.paths.experts.as_path(), std::path::Path::new(".shared/experts"));
+        assert_eq!(
+            w.paths.experts.as_path(),
+            std::path::Path::new(".shared/experts")
+        );
     }
 
     #[test]
@@ -348,9 +360,7 @@ handle = "proof"
         // escaping and an absolute value wrote a Hand's directories and
         // definitions into an unrelated repository's tree, exit 0.
         for bad in ["../victim/stolen", "/etc/passwd-ish", "a/../../out"] {
-            let toml = format!(
-                "content_repo = \"local\"\n\n[paths]\nhands = \"{bad}\"\n"
-            );
+            let toml = format!("content_repo = \"local\"\n\n[paths]\nhands = \"{bad}\"\n");
             assert!(
                 Workspace::parse(&toml).is_err(),
                 "`{bad}` must be refused where somebody can act on it"
@@ -363,7 +373,10 @@ handle = "proof"
         // Including one that climbs and comes back, which is contained.
         let toml = "content_repo = \"local\"\n\n[paths]\nhands = \"a/../b/hands\"\n";
         let w = Workspace::parse(toml).expect("contained paths are fine");
-        assert_eq!(w.paths.hands.as_path(), std::path::Path::new("a/../b/hands"));
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new("a/../b/hands")
+        );
     }
 
     #[test]
