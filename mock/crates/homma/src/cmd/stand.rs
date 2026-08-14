@@ -256,7 +256,10 @@ domain = "rendering"
         fn enclosing_repo(&self, path: &Path) -> Result<Option<PathBuf>, Never> {
             // The real one refuses a relative path. A fake that accepts one is
             // a fake that lets a caller ship the bypass.
-            assert!(path.is_absolute(), "the real implementation refuses {path:?}");
+            assert!(
+                path.is_absolute(),
+                "the real implementation refuses {path:?}"
+            );
             Ok(None)
         }
         fn origin_url(&self, path: &Path) -> Result<Option<String>, Never> {
@@ -350,8 +353,6 @@ domain = "rendering"
         stand_up(&ws(), d.path(), "paja", &git).unwrap();
         assert_eq!(git.cloned.borrow()[0].0, CONTENT);
     }
-
-
 
     #[test]
     fn the_standing_instruction_forbids_committing_to_a_trunk() {

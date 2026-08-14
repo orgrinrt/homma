@@ -285,7 +285,6 @@ fn standing_up_from_a_root_that_is_not_a_clone_is_refused() {
     assert!(!ws.exists(), "a refusal must leave nothing behind");
 }
 
-
 #[test]
 fn standing_up_changes_no_global_git_configuration() {
     // The half of the roadmap's exit test the integration test omitted. The
@@ -370,9 +369,6 @@ fn standing_up_does_not_depend_on_where_the_operator_is_standing() {
     assert!(root.join(".shared/hands/fresh").exists());
 }
 
-
-
-
 #[test]
 fn a_symlinked_registry_is_written_through_rather_than_replaced() {
     // Renaming over a symlink replaces the link with a regular file: the entry
@@ -409,4 +405,3 @@ fn a_symlinked_registry_is_written_through_rather_than_replaced() {
         "the entry must reach the file the link points at"
     );
 }
-
