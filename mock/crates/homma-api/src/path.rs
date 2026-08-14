@@ -227,9 +227,13 @@ pub struct RelPath(PathBuf);
 impl RelPath {
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, NotContained> {
         let path = path.into();
-        if path.is_absolute() {
-            return Err(NotContained(path));
-        }
+        // There was an `is_absolute()` early return here and it was
+        // unreachable: an absolute path leads with a root or prefix component,
+        // which the loop below already refuses. Deleting it failed nothing,
+        // which is the test that says it was doing nothing, and dead defence
+        // that reads as live defence is what this file has spent eight review
+        // rounds on.
+        //
         // Not merely "contains no `..`": `a/../b` is fine and stays inside.
         // What is refused is a path whose normalisation leaves.
         let mut depth: i32 = 0;
@@ -369,9 +373,17 @@ mod tests {
         // `hands = "../victim/stolen"` wrote into another repository's tree.
         //
         // **This needs its own test and a measurement is why.** `RelPath`
-        // refuses such a value at the configuration boundary, so loosening this
-        // back to `PathBuf::join` fails nothing else in the suite: it is defence
-        // in depth, and defence nothing pins is defence somebody deletes.
+        // refuses such a value at the configuration boundary, so this is
+        // defence in depth, and defence nothing pins is defence somebody
+        // deletes.
+        //
+        // Measured on the whole workspace with `--no-fail-fast`, because
+        // stopping at the first failing binary is what produced the wrong count
+        // the first three times this was reported. Loosening `join` back to
+        // `PathBuf::join` fails exactly two tests: this one, and
+        // `a_path_never_carries_a_parent_component`, which asserts
+        // `base.join("a/../b")`. An earlier version of this comment claimed it
+        // failed nothing else, which was wrong when written.
         let base = AbsPath::new("/srv/ws").unwrap();
         assert_eq!(
             base.join("../escape").as_path(),

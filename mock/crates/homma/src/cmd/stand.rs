@@ -7,17 +7,23 @@
 
 use super::org::DISCIPLINE;
 use anyhow::{Context, Result};
-use homma_api::{AbsPath, Git, Staffing, Workspace};
+use homma_api::{AbsPath, ContainedPath, Git, Staffing, Workspace};
 use homma_org::{prepare, provision, write_definitions, Layout, Registry};
 
 /// Refuse a path that lies inside a repository which is not itself.
 ///
-/// **Every path this command writes to passes through here**, which is the
-/// point. A previous round moved this check from the root to the workspace and
-/// closed the route it had been shown a reproduction for, while putting the
-/// original defect back on the root, where the directories, the definitions and
-/// the memory link land. Checking one path and reporting the class closed is how
-/// five rounds each opened the next one.
+/// Called on **the root and the workspace**, which are the two paths a caller
+/// hands in. It is not what guards the paths derived from them: those are
+/// guarded by [`homma_api::Root`], which proves containment against the
+/// filesystem and hands back a type that the write functions are the only
+/// consumers of.
+///
+/// The split matters because a previous version of this comment claimed every
+/// written path passed through here. It did not, and the claim survived a round
+/// after being reported, which is how a guard gets trusted for work it is not
+/// doing. This one answers "is this path inside somebody else's repository";
+/// the other answers "does this path resolve inside our root". Neither implies
+/// the other.
 fn refuse_if_nested<G: Git>(git: &G, path: &AbsPath, what: &str) -> Result<()> {
     let enclosing = git
         .enclosing_repo(path)
@@ -35,13 +41,13 @@ fn refuse_if_nested<G: Git>(git: &G, path: &AbsPath, what: &str) -> Result<()> {
 #[derive(Debug)]
 pub struct StoodUp {
     pub handle: String,
-    pub home: AbsPath,
+    pub home: ContainedPath,
     /// The workspace clone itself, which is what the identity commits in.
     pub workspace: AbsPath,
     /// False when the workspace already held the content repository.
     pub cloned: bool,
-    pub definition: AbsPath,
-    pub twin_definition: AbsPath,
+    pub definition: ContainedPath,
+    pub twin_definition: ContainedPath,
 }
 
 /// Clone the content repository, set the identity in that clone, create the
@@ -131,6 +137,15 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
          outside it."
     );
 
+    // And the workspace against the filesystem, not only lexically, and still
+    // before anything is initialised. The lexical check above only catches a
+    // workspace inside the root; a workspace nested in some *other* repository
+    // fell through it, `git.init(root)` ran, and `provision` refused afterwards,
+    // leaving behind the `.git` the comment above promises a refusal does not
+    // create. `provision` still makes the same check, and keeps it: it is the
+    // one that holds when provision is called from anywhere else.
+    refuse_if_nested(git, &workspace, "workspace")?;
+
     let url = if ws.content_repo == homma_api::config::LOCAL {
         // The root itself is the content repository. On a fresh workspace it is
         // not a repository yet, and there is nothing to clone from until it is.
@@ -171,7 +186,8 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     let provisioned = provision(id, &workspace, &url, git)
         .map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
 
-    let layout = Layout::new(root, &ws.paths);
+    let layout = Layout::new(root, &ws.paths)
+        .with_context(|| format!("resolving the workspace root at {root}"))?;
     let prepared =
         prepare(&layout, id).with_context(|| format!("preparing the workspace for `{handle}`"))?;
     let (prime, twin) = write_definitions(&layout, id, DISCIPLINE)

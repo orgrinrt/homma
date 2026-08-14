@@ -11,59 +11,75 @@
 //! through it land in the layout's directory, and version control carries it as
 //! a link rather than a copy, so it survives cloning to any machine.
 
-use homma_api::{AbsPath, Identity, Paths};
+use homma_api::{AbsPath, ContainedPath, Escapes, Identity, Paths, Root};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 /// Where things sit inside one workspace.
+///
+/// **Every accessor returns a proven path, and there is no accessor that does
+/// not.** That is the round's whole change and it is a structural one: a write
+/// computed from a path nobody checked against the filesystem no longer
+/// compiles.
+///
+/// The accessors were lexical before, built with [`AbsPath::join`], which clamps
+/// `..` and cannot see through a symlink. A root whose tree carried
+/// `.shared -> ../victim` took every path under it into another repository, and
+/// homma commits symlinks itself, so a clone is expected to carry them.
 pub struct Layout<'a> {
-    root: AbsPath,
+    root: Root,
     paths: &'a Paths,
 }
 
 impl<'a> Layout<'a> {
-    pub fn new(root: &AbsPath, paths: &'a Paths) -> Self {
-        Self {
-            root: root.clone(),
+    pub fn new(root: &AbsPath, paths: &'a Paths) -> io::Result<Self> {
+        Ok(Self {
+            root: Root::new(root)?,
             paths,
-        }
+        })
     }
 
     /// Everything belonging to one identity lives under one directory.
-    pub fn home(&self, id: &Identity) -> AbsPath {
+    pub fn home(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
         let base = if id.role.has_workspace() {
             &self.paths.hands
         } else {
             &self.paths.experts
         };
-        self.root.join(base).join(&id.handle)
+        self.contain(self.root.as_abs().join(base).join(&id.handle))
     }
 
-    pub fn memory(&self, id: &Identity) -> AbsPath {
-        self.home(id).join("memory")
+    pub fn memory(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
+        self.under_home(id, "memory")
     }
 
-    pub fn notes(&self, id: &Identity) -> AbsPath {
-        self.home(id).join("notes")
+    pub fn notes(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
+        self.under_home(id, "notes")
     }
 
-    pub fn character(&self, id: &Identity) -> AbsPath {
-        self.home(id).join("character.md")
+    pub fn character(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
+        self.under_home(id, "character.md")
     }
 
     /// Where the harness expects to find this identity's memory.
-    pub fn harness_memory(&self, id: &Identity) -> AbsPath {
-        self.root
-            .join(".claude")
-            .join("agent-memory")
-            .join(&id.handle)
+    pub fn harness_memory(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
+        self.contain(
+            self.root
+                .as_abs()
+                .join(".claude")
+                .join("agent-memory")
+                .join(&id.handle),
+        )
     }
 
-    pub fn definition(&self, id: &Identity) -> AbsPath {
-        self.root
-            .join(&self.paths.agents)
-            .join(format!("{}.md", id.handle))
+    pub fn definition(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
+        self.contain(
+            self.root
+                .as_abs()
+                .join(&self.paths.agents)
+                .join(format!("{}.md", id.handle)),
+        )
     }
 
     /// The definition a twin runs under.
@@ -72,14 +88,33 @@ impl<'a> Layout<'a> {
     /// has to be structural: a definition carrying the memory key grants the
     /// write path whatever its prose says, so the twin's simply does not carry
     /// it.
-    pub fn twin_definition(&self, id: &Identity) -> AbsPath {
-        self.root
-            .join(&self.paths.agents)
-            .join(format!("{}-twin.md", id.handle))
+    pub fn twin_definition(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
+        self.contain(
+            self.root
+                .as_abs()
+                .join(&self.paths.agents)
+                .join(format!("{}-twin.md", id.handle)),
+        )
     }
 
     pub fn root(&self) -> &AbsPath {
+        self.root.as_abs()
+    }
+
+    /// The root as the thing that mints proofs, for a caller that has to create
+    /// a directory and wants the re-check that comes with it.
+    pub fn contained_root(&self) -> &Root {
         &self.root
+    }
+
+    fn under_home(&self, id: &Identity, tail: &str) -> Result<ContainedPath, Escapes> {
+        // Through `home` rather than beside it, so a home that escapes is
+        // caught once instead of three times differently.
+        self.contain(self.home(id)?.as_abs().join(tail))
+    }
+
+    fn contain(&self, path: AbsPath) -> Result<ContainedPath, Escapes> {
+        self.root.contain(&path)
     }
 }
 
@@ -87,12 +122,12 @@ impl<'a> Layout<'a> {
 /// guess.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prepared {
-    pub home: AbsPath,
-    pub memory: AbsPath,
-    pub notes: AbsPath,
-    pub harness_link: AbsPath,
-    pub definition: AbsPath,
-    pub twin_definition: AbsPath,
+    pub home: ContainedPath,
+    pub memory: ContainedPath,
+    pub notes: ContainedPath,
+    pub harness_link: ContainedPath,
+    pub definition: ContainedPath,
+    pub twin_definition: ContainedPath,
 }
 
 /// Create the directories an identity needs and link its memory where the
@@ -101,26 +136,33 @@ pub struct Prepared {
 /// Idempotent: running it against a workspace that already has them changes
 /// nothing and returns the same answer.
 pub fn prepare(layout: &Layout<'_>, id: &Identity) -> io::Result<Prepared> {
-    let home = layout.home(id);
-    let memory = layout.memory(id);
-    let notes = layout.notes(id);
+    let root = layout.contained_root();
+    let home = layout.home(id).map_err(escaped)?;
+    let memory = layout.memory(id).map_err(escaped)?;
+    let notes = layout.notes(id).map_err(escaped)?;
     if id.role.has_memory() {
-        fs::create_dir_all(&memory)?;
+        root.create_dir_all(&memory)?;
     }
     if id.role.has_workspace() {
-        fs::create_dir_all(&notes)?;
+        root.create_dir_all(&notes)?;
     }
 
-    let link = layout.harness_memory(id);
+    let link = layout.harness_memory(id).map_err(escaped)?;
     if id.role.has_memory() {
-        if let Some(parent) = link.parent() {
-            fs::create_dir_all(parent)?;
+        if let Some(parent) = link.as_abs().parent() {
+            // Proven separately, because a parent derived by arithmetic from a
+            // proven path is not itself proven: `..` off a symlinked child
+            // lands somewhere the child's proof says nothing about.
+            let parent = root.contain(&parent).map_err(escaped)?;
+            root.create_dir_all(&parent)?;
         }
-        link_memory(&link, &memory)?;
+        link_memory(link.as_path(), memory.as_path())?;
     }
 
-    if let Some(parent) = layout.definition(id).parent() {
-        fs::create_dir_all(parent)?;
+    let definition = layout.definition(id).map_err(escaped)?;
+    if let Some(parent) = definition.as_abs().parent() {
+        let parent = root.contain(&parent).map_err(escaped)?;
+        root.create_dir_all(&parent)?;
     }
 
     Ok(Prepared {
@@ -128,9 +170,15 @@ pub fn prepare(layout: &Layout<'_>, id: &Identity) -> io::Result<Prepared> {
         memory,
         notes,
         harness_link: link,
-        definition: layout.definition(id),
-        twin_definition: layout.twin_definition(id),
+        definition,
+        twin_definition: layout.twin_definition(id).map_err(escaped)?,
     })
+}
+
+/// A path that left the workspace is an io failure to the caller, and carries
+/// its own explanation of where it went.
+fn escaped(e: Escapes) -> io::Error {
+    io::Error::other(e.to_string())
 }
 
 /// Point `link` at `target`, relatively, replacing an existing link.
@@ -208,17 +256,18 @@ mod tests {
     #[test]
     fn a_hand_and_a_consultant_live_under_different_roots() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
-        assert!(l.home(&hand()).ends_with("hands/paja"));
-        assert!(l.home(&expert()).ends_with("experts/proof"));
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
+        assert!(l.home(&hand()).unwrap().ends_with("hands/paja"));
+        assert!(l.home(&expert()).unwrap().ends_with("experts/proof"));
     }
 
     #[test]
     fn the_harness_link_lands_where_the_harness_looks() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         assert!(l
             .harness_memory(&hand())
+            .unwrap()
             .ends_with(".claude/agent-memory/paja"));
     }
 
@@ -228,7 +277,7 @@ mod tests {
     #[test]
     fn memory_is_linked_relatively_and_writes_through_to_the_layout() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         let id = hand();
         let done = prepare(&l, &id).unwrap();
 
@@ -241,14 +290,14 @@ mod tests {
 
         // Writing through the harness's path must land in the layout's directory.
         fs::write(done.harness_link.join("MEMORY.md"), "learned a thing").unwrap();
-        let landed = fs::read_to_string(l.memory(&id).join("MEMORY.md")).unwrap();
+        let landed = fs::read_to_string(l.memory(&id).unwrap().join("MEMORY.md")).unwrap();
         assert_eq!(landed, "learned a thing");
     }
 
     #[test]
     fn preparing_twice_changes_nothing() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         let id = hand();
         let first = prepare(&l, &id).unwrap();
         fs::write(first.harness_link.join("MEMORY.md"), "kept").unwrap();
@@ -256,7 +305,7 @@ mod tests {
         // Comparing the two Prepared values would pass with prepare a no-op,
         // since they are built from path arithmetic. The content is the test.
         assert_eq!(
-            fs::read_to_string(l.memory(&id).join("MEMORY.md")).unwrap(),
+            fs::read_to_string(l.memory(&id).unwrap().join("MEMORY.md")).unwrap(),
             "kept",
             "a second prepare must not clear what the first one's memory holds"
         );
@@ -265,9 +314,9 @@ mod tests {
     #[test]
     fn a_real_directory_where_the_link_belongs_is_refused_rather_than_deleted() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         let id = hand();
-        let link = l.harness_memory(&id);
+        let link = l.harness_memory(&id).unwrap();
         fs::create_dir_all(&link).unwrap();
         fs::write(link.join("someones-notes.md"), "not ours to delete").unwrap();
 
@@ -282,7 +331,7 @@ mod tests {
     #[test]
     fn a_role_that_does_not_remember_gets_no_memory_directory() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         let general = Identity::new(Role::General, "runner");
         let done = prepare(&l, &general).unwrap();
         assert!(!done.memory.exists(), "labour accumulates nothing");
@@ -294,7 +343,7 @@ mod tests {
         // Notes are a twin's staging area, and a consultant has no prime to
         // triage them.
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         let done = prepare(&l, &expert()).unwrap();
         assert!(done.memory.exists());
         assert!(!done.notes.exists());
@@ -303,9 +352,9 @@ mod tests {
     #[test]
     fn the_twin_definition_is_a_different_file_from_the_primes() {
         let (d, p) = fixture();
-        let l = Layout::new(&abs(d.path()), &p);
+        let l = Layout::new(&abs(d.path()), &p).unwrap();
         let id = hand();
-        assert_ne!(l.definition(&id), l.twin_definition(&id));
+        assert_ne!(l.definition(&id).unwrap(), l.twin_definition(&id).unwrap());
     }
 
     #[test]
