@@ -145,8 +145,24 @@ pub fn provision<G: Git>(
         // is missing fails with an error about opening data, which reads as a
         // network problem and is not one. Found by running this against a real
         // repository; the fake in these tests never touched a filesystem.
+        //
+        // **`create_dir`, not `create_dir_all`, and that is the whole guard.**
+        // One level is required for the reason above. A chain never was, and
+        // `create_dir_all` supplied whatever chain the configured path implied:
+        // a workspace at `somewhere/.claude/hands/paja` built `somewhere` and
+        // `somewhere/.claude` on the way there, which is deny item three, and
+        // spelled with `..` it did so several levels above the root.
+        //
+        // The workspace is **required** to sit outside the containment root, so
+        // no `Root` covers it and none can. This is the same rule as the root's,
+        // stated for the other directory homma creates: it creates the thing,
+        // never the path to the thing.
         if let Some(parent) = root.parent() {
-            std::fs::create_dir_all(parent).map_err(ProvisionError::Parent)?;
+            match std::fs::create_dir(&parent) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(ProvisionError::Parent(e)),
+            }
         }
         git.clone_repo(content_repo_url, &root)
             .map_err(ProvisionError::Git)?;
@@ -341,8 +357,10 @@ mod tests {
         // missing fails with an error about opening data, which reads as a
         // network fault. Found by running this against a real repository after
         // every fake-backed test passed.
+        //
+        // One level, which is what that reason needs.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("nested").join("deeper").join("paja"));
+        let ws = abs(d.path().join("crew").join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
@@ -350,6 +368,31 @@ mod tests {
         assert!(
             ws.parent().unwrap().exists(),
             "the parent must exist before the clone is attempted"
+        );
+    }
+
+    #[test]
+    fn provisioning_refuses_to_build_a_chain_of_directories_to_the_workspace() {
+        // **This asserts the opposite of what this test's sibling asserted one
+        // round ago**, and the sibling was a correct test of a rule that had to
+        // change. Ten tests failed when the creation was deleted and every one
+        // of them was pinning the behaviour being corrected, which is worth
+        // remembering: a guard being pinned says nothing about whether what it
+        // pins is wanted.
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("nested").join("deeper").join("paja"));
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+
+        let err = provision(&id, &ws, "git@example.invalid:x/y.git", &git)
+            .expect_err("two missing levels is a chain, and homma does not build one");
+        assert!(
+            matches!(err, ProvisionError::Parent(_)),
+            "must refuse for the right reason: {err}"
+        );
+        assert!(
+            !d.path().join("nested").exists(),
+            "and must not have built the first level on the way to refusing"
         );
     }
 
