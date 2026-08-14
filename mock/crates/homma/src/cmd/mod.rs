@@ -19,6 +19,7 @@ pub mod forge;
 pub mod gates;
 pub mod migrate;
 pub mod org;
+pub mod registry;
 pub mod repo;
 pub mod stand;
 pub mod status;
@@ -95,7 +96,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // in the registry survives being added to. Written through a
                     // temporary and renamed, so a short write cannot leave a
                     // registry nothing can parse.
-                    stand::append_entry(&path, &id)?;
+                    registry::append_entry(&path, &id)?;
 
                     println!("{} {}", id.handle, org::describe(&staffing));
                 }
@@ -110,6 +111,16 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             .filter(|p| !p.as_os_str().is_empty())
                             .map(|p| p.to_path_buf())
                             .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    });
+                    // Absolute before anything reads it. The nested-repository
+                    // guard walks upward, and a relative path walks up from the
+                    // process's directory rather than this one, which is the
+                    // thing deriving the root from `--config` already fixed
+                    // once.
+                    let root = std::fs::canonicalize(&root).unwrap_or_else(|_| {
+                        std::env::current_dir()
+                            .map(|cwd| cwd.join(&root))
+                            .unwrap_or(root)
                     });
                     let out = stand::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
                     println!("{} {}", out.handle, out.home.display());

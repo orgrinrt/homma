@@ -196,7 +196,10 @@ mod tests {
         fn init(&self, _path: &Path) -> Result<(), Never> {
             Ok(())
         }
-        fn enclosing_repo(&self, _path: &Path) -> Result<Option<PathBuf>, Never> {
+        fn enclosing_repo(&self, path: &Path) -> Result<Option<PathBuf>, Never> {
+            // The real one refuses a relative path. A fake that accepts one is
+            // a fake that lets a caller ship the bypass.
+            assert!(path.is_absolute(), "the real implementation refuses {path:?}");
             Ok(None)
         }
         fn origin_url(&self, path: &Path) -> Result<Option<String>, Never> {

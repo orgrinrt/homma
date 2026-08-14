@@ -58,8 +58,17 @@ impl Git for GixGit {
     }
 
     fn enclosing_repo(&self, path: &Path) -> Result<Option<std::path::PathBuf>, Self::Error> {
-        // Walk upward from the first existing ancestor. The path itself may not
-        // exist yet, which is the ordinary case when standing one up.
+        // A relative path walks up from the process's directory instead of
+        // this one and terminates at the empty string, so the guard checks the
+        // wrong ancestors and passes. Refused rather than resolved here,
+        // because resolving would hide the caller's mistake.
+        if path.is_relative() {
+            return Err(RepoError::Config(format!(
+                "{} is relative; a path reaching git must be absolute, or the \
+                 walk upward starts from wherever the process happens to be",
+                path.display()
+            )));
+        }
         let mut at = path.to_path_buf();
         loop {
             if at.join(".git").exists() {
@@ -73,6 +82,13 @@ impl Git for GixGit {
     }
 
     fn origin_url(&self, path: &Path) -> Result<Option<String>, Self::Error> {
+        // A directory that is not a repository points at nothing, which is an
+        // answer rather than a failure. Erroring here made the ordinary
+        // bootstrap fail outright: a directory, a registry, and a remote to
+        // clone from is exactly a root that is not yet a repository.
+        if !config_path(path).exists() {
+            return Ok(None);
+        }
         let file = local_config(path)?;
         Ok(file
             .raw_value("remote.origin.url")
@@ -271,6 +287,23 @@ mod tests {
             GixGit.enclosing_repo(&nested).unwrap(),
             Some(d.path().to_path_buf())
         );
+    }
+
+    #[test]
+    fn a_relative_path_is_refused_rather_than_walked_from_the_wrong_place() {
+        // The bypass: `parent()` on a relative path terminates at the empty
+        // string, so the walk inspected the process's own directory and the
+        // nested-repository guard passed from inside another repository.
+        assert!(GixGit.enclosing_repo(Path::new("sub")).is_err());
+        assert!(GixGit.enclosing_repo(Path::new("./a/b")).is_err());
+    }
+
+    #[test]
+    fn a_directory_that_is_not_a_repository_has_no_origin_rather_than_erroring() {
+        // Erroring here made a URI content repository against a fresh root fail
+        // outright, which is the ordinary bootstrap.
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(GixGit.origin_url(d.path()).unwrap(), None);
     }
 
     #[test]

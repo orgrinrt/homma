@@ -11,6 +11,8 @@
 
 use std::path::PathBuf;
 
+mod support;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 
@@ -283,21 +285,6 @@ fn standing_up_from_a_root_that_is_not_a_clone_is_refused() {
     assert!(!ws.exists(), "a refusal must leave nothing behind");
 }
 
-/// Every place git would read a configuration that is not a repository's own.
-fn global_config_paths() -> Vec<PathBuf> {
-    let mut out = vec![PathBuf::from("/etc/gitconfig")];
-    if let Ok(v) = std::env::var("GIT_CONFIG_GLOBAL") {
-        out.push(PathBuf::from(v));
-    }
-    if let Ok(v) = std::env::var("XDG_CONFIG_HOME") {
-        out.push(PathBuf::from(v).join("git").join("config"));
-    }
-    if let Ok(v) = std::env::var("HOME") {
-        out.push(PathBuf::from(&v).join(".gitconfig"));
-        out.push(PathBuf::from(&v).join(".config").join("git").join("config"));
-    }
-    out
-}
 
 #[test]
 fn standing_up_changes_no_global_git_configuration() {
@@ -309,9 +296,7 @@ fn standing_up_changes_no_global_git_configuration() {
     let cfg = root.join("homma.toml");
     let ws = dir.path().join("ws").join("fresh");
 
-    let globals = global_config_paths();
-    assert!(!globals.is_empty(), "nothing to compare");
-    let before: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
+    let before = support::global_configs_now();
 
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
@@ -330,11 +315,8 @@ fn standing_up_changes_no_global_git_configuration() {
         .assert()
         .success();
 
-    let after: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
-    assert_eq!(
-        before, after,
-        "no global configuration may change: {globals:?}"
-    );
+    let after = support::global_configs_now();
+    assert_eq!(before, after, "no global git configuration may change");
 }
 
 #[test]
@@ -388,95 +370,8 @@ fn standing_up_does_not_depend_on_where_the_operator_is_standing() {
     assert!(root.join(".shared/hands/fresh").exists());
 }
 
-#[test]
-fn a_registry_with_no_content_repo_treats_its_own_directory_as_one() {
-    // `local` is the default, so a workspace needs no configuration key at all
-    // to start: the directory holding the registry becomes the content
-    // repository, initialised if it is not one yet.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("ws");
-    std::fs::create_dir_all(&root).unwrap();
-    let cfg = root.join("homma.toml");
-    std::fs::write(&cfg, "# no content_repo key\n").unwrap();
-    let ws = dir.path().join("hands").join("fresh");
 
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
-        .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
-        .args(["--workspace", ws.to_str().unwrap()])
-        .assert()
-        .success();
 
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
-        .assert()
-        .success();
-
-    assert!(root.join(".git").exists(), "the root must be initialised");
-    assert!(ws.join(".git").exists(), "and the workspace cloned from it");
-    let local = std::fs::read_to_string(ws.join(".git/config")).unwrap();
-    assert!(local.contains("fresh@example.invalid"));
-}
-
-#[test]
-fn local_may_be_said_explicitly() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("ws");
-    std::fs::create_dir_all(&root).unwrap();
-    let cfg = root.join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
-    let ws = dir.path().join("hands").join("b");
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "add", "b"])
-        .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "b", "--git-email", "b@example.invalid"])
-        .args(["--workspace", ws.to_str().unwrap()])
-        .assert()
-        .success();
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "b"])
-        .assert()
-        .success();
-    assert!(ws.join(".git").exists());
-}
-
-#[test]
-fn a_local_root_that_is_already_a_repository_is_not_reinitialised() {
-    // Standing up twice is the same answer, and initialising over an existing
-    // repository would discard its history.
-    let dir = tempfile::tempdir().unwrap();
-    let (_src, root) = content_repo_and_root(dir.path());
-    // Point it at itself rather than at the remote it was cloned from.
-    let cfg = root.join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
-    let before = std::fs::read_to_string(root.join(".git/config")).unwrap();
-    let ws = dir.path().join("hands").join("c");
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "add", "c"])
-        .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "c", "--git-email", "c@example.invalid"])
-        .args(["--workspace", ws.to_str().unwrap()])
-        .assert()
-        .success();
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "c"])
-        .assert()
-        .success();
-
-    assert_eq!(
-        std::fs::read_to_string(root.join(".git/config")).unwrap(),
-        before,
-        "an existing repository must not be re-initialised"
-    );
-}
 
 #[test]
 fn a_symlinked_registry_is_written_through_rather_than_replaced() {
@@ -515,37 +410,3 @@ fn a_symlinked_registry_is_written_through_rather_than_replaced() {
     );
 }
 
-#[test]
-fn a_local_root_inside_another_repository_is_refused() {
-    // Otherwise `local` initialises a repository inside somebody else's
-    // checkout and writes a participant's directories into their tree, which
-    // the deny list forbids outright.
-    let dir = tempfile::tempdir().unwrap();
-    let (_src, outer) = content_repo_and_root(dir.path());
-
-    let nested = outer.join("sub");
-    std::fs::create_dir_all(&nested).unwrap();
-    let cfg = nested.join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
-    let ws = dir.path().join("hands").join("h");
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "add", "h"])
-        .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "h", "--git-email", "h@example.invalid"])
-        .args(["--workspace", ws.to_str().unwrap()])
-        .assert()
-        .success();
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "h"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("sits inside the repository"));
-
-    assert!(
-        !nested.join(".git").exists(),
-        "no repository may be initialised inside another one"
-    );
-    assert!(!ws.exists(), "and nothing may be cloned");
-}

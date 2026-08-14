@@ -536,8 +536,12 @@ pub enum OrgOp {
         /// The handle to stand up.
         handle: String,
 
-        /// The workspace root to stand it up in. Defaults to the current
-        /// directory, which is the workspace homma was invoked from.
+        /// The workspace root to stand it up in.
+        ///
+        /// Defaults to the directory holding the configuration file, resolved
+        /// to an absolute path. Not the current directory: where somebody
+        /// happens to be standing is not a statement about which workspace is
+        /// being operated on.
         #[arg(long)]
         root: Option<PathBuf>,
     },

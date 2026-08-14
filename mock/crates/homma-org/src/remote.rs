@@ -33,37 +33,66 @@ pub fn same_repo(a: &str, b: &str) -> bool {
 pub fn parse(url: &str) -> Remote {
     let trimmed = url.trim().trim_end_matches('/');
 
-    // scp-like: user@host:owner/name.git, which has no scheme and one colon
-    // before a path that does not start with a slash.
-    if let Some((before, after)) = trimmed.split_once(':') {
-        if !after.starts_with('/') && !before.contains('/') && before.contains('@') {
-            let host = before.rsplit('@').next().unwrap_or(before);
-            return hosted(host, after);
-        }
+    // A `file://` URL is a path wearing a URL. Treating it as a host made
+    // `file:///srv/content` a different repository from `/srv/content`.
+    if let Some(rest) = trimmed.strip_prefix("file://") {
+        return local(rest);
     }
 
-    // scheme://host/owner/name.git
+    // scheme://[user@]host[:port]/owner/name
     if let Some((_scheme, rest)) = trimmed.split_once("://") {
-        if let Some((host, path)) = rest.split_once('/') {
-            // Credentials in the authority are not part of the identity.
-            let host = host.rsplit('@').next().unwrap_or(host);
-            return hosted(host, path);
+        if let Some((authority, path)) = rest.split_once('/') {
+            return hosted(authority, path);
         }
     }
 
-    // Anything else is a path. Resolved where it exists, because two spellings
-    // of one directory are one directory; left as written where it does not, so
-    // that a path which has not been created yet still compares to itself.
-    let path = std::path::PathBuf::from(trimmed.trim_end_matches(".git"));
+    // scp-like: [user@]host:owner/name. One colon, and what follows is not an
+    // absolute path. **The user is optional**; requiring it sent every bare
+    // `host:path` to the local branch, where it could never compare equal to
+    // the same repository written any other way.
+    if let Some((authority, path)) = trimmed.split_once(':') {
+        // `C:/src/thing` is a drive letter, not a host.
+        let drive_letter = authority.len() == 1;
+        if !path.starts_with('/') && !authority.contains('/') && !drive_letter {
+            return hosted(authority, path);
+        }
+    }
+
+    local(trimmed)
+}
+
+/// A path on this machine, resolved where it exists.
+///
+/// Resolved because two spellings of one directory are one directory; left as
+/// written where it does not exist, so a path not yet created still compares to
+/// itself.
+fn local(path: &str) -> Remote {
+    let path = std::path::PathBuf::from(strip_git_suffix(path));
     Remote::Local(std::fs::canonicalize(&path).unwrap_or(path))
 }
 
-fn hosted(host: &str, path: &str) -> Remote {
-    let path = path.trim_matches('/').trim_end_matches(".git");
+/// Exactly one trailing `.git`.
+///
+/// `trim_end_matches` strips it repeatedly, which made `owner/name.git.git` the
+/// same repository as `owner/name`. That one fails **open**, so it is the one
+/// worth naming.
+fn strip_git_suffix(s: &str) -> &str {
+    s.strip_suffix(".git").unwrap_or(s)
+}
+
+fn hosted(authority: &str, path: &str) -> Remote {
+    // Credentials are not the identity, and neither is the port: the same
+    // repository reached on an explicit 22 or 443 is the same repository.
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    let host = host.split(':').next().unwrap_or(host);
+
+    let path = strip_git_suffix(path.trim_matches('/'));
     match path.rsplit_once('/') {
         Some((owner, name)) => Remote::Hosted {
             host: host.to_ascii_lowercase(),
-            owner: owner.trim_matches('/').to_string(),
+            // A forge treats an owner case-insensitively, so two spellings of
+            // one owner are one owner.
+            owner: owner.trim_matches('/').to_ascii_lowercase(),
             name: name.to_string(),
         },
         // A host and a bare name, with nobody owning it.
@@ -76,14 +105,33 @@ fn hosted(host: &str, path: &str) -> Remote {
 }
 
 /// The repository's own name, for a message that has to say which one.
+/// **Not derived from [`parse`].** That folds case so two spellings of one
+/// owner compare equal, which is right for a comparison and wrong for a message:
+/// a refusal that echoes an owner back in a case the operator did not type reads
+/// as a second mistake on top of the first.
 pub fn repo_name(url: &str) -> String {
-    match parse(url) {
-        Remote::Hosted { owner, name, .. } if !owner.is_empty() => format!("{owner}/{name}"),
-        Remote::Hosted { name, .. } => name,
-        Remote::Local(p) => p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| p.to_string_lossy().into_owned()),
+    let trimmed = url.trim().trim_end_matches('/');
+    let trimmed = trimmed.strip_prefix("file://").unwrap_or(trimmed);
+    let after_authority = match trimmed.split_once("://") {
+        Some((_, rest)) => rest.split_once('/').map(|(_, p)| p).unwrap_or(rest),
+        None => match trimmed.split_once(':') {
+            Some((authority, path))
+                if !path.starts_with('/') && !authority.contains('/') && authority.len() > 1 =>
+            {
+                path
+            }
+            _ => trimmed,
+        },
+    };
+    let path = strip_git_suffix(after_authority.trim_matches('/'));
+    match path.rsplit_once('/') {
+        // Two segments, which is an owner and a name on every forge worth
+        // naming. More than two, and the last two are the part that identifies.
+        Some((owner, name)) => match owner.rsplit_once('/') {
+            Some((_, nearest)) => format!("{nearest}/{name}"),
+            None => format!("{owner}/{name}"),
+        },
+        None => path.to_string(),
     }
 }
 
@@ -149,6 +197,75 @@ mod tests {
         std::fs::create_dir_all(&a).unwrap();
         std::fs::create_dir_all(&b).unwrap();
         assert!(!same_repo(a.to_str().unwrap(), b.to_str().unwrap()));
+    }
+
+    #[test]
+    fn a_port_is_not_part_of_the_identity() {
+        assert!(same_repo(
+            "ssh://git@github.com:22/orgrinrt/clause-dev.git",
+            "git@github.com:orgrinrt/clause-dev.git"
+        ));
+        assert!(same_repo(
+            "https://github.com:443/orgrinrt/clause-dev",
+            "https://github.com/orgrinrt/clause-dev"
+        ));
+    }
+
+    #[test]
+    fn the_scp_form_needs_no_user() {
+        // Requiring one sent every bare `host:path` to the local branch, where
+        // it could never compare equal to the same repository written any
+        // other way, so the guard refused a correct workspace permanently.
+        assert!(same_repo(
+            "github.com:orgrinrt/clause-dev.git",
+            "https://github.com/orgrinrt/clause-dev"
+        ));
+    }
+
+    #[test]
+    fn a_file_url_is_the_path_it_names() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("content");
+        std::fs::create_dir_all(&p).unwrap();
+        assert!(same_repo(
+            &format!("file://{}", p.display()),
+            p.to_str().unwrap()
+        ));
+    }
+
+    #[test]
+    fn an_owner_differing_only_in_case_is_the_same_owner() {
+        assert!(same_repo(
+            "git@github.com:OrgrinRT/clause-dev.git",
+            "git@github.com:orgrinrt/clause-dev.git"
+        ));
+    }
+
+    #[test]
+    fn only_one_git_suffix_is_stripped() {
+        // Stripping repeatedly made these one repository, and that one fails
+        // open: the guard would accept a workspace cloned from somewhere else.
+        assert!(!same_repo(
+            "git@github.com:orgrinrt/clause-dev.git.git",
+            "git@github.com:orgrinrt/clause-dev.git"
+        ));
+    }
+
+    #[test]
+    fn a_windows_drive_letter_is_a_path_and_not_a_host() {
+        assert!(matches!(parse("C:/src/content"), Remote::Local(_)));
+    }
+
+    #[test]
+    fn a_path_of_more_than_two_segments_keeps_only_the_owner_and_the_name() {
+        assert_eq!(
+            parse("https://git.example.org/group/sub/thing.git"),
+            Remote::Hosted {
+                host: "git.example.org".into(),
+                owner: "group/sub".into(),
+                name: "thing".into(),
+            }
+        );
     }
 
     #[test]
