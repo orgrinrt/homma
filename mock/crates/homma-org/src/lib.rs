@@ -8,7 +8,7 @@ pub mod generate;
 pub mod workspace;
 
 pub use generate::{definition, write_definitions, Form, Generated};
-pub use workspace::{provision, prepare, Layout, Prepared, ProvisionError, Provisioned};
+pub use workspace::{prepare, provision, Layout, Prepared, ProvisionError, Provisioned};
 
 use homma_api::{Identity, Role, Standing, Workspace};
 

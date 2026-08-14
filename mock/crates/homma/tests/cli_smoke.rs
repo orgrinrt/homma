@@ -229,7 +229,13 @@ fn adding_an_entry_appends_and_leaves_the_rest_of_the_file_alone() {
     let path = registry_with_a_comment(&dir);
 
     bin()
-        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
+        .args([
+            "--config",
+            path.to_str().unwrap(),
+            "org",
+            "add",
+            "rendering",
+        ])
         .args(["--role", "hand", "--domain", "rendering"])
         .assert()
         .success()
@@ -251,7 +257,13 @@ fn an_added_entry_parses_back_and_reports_as_mapped() {
     let dir = tempfile::tempdir().unwrap();
     let path = registry_with_a_comment(&dir);
     bin()
-        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
+        .args([
+            "--config",
+            path.to_str().unwrap(),
+            "org",
+            "add",
+            "rendering",
+        ])
         .args(["--role", "hand", "--domain", "rendering"])
         .assert()
         .success();
@@ -271,7 +283,13 @@ fn standing_up_a_mapped_entry_is_refused_and_says_it_is_mapped() {
     let dir = tempfile::tempdir().unwrap();
     let path = registry_with_a_comment(&dir);
     bin()
-        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
+        .args([
+            "--config",
+            path.to_str().unwrap(),
+            "org",
+            "add",
+            "rendering",
+        ])
         .args(["--role", "hand"])
         .assert()
         .success();
