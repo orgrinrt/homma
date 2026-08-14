@@ -29,12 +29,24 @@ carried by version control as a link rather than a copy.
 Repositories are added when work needs them rather than up front, so a workspace
 describes what its owner actually does.
 
-**The clone URL is the workspace root's own `origin`, never a configuration
-key.** homma runs inside a clone of the content repository, so the URL is already
-on disk and correct; adding a key for it would be a second place for one fact to
-live and therefore a second place for it to be wrong. Where the root is not a
-repository there is nothing to derive it from, and standing up is refused rather
-than guessing.
+**The workspace root is the configuration file's own directory**, never the
+current one. The current directory says where somebody happened to be standing,
+which is not a statement about which workspace is being operated on; treating it
+as one clones an arbitrary repository and writes a participant's directories into
+whatever tree the operator was in. An explicit root still overrides, because
+standing a workspace up elsewhere on purpose is a real thing to do.
+
+**The clone URL comes from that root's `origin`, verified against
+`content_repo`.** Both facts exist, so both are used and a disagreement is refused
+naming each. A root whose origin does not name the content repository is not the
+workspace this configuration describes, and cloning from it is the defect the
+verification exists to catch. Where the root is not a repository at all there is
+nothing to derive from, and standing up is refused rather than guessed at.
+
+**An existing workspace has its remote checked before it is skipped.** Standing up
+twice is the same answer only when what is already there is the right thing; a
+workspace cloned from the wrong repository would otherwise be permanent, since a
+later run reports it already present and succeeds.
 
 **Setting the git identity in that clone's own configuration is the step whose
 absence is invisible.** Nothing fails, no test goes red, and the first sign is a
