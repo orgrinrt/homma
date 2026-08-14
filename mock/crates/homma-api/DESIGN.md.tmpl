@@ -67,6 +67,14 @@ relative path resolves against whatever directory the process happens to be in,
 so a guard walking upward from one walks up from the process's directory and
 passes, and a clone target that is one lands wherever the operator was standing.
 
+**What the type carries is absoluteness, and nothing else.** It does not carry
+containment: `/a/b/../../etc` is absolute, and so is a path pointing straight
+into somebody else's repository. Containment is a question about the filesystem
+rather than about the value, so it stays a runtime check, and the check belongs
+on **the path being written to** rather than on the one it was resolved against.
+A round that put the type in place and left that check on the wrong path shipped
+the same escape it was closing.
+
 **The type is the point, and prose was tried first.** Stating the precondition in
 a comment means re-checking it at every call. Checking it at runtime in one
 implementation leaves the other six unchecked, which is what happened: three

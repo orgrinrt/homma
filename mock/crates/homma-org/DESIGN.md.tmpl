@@ -53,6 +53,16 @@ facts say which repository this is, so both are used and a disagreement is
 refused naming each. A root that is a clone of something else is not the
 workspace this configuration describes, and its tree is not ours to write in.
 
+**A workspace is refused when it sits inside another repository.** Not "under
+the workspace root", which is false: a workspace legitimately lives outside the
+content repository, and `~/Dev/clause-crew/paja` is the ordinary case. The
+property that matters is that creating one never writes into a tree belonging to
+somebody else, which is what the deny list forbids and what a relative `..` or a
+plainly absolute path both reach.
+
+The same question already had an answer, `enclosing_repo`, and it was being asked
+about the root instead of about the thing being created.
+
 **An existing workspace has its remote checked before it is skipped.** Standing up
 twice is the same answer only when what is already there is the right thing; a
 workspace cloned from the wrong repository would otherwise be permanent, since a
