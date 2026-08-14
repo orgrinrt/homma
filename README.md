@@ -18,9 +18,19 @@ The intended workflow shape is a flat workspace directory of cloned repos plus a
 
 ## Status
 
-Pre-implementation. The repo carries the bootstrap workspace shape; substantive code lands across a sequence of upcoming tasks (config schema, git ops via `gix`, Forge trait, Forgejo and GitHub clients, CLI parser, migrate command, built-in lints).
+Working, and narrow. homma reads a workspace manifest, reports the state of every
+member repository and its forge mapping, drives each member's own tooling, and
+carries a registry of the participants who work in the workspace.
 
-This README will fill in the standard sections (Installation, Usage, Contents, Cargo features) once the surface stabilises.
+The Cargo workspace lives under `mock/`, not at the repository root, which is the
+shape every repository in this ecosystem uses. Build from there:
+
+```
+cd mock && cargo build
+```
+
+Design documents are generated into `docs/` from templates under `mock/`; the
+templates are the source and the rendered tree is not hand-edited.
 
 ## Support
 
