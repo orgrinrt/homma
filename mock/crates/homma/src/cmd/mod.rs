@@ -124,7 +124,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     .canonical()
                     .with_context(|| format!("resolving the workspace root {}", root.display()))?;
                     let out = stand::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
-                    println!("{} {}", out.handle, out.home.display());
+                    println!("{} {}", out.handle, out.home);
                     println!(
                         "  workspace  {} ({})",
                         out.workspace.display(),
@@ -134,8 +134,8 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             "already there"
                         }
                     );
-                    println!("  definition {}", out.definition.display());
-                    println!("  twin       {}", out.twin_definition.display());
+                    println!("  definition {}", out.definition);
+                    println!("  twin       {}", out.twin_definition);
                 }
             }
             Ok(Outcome::Ok)

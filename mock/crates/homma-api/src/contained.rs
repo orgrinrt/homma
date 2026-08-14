@@ -50,10 +50,17 @@ impl Root {
 
     /// Prove that `path` resolves inside this root.
     ///
-    /// The path need not exist. Its longest existing prefix is resolved and the
-    /// remainder is taken as written, which is what makes the check usable on a
-    /// path that is about to be created, and is enough: a symlink that would
-    /// redirect the write has to exist for the write to follow it.
+    /// The path need not exist. Every symlink on it is followed by
+    /// [`AbsPath::resolved`], including one whose target does not exist, and
+    /// what remains after the last real component is taken as written.
+    ///
+    /// **The previous version of this sentence was the type's whole safety
+    /// argument and it was false.** It said a symlink had to exist for a write
+    /// to follow it, which is true of the symlink and not of its target: a
+    /// dangling link is a link, `O_CREAT` follows it, and the write lands
+    /// outside. The argument now rests on the walk in `resolved` rather than on
+    /// a claim about what `exists()` means, and the cases are pinned by tests
+    /// below rather than by this paragraph.
     pub fn contain(&self, path: &AbsPath) -> Result<ContainedPath, Escapes> {
         let resolved = path.resolved().map_err(|e| Escapes {
             path: path.clone(),
@@ -94,6 +101,14 @@ impl Root {
 ///
 /// Constructed only by [`Root::contain`]. That is deliberate and is the point of
 /// the type: a function taking one cannot be handed a path nobody checked.
+///
+/// **It deliberately does not implement `Deref<Target = Path>`.** It did, and
+/// that handed every consumer `Path::join` and `Path::parent` on a proven path.
+/// Neither preserves the proof, and `join` with an absolute argument discards
+/// the receiver outright, so the guarantee was voidable by accident by anybody
+/// who did not know to avoid it. The accessors below all hand out the same path
+/// and none of them produces a new one; deriving a path means going back through
+/// [`Root::contain`], which is the only thing that can prove one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainedPath(AbsPath);
 
@@ -108,13 +123,6 @@ impl ContainedPath {
 
     pub fn into_abs(self) -> AbsPath {
         self.0
-    }
-}
-
-impl std::ops::Deref for ContainedPath {
-    type Target = Path;
-    fn deref(&self) -> &Path {
-        self.0.as_path()
     }
 }
 
@@ -286,7 +294,7 @@ mod tests {
         let root = Root::new(&abs(d.path())).unwrap();
         let target = root.contain(&root.as_abs().join("a").join("b")).unwrap();
         root.create_dir_all(&target).unwrap();
-        assert!(target.exists());
+        assert!(target.as_path().exists());
     }
 
     #[test]

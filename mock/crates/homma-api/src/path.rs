@@ -111,41 +111,100 @@ impl AbsPath {
         self.0.parent().map(|p| Self(p.to_path_buf()))
     }
 
-    /// This path with its **existing prefix** resolved and the rest left as
-    /// written.
+    /// This path with every symlink on it followed, whether or not the thing at
+    /// the end exists.
     ///
-    /// `canonical` fails on a path that does not exist, and a path being created
-    /// never does, so comparing one against a resolved path never matches: on a
-    /// system where `/var` is a symlink to `/private/var`, a canonical root and
-    /// an unresolved target are never in a containment relation even when one
-    /// plainly contains the other. That mismatch has now produced the same
-    /// defect twice, so the resolution lives here rather than in whichever
-    /// caller last needed it.
+    /// **A dangling symlink is not an absent path**, and assuming otherwise was
+    /// a real hole rather than a theoretical one. The previous shape found the
+    /// longest prefix satisfying `Path::exists()` and canonicalised that.
+    /// `exists()` follows the link, so a link whose target is missing answers
+    /// `false`, gets popped off as absent, and is re-appended **as written**;
+    /// `canonicalize` then fails on it too, so the fallback returned the path
+    /// unresolved. Every `std` write opens with `O_CREAT` and follows the link,
+    /// so the write landed at the target while the guard was comparing the link.
+    ///
+    /// Measured, on a link whose target does not exist: `exists()` is `false`,
+    /// `symlink_metadata()` is `Ok`, `canonicalize()` is `Err(NotFound)`.
+    ///
+    /// So this walks the components instead, the way the kernel does. Each
+    /// prefix is examined with `symlink_metadata`, which reports a dangling link
+    /// as the link it is, and `read_link` reads one whether or not its target
+    /// exists. A target that is absolute restarts the walk at the root; a
+    /// relative one continues from where the link sat. What does not exist and
+    /// is not a link is taken as written, which is what keeps this usable on a
+    /// path that is about to be created.
+    ///
+    /// `..` is handled here as well as lexically, because a link target may
+    /// carry one and it applies to wherever the link landed rather than to
+    /// where the path was written.
     pub fn resolved(&self) -> std::io::Result<Self> {
-        let mut existing = self.clone();
-        let mut rest: Vec<std::ffi::OsString> = Vec::new();
-        loop {
-            if existing.exists() {
-                break;
+        use std::collections::VecDeque;
+        use std::ffi::OsString;
+
+        // A cycle is a real filesystem state and hanging is not an acceptable
+        // answer to it. Linux uses 40; the number matters less than its
+        // existence.
+        const MAX_HOPS: usize = 40;
+
+        let mut pending: VecDeque<OsString> = self
+            .0
+            .components()
+            .filter_map(|c| match c {
+                std::path::Component::Normal(n) => Some(n.to_os_string()),
+                std::path::Component::ParentDir => Some(OsString::from("..")),
+                _ => None,
+            })
+            .collect();
+
+        let mut out = PathBuf::from("/");
+        let mut hops = 0usize;
+
+        while let Some(name) = pending.pop_front() {
+            if name == ".." {
+                out.pop();
+                continue;
             }
-            match (
-                existing.file_name().map(|n| n.to_os_string()),
-                existing.parent(),
-            ) {
-                (Some(name), Some(parent)) => {
-                    rest.push(name);
-                    existing = parent;
+            if name == "." {
+                continue;
+            }
+            let candidate = out.join(&name);
+            match std::fs::symlink_metadata(&candidate) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    hops += 1;
+                    if hops > MAX_HOPS {
+                        // `ErrorKind::FilesystemLoop` says this exactly and is
+                        // unstable, and a feature gate is not worth an error
+                        // kind. The message carries what the kind would.
+                        return Err(std::io::Error::other(format!(
+                            "too many symbolic links resolving {}",
+                            self.0.display()
+                        )));
+                    }
+                    let target = std::fs::read_link(&candidate)?;
+                    let mut front: Vec<OsString> = Vec::new();
+                    for c in target.components() {
+                        match c {
+                            std::path::Component::RootDir => out = PathBuf::from("/"),
+                            std::path::Component::Prefix(_) => {}
+                            std::path::Component::CurDir => {}
+                            std::path::Component::ParentDir => front.push(OsString::from("..")),
+                            std::path::Component::Normal(n) => front.push(n.to_os_string()),
+                        }
+                    }
+                    // An absolute target has already reset `out`; a relative one
+                    // continues from the directory the link sat in, which is
+                    // `out` as it stands.
+                    for n in front.into_iter().rev() {
+                        pending.push_front(n);
+                    }
                 }
-                // Nothing on the way up exists, which an absolute path with a
-                // root cannot manage, but is not worth an unwrap.
-                _ => return Ok(self.clone()),
+                // Present and not a link, or absent. Either way it is taken as
+                // written: an absent component cannot redirect anything, and a
+                // real directory is where it says it is.
+                _ => out.push(name),
             }
         }
-        let mut out = existing.canonical()?;
-        for name in rest.into_iter().rev() {
-            out = out.join(name);
-        }
-        Ok(out)
+        Ok(Self(out))
     }
 
     /// Symlinks and `..` resolved.

@@ -123,15 +123,22 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
             .as_ref()
             .expect("a staffed identity carries a workspace"),
     );
-    // Both sides resolved, because one of them is canonical and the other is
-    // whatever the registry said. Comparing those directly is what let this
-    // check fall through to the repository check, which only fires after the
-    // root has been initialised.
+    // Both sides resolved, and this comment previously said so while resolving
+    // one of them. On a machine where the root's own path runs through a link,
+    // and `/var -> private/var` on this one, a resolved workspace never starts
+    // with an unresolved root, so the guard answered false for a workspace that
+    // was plainly inside the root and refused nothing. It was inert rather than
+    // harmful only because `cmd/mod.rs` canonicalises the root before calling
+    // here, and nothing pinned that, which is the same shape as every other
+    // guard on this branch that turned out to be doing less than its comment.
     let resolved_workspace = workspace
         .resolved()
         .with_context(|| format!("resolving {workspace}"))?;
+    let resolved_root = root
+        .resolved()
+        .with_context(|| format!("resolving {root}"))?;
     anyhow::ensure!(
-        !resolved_workspace.starts_with(root.as_path()),
+        !resolved_workspace.starts_with(resolved_root.as_path()),
         "{workspace} is inside the workspace root at {root}. A workspace is a \
          clone of the content repository and cannot live in its tree; name one \
          outside it."
@@ -239,6 +246,46 @@ domain = "rendering"
     fn ws() -> Workspace {
         Workspace::parse(ORG).unwrap()
     }
+    // Pins the fix for a guard that was inert. `stand_up` refused a workspace
+    // inside the root by comparing a *resolved* workspace against a *raw* root,
+    // and on any machine where the root's path runs through a link those never
+    // match, so the guard passed everything. This test hands it an unresolved
+    // root deliberately, which is what `tempfile` already gives on macOS, where
+    // `/var` is a link to `private/var`.
+    //
+    // Written because the review that found it observed that nothing pinned it,
+    // and a guard nobody pins is a guard the next round deletes by accident.
+    #[test]
+    fn a_workspace_inside_an_unresolved_root_is_still_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let raw = abs(d.path());
+        let resolved = raw.resolved().unwrap();
+        // The test says nothing unless the two differ, so it says so out loud
+        // rather than passing silently on a machine where they do not.
+        if raw == resolved {
+            eprintln!("skipped: {raw} is already resolved on this filesystem");
+            return;
+        }
+
+        let git = FakeGit::at_the_content_repo();
+        let err = stand_up(&ws_with_inside_workspace(), &raw, "paja", &git)
+            .expect_err("a workspace inside the root is refused whatever the root looks like");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("inside the workspace root"),
+            "must refuse for the right reason: {msg}"
+        );
+    }
+
+    /// The same registry, with the workspace pointed inside the root.
+    ///
+    /// Relative on purpose: an absolute workspace ignores the root entirely, so
+    /// only a relative one exercises the comparison this test is about.
+    fn ws_with_inside_workspace() -> Workspace {
+        Workspace::parse(&ORG.replace("workspace = \"/tmp/paja\"", "workspace = \"inside/paja\""))
+            .expect("the fixture parses")
+    }
+
     #[test]
     fn standing_up_clones_the_workspace_and_sets_its_identity() {
         // The defect the previous round shipped: `provision` existed, was
@@ -401,8 +448,8 @@ domain = "rendering"
             &FakeGit::at_the_content_repo(),
         )
         .unwrap();
-        assert!(out.definition.exists());
-        assert!(out.twin_definition.exists());
+        assert!(out.definition.as_path().exists());
+        assert!(out.twin_definition.as_path().exists());
 
         let prime = std::fs::read_to_string(&out.definition).unwrap();
         let twin = std::fs::read_to_string(&out.twin_definition).unwrap();
@@ -415,8 +462,8 @@ domain = "rendering"
             .unwrap()
             .file_type()
             .is_symlink());
-        std::fs::write(link.join("MEMORY.md"), "x").unwrap();
-        assert!(out.home.join("memory/MEMORY.md").exists());
+        std::fs::write(link.as_path().join("MEMORY.md"), "x").unwrap();
+        assert!(out.home.as_path().join("memory/MEMORY.md").exists());
     }
 
     #[test]
@@ -429,7 +476,7 @@ domain = "rendering"
             &FakeGit::at_the_content_repo(),
         )
         .unwrap();
-        std::fs::write(a.home.join("memory/MEMORY.md"), "kept").unwrap();
+        std::fs::write(a.home.as_path().join("memory/MEMORY.md"), "kept").unwrap();
         let b = stand_up(
             &ws(),
             &abs(d.path()),
@@ -439,7 +486,7 @@ domain = "rendering"
         .unwrap();
         assert_eq!(a.home, b.home);
         assert_eq!(
-            std::fs::read_to_string(b.home.join("memory/MEMORY.md")).unwrap(),
+            std::fs::read_to_string(b.home.as_path().join("memory/MEMORY.md")).unwrap(),
             "kept",
             "standing up again must not clear what is remembered"
         );

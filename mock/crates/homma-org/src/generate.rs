@@ -11,8 +11,8 @@
 //! carrying the key grants the write path whatever its prose says.
 
 use crate::workspace::Layout;
-use homma_api::{ContainedPath, Escapes};
 use homma_api::Identity;
+use homma_api::{ContainedPath, Escapes};
 use std::fs;
 use std::io;
 

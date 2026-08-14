@@ -156,7 +156,7 @@ pub fn prepare(layout: &Layout<'_>, id: &Identity) -> io::Result<Prepared> {
             let parent = root.contain(&parent).map_err(escaped)?;
             root.create_dir_all(&parent)?;
         }
-        link_memory(link.as_path(), memory.as_path())?;
+        link_memory(&link, &memory)?;
     }
 
     let definition = layout.definition(id).map_err(escaped)?;
@@ -185,8 +185,16 @@ fn escaped(e: Escapes) -> io::Error {
 ///
 /// Relative because an absolute target is a path on one machine, and the link is
 /// committed: a clone elsewhere must resolve it.
-fn link_memory(link: &Path, target: &Path) -> io::Result<()> {
-    let relative = relative_from(link.parent().unwrap_or(Path::new(".")), target);
+///
+/// **Both arguments are proven paths and that is not decoration.** This function
+/// performs `remove_file` and `symlink`, which are two of the most consequential
+/// writes in the crate, and it took two `&Path` while the module above claimed
+/// an unproven write no longer compiled. It was private with one caller, so the
+/// claim was true in practice and false as stated, which is the failure mode
+/// this branch has been correcting for nine rounds.
+fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
+    let link = link.as_path();
+    let relative = relative_from(link.parent().unwrap_or(Path::new(".")), target.as_path());
     match fs::symlink_metadata(link) {
         Ok(meta) if meta.file_type().is_symlink() => {
             if fs::read_link(link)? == relative {
@@ -257,8 +265,12 @@ mod tests {
     fn a_hand_and_a_consultant_live_under_different_roots() {
         let (d, p) = fixture();
         let l = Layout::new(&abs(d.path()), &p).unwrap();
-        assert!(l.home(&hand()).unwrap().ends_with("hands/paja"));
-        assert!(l.home(&expert()).unwrap().ends_with("experts/proof"));
+        assert!(l.home(&hand()).unwrap().as_path().ends_with("hands/paja"));
+        assert!(l
+            .home(&expert())
+            .unwrap()
+            .as_path()
+            .ends_with("experts/proof"));
     }
 
     #[test]
@@ -268,6 +280,7 @@ mod tests {
         assert!(l
             .harness_memory(&hand())
             .unwrap()
+            .as_path()
             .ends_with(".claude/agent-memory/paja"));
     }
 
@@ -289,8 +302,13 @@ mod tests {
         assert_eq!(target, Path::new("../../.shared/hands/paja/memory"));
 
         // Writing through the harness's path must land in the layout's directory.
-        fs::write(done.harness_link.join("MEMORY.md"), "learned a thing").unwrap();
-        let landed = fs::read_to_string(l.memory(&id).unwrap().join("MEMORY.md")).unwrap();
+        fs::write(
+            done.harness_link.as_path().join("MEMORY.md"),
+            "learned a thing",
+        )
+        .unwrap();
+        let landed =
+            fs::read_to_string(l.memory(&id).unwrap().as_path().join("MEMORY.md")).unwrap();
         assert_eq!(landed, "learned a thing");
     }
 
@@ -300,12 +318,12 @@ mod tests {
         let l = Layout::new(&abs(d.path()), &p).unwrap();
         let id = hand();
         let first = prepare(&l, &id).unwrap();
-        fs::write(first.harness_link.join("MEMORY.md"), "kept").unwrap();
+        fs::write(first.harness_link.as_path().join("MEMORY.md"), "kept").unwrap();
         prepare(&l, &id).unwrap();
         // Comparing the two Prepared values would pass with prepare a no-op,
         // since they are built from path arithmetic. The content is the test.
         assert_eq!(
-            fs::read_to_string(l.memory(&id).unwrap().join("MEMORY.md")).unwrap(),
+            fs::read_to_string(l.memory(&id).unwrap().as_path().join("MEMORY.md")).unwrap(),
             "kept",
             "a second prepare must not clear what the first one's memory holds"
         );
@@ -318,12 +336,16 @@ mod tests {
         let id = hand();
         let link = l.harness_memory(&id).unwrap();
         fs::create_dir_all(&link).unwrap();
-        fs::write(link.join("someones-notes.md"), "not ours to delete").unwrap();
+        fs::write(
+            link.as_path().join("someones-notes.md"),
+            "not ours to delete",
+        )
+        .unwrap();
 
         let err = prepare(&l, &id).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert!(
-            link.join("someones-notes.md").exists(),
+            link.as_path().join("someones-notes.md").exists(),
             "refusing must not be a euphemism for deleting"
         );
     }
@@ -334,8 +356,11 @@ mod tests {
         let l = Layout::new(&abs(d.path()), &p).unwrap();
         let general = Identity::new(Role::General, "runner");
         let done = prepare(&l, &general).unwrap();
-        assert!(!done.memory.exists(), "labour accumulates nothing");
-        assert!(!done.harness_link.exists());
+        assert!(
+            !done.memory.as_path().exists(),
+            "labour accumulates nothing"
+        );
+        assert!(!done.harness_link.as_path().exists());
     }
 
     #[test]
@@ -345,8 +370,8 @@ mod tests {
         let (d, p) = fixture();
         let l = Layout::new(&abs(d.path()), &p).unwrap();
         let done = prepare(&l, &expert()).unwrap();
-        assert!(done.memory.exists());
-        assert!(!done.notes.exists());
+        assert!(done.memory.as_path().exists());
+        assert!(!done.notes.as_path().exists());
     }
 
     #[test]
