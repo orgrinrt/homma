@@ -60,12 +60,33 @@ repository when it carries a `.git` **or** when it is itself bare. Computing it
 from the path alone is what let five rounds each close one route and open the
 next.
 
-**Every path written to is checked, not the one a reproduction pointed at.** The
-workspace is written to and so is the root, which is where the directories, the
-definitions and the memory link land. A round that moved the check from the root
-to the workspace closed the route it had been shown and put the original defect
-back on the path it stopped checking. The check therefore lives in one place that
-all of them pass through.
+**Two guards, answering two questions, and neither implies the other.**
+`enclosing_repo` asks whether a path sits inside a repository that is not itself,
+and it is called on the root and on the workspace, which are the paths a caller
+hands in. `Root::contain` asks whether a path resolves inside the workspace root,
+against the filesystem, and it is the only thing that can produce the
+`ContainedPath` the write functions accept.
+
+**The proven surface is stated rather than assumed**, because ten review rounds
+each closed one route while a sentence here claimed the class was shut:
+
+- Every path `Layout` hands out is proven, and `prepare` and `write_definitions`
+  accept nothing else, so a write computed from an unchecked path does not
+  compile.
+- The **body** of the memory symlink is proven too. It is a path the kernel
+  follows, it was computed lexically between as-written paths while the link was
+  created at its resolved location, and a link in the chain made the two disagree
+  by a level. That is the tenth round's defect and it is why this list exists in
+  place of a claim of totality.
+- `AbsPath::resolved` follows a dangling link rather than treating it as absent,
+  because every write opens with `O_CREAT` and follows one.
+
+**What is not closed, said plainly.** Proving a path and then creating it leaves
+a window a concurrent writer can plant a link in. Closing it means walking and
+creating one component at a time with the check between each, which is a larger
+change than any round so far has carried. Creation re-proves afterwards, which
+turns a silent escape into a loud one and is half of an answer rather than an
+answer.
 
 **A workspace is refused when it sits inside another repository.** Not "under
 the workspace root", which is false: a workspace legitimately lives outside the
