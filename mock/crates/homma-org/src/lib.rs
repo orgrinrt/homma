@@ -8,9 +8,9 @@ pub mod generate;
 pub mod workspace;
 
 pub use generate::{definition, write_definitions, Form, Generated};
-pub use workspace::{prepare, Layout, Prepared};
+pub use workspace::{provision, prepare, Layout, Prepared, ProvisionError, Provisioned};
 
-use homma_api::{Identity, Role, Workspace};
+use homma_api::{Identity, Role, Standing, Workspace};
 
 /// The registry, read from a workspace's configuration.
 pub struct Registry<'a> {
@@ -42,24 +42,31 @@ impl<'a> Registry<'a> {
         self.workspace.org.values().collect()
     }
 
-    /// Everyone whose role owns a workspace but whose entry cannot stand one up
-    /// yet, with what each is missing.
+    /// Everyone meant to have a workspace whose entry cannot yet stand one up,
+    /// with what each is missing.
     ///
     /// This exists so the gap is reported rather than discovered halfway through
-    /// a clone.
+    /// a clone. **A mapped identity is not incomplete** and does not appear
+    /// here: it has no workspace on purpose, and reporting it would make a
+    /// roster of mapped domains look like a roster of mistakes.
     pub fn incomplete(&self) -> Vec<(&'a Identity, Vec<&'static str>)> {
         self.workspace
             .org
             .values()
-            .filter(|i| i.role.has_workspace())
-            .filter_map(|i| {
-                let gaps = i.missing();
-                if gaps.is_empty() {
-                    None
-                } else {
-                    Some((i, gaps))
-                }
+            .filter_map(|i| match i.standing() {
+                Standing::Incomplete(gaps) => Some((i, gaps)),
+                _ => None,
             })
+            .collect()
+    }
+
+    /// Everyone holding a domain without a workspace, which is a decision
+    /// recorded rather than work half done.
+    pub fn mapped(&self) -> Vec<&'a Identity> {
+        self.workspace
+            .org
+            .values()
+            .filter(|i| i.standing() == Standing::Mapped)
             .collect()
     }
 }
@@ -77,6 +84,7 @@ handle = "op"
 
 [org.paja]
 role = "hand"
+staffed = true
 handle = "paja"
 git_name = "paja"
 git_email = "paja@example.invalid"
@@ -84,7 +92,13 @@ workspace = "/tmp/paja"
 
 [org.nameless]
 role = "hand"
+staffed = true
 handle = "nameless"
+
+[org.rendering]
+role = "hand"
+handle = "rendering"
+domain = "rendering"
 
 [org.proof]
 role = "expert"
@@ -104,7 +118,7 @@ handle = "proof"
             .iter()
             .map(|i| i.handle.clone())
             .collect();
-        assert_eq!(hands, vec!["nameless", "paja"]);
+        assert_eq!(hands, vec!["nameless", "paja", "rendering"]);
         assert_eq!(r.in_role(Role::King).len(), 1);
         assert_eq!(r.in_role(Role::General).len(), 0);
     }
@@ -120,9 +134,28 @@ handle = "proof"
     }
 
     #[test]
+    fn a_mapped_entry_is_not_reported_as_incomplete() {
+        // It lacks exactly the fields `nameless` lacks. Reporting both the same
+        // way turns a roster of drawn boundaries into a roster of mistakes, and
+        // a report that is wrong once per mapped domain is one nobody reads.
+        let w = ws();
+        let r = Registry::new(&w);
+        assert!(
+            r.incomplete().iter().all(|(i, _)| i.handle != "rendering"),
+            "a domain mapped on purpose is not a gap"
+        );
+        assert_eq!(
+            r.mapped().iter().map(|i| &i.handle).collect::<Vec<_>>(),
+            vec!["rendering"]
+        );
+    }
+
+    #[test]
     fn a_consultant_is_never_incomplete_because_it_owns_no_workspace() {
         let w = ws();
         let r = Registry::new(&w);
         assert!(r.incomplete().iter().all(|(i, _)| i.handle != "proof"));
+        // Nor mapped, which is a statement about a workspace it could have had.
+        assert!(r.mapped().iter().all(|i| i.handle != "proof"));
     }
 }

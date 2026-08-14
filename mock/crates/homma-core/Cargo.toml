@@ -10,6 +10,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+homma-api = { path = "../homma-api" }
 mockspace-template = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
 mockspace-config = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
 serde = { version = "1", features = ["derive"] }

@@ -208,3 +208,94 @@ fn archive_undeclared_forge_override_errors_cleanly() {
             "forge `doesnotexist` not declared",
         ));
 }
+
+/// A registry with a comment and one entry, to add to.
+fn registry_with_a_comment(dir: &tempfile::TempDir) -> PathBuf {
+    let path = dir.path().join("homma.toml");
+    std::fs::write(
+        &path,
+        "# a comment that must survive\ncontent_repo = \"clause-dev\"\n\n\
+         [org.op]\nrole = \"king\"\nhandle = \"op\"\n",
+    )
+    .unwrap();
+    path
+}
+
+#[test]
+fn adding_an_entry_appends_and_leaves_the_rest_of_the_file_alone() {
+    // Serialising the whole registry back would round-trip away the comments
+    // and the ordering somebody chose, silently, and the file is hand-edited.
+    let dir = tempfile::tempdir().unwrap();
+    let path = registry_with_a_comment(&dir);
+
+    bin()
+        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
+        .args(["--role", "hand", "--domain", "rendering"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("mapped"));
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("# a comment that must survive"),
+        "the comment must survive being added to:\n{text}"
+    );
+    assert!(text.contains("[org.rendering]"));
+    assert!(text.contains("staffed = false"));
+}
+
+#[test]
+fn an_added_entry_parses_back_and_reports_as_mapped() {
+    // The round trip is the point: an entry homma writes and cannot read is
+    // worse than one it refuses to write.
+    let dir = tempfile::tempdir().unwrap();
+    let path = registry_with_a_comment(&dir);
+    bin()
+        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
+        .args(["--role", "hand", "--domain", "rendering"])
+        .assert()
+        .success();
+
+    bin()
+        .args(["--config", path.to_str().unwrap(), "org", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rendering"))
+        .stdout(predicate::str::contains("mapped"));
+}
+
+#[test]
+fn standing_up_a_mapped_entry_is_refused_and_says_it_is_mapped() {
+    // The message is the test. Reporting three absent fields would be true and
+    // would send somebody off to fill them in when the entry is finished.
+    let dir = tempfile::tempdir().unwrap();
+    let path = registry_with_a_comment(&dir);
+    bin()
+        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
+        .args(["--role", "hand"])
+        .assert()
+        .success();
+
+    bin()
+        .args(["--config", path.to_str().unwrap(), "org", "up", "rendering"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mapped, not staffed"));
+}
+
+#[test]
+fn adding_a_handle_that_would_escape_its_directory_is_refused_at_the_cli() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = registry_with_a_comment(&dir);
+    bin()
+        .args(["--config", path.to_str().unwrap(), "org", "add", "../evil"])
+        .args(["--role", "hand"])
+        .assert()
+        .failure();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !text.contains("evil"),
+        "a refused entry must not reach the file:\n{text}"
+    );
+}

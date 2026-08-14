@@ -58,19 +58,46 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             match op {
                 OrgOp::List => {
                     for line in org::list(&ws) {
-                        let gaps = if line.gaps.is_empty() {
-                            String::new()
-                        } else {
-                            format!("  missing: {}", line.gaps.join(", "))
-                        };
                         println!(
-                            "{:<12} {:<8} {}{}",
+                            "{:<12} {:<8} {:<28} {}",
                             line.handle,
                             format!("{:?}", line.role).to_lowercase(),
+                            org::describe(&line.standing),
                             line.domain,
-                            gaps
                         );
                     }
+                }
+                OrgOp::Add {
+                    handle,
+                    role,
+                    nickname,
+                    full_name,
+                    domain,
+                    staffed,
+                    git_name,
+                    git_email,
+                    workspace,
+                } => {
+                    let mut ws = ws;
+                    let mut id = homma_api::Identity::new((*role).into(), handle.clone());
+                    id.staffed = *staffed;
+                    id.nickname = nickname.clone();
+                    id.full_name = full_name.clone();
+                    id.domain = domain.clone();
+                    id.git_name = git_name.clone();
+                    id.git_email = git_email.clone();
+                    id.workspace = workspace.clone();
+                    let standing = id.standing();
+                    org::add(&mut ws, id.clone())?;
+
+                    // Appended, so every comment and every hand-chosen ordering
+                    // in the registry survives being added to.
+                    let block = org::render_entry(&id)?;
+                    let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+                    use std::io::Write as _;
+                    file.write_all(block.as_bytes())?;
+
+                    println!("{} {}", id.handle, org::describe(&standing));
                 }
                 OrgOp::Up { handle, root } => {
                     let root = root
