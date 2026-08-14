@@ -5,14 +5,13 @@
 //! this one runs git against a tree it does not.
 
 use crate::remote::same_repo;
-use homma_api::{Git, Identity};
-use std::path::PathBuf;
+use homma_api::{AbsPath, Git, Identity};
 
 /// What provisioning a workspace did, so a caller reports rather than guesses.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Provisioned {
     /// Where the workspace is.
-    pub root: PathBuf,
+    pub root: AbsPath,
     /// False when the workspace already held the content repository.
     pub cloned: bool,
 }
@@ -20,8 +19,6 @@ pub struct Provisioned {
 /// Why a workspace could not be provisioned.
 #[derive(Debug)]
 pub enum ProvisionError<E> {
-    /// The entry names no workspace, so there is nowhere to put one.
-    NoWorkspace,
     /// The entry carries no git identity, so a clone would commit as whoever
     /// this machine belongs to.
     NoIdentity,
@@ -41,7 +38,6 @@ pub enum ProvisionError<E> {
 impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProvisionError::NoWorkspace => write!(f, "the entry names no workspace"),
             ProvisionError::NoIdentity => write!(f, "the entry carries no git identity"),
             ProvisionError::Git(e) => write!(f, "git: {e}"),
             ProvisionError::Parent(e) => write!(f, "creating the parent directory: {e}"),
@@ -83,10 +79,15 @@ impl<E: std::error::Error + 'static> std::error::Error for ProvisionError<E> {
 /// deleting a workspace to make it.
 pub fn provision<G: Git>(
     id: &Identity,
+    workspace: &AbsPath,
     content_repo_url: &str,
     git: &G,
 ) -> Result<Provisioned, ProvisionError<G::Error>> {
-    let root = PathBuf::from(id.workspace.as_ref().ok_or(ProvisionError::NoWorkspace)?);
+    // The workspace arrives already resolved. It used to be built here with
+    // `PathBuf::from(id.workspace)`, so a registry saying `workspace =
+    // "hands/rel"` cloned into whatever directory the process was in and wrote
+    // a nested repository into whatever tree that was.
+    let root = workspace.clone();
     let (name, email) = match (&id.git_name, &id.git_email) {
         (Some(n), Some(e)) => (n, e),
         // Refused rather than cloning and leaving the identity for later. A
@@ -140,7 +141,11 @@ pub fn provision<G: Git>(
 mod tests {
     use super::*;
     use homma_api::Role;
-    use std::path::Path;
+    use std::path::PathBuf;
+
+    fn abs(p: impl Into<PathBuf>) -> AbsPath {
+        AbsPath::new(p).expect("a tempdir path is absolute")
+    }
 
     fn hand() -> Identity {
         let mut i = Identity::new(Role::Hand, "paja");
@@ -158,10 +163,10 @@ mod tests {
         /// What `origin_url` answers for a given path. A fake answering one URL
         /// for every path cannot enter the refusing arm, which is why the guard
         /// shipped with no test.
-        remotes: std::cell::RefCell<Vec<(PathBuf, String)>>,
-        existing: std::cell::RefCell<Vec<PathBuf>>,
-        clones: std::cell::RefCell<Vec<(String, PathBuf)>>,
-        identities: std::cell::RefCell<Vec<(PathBuf, String, String)>>,
+        remotes: std::cell::RefCell<Vec<(AbsPath, String)>>,
+        existing: std::cell::RefCell<Vec<AbsPath>>,
+        clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
+        identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
     }
 
     #[derive(Debug)]
@@ -175,28 +180,26 @@ mod tests {
 
     impl Git for FakeGit {
         type Error = Never;
-        fn is_repo(&self, path: &Path) -> bool {
+        fn is_repo(&self, path: &AbsPath) -> bool {
             self.existing.borrow().iter().any(|p| p == path)
         }
-        fn clone_repo(&self, url: &str, dest: &Path) -> Result<(), Never> {
+        fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Never> {
             self.clones
                 .borrow_mut()
-                .push((url.to_string(), dest.to_path_buf()));
-            self.existing.borrow_mut().push(dest.to_path_buf());
+                .push((url.to_string(), dest.clone()));
+            self.existing.borrow_mut().push(dest.clone());
             Ok(())
         }
-        fn set_identity(&self, path: &Path, name: &str, email: &str) -> Result<(), Never> {
-            self.identities.borrow_mut().push((
-                path.to_path_buf(),
-                name.to_string(),
-                email.to_string(),
-            ));
+        fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
+            self.identities
+                .borrow_mut()
+                .push((path.clone(), name.to_string(), email.to_string()));
             Ok(())
         }
-        fn init(&self, _path: &Path) -> Result<(), Never> {
+        fn init(&self, _path: &AbsPath) -> Result<(), Never> {
             Ok(())
         }
-        fn enclosing_repo(&self, path: &Path) -> Result<Option<PathBuf>, Never> {
+        fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Never> {
             // The real one refuses a relative path. A fake that accepts one is
             // a fake that lets a caller ship the bypass.
             assert!(
@@ -205,7 +208,7 @@ mod tests {
             );
             Ok(None)
         }
-        fn origin_url(&self, path: &Path) -> Result<Option<String>, Never> {
+        fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Never> {
             if let Some((_, url)) = self.remotes.borrow().iter().find(|(p, _)| p == path) {
                 return Ok(Some(url.clone()));
             }
@@ -216,7 +219,7 @@ mod tests {
                 .find(|(_, p)| p == path)
                 .map(|(u, _)| u.clone()))
         }
-        fn identity(&self, path: &Path) -> Result<Option<(String, String)>, Never> {
+        fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Never> {
             Ok(self
                 .identities
                 .borrow()
@@ -227,21 +230,21 @@ mod tests {
         }
     }
 
-    fn staffed_hand(at: &Path) -> Identity {
+    fn staffed_hand(at: &AbsPath) -> Identity {
         let mut i = hand();
         i.staffed = true;
-        i.workspace = Some(at.to_string_lossy().into_owned());
+        i.workspace = Some(at.to_string());
         i
     }
 
     #[test]
     fn provisioning_clones_and_sets_the_identity_in_that_clone() {
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("paja");
+        let ws = abs(d.path().join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
-        let done = provision(&id, "git@example.invalid:orgrinrt/content.git", &git).unwrap();
+        let done = provision(&id, &ws, "git@example.invalid:orgrinrt/content.git", &git).unwrap();
         assert!(done.cloned);
         assert_eq!(git.clones.borrow().len(), 1);
         assert_eq!(
@@ -257,11 +260,11 @@ mod tests {
         // network fault. Found by running this against a real repository after
         // every fake-backed test passed.
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("nested").join("deeper").join("paja");
+        let ws = abs(d.path().join("nested").join("deeper").join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
-        provision(&id, "git@example.invalid:x/y.git", &git).unwrap();
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
         assert!(
             ws.parent().unwrap().exists(),
             "the parent must exist before the clone is attempted"
@@ -277,7 +280,7 @@ mod tests {
         // a fake that answered the matching URL for every path, so the refusing
         // arm was unreachable.
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("paja");
+        let ws = abs(d.path().join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
@@ -286,7 +289,7 @@ mod tests {
             "git@example.invalid:someone-else/content.git".into(),
         ));
 
-        let err = provision(&id, CONTENT, &git).unwrap_err();
+        let err = provision(&id, &ws, CONTENT, &git).unwrap_err();
         match err {
             ProvisionError::WrongRemote { expected, found } => {
                 assert_eq!(expected, CONTENT);
@@ -308,7 +311,7 @@ mod tests {
         // Comparing the last path segment made these equal. For a fork or a
         // mirror this is the ordinary case.
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("paja");
+        let ws = abs(d.path().join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
@@ -317,7 +320,7 @@ mod tests {
             .push((ws.clone(), "git@example.invalid:a-fork/content.git".into()));
 
         assert!(matches!(
-            provision(&id, CONTENT, &git).unwrap_err(),
+            provision(&id, &ws, CONTENT, &git).unwrap_err(),
             ProvisionError::WrongRemote { .. }
         ));
     }
@@ -327,12 +330,12 @@ mod tests {
         // An existing directory that is a repository and points nowhere is not
         // the content repository, and adopting it would be a guess.
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("paja");
+        let ws = abs(d.path().join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
 
-        match provision(&id, CONTENT, &git).unwrap_err() {
+        match provision(&id, &ws, CONTENT, &git).unwrap_err() {
             ProvisionError::WrongRemote { found, .. } => assert!(found.is_none()),
             other => panic!("got {other:?}"),
         }
@@ -343,13 +346,13 @@ mod tests {
         // Standing up twice is the same answer, and this is the half of that
         // property the clone introduces.
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("paja");
+        let ws = abs(d.path().join("paja"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
         git.remotes.borrow_mut().push((ws.clone(), CONTENT.into()));
 
-        let done = provision(&id, CONTENT, &git).unwrap();
+        let done = provision(&id, &ws, CONTENT, &git).unwrap();
         assert!(!done.cloned);
         assert!(
             git.clones.borrow().is_empty(),
@@ -365,26 +368,16 @@ mod tests {
         // A clone without an identity commits as whoever this machine belongs
         // to, and the first sign of that is a commit already made.
         let d = tempfile::tempdir().unwrap();
-        let ws = d.path().join("nameless");
+        let ws = abs(d.path().join("nameless"));
         let mut id = staffed_hand(&ws);
         id.git_email = None;
         let git = FakeGit::default();
 
-        let err = provision(&id, "git@example.invalid:x/y.git", &git).unwrap_err();
+        let err = provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap_err();
         assert!(matches!(err, ProvisionError::NoIdentity));
         assert!(
             git.clones.borrow().is_empty(),
             "refusing must happen before the clone, not after"
         );
-    }
-
-    #[test]
-    fn provisioning_an_entry_naming_no_workspace_is_refused() {
-        let id = hand();
-        let git = FakeGit::default();
-        assert!(matches!(
-            provision(&id, "git@example.invalid:x/y.git", &git).unwrap_err(),
-            ProvisionError::NoWorkspace
-        ));
     }
 }

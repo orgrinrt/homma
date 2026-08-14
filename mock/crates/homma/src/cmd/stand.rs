@@ -7,21 +7,20 @@
 
 use super::org::DISCIPLINE;
 use anyhow::{Context, Result};
-use homma_api::{Git, Staffing, Workspace};
+use homma_api::{AbsPath, Git, Staffing, Workspace};
 use homma_org::{prepare, provision, write_definitions, Layout, Registry};
-use std::path::{Path, PathBuf};
 
 /// What standing an identity up produced.
 #[derive(Debug)]
 pub struct StoodUp {
     pub handle: String,
-    pub home: PathBuf,
+    pub home: AbsPath,
     /// The workspace clone itself, which is what the identity commits in.
-    pub workspace: PathBuf,
+    pub workspace: AbsPath,
     /// False when the workspace already held the content repository.
     pub cloned: bool,
-    pub definition: PathBuf,
-    pub twin_definition: PathBuf,
+    pub definition: AbsPath,
+    pub twin_definition: AbsPath,
 }
 
 /// Clone the content repository, set the identity in that clone, create the
@@ -34,7 +33,7 @@ pub struct StoodUp {
 /// `up` reported success having created directories and no workspace, while the
 /// definition it generated told the Hand it committed under an identity nothing
 /// had set. Every test passed, because each tested a function nothing called.
-pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> Result<StoodUp> {
+pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -> Result<StoodUp> {
     let registry = Registry::new(ws);
     let id = registry
         .get(handle)
@@ -129,9 +128,20 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
         ws.content_repo.clone()
     };
 
+    // Resolved against the root, which is what a registry saying
+    // `workspace = "hands/rel"` always meant. Used raw it was a path relative to
+    // whatever directory the process happened to be in, so the clone landed
+    // there and wrote a nested repository into that tree.
+    let workspace = AbsPath::resolve(
+        root,
+        id.workspace
+            .as_ref()
+            .expect("a staffed identity carries a workspace"),
+    );
+
     // Before the directories, so a refusal here leaves nothing half-built.
-    let provisioned =
-        provision(id, &url, git).map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
+    let provisioned = provision(id, &workspace, &url, git)
+        .map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
 
     let layout = Layout::new(root, &ws.paths);
     let prepared =
@@ -152,6 +162,12 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    /// A tempdir path as the type the contract takes.
+    fn abs(p: impl Into<PathBuf>) -> AbsPath {
+        AbsPath::new(p).expect("a tempdir path is absolute")
+    }
 
     const ORG: &str = r#"
 content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
@@ -188,8 +204,8 @@ domain = "rendering"
     struct FakeGit {
         /// What `origin_url` reports for the workspace root.
         root_origin: Option<String>,
-        cloned: std::cell::RefCell<Vec<(String, PathBuf)>>,
-        identities: std::cell::RefCell<Vec<(PathBuf, String, String)>>,
+        cloned: std::cell::RefCell<Vec<(String, AbsPath)>>,
+        identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
     }
 
     const CONTENT: &str = "git@example.invalid:orgrinrt/clause-dev.git";
@@ -233,27 +249,25 @@ domain = "rendering"
 
     impl Git for FakeGit {
         type Error = Never;
-        fn is_repo(&self, path: &Path) -> bool {
+        fn is_repo(&self, path: &AbsPath) -> bool {
             self.cloned.borrow().iter().any(|(_, p)| p == path)
         }
-        fn clone_repo(&self, url: &str, dest: &Path) -> Result<(), Never> {
+        fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Never> {
             self.cloned
                 .borrow_mut()
-                .push((url.to_string(), dest.to_path_buf()));
+                .push((url.to_string(), dest.clone()));
             Ok(())
         }
-        fn set_identity(&self, path: &Path, name: &str, email: &str) -> Result<(), Never> {
-            self.identities.borrow_mut().push((
-                path.to_path_buf(),
-                name.to_string(),
-                email.to_string(),
-            ));
+        fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
+            self.identities
+                .borrow_mut()
+                .push((path.clone(), name.to_string(), email.to_string()));
             Ok(())
         }
-        fn init(&self, _path: &Path) -> Result<(), Never> {
+        fn init(&self, _path: &AbsPath) -> Result<(), Never> {
             Ok(())
         }
-        fn enclosing_repo(&self, path: &Path) -> Result<Option<PathBuf>, Never> {
+        fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Never> {
             // The real one refuses a relative path. A fake that accepts one is
             // a fake that lets a caller ship the bypass.
             assert!(
@@ -262,7 +276,7 @@ domain = "rendering"
             );
             Ok(None)
         }
-        fn origin_url(&self, path: &Path) -> Result<Option<String>, Never> {
+        fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Never> {
             // A cloned workspace reports what it was cloned from; anything else
             // is the root, and reports what this fake was built to say.
             Ok(self
@@ -273,7 +287,7 @@ domain = "rendering"
                 .map(|(u, _)| u.clone())
                 .or_else(|| self.root_origin.clone()))
         }
-        fn identity(&self, path: &Path) -> Result<Option<(String, String)>, Never> {
+        fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Never> {
             Ok(self
                 .identities
                 .borrow()
@@ -291,7 +305,7 @@ domain = "rendering"
         // directories and no workspace at all.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::at_the_content_repo();
-        let out = stand_up(&ws(), d.path(), "paja", &git).unwrap();
+        let out = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
 
         assert!(out.cloned, "a fresh workspace must be cloned");
         assert_eq!(git.cloned.borrow().len(), 1);
@@ -306,8 +320,8 @@ domain = "rendering"
     fn standing_up_twice_does_not_clone_over_the_workspace() {
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::at_the_content_repo();
-        stand_up(&ws(), d.path(), "paja", &git).unwrap();
-        let second = stand_up(&ws(), d.path(), "paja", &git).unwrap();
+        stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
+        let second = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
         assert!(!second.cloned);
         assert_eq!(git.cloned.borrow().len(), 1);
     }
@@ -320,7 +334,7 @@ domain = "rendering"
         // deny item 2 forbids outright. It exited 0.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::somewhere_else();
-        let err = stand_up(&ws(), d.path(), "paja", &git).unwrap_err();
+        let err = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap_err();
         let msg = format!("{err:#}");
         assert!(
             msg.contains("clause-dev"),
@@ -340,7 +354,7 @@ domain = "rendering"
         // refuse; the URI came from the configuration either way.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::no_origin();
-        let out = stand_up(&ws(), d.path(), "paja", &git).unwrap();
+        let out = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
         assert!(out.cloned);
         assert_eq!(git.cloned.borrow()[0].0, CONTENT);
     }
@@ -350,7 +364,7 @@ domain = "rendering"
         // The whole defect in one assertion.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::at_the_content_repo();
-        stand_up(&ws(), d.path(), "paja", &git).unwrap();
+        stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
         assert_eq!(git.cloned.borrow()[0].0, CONTENT);
     }
 
@@ -371,7 +385,7 @@ domain = "rendering"
         let d = tempfile::tempdir().unwrap();
         let err = stand_up(
             &ws(),
-            d.path(),
+            &abs(d.path()),
             "rendering",
             &FakeGit::at_the_content_repo(),
         )
@@ -388,8 +402,13 @@ domain = "rendering"
     #[test]
     fn standing_up_an_incomplete_identity_is_refused_with_the_reason() {
         let d = tempfile::tempdir().unwrap();
-        let err =
-            stand_up(&ws(), d.path(), "nameless", &FakeGit::at_the_content_repo()).unwrap_err();
+        let err = stand_up(
+            &ws(),
+            &abs(d.path()),
+            "nameless",
+            &FakeGit::at_the_content_repo(),
+        )
+        .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("git_name"), "must say what is missing: {msg}");
         assert!(
@@ -403,7 +422,8 @@ domain = "rendering"
         // It succeeded, producing .claude/agents/op.md with memory: project,
         // under the one handle whose provenance derives a ratified standing.
         let d = tempfile::tempdir().unwrap();
-        let err = stand_up(&ws(), d.path(), "op", &FakeGit::at_the_content_repo()).unwrap_err();
+        let err =
+            stand_up(&ws(), &abs(d.path()), "op", &FakeGit::at_the_content_repo()).unwrap_err();
         assert!(err.to_string().contains("owns no workspace"), "{err}");
         assert!(!d.path().join(".claude/agents/op.md").exists());
     }
@@ -413,20 +433,33 @@ domain = "rendering"
         let mut w = ws();
         w.org.get_mut("paja").unwrap().nickname = Some("Paja\nmemory: project".into());
         let d = tempfile::tempdir().unwrap();
-        let err = stand_up(&w, d.path(), "paja", &FakeGit::at_the_content_repo()).unwrap_err();
+        let err =
+            stand_up(&w, &abs(d.path()), "paja", &FakeGit::at_the_content_repo()).unwrap_err();
         assert!(err.to_string().contains("control characters"), "{err}");
     }
 
     #[test]
     fn standing_up_an_unknown_handle_is_refused() {
         let d = tempfile::tempdir().unwrap();
-        assert!(stand_up(&ws(), d.path(), "stranger", &FakeGit::at_the_content_repo()).is_err());
+        assert!(stand_up(
+            &ws(),
+            &abs(d.path()),
+            "stranger",
+            &FakeGit::at_the_content_repo()
+        )
+        .is_err());
     }
 
     #[test]
     fn standing_up_produces_both_definitions_and_a_linked_memory() {
         let d = tempfile::tempdir().unwrap();
-        let out = stand_up(&ws(), d.path(), "paja", &FakeGit::at_the_content_repo()).unwrap();
+        let out = stand_up(
+            &ws(),
+            &abs(d.path()),
+            "paja",
+            &FakeGit::at_the_content_repo(),
+        )
+        .unwrap();
         assert!(out.definition.exists());
         assert!(out.twin_definition.exists());
 
@@ -448,9 +481,21 @@ domain = "rendering"
     #[test]
     fn standing_up_twice_is_the_same_answer() {
         let d = tempfile::tempdir().unwrap();
-        let a = stand_up(&ws(), d.path(), "paja", &FakeGit::at_the_content_repo()).unwrap();
+        let a = stand_up(
+            &ws(),
+            &abs(d.path()),
+            "paja",
+            &FakeGit::at_the_content_repo(),
+        )
+        .unwrap();
         std::fs::write(a.home.join("memory/MEMORY.md"), "kept").unwrap();
-        let b = stand_up(&ws(), d.path(), "paja", &FakeGit::at_the_content_repo()).unwrap();
+        let b = stand_up(
+            &ws(),
+            &abs(d.path()),
+            "paja",
+            &FakeGit::at_the_content_repo(),
+        )
+        .unwrap();
         assert_eq!(a.home, b.home);
         assert_eq!(
             std::fs::read_to_string(b.home.join("memory/MEMORY.md")).unwrap(),

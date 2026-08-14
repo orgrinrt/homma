@@ -112,16 +112,14 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             .map(|p| p.to_path_buf())
                             .unwrap_or_else(|| std::path::PathBuf::from("."))
                     });
-                    // Absolute before anything reads it. The nested-repository
-                    // guard walks upward, and a relative path walks up from the
-                    // process's directory rather than this one, which is the
-                    // thing deriving the root from `--config` already fixed
-                    // once.
-                    let root = std::fs::canonicalize(&root).unwrap_or_else(|_| {
-                        std::env::current_dir()
-                            .map(|cwd| cwd.join(&root))
-                            .unwrap_or(root)
-                    });
+                    // The one place a relative path becomes absolute, and the
+                    // only place that resolution is a judgement rather than a
+                    // type: everything downstream takes `AbsPath`.
+                    let root = match homma_api::AbsPath::new(&root) {
+                        Ok(p) => p.canonical(),
+                        Err(_) => homma_api::AbsPath::resolve(&homma_api::AbsPath::cwd()?, &root)
+                            .canonical(),
+                    };
                     let out = stand::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
                     println!("{} {}", out.handle, out.home.display());
                     println!(

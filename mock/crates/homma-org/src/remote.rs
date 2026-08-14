@@ -67,8 +67,17 @@ pub fn parse(url: &str) -> Remote {
 /// written where it does not exist, so a path not yet created still compares to
 /// itself.
 fn local(path: &str) -> Remote {
-    let path = std::path::PathBuf::from(strip_git_suffix(path));
-    Remote::Local(std::fs::canonicalize(&path).unwrap_or(path))
+    // **Not stripped before resolving.** `/srv/content.git` is a bare
+    // repository and `/srv/content` is a working tree beside it; they are two
+    // repositories, and stripping first made them one, which fails open.
+    // Stripped only when nothing exists at the path as written, so a URL-shaped
+    // local path still compares to its own working tree.
+    let as_written = std::path::PathBuf::from(path);
+    if as_written.exists() {
+        return Remote::Local(std::fs::canonicalize(&as_written).unwrap_or(as_written));
+    }
+    let stripped = std::path::PathBuf::from(strip_git_suffix(path));
+    Remote::Local(std::fs::canonicalize(&stripped).unwrap_or(stripped))
 }
 
 /// Exactly one trailing `.git`.
@@ -84,7 +93,12 @@ fn hosted(authority: &str, path: &str) -> Remote {
     // Credentials are not the identity, and neither is the port: the same
     // repository reached on an explicit 22 or 443 is the same repository.
     let host = authority.rsplit('@').next().unwrap_or(authority);
-    let host = host.split(':').next().unwrap_or(host);
+    // An IPv6 literal is bracketed and full of colons, so splitting on the
+    // first one yields "[" and every address compares equal, which fails open.
+    let host = match host.strip_prefix('[') {
+        Some(rest) => rest.split_once(']').map(|(h, _)| h).unwrap_or(rest),
+        None => host.split(':').next().unwrap_or(host),
+    };
 
     let path = strip_git_suffix(path.trim_matches('/'));
     match path.rsplit_once('/') {
@@ -93,13 +107,16 @@ fn hosted(authority: &str, path: &str) -> Remote {
             // A forge treats an owner case-insensitively, so two spellings of
             // one owner are one owner.
             owner: owner.trim_matches('/').to_ascii_lowercase(),
-            name: name.to_string(),
+            // Folded for the same reason the owner is. Folding one and not the
+            // other refused a correct workspace permanently, which is the
+            // adjacent field the previous round left alone.
+            name: name.to_ascii_lowercase(),
         },
         // A host and a bare name, with nobody owning it.
         None => Remote::Hosted {
             host: host.to_ascii_lowercase(),
             owner: String::new(),
-            name: path.to_string(),
+            name: path.to_ascii_lowercase(),
         },
     }
 }
@@ -266,6 +283,42 @@ mod tests {
                 name: "thing".into(),
             }
         );
+    }
+
+    #[test]
+    fn a_bare_repository_is_not_the_working_tree_beside_it() {
+        // Stripping `.git` before resolving made these one repository, which
+        // fails open: the guard would accept a workspace cloned from the other.
+        let d = tempfile::tempdir().unwrap();
+        let bare = d.path().join("content.git");
+        let tree = d.path().join("content");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::create_dir_all(&tree).unwrap();
+        assert!(!same_repo(bare.to_str().unwrap(), tree.to_str().unwrap()));
+    }
+
+    #[test]
+    fn two_ipv6_hosts_are_two_hosts() {
+        // Splitting on the first colon yielded "[" for every address, so every
+        // IPv6 host compared equal to every other. Fails open.
+        assert!(!same_repo(
+            "https://[::1]/orgrinrt/clause-dev",
+            "https://[::ffff:1]/orgrinrt/clause-dev"
+        ));
+        assert!(same_repo(
+            "https://[::1]:443/orgrinrt/clause-dev",
+            "https://[::1]/orgrinrt/clause-dev"
+        ));
+    }
+
+    #[test]
+    fn a_name_differing_only_in_case_is_the_same_name() {
+        // The owner was folded and the name beside it was not, so one correct
+        // workspace was refused permanently.
+        assert!(same_repo(
+            "git@github.com:orgrinrt/Clause-Dev.git",
+            "git@github.com:orgrinrt/clause-dev.git"
+        ));
     }
 
     #[test]

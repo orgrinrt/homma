@@ -12,6 +12,7 @@
 pub mod config;
 pub mod forge;
 pub mod repo;
+pub mod testing;
 
 pub use config::{
     Config, ConfigError, Defaults, ForgeConfig, ForgeKind, RepoConfig, WorkspaceConfig,

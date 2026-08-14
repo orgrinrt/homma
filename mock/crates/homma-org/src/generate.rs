@@ -11,7 +11,7 @@
 //! carrying the key grants the write path whatever its prose says.
 
 use crate::workspace::Layout;
-use homma_api::Identity;
+use homma_api::{AbsPath, Identity};
 use std::fs;
 use std::io;
 
@@ -137,7 +137,7 @@ pub fn write_definitions(
     layout: &Layout<'_>,
     id: &Identity,
     discipline: &str,
-) -> io::Result<(std::path::PathBuf, std::path::PathBuf)> {
+) -> io::Result<(AbsPath, AbsPath)> {
     // Only absence is absence. Swallowing every error shipped a Hand without
     // its voice and reported nothing.
     let character = match fs::read_to_string(layout.character(id)) {
@@ -164,6 +164,11 @@ pub fn write_definitions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tempdir path as the type the layout takes.
+    fn abs(p: impl Into<std::path::PathBuf>) -> AbsPath {
+        AbsPath::new(p).expect("a tempdir path is absolute")
+    }
     use crate::workspace::Layout;
     use homma_api::{Paths, Role};
 
@@ -264,7 +269,7 @@ mod tests {
     fn both_definitions_land_on_disk() {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::default();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let id = hand();
         crate::workspace::prepare(&l, &id).unwrap();
         std::fs::write(l.character(&id), "Terse.").unwrap();
@@ -305,7 +310,7 @@ mod tests {
     fn a_character_that_cannot_be_read_is_reported_rather_than_swallowed() {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::default();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let id = hand();
         crate::workspace::prepare(&l, &id).unwrap();
         // A directory where the file belongs is not absence.

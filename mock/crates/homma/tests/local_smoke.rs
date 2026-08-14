@@ -4,9 +4,6 @@
 //! cases where the workspace's own directory is the content repository, which
 //! is the default and the shape a workspace starts in.
 
-#[allow(dead_code, reason = "shared across test binaries; each uses a subset")]
-mod support;
-
 use std::path::PathBuf;
 
 use assert_cmd::Command;

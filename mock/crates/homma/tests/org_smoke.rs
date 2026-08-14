@@ -405,3 +405,48 @@ fn a_symlinked_registry_is_written_through_rather_than_replaced() {
         "the entry must reach the file the link points at"
     );
 }
+
+#[test]
+fn a_relative_workspace_in_the_registry_anchors_under_the_root() {
+    // The route the previous three rounds never looked at. `workspace =
+    // "hands/rel"` was used raw as a clone target, so it resolved against
+    // whatever directory the process was in: run from inside a committed
+    // repository, it cloned a nested repository into that repository's tree
+    // and exited 0. Deny item 2, by a field rather than by a flag.
+    let dir = tempfile::tempdir().unwrap();
+    let (_src, root) = content_repo_and_root(dir.path());
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    // Somewhere else entirely, and a repository, so a stray write is visible.
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::process::Command::new("git")
+        .args(["init", "-q", "-b", "main"])
+        .current_dir(&elsewhere)
+        .status()
+        .unwrap();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "r"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "r", "--git-email", "r@example.invalid"])
+        .args(["--workspace", "hands/rel"])
+        .assert()
+        .success();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .current_dir(&elsewhere)
+        .assert()
+        .success();
+
+    assert!(
+        root.join("hands/rel/.git").exists(),
+        "a relative workspace anchors under the workspace root"
+    );
+    assert!(
+        !elsewhere.join("hands").exists(),
+        "and never under whatever directory the process happened to be in"
+    );
+}

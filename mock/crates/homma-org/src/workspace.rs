@@ -11,27 +11,27 @@
 //! through it land in the layout's directory, and version control carries it as
 //! a link rather than a copy, so it survives cloning to any machine.
 
-use homma_api::{Identity, Paths};
+use homma_api::{AbsPath, Identity, Paths};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 /// Where things sit inside one workspace.
 pub struct Layout<'a> {
-    root: PathBuf,
+    root: AbsPath,
     paths: &'a Paths,
 }
 
 impl<'a> Layout<'a> {
-    pub fn new(root: impl Into<PathBuf>, paths: &'a Paths) -> Self {
+    pub fn new(root: &AbsPath, paths: &'a Paths) -> Self {
         Self {
-            root: root.into(),
+            root: root.clone(),
             paths,
         }
     }
 
     /// Everything belonging to one identity lives under one directory.
-    pub fn home(&self, id: &Identity) -> PathBuf {
+    pub fn home(&self, id: &Identity) -> AbsPath {
         let base = if id.role.has_workspace() {
             &self.paths.hands
         } else {
@@ -40,27 +40,27 @@ impl<'a> Layout<'a> {
         self.root.join(base).join(&id.handle)
     }
 
-    pub fn memory(&self, id: &Identity) -> PathBuf {
+    pub fn memory(&self, id: &Identity) -> AbsPath {
         self.home(id).join("memory")
     }
 
-    pub fn notes(&self, id: &Identity) -> PathBuf {
+    pub fn notes(&self, id: &Identity) -> AbsPath {
         self.home(id).join("notes")
     }
 
-    pub fn character(&self, id: &Identity) -> PathBuf {
+    pub fn character(&self, id: &Identity) -> AbsPath {
         self.home(id).join("character.md")
     }
 
     /// Where the harness expects to find this identity's memory.
-    pub fn harness_memory(&self, id: &Identity) -> PathBuf {
+    pub fn harness_memory(&self, id: &Identity) -> AbsPath {
         self.root
             .join(".claude")
             .join("agent-memory")
             .join(&id.handle)
     }
 
-    pub fn definition(&self, id: &Identity) -> PathBuf {
+    pub fn definition(&self, id: &Identity) -> AbsPath {
         self.root
             .join(&self.paths.agents)
             .join(format!("{}.md", id.handle))
@@ -72,13 +72,13 @@ impl<'a> Layout<'a> {
     /// has to be structural: a definition carrying the memory key grants the
     /// write path whatever its prose says, so the twin's simply does not carry
     /// it.
-    pub fn twin_definition(&self, id: &Identity) -> PathBuf {
+    pub fn twin_definition(&self, id: &Identity) -> AbsPath {
         self.root
             .join(&self.paths.agents)
             .join(format!("{}-twin.md", id.handle))
     }
 
-    pub fn root(&self) -> &Path {
+    pub fn root(&self) -> &AbsPath {
         &self.root
     }
 }
@@ -87,12 +87,12 @@ impl<'a> Layout<'a> {
 /// guess.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prepared {
-    pub home: PathBuf,
-    pub memory: PathBuf,
-    pub notes: PathBuf,
-    pub harness_link: PathBuf,
-    pub definition: PathBuf,
-    pub twin_definition: PathBuf,
+    pub home: AbsPath,
+    pub memory: AbsPath,
+    pub notes: AbsPath,
+    pub harness_link: AbsPath,
+    pub definition: AbsPath,
+    pub twin_definition: AbsPath,
 }
 
 /// Create the directories an identity needs and link its memory where the
@@ -183,6 +183,11 @@ fn relative_from(from: &Path, to: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tempdir path as the type the layout takes.
+    fn abs(p: impl Into<std::path::PathBuf>) -> AbsPath {
+        AbsPath::new(p).expect("a tempdir path is absolute")
+    }
     use homma_api::{Identity, Paths, Role};
 
     fn hand() -> Identity {
@@ -203,7 +208,7 @@ mod tests {
     #[test]
     fn a_hand_and_a_consultant_live_under_different_roots() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         assert!(l.home(&hand()).ends_with("hands/paja"));
         assert!(l.home(&expert()).ends_with("experts/proof"));
     }
@@ -211,7 +216,7 @@ mod tests {
     #[test]
     fn the_harness_link_lands_where_the_harness_looks() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         assert!(l
             .harness_memory(&hand())
             .ends_with(".claude/agent-memory/paja"));
@@ -223,7 +228,7 @@ mod tests {
     #[test]
     fn memory_is_linked_relatively_and_writes_through_to_the_layout() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let id = hand();
         let done = prepare(&l, &id).unwrap();
 
@@ -243,7 +248,7 @@ mod tests {
     #[test]
     fn preparing_twice_changes_nothing() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let id = hand();
         let first = prepare(&l, &id).unwrap();
         fs::write(first.harness_link.join("MEMORY.md"), "kept").unwrap();
@@ -260,7 +265,7 @@ mod tests {
     #[test]
     fn a_real_directory_where_the_link_belongs_is_refused_rather_than_deleted() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let id = hand();
         let link = l.harness_memory(&id);
         fs::create_dir_all(&link).unwrap();
@@ -277,7 +282,7 @@ mod tests {
     #[test]
     fn a_role_that_does_not_remember_gets_no_memory_directory() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let general = Identity::new(Role::General, "runner");
         let done = prepare(&l, &general).unwrap();
         assert!(!done.memory.exists(), "labour accumulates nothing");
@@ -289,7 +294,7 @@ mod tests {
         // Notes are a twin's staging area, and a consultant has no prime to
         // triage them.
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let done = prepare(&l, &expert()).unwrap();
         assert!(done.memory.exists());
         assert!(!done.notes.exists());
@@ -298,7 +303,7 @@ mod tests {
     #[test]
     fn the_twin_definition_is_a_different_file_from_the_primes() {
         let (d, p) = fixture();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(&abs(d.path()), &p);
         let id = hand();
         assert_ne!(l.definition(&id), l.twin_definition(&id));
     }
