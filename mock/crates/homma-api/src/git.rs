@@ -49,8 +49,15 @@ pub trait Git {
     /// there to clone from until one exists.
     fn init(&self, path: &AbsPath) -> Result<(), Self::Error>;
 
-    /// The repository whose working tree `path` sits inside, if any, found by
-    /// walking upward.
+    /// The repository whose working tree `path` sits **inside**, if any, found
+    /// by walking upward.
+    ///
+    /// **A path that is itself a repository is not inside one**, and reports
+    /// `None`. The comparison lives here rather than in every caller because
+    /// both sides have to be resolved to be compared at all: on a system where
+    /// `/var` is a symlink to `/private/var`, a resolved ancestor and an
+    /// unresolved subject are never equal, and a workspace refuses to stand up
+    /// twice.
     ///
     /// `is_repo` only answers whether a path is itself a repository root, so a
     /// directory nested inside somebody else's checkout looks free. Initialising

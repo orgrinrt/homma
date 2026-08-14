@@ -57,11 +57,19 @@ impl Git for GixGit {
     }
 
     fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Self::Error> {
-        // No check that the path is absolute, because `AbsPath` is one. The
-        // walk terminates at the filesystem root, where `parent()` is `None`.
-        let mut at = path.clone();
+        // **Resolved before it is walked.** Containment is a property of the
+        // filesystem and the path together, and five rounds computed it from
+        // the path alone. A symlink anywhere in the chain then hides the
+        // repository above it, and the walk answers about a place nobody asked
+        // about. The path being created does not exist yet, so what is resolved
+        // is the longest prefix that does, and the rest is re-appended.
+        let subject = resolved_prefix(path)?;
+        let mut at = subject.clone();
         loop {
-            if at.join(".git").exists() {
+            // A path that is itself a repository is not inside one. Compared
+            // here, where both sides are resolved; a caller comparing a
+            // resolved ancestor against its own unresolved path never matches.
+            if is_repo_dir(&at) && at != subject {
                 return Ok(Some(at));
             }
             match at.parent() {
@@ -103,6 +111,52 @@ impl Git for GixGit {
             _ => None,
         })
     }
+}
+
+/// Whether a directory is a repository.
+///
+/// **A bare repository has no `.git`**, so testing for one alone answers no for
+/// every bare repository there is, and a workspace created inside one is
+/// exactly the write this guard exists to refuse. A bare repository is a `HEAD`
+/// beside `objects` and `refs`, which is what `git` itself looks for.
+fn is_repo_dir(path: &AbsPath) -> bool {
+    if path.join(".git").exists() {
+        return true;
+    }
+    path.join("HEAD").exists() && path.join("objects").is_dir() && path.join("refs").is_dir()
+}
+
+/// The path with its existing prefix resolved, and the rest left as written.
+///
+/// `canonicalize` fails outright on a path that does not exist, and the path
+/// being created never does. Walking up to the first ancestor that exists,
+/// resolving that, and re-appending the remainder gives the real ancestry
+/// without requiring the target to be there.
+fn resolved_prefix(path: &AbsPath) -> Result<AbsPath, RepoError> {
+    let mut existing = path.clone();
+    let mut rest: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        if existing.exists() {
+            break;
+        }
+        match (existing.file_name().map(|n| n.to_os_string()), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                existing = parent;
+            }
+            // Nothing on the way up exists, which cannot happen for an absolute
+            // path with a root, but is not worth an unwrap.
+            _ => return Ok(path.clone()),
+        }
+    }
+    let mut out = existing.canonical().map_err(|e| RepoError::Io {
+        path: existing.clone().into_path_buf(),
+        source: e,
+    })?;
+    for name in rest.into_iter().rev() {
+        out = out.join(name);
+    }
+    Ok(out)
 }
 
 /// Where a repository keeps its own configuration.
@@ -268,9 +322,12 @@ mod tests {
         source_repo(d.path());
         let nested = d.path().join("a").join("b");
         std::fs::create_dir_all(&nested).unwrap();
+        // Resolved on both sides: on macOS the tempdir is reached through a
+        // symlink, so comparing the spellings would test the platform.
+        let found = GixGit.enclosing_repo(&abs(nested.clone())).unwrap().unwrap();
         assert_eq!(
-            GixGit.enclosing_repo(&abs(nested.clone())).unwrap(),
-            Some(abs(d.path()))
+            std::fs::canonicalize(found).unwrap(),
+            std::fs::canonicalize(d.path()).unwrap()
         );
     }
 
@@ -301,12 +358,50 @@ mod tests {
     }
 
     #[test]
-    fn a_repository_root_reports_itself() {
+    fn a_repository_is_not_inside_itself() {
+        // Standing up twice depends on this. Reporting itself made a workspace
+        // refuse to be re-provisioned, since it appeared nested in a repository
+        // that was it.
         let d = tempfile::tempdir().unwrap();
         source_repo(d.path());
+        assert_eq!(GixGit.enclosing_repo(&abs(d.path())).unwrap(), None);
+    }
+
+    #[test]
+    fn a_bare_repository_is_seen_as_an_ancestor() {
+        // It has no `.git`, so testing for one answered no for every bare
+        // repository there is.
+        let d = tempfile::tempdir().unwrap();
+        let bare = d.path().join("bare.git");
+        std::process::Command::new("git")
+            .args(["init", "-q", "--bare", bare.to_str().unwrap()])
+            .status()
+            .unwrap();
+        let inside = bare.join("ws").join("hand");
+        let found = GixGit.enclosing_repo(&abs(inside)).unwrap().unwrap();
         assert_eq!(
-            GixGit.enclosing_repo(&abs(d.path())).unwrap(),
-            Some(abs(d.path()))
+            std::fs::canonicalize(found).unwrap(),
+            std::fs::canonicalize(&bare).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_symlink_in_the_chain_does_not_hide_the_repository_above_it() {
+        // Walking lexically, the link's own parents were inspected and the
+        // repository the link points into was never seen.
+        let d = tempfile::tempdir().unwrap();
+        let victim = d.path().join("victim");
+        std::fs::create_dir_all(victim.join("inside")).unwrap();
+        source_repo(&victim);
+        let elsewhere = d.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(victim.join("inside"), elsewhere.join("link")).unwrap();
+
+        let target = elsewhere.join("link").join("hand");
+        let found = GixGit.enclosing_repo(&abs(target)).unwrap().unwrap();
+        assert_eq!(
+            std::fs::canonicalize(found).unwrap(),
+            std::fs::canonicalize(&victim).unwrap()
         );
     }
 

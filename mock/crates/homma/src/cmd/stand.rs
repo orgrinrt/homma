@@ -10,6 +10,28 @@ use anyhow::{Context, Result};
 use homma_api::{AbsPath, Git, Staffing, Workspace};
 use homma_org::{prepare, provision, write_definitions, Layout, Registry};
 
+/// Refuse a path that lies inside a repository which is not itself.
+///
+/// **Every path this command writes to passes through here**, which is the
+/// point. A previous round moved this check from the root to the workspace and
+/// closed the route it had been shown a reproduction for, while putting the
+/// original defect back on the root, where the directories, the definitions and
+/// the memory link land. Checking one path and reporting the class closed is how
+/// five rounds each opened the next one.
+fn refuse_if_nested<G: Git>(git: &G, path: &AbsPath, what: &str) -> Result<()> {
+    let enclosing = git
+        .enclosing_repo(path)
+        .map_err(|e| anyhow::anyhow!("looking for a repository above {path}: {e}"))?;
+    if let Some(enclosing) = enclosing {
+        anyhow::bail!(
+            "{path} sits inside the repository at {enclosing}, and it is the \
+             {what}. Writing there would put files in a tree that is not ours, \
+             which the deny list forbids."
+        );
+    }
+    Ok(())
+}
+
 /// What standing an identity up produced.
 #[derive(Debug)]
 pub struct StoodUp {
@@ -80,6 +102,10 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // for one fact to disagree. The key already existed and the derivation
     // consulted neither, so standing up from an unrelated clone cloned that
     // unrelated repository and wrote a participant's directories into it.
+    // Before anything is created, and on the root rather than only on the
+    // workspace: `prepare` and `write_definitions` both write here.
+    refuse_if_nested(git, root, "workspace root")?;
+
     let url = if ws.content_repo == homma_api::config::LOCAL {
         // The root itself is the content repository. On a fresh workspace it is
         // not a repository yet, and there is nothing to clone from until it is.
@@ -89,18 +115,6 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
             // Initialising there puts a repository inside a repository and
             // lands a participant's directories in a tree that is not ours,
             // which the deny list forbids outright.
-            if let Some(enclosing) = git.enclosing_repo(root).map_err(|e| {
-                anyhow::anyhow!("looking for a repository above {}: {e}", root.display())
-            })? {
-                anyhow::bail!(
-                    "{} sits inside the repository at {}. `content_repo = \"local\"` \
-                     would initialise a repository inside that one and write \
-                     `{handle}`'s directories into its tree. Move the registry \
-                     out, or name a content repository explicitly.",
-                    root.display(),
-                    enclosing.display()
-                );
-            }
             git.init(root)
                 .map_err(|e| anyhow::anyhow!("initialising {}: {e}", root.display()))?;
         }

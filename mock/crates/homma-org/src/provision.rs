@@ -120,12 +120,10 @@ pub fn provision<G: Git>(
     // A workspace that is already the repository is fine: that is standing up
     // twice. What is refused is one nested inside a different repository.
     if let Some(enclosing) = git.enclosing_repo(&root).map_err(ProvisionError::Git)? {
-        if enclosing != root {
-            return Err(ProvisionError::InsideAnotherRepo {
-                workspace: root.clone(),
-                enclosing,
-            });
-        }
+        return Err(ProvisionError::InsideAnotherRepo {
+            workspace: root.clone(),
+            enclosing,
+        });
     }
 
     let cloned = if git.is_repo(&root) {
@@ -331,8 +329,8 @@ mod tests {
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
         git.remotes.borrow_mut().push((ws.clone(), CONTENT.into()));
-        git.enclosures.borrow_mut().push((ws.clone(), ws.clone()));
-
+        // No entry: a repository is not inside itself, which is what the
+        // contract now answers and what standing up twice depends on.
         let done = provision(&id, &ws, CONTENT, &git).unwrap();
         assert!(!done.cloned);
     }

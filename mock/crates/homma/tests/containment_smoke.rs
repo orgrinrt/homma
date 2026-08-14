@@ -216,3 +216,131 @@ fn standing_up_does_not_depend_on_where_the_operator_is_standing() {
     // It went to the configuration's own directory instead.
     assert!(root.join(".shared/hands/fresh").exists());
 }
+
+/// A committed repository at `at`.
+fn repo_at(at: &std::path::Path) {
+    std::fs::create_dir_all(at).unwrap();
+    let run = |args: &[&str]| {
+        assert!(std::process::Command::new("git")
+            .args(args)
+            .current_dir(at)
+            .status()
+            .unwrap()
+            .success());
+    };
+    run(&["init", "-q", "-b", "main"]);
+    run(&["config", "user.name", "s"]);
+    run(&["config", "user.email", "s@example.invalid"]);
+    std::fs::write(at.join("README.md"), "x").unwrap();
+    run(&["add", "README.md"]);
+    run(&["commit", "-q", "-m", "i", "--no-gpg-sign"]);
+}
+
+fn add_hand(cfg: &std::path::Path, handle: &str, workspace: &str) {
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", handle])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", handle, "--git-email", "h@example.invalid"])
+        .args(["--workspace", workspace])
+        .assert()
+        .success();
+}
+
+#[test]
+fn a_workspace_root_inside_another_repository_is_refused() {
+    // The route the previous round reopened by *moving* the guard from the root
+    // to the workspace. The root is where `prepare` and `write_definitions`
+    // write, so taking the check off it put the original defect back one
+    // function over: `.shared/hands/`, both definitions and the memory symlink
+    // landed in an unrelated repository's tree, exit 0.
+    let dir = tempfile::tempdir().unwrap();
+    let victim = dir.path().join("victim");
+    repo_at(&victim);
+    let src = dir.path().join("src");
+    repo_at(&src);
+
+    let root = victim.join("sub");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, format!("content_repo = \"{}\"\n", src.display())).unwrap();
+    let ws = dir.path().join("out").join("paja");
+
+    add_hand(&cfg, "paja", ws.to_str().unwrap());
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "paja"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("workspace root"));
+
+    assert!(!root.join(".shared").exists(), "nothing under the victim");
+    assert!(!root.join(".claude").exists());
+    assert!(!ws.exists(), "and nothing cloned");
+}
+
+#[test]
+fn a_symlink_in_the_chain_does_not_hide_the_repository_above_it() {
+    // The walk was lexical over an unresolved path, so a symlink anywhere in
+    // the chain hid the repository it pointed into.
+    //
+    // Arranged so that **no lexical ancestor is a repository**. An earlier
+    // construction was refused for the wrong reason, because the workspace root
+    // happened to be a lexical ancestor, which is a correct answer from a
+    // broken computation and is invisible in a pass.
+    let dir = tempfile::tempdir().unwrap();
+    let victim = dir.path().join("victim");
+    repo_at(&victim);
+    std::fs::create_dir_all(victim.join("inside")).unwrap();
+
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(victim.join("inside"), elsewhere.join("link")).unwrap();
+
+    let ws = elsewhere.join("link").join("paja");
+    add_hand(&cfg, "paja", ws.to_str().unwrap());
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "paja"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sits inside the repository"));
+
+    assert!(
+        !victim.join("inside").join("paja").exists(),
+        "nothing may be written through the link into the victim"
+    );
+}
+
+#[test]
+fn a_bare_repository_ancestor_is_seen() {
+    // A bare repository has no `.git`, so testing for one answered no for every
+    // bare repository there is.
+    let dir = tempfile::tempdir().unwrap();
+    let bare = dir.path().join("bare.git");
+    assert!(std::process::Command::new("git")
+        .args(["init", "-q", "--bare", bare.to_str().unwrap()])
+        .status()
+        .unwrap()
+        .success());
+
+    let root = bare.join("ws");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    add_hand(&cfg, "paja", root.join("hand").to_str().unwrap());
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "paja"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sits inside the repository"));
+
+    assert!(!root.join(".shared").exists());
+    assert!(!root.join("hand").exists());
+}
