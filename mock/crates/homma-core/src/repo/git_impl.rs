@@ -200,16 +200,34 @@ mod tests {
 
     // U-3.1's exit test, and it reads the **commit** rather than the config.
     //
-    // That is the unit's whole point. A previous round shipped a config write
-    // nothing read, and the guard that caught it then went four rounds pinned by
-    // nothing. Asserting the config asserts the mechanism; asserting the commit
-    // asserts the outcome, and only one of those is what anybody wanted.
+    // **Run against a hostile global configuration**, which is the half the
+    // first version missed. It asserted the author was `ort@hiisi.digital`,
+    // which is this machine's own global `user.email`, so deleting every author
+    // write homma performs left the test passing. The machine was answering it.
+    //
+    // So the global and system files are pointed at one naming a different
+    // author and committer, and homma's values have to beat them rather than
+    // coincide with them. That also makes this runnable somewhere else, which it
+    // was not.
     #[test]
     fn a_commit_carries_the_author_and_the_committer_separately() {
         let d = tempfile::tempdir().unwrap();
         let repo = d.path().join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         let at = AbsPath::new(&repo).unwrap();
+
+        // Every key homma writes, set to something else, plus the two names it
+        // did not write until this round: a global `author.name` overrides a
+        // local `user.name`, which is how a workspace could commit under a name
+        // homma never configured.
+        let hostile = d.path().join("hostile.gitconfig");
+        std::fs::write(
+            &hostile,
+            "[user]\n\tname = Somebody Else\n\temail = wrong@example.invalid\n\
+             [author]\n\tname = Wrong Author\n\temail = wrong-author@example.invalid\n\
+             [committer]\n\tname = Wrong Committer\n\temail = wrong-committer@example.invalid\n",
+        )
+        .unwrap();
 
         let git = GixGit;
         git.init(&at).unwrap();
@@ -226,6 +244,8 @@ mod tests {
             let out = std::process::Command::new("git")
                 .args(args)
                 .current_dir(&repo)
+                .env("GIT_CONFIG_GLOBAL", &hostile)
+                .env("GIT_CONFIG_SYSTEM", &hostile)
                 .output()
                 .expect("git should run");
             assert!(
@@ -241,14 +261,19 @@ mod tests {
         assert_eq!(
             run(&["log", "-1", "--format=%ae"]),
             "ort@hiisi.digital",
-            "the author is op, per the record"
+            "the author is op, per the record, and must beat the global"
         );
         assert_eq!(
             run(&["log", "-1", "--format=%ce"]),
             "orgrinrt+vouti@ikiuni.dev",
             "and the committer is the tagged address that distinguishes it"
         );
-        assert_eq!(run(&["log", "-1", "--format=%an"]), "Onni Armas");
+        assert_eq!(
+            run(&["log", "-1", "--format=%an"]),
+            "Onni Armas",
+            "a global author.name overrides a local user.name, so the name is a hole too"
+        );
+        assert_eq!(run(&["log", "-1", "--format=%cn"]), "Onni Armas");
     }
 
     #[test]
