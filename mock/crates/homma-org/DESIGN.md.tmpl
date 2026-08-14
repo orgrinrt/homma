@@ -29,6 +29,13 @@ carried by version control as a link rather than a copy.
 Repositories are added when work needs them rather than up front, so a workspace
 describes what its owner actually does.
 
+**The clone URL is the workspace root's own `origin`, never a configuration
+key.** homma runs inside a clone of the content repository, so the URL is already
+on disk and correct; adding a key for it would be a second place for one fact to
+live and therefore a second place for it to be wrong. Where the root is not a
+repository there is nothing to derive it from, and standing up is refused rather
+than guessing.
+
 **Setting the git identity in that clone's own configuration is the step whose
 absence is invisible.** Nothing fails, no test goes red, and the first sign is a
 commit landing under whoever the machine's global configuration names. So it is
