@@ -93,13 +93,16 @@ change than any round so far has carried. Creation re-proves afterwards, which
 turns a silent escape into a loud one and is half of an answer rather than an
 answer.
 
-**What is closed, and the argument has been owed for three rounds.** Creating a
-directory cannot make a prefix outside the root, because a prefix is only created
-when it does not exist, and a path that does not exist resolves as its parent's
-resolution plus the remainder as written. So if the full path resolves inside the
-root, every prefix that gets created does too. The residue above is a race with a
-concurrent writer and nothing else, which is worth knowing, because the paragraph
-alone reads as though it were the only thing standing.
+**Homma creates the root, never the path to it.** A root whose own parent does
+not exist is refused, and that is a rule rather than a nicety:
+`create_dir_all` on a path under a missing root creates every missing ancestor,
+and the root's ancestors are above the root by definition, so containment says
+nothing about them. With the root under a home directory that reached
+`~/.claude/`, which the record forbids outright.
+
+An earlier version of this paragraph argued the opposite and was wrong in its
+quantifier: it ranged over prefixes below the root, which is where the argument
+holds, while the call it described does not stop there.
 
 **A workspace is refused when it sits inside another repository.** Not "under
 the workspace root", which is false: a workspace legitimately lives outside the

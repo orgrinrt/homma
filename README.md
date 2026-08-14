@@ -24,9 +24,13 @@ carries a registry of the participants who work in the workspace.
 
 It also stands one of them up: cloning a workspace for a participant, setting the
 git identity inside that clone, linking its memory where the agent harness looks
-for it, and generating its definitions. Everything that writes does so under a
-path proven to resolve inside the workspace root, against the filesystem rather
-than lexically, because a symlink defeats anything lexical.
+for it, and generating its definitions.
+
+The directories, definitions and memory link it writes inside the workspace go
+through a path proven against the filesystem to resolve within it, rather than
+checked lexically, because a symlink defeats anything lexical. The participant's
+own clone is deliberately outside that root and is guarded differently: it is
+refused when it would land inside a repository that is not its own.
 
 The Cargo workspace lives under `mock/`, not at the repository root, which is the
 shape every repository in this ecosystem uses. Build from there:
