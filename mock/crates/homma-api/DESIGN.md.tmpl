@@ -56,3 +56,26 @@ One required key names the content repository. Everything else has a default
 homma will create and an override for a workspace whose convention differs.
 Identities are blocks: a role, a handle, and whatever that role needs. A person
 needs a git identity and a workspace; a consultant needs neither.
+
+## Mapped and staffed
+
+An identity whose role owns a workspace is in one of two states, and they are not
+degrees of completeness.
+
+**Staffed** means it has a workspace on disk, a git identity, and repositories. It
+is somebody who works.
+
+**Mapped** means the entry records that a boundary has been drawn and who owns it,
+so the same ground is not carved twice by somebody arriving later. It has no
+workspace and is not supposed to have one.
+
+Without the distinction the two are indistinguishable, because a mapped entry
+lacks exactly the fields an unfinished one lacks. A registry holding a dozen
+mapped entries then reports a dozen broken ones, and a report that is wrong a
+dozen times is a report nobody reads.
+
+**The state is declared, never inferred from an absent workspace.** Inference is
+cheaper and wrong: an entry whose workspace was mistyped or dropped would read as
+a deliberate decision, which is the confusion the distinction exists to remove. So
+an entry says it is staffed, and a staffed entry lacking its workspace is still a
+gap and still reported.

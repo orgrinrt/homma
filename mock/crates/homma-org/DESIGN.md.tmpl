@@ -29,6 +29,21 @@ carried by version control as a link rather than a copy.
 Repositories are added when work needs them rather than up front, so a workspace
 describes what its owner actually does.
 
+**Setting the git identity in that clone's own configuration is the step whose
+absence is invisible.** Nothing fails, no test goes red, and the first sign is a
+commit landing under whoever the machine's global configuration names. So it is
+asserted rather than assumed: after standing up, that clone reports the identity's
+own email, and the machine's global configuration is unchanged.
+
+**Standing up twice is the same answer**, which now covers the clone as well as
+the directories and the memory. A workspace that already holds the content
+repository is left alone rather than re-cloned, and nothing remembered is cleared.
+
+**A mapped identity is refused, not promoted.** An entry that deliberately has no
+workspace is a decision somebody recorded, and creating one for it as a side
+effect of standing it up would let a typo become a workspace. Promotion is an edit
+to the registry, made on purpose.
+
 ## Generation
 
 The definition an agent runs under is generated from the registry entry plus a
