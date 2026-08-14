@@ -133,7 +133,7 @@ impl Git for GixGit {
     fn identity(&self, path: &AbsPath) -> Result<Option<CommitIdentity>, Self::Error> {
         let file = local_config(path)?;
         let get = |section: &str, key: &str| {
-            file.raw_value(&format!("{section}.{key}"))
+            file.raw_value(format!("{section}.{key}"))
                 .ok()
                 .map(|v| v.to_string())
         };
