@@ -247,7 +247,7 @@ mod tests {
         let id = hand();
         let first = prepare(&l, &id).unwrap();
         fs::write(first.harness_link.join("MEMORY.md"), "kept").unwrap();
-        let second = prepare(&l, &id).unwrap();
+        prepare(&l, &id).unwrap();
         // Comparing the two Prepared values would pass with prepare a no-op,
         // since they are built from path arithmetic. The content is the test.
         assert_eq!(

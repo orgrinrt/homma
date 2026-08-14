@@ -33,6 +33,8 @@ pub enum RepoError {
         path: PathBuf,
         source: std::io::Error,
     },
+    /// Reading or writing the repository's own configuration failed.
+    Config(String),
     /// Alternative-impl backend error pass-through.
     Backend(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -50,6 +52,7 @@ impl std::fmt::Display for RepoError {
             Self::Refspec(msg) => write!(f, "refspec error: {msg}"),
             Self::BranchNotFound(name) => write!(f, "branch not found: {name}"),
             Self::Io { path, source } => write!(f, "io error at {}: {source}", path.display()),
+            Self::Config(msg) => write!(f, "config error: {msg}"),
             Self::Backend(e) => write!(f, "backend error: {e}"),
         }
     }

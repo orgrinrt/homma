@@ -5,9 +5,11 @@
 //! depending on each other.
 
 pub mod config;
+pub mod git;
 pub mod record;
 pub mod reference;
 
-pub use config::{Identity, Paths, Role, Workspace};
+pub use config::{Identity, Paths, Role, Staffing, Workspace};
+pub use git::Git;
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
 pub use reference::{Namespace, NotAReference, Reference, Rung};

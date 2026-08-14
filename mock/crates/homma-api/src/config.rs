@@ -38,6 +38,37 @@ impl Role {
     }
 }
 
+/// Whether an identity that could own a workspace has somebody on it.
+///
+/// Named staffing rather than standing because *standing* already means what a
+/// reference derives, one module over, and a vocabulary crate using one word for
+/// two concepts has failed at its only job.
+///
+/// The distinction between [`Staffing::Mapped`] and [`Staffing::Incomplete`] is
+/// the whole reason this is an enum rather than a list of absent fields: a mapped
+/// entry lacks exactly the fields an unfinished one lacks, so any answer of the
+/// shape "here is what is missing" conflates a decision with a mistake.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Staffing {
+    /// The role owns no workspace at all, so there is nothing to stand up and no
+    /// set of fields that would change that.
+    NoWorkspace,
+    /// A boundary recorded, so the same ground is not carved twice. Complete as
+    /// an entry, and deliberately without a workspace.
+    Mapped,
+    /// Meant to have a workspace, and these fields are absent.
+    Incomplete(Vec<&'static str>),
+    /// Ready to be stood up.
+    Staffed,
+}
+
+impl Staffing {
+    /// Whether a workspace may be created for this identity.
+    pub fn can_stand_up(&self) -> bool {
+        matches!(self, Staffing::Staffed)
+    }
+}
+
 /// One participant.
 ///
 /// A consultant's entry carries a role and a definition and nothing else,
@@ -48,6 +79,13 @@ pub struct Identity {
     pub role: Role,
     /// What everything else addresses it by.
     pub handle: String,
+    /// Whether this entry is meant to have a workspace.
+    ///
+    /// Declared rather than inferred from an absent workspace. Inference is
+    /// cheaper and wrong: an entry whose workspace was mistyped or dropped would
+    /// read as a deliberate decision, which is the confusion this removes.
+    #[serde(default)]
+    pub staffed: bool,
     /// The short name a human uses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nickname: Option<String>,
@@ -78,6 +116,7 @@ impl Identity {
         Self {
             role,
             handle: handle.into(),
+            staffed: false,
             nickname: None,
             full_name: None,
             domain: None,
@@ -89,32 +128,38 @@ impl Identity {
         }
     }
 
-    /// What is missing before this identity can be stood up.
+    /// Whether this identity has somebody on it, and therefore whether it can
+    /// be stood up.
     ///
-    /// Returns the names of the fields its role requires and it does not carry.
-    /// A role that owns no workspace requires none of them.
-    pub fn missing(&self) -> Vec<&'static str> {
-        let mut gaps = Vec::new();
+    /// Replaces an earlier `missing()` that returned a list of absent fields.
+    /// That shape cannot express the distinction that matters, because an entry
+    /// which is mapped on purpose lacks exactly the fields an unfinished one
+    /// lacks, so an empty-or-not answer reports a decision as a mistake.
+    pub fn staffing(&self) -> Staffing {
         if !self.role.has_workspace() {
-            // Not a gap that filling fields would close: this role has no
-            // workspace to stand up at all. Reported so a caller refuses rather
-            // than building one anyway, which under the king's handle would
-            // manufacture a dispatchable agent for the human.
-            gaps.push("a role that owns no workspace");
-            return gaps;
+            // Not a gap that filling fields would close. Reported so a caller
+            // refuses rather than building one anyway, which under the king's
+            // handle would manufacture a dispatchable agent for the human.
+            return Staffing::NoWorkspace;
         }
-        if self.role.has_workspace() {
-            if self.git_name.is_none() {
-                gaps.push("git_name");
-            }
-            if self.git_email.is_none() {
-                gaps.push("git_email");
-            }
-            if self.workspace.is_none() {
-                gaps.push("workspace");
-            }
+        if !self.staffed {
+            return Staffing::Mapped;
         }
-        gaps
+        let mut gaps = Vec::new();
+        if self.git_name.is_none() {
+            gaps.push("git_name");
+        }
+        if self.git_email.is_none() {
+            gaps.push("git_email");
+        }
+        if self.workspace.is_none() {
+            gaps.push("workspace");
+        }
+        if gaps.is_empty() {
+            Staffing::Staffed
+        } else {
+            Staffing::Incomplete(gaps)
+        }
     }
 }
 
@@ -186,12 +231,20 @@ impl Workspace {
                 ("domain", id.domain.as_ref()),
                 ("git_name", id.git_name.as_ref()),
                 ("git_email", id.git_email.as_ref()),
+                // Unreachable from the command line until `org add` existed.
+                // A surface that can write a field is a surface that can write
+                // a bad one into it.
+                ("workspace", id.workspace.as_ref()),
+                ("session", id.session.as_ref()),
             ] {
                 if let Some(v) = value {
                     if v.chars().any(|c| c.is_control()) {
                         bad.push((handle.clone(), field));
                     }
                 }
+            }
+            if id.repos.iter().any(|r| r.chars().any(|c| c.is_control())) {
+                bad.push((handle.clone(), "repos"));
             }
         }
         bad
@@ -218,12 +271,18 @@ handle = "op"
 
 [org.paja]
 role = "hand"
+staffed = true
 handle = "paja"
 nickname = "Paja"
 git_name = "paja"
 git_email = "paja@example.invalid"
 workspace = "/tmp/paja"
 repos = ["homma"]
+
+[org.rendering]
+role = "hand"
+handle = "rendering"
+domain = "rendering"
 
 [org.proof]
 role = "expert"
@@ -259,21 +318,49 @@ handle = "proof"
         assert_eq!(proof.role, Role::Expert);
         assert!(proof.workspace.is_none());
         assert!(proof.git_name.is_none());
-        // It is complete as an entry, and there is still nothing to stand up,
-        // which is a different statement and is what `missing` now reports.
-        assert_eq!(proof.missing(), vec!["a role that owns no workspace"]);
+        // Complete as an entry, and still nothing to stand up, which is a
+        // different statement and is what standing reports.
+        assert_eq!(proof.staffing(), Staffing::NoWorkspace);
     }
 
     #[test]
-    fn a_hand_missing_its_identity_says_which_fields() {
-        let bare = Identity::new(Role::Hand, "nameless");
-        assert_eq!(bare.missing(), vec!["git_name", "git_email", "workspace"]);
+    fn a_staffed_hand_missing_its_identity_says_which_fields() {
+        let mut bare = Identity::new(Role::Hand, "nameless");
+        bare.staffed = true;
+        assert_eq!(
+            bare.staffing(),
+            Staffing::Incomplete(vec!["git_name", "git_email", "workspace"])
+        );
     }
 
     #[test]
-    fn a_complete_hand_is_missing_nothing() {
+    fn a_complete_hand_is_staffed() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert!(w.org["paja"].missing().is_empty());
+        assert_eq!(w.org["paja"].staffing(), Staffing::Staffed);
+        assert!(w.org["paja"].staffing().can_stand_up());
+    }
+
+    #[test]
+    fn a_mapped_hand_is_not_reported_as_incomplete() {
+        // The whole reason standing is an enum. A mapped entry lacks exactly
+        // the fields an unfinished one lacks, so a list of gaps reports a
+        // decision as a mistake, and a registry of a dozen mapped entries
+        // reports a dozen broken ones.
+        let w = Workspace::parse(WITH_ORG).unwrap();
+        let mapped = &w.org["rendering"];
+        assert_eq!(mapped.staffing(), Staffing::Mapped);
+        assert!(!mapped.staffing().can_stand_up());
+    }
+
+    #[test]
+    fn an_entry_that_says_nothing_about_staffing_is_mapped_rather_than_broken() {
+        // The default has to fall this way: a roster is mapped first and
+        // staffed later, so silence means the boundary is drawn and nobody has
+        // been put on it.
+        // Via TOML, because the property claimed is serde's default and a
+        // constructor literal asserted against itself would say nothing.
+        let w = Workspace::parse(WITH_ORG).unwrap();
+        assert_eq!(w.org["rendering"].staffing(), Staffing::Mapped);
     }
 
     #[test]
@@ -284,11 +371,21 @@ handle = "proof"
         for role in [Role::King, Role::Expert, Role::General] {
             let id = Identity::new(role, "someone");
             assert_eq!(
-                id.missing(),
-                vec!["a role that owns no workspace"],
+                id.staffing(),
+                Staffing::NoWorkspace,
                 "{role:?} must report that it cannot be stood up"
             );
         }
+    }
+
+    #[test]
+    fn staffing_a_role_that_owns_no_workspace_changes_nothing() {
+        // Setting the flag on a King must not manufacture a path to standing
+        // one up, since the role is what decides whether a workspace exists at
+        // all and the flag only says whether one is intended.
+        let mut king = Identity::new(Role::King, "op");
+        king.staffed = true;
+        assert_eq!(king.staffing(), Staffing::NoWorkspace);
     }
 
     #[test]
