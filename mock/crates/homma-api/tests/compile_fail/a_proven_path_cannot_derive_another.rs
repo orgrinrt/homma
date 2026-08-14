@@ -1,4 +1,4 @@
-//! A `ContainedPath` must not hand out a way to build a new path from itself.
+//! A `ContainedPath` does not itself carry a way to build a new path.
 //!
 //! It implemented `Deref<Target = Path>` for one round, which gave every
 //! consumer `Path::join` and `Path::parent` on a proven path. Neither preserves
@@ -6,8 +6,13 @@
 //! outright, so the guarantee was voidable by accident by anybody who did not
 //! know to avoid it.
 //!
-//! Removing the impl is the fix. This file is what stops a later round adding it
-//! back for convenience, since nothing else in the suite names the absence.
+//! **This pins the absence of that impl and nothing more, which is narrower than
+//! the file's own title first read.** `ContainedPath::as_abs` is a declared
+//! unwrap door, so a caller wanting `join` reaches it in two steps, and a review
+//! found this file claiming a property the two-step route walks around. What the
+//! missing `Deref` buys is that deriving a path is something somebody wrote down
+//! rather than something that happened, and `Root::contain_under` exists so the
+//! ordinary case never writes it at all.
 
 use homma_api::{AbsPath, Root};
 

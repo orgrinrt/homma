@@ -258,14 +258,20 @@ domain = "rendering"
     #[test]
     fn a_workspace_inside_an_unresolved_root_is_still_refused() {
         let d = tempfile::tempdir().unwrap();
-        let raw = abs(d.path());
-        let resolved = raw.resolved().unwrap();
-        // The test says nothing unless the two differ, so it says so out loud
-        // rather than passing silently on a machine where they do not.
-        if raw == resolved {
-            eprintln!("skipped: {raw} is already resolved on this filesystem");
-            return;
-        }
+        // The unresolved root is built rather than hoped for. An earlier version
+        // returned early when the tempdir path happened to be resolved already,
+        // which is every Linux tmpfs, so on the platform CI most likely runs it
+        // pinned nothing and reported green. It ran here only because macOS has
+        // `/var -> private/var`, which is luck rather than a test.
+        let real = d.path().join("real");
+        std::fs::create_dir_all(real.join("inside")).unwrap();
+        std::os::unix::fs::symlink(&real, d.path().join("alias")).unwrap();
+        let raw = abs(d.path().join("alias"));
+        assert_ne!(
+            raw,
+            raw.resolved().unwrap(),
+            "the point of this test is a root whose path differs from where it lands"
+        );
 
         let git = FakeGit::at_the_content_repo();
         let err = stand_up(&ws_with_inside_workspace(), &raw, "paja", &git)

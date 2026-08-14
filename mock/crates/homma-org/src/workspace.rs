@@ -109,8 +109,10 @@ impl<'a> Layout<'a> {
 
     fn under_home(&self, id: &Identity, tail: &str) -> Result<ContainedPath, Escapes> {
         // Through `home` rather than beside it, so a home that escapes is
-        // caught once instead of three times differently.
-        self.contain(self.home(id)?.as_abs().join(tail))
+        // caught once instead of three times differently, and through
+        // `contain_under` rather than the unwrap door, so deriving a path is one
+        // call to the thing that proves them.
+        self.root.contain_under(&self.home(id)?, tail)
     }
 
     fn contain(&self, path: AbsPath) -> Result<ContainedPath, Escapes> {
@@ -156,7 +158,7 @@ pub fn prepare(layout: &Layout<'_>, id: &Identity) -> io::Result<Prepared> {
             let parent = root.contain(&parent).map_err(escaped)?;
             root.create_dir_all(&parent)?;
         }
-        link_memory(&link, &memory)?;
+        link_memory(root, &link, &memory)?;
     }
 
     let definition = layout.definition(id).map_err(escaped)?;
@@ -192,9 +194,36 @@ fn escaped(e: Escapes) -> io::Error {
 /// an unproven write no longer compiled. It was private with one caller, so the
 /// claim was true in practice and false as stated, which is the failure mode
 /// this branch has been correcting for nine rounds.
-fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
+fn link_memory(root: &Root, link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
+    // **The body of a symlink is a path**, in exactly the sense `Root` exists to
+    // prove: the kernel follows it on every `open`. Nothing proved it, and both
+    // arguments being proven was mistaken for the whole job.
+    //
+    // It was computed lexically from the paths *as written*, while the link is
+    // created where those paths *resolve*. A link in the chain that makes the
+    // real location shallower than the written one left the `..` sequence
+    // climbing a level too far, and the escape was committed, because this link
+    // is git mode 120000 by design.
+    //
+    // Both ends are resolved first, which makes the result correct by
+    // construction: two paths inside the root have a relative path between them
+    // that ascends only to their common ancestor, which is at or below the root.
+    // It is proven anyway, below, because correct-by-construction is what ten
+    // rounds of paragraph in this crate have each claimed.
+    let link_dir = link
+        .as_abs()
+        .parent()
+        .ok_or_else(|| io::Error::other("the memory link has no parent directory"))?
+        .resolved()?;
+    let relative = relative_from(link_dir.as_path(), target.as_abs().resolved()?.as_path());
+
+    // Where the body actually lands, resolved lexically so `..` is honoured
+    // rather than clamped, then proven.
+    let lands = AbsPath::new(link_dir.as_path().join(&relative))
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    root.contain(&lands).map_err(escaped)?;
+
     let link = link.as_path();
-    let relative = relative_from(link.parent().unwrap_or(Path::new(".")), target.as_path());
     match fs::symlink_metadata(link) {
         Ok(meta) if meta.file_type().is_symlink() => {
             if fs::read_link(link)? == relative {
@@ -349,6 +378,14 @@ mod tests {
         // level from the real depth, which is the whole reproduction.
         std::os::unix::fs::symlink(".", root_dir.join(".claude")).unwrap();
 
+        // **Resolved**, because that is what the binary passes and because an
+        // unresolved one made this test pass for the wrong reason. Measured: with
+        // an unresolved root the link directory and the resolved target share no
+        // prefix but `/`, so `relative_from` climbs all the way to the root of
+        // the filesystem and comes back down, which happens to work. The short
+        // broken body only appears once both ends are spelled the same way, and
+        // `cmd/mod.rs` canonicalises before `Layout` ever sees the root.
+        let root_dir = std::fs::canonicalize(&root_dir).unwrap();
         let p = Paths::default();
         let l = Layout::new(&abs(&root_dir), &p).unwrap();
         let id = hand();

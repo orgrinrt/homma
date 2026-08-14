@@ -134,9 +134,16 @@ impl AbsPath {
     /// is not a link is taken as written, which is what keeps this usable on a
     /// path that is about to be created.
     ///
-    /// `..` is handled here as well as lexically, because a link target may
-    /// carry one and it applies to wherever the link landed rather than to
-    /// where the path was written.
+    /// A `..` **inside a link target** is handled, because a target may carry one
+    /// and it applies to wherever the link landed.
+    ///
+    /// A `..` written in the path itself is not, and there is no arm for it. One
+    /// existed and was unreachable: every `AbsPath` constructor normalises
+    /// lexically first, so nothing can put a `ParentDir` here from `self`. It was
+    /// also wrong where it could not run. Measured against the kernel,
+    /// `/base/x/y/L/..` with `L -> /base/z` is `/base`, and that arm gave
+    /// `/base/x/y`. Dead defence that reads as live defence is what this file
+    /// deleted a branch for two rounds ago.
     pub fn resolved(&self) -> std::io::Result<Self> {
         use std::collections::VecDeque;
         use std::ffi::OsString;
@@ -151,7 +158,7 @@ impl AbsPath {
             .components()
             .filter_map(|c| match c {
                 std::path::Component::Normal(n) => Some(n.to_os_string()),
-                std::path::Component::ParentDir => Some(OsString::from("..")),
+                // No `ParentDir` arm: `normalise` removed them before this ran.
                 _ => None,
             })
             .collect();

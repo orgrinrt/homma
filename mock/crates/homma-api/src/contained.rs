@@ -80,6 +80,23 @@ impl Root {
         }
     }
 
+    /// Descend from a path already proven, and prove the result.
+    ///
+    /// The ordinary way to derive a path. It exists because every derivation was
+    /// going through [`ContainedPath::as_abs`], which hands back an [`AbsPath`]
+    /// carrying `join`, `parent` and a full `Deref`, so the property that a
+    /// derived path gets re-proven was a convention every caller had to keep
+    /// rather than something the types enforced. Callers that keep a convention
+    /// correctly four times out of four are still one careless call from the
+    /// eleventh review.
+    pub fn contain_under(
+        &self,
+        base: &ContainedPath,
+        tail: impl AsRef<Path>,
+    ) -> Result<ContainedPath, Escapes> {
+        self.contain(&base.0.join(tail))
+    }
+
     /// Create a directory and everything above it, then prove it is still
     /// inside.
     ///
@@ -106,13 +123,31 @@ impl Root {
 /// that handed every consumer `Path::join` and `Path::parent` on a proven path.
 /// Neither preserves the proof, and `join` with an absolute argument discards
 /// the receiver outright, so the guarantee was voidable by accident by anybody
-/// who did not know to avoid it. The accessors below all hand out the same path
-/// and none of them produces a new one; deriving a path means going back through
-/// [`Root::contain`], which is the only thing that can prove one.
+/// who did not know to avoid it.
+///
+/// **That is a narrower property than it sounds and the difference matters.**
+/// [`ContainedPath::as_abs`] is a declared unwrap door, so a caller that wants
+/// `join` can still reach it in two steps. What the missing `Deref` buys is that
+/// the two steps are visible: deriving a path is a thing somebody wrote down
+/// rather than a thing that happened. Use [`Root::contain_under`] and the door
+/// is not needed at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainedPath(AbsPath);
 
 impl ContainedPath {
+    /// The proven path as an [`AbsPath`], **which is an unwrap door and is
+    /// declared as one**.
+    ///
+    /// An `AbsPath` carries `join`, `parent` and `Deref<Target = Path>`, none of
+    /// which preserves the proof, so anything derived from the result has to go
+    /// back through [`Root::contain`] before it is written to. That is a
+    /// convention rather than a type property, which is why
+    /// [`Root::contain_under`] exists and why this should be rare.
+    ///
+    /// `what-you-can-observe-is-what-you-guaranteed.md` permits a door of this
+    /// shape when it is documented as one. It is the same reasoning that lets a
+    /// `Transparent` newtype hand out its inner value: the perimeter stays
+    /// closed because the opening is named, not because nothing opens.
     pub fn as_abs(&self) -> &AbsPath {
         &self.0
     }
@@ -278,6 +313,59 @@ mod tests {
         // Either answer is acceptable except hanging, so the assertion is that
         // it returns at all. A cycle inside the root is not an escape.
         let _ = root.contain(&root.as_abs().join("a"));
+    }
+
+    // `resolved` is a reimplementation of something the kernel already does, so
+    // it is measured against the kernel rather than against what its author
+    // expected. `canonicalize` needs the path to exist, so this covers only the
+    // half both can answer, which is exactly the half where a disagreement is
+    // checkable.
+    //
+    // The half `canonicalize` cannot answer, a path that does not exist yet, is
+    // the reason `resolved` exists at all and is covered by the tests above.
+    #[test]
+    fn resolution_agrees_with_the_kernel_wherever_the_kernel_can_answer() {
+        let d = tempfile::tempdir().unwrap();
+        let base = d.path();
+        std::fs::create_dir_all(base.join("real/deep/nest")).unwrap();
+        std::fs::create_dir_all(base.join("other")).unwrap();
+        std::fs::write(base.join("real/deep/nest/file"), "x").unwrap();
+
+        // relative target, absolute target, a chain, a target carrying `..`,
+        // a link used as an interior component, and a link to a link to a file.
+        std::os::unix::fs::symlink("real/deep", base.join("rel")).unwrap();
+        std::os::unix::fs::symlink(base.join("real"), base.join("absl")).unwrap();
+        std::os::unix::fs::symlink("rel", base.join("chain")).unwrap();
+        std::os::unix::fs::symlink("../other", base.join("real/up")).unwrap();
+        std::os::unix::fs::symlink("real/deep/nest/file", base.join("tofile")).unwrap();
+        std::os::unix::fs::symlink("tofile", base.join("totofile")).unwrap();
+
+        let cases = [
+            "rel",
+            "rel/nest",
+            "rel/nest/file",
+            "absl",
+            "absl/deep/nest",
+            "chain",
+            "chain/nest",
+            "real/up",
+            "tofile",
+            "totofile",
+            "real/deep/nest",
+        ];
+
+        for case in cases {
+            let p = abs(base.join(case));
+            let kernel = std::fs::canonicalize(base.join(case)).unwrap_or_else(|e| {
+                panic!("the case must exist for this to mean anything: {case}: {e}")
+            });
+            let ours = p.resolved().unwrap();
+            assert_eq!(
+                ours.as_path(),
+                kernel,
+                "resolution disagrees with the kernel on {case}"
+            );
+        }
     }
 
     #[test]
