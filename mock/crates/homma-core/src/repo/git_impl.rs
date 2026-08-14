@@ -173,8 +173,7 @@ mod tests {
         // local file says nothing about whether a global one was also written.
         let after: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
         assert_eq!(
-            before,
-            after,
+            before, after,
             "no global git configuration may change: {globals:?}"
         );
     }
@@ -203,7 +202,10 @@ mod tests {
 
         let git = GixGit;
         git.clone_repo(src.path().to_str().unwrap(), &into).unwrap();
-        let url = git.origin_url(&into).unwrap().expect("a clone has an origin");
+        let url = git
+            .origin_url(&into)
+            .unwrap()
+            .expect("a clone has an origin");
         // Canonicalised on both sides: the temp directory resolves through a
         // symlink on macOS, and comparing the two spellings tests the platform
         // rather than the function.

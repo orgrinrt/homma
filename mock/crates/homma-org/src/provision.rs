@@ -91,7 +91,6 @@ pub fn provision<G: Git>(
     Ok(Provisioned { root, cloned })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,5 +247,4 @@ mod tests {
             ProvisionError::NoWorkspace
         ));
     }
-
 }

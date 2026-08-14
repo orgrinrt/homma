@@ -367,7 +367,12 @@ fn standing_up_clones_the_workspace_and_sets_the_identity_in_that_clone() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
+        .args([
+            "--git-name",
+            "fresh",
+            "--git-email",
+            "fresh@example.invalid",
+        ])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();
@@ -402,7 +407,12 @@ fn standing_up_twice_reports_the_workspace_was_already_there() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
+        .args([
+            "--git-name",
+            "fresh",
+            "--git-email",
+            "fresh@example.invalid",
+        ])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();
@@ -437,7 +447,12 @@ fn standing_up_from_a_root_that_is_not_a_clone_is_refused() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
+        .args([
+            "--git-name",
+            "fresh",
+            "--git-email",
+            "fresh@example.invalid",
+        ])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();

@@ -230,8 +230,8 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
         })?;
 
     // Before the directories, so a refusal here leaves nothing half-built.
-    let provisioned = provision(id, &url, git)
-        .map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
+    let provisioned =
+        provision(id, &url, git).map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
 
     let layout = Layout::new(root, &ws.paths);
     let prepared =
@@ -256,8 +256,8 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &Path, handle: &str, git: &G) -> R
 /// afterwards, because a file homma writes and cannot read is worse than one it
 /// refuses to write.
 pub fn append_entry(path: &Path, id: &Identity) -> Result<()> {
-    let existing = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let existing =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let next = format!("{existing}{}", render_entry(id)?);
 
     Workspace::parse(&next).with_context(|| {
@@ -308,7 +308,6 @@ domain = "rendering"
     fn ws() -> Workspace {
         Workspace::parse(ORG).unwrap()
     }
-
 
     /// Enough git to exercise `stand_up`'s own logic. What a real repository
     /// does with an identity is tested where the real implementation lives.

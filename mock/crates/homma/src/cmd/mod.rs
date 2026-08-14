@@ -107,7 +107,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     println!(
                         "  workspace  {} ({})",
                         out.workspace.display(),
-                        if out.cloned { "cloned" } else { "already there" }
+                        if out.cloned {
+                            "cloned"
+                        } else {
+                            "already there"
+                        }
                     );
                     println!("  definition {}", out.definition.display());
                     println!("  twin       {}", out.twin_definition.display());
