@@ -13,8 +13,15 @@
 //!
 //! So containment is established against the filesystem, and holding a
 //! [`ContainedPath`] is the proof that it was. There is no other constructor,
-//! which is the whole mechanism: a write computed from an unchecked path does
-//! not type-check, rather than not being noticed.
+//! which is the mechanism.
+//!
+//! **What that buys is narrower than the obvious sentence, which was compiled
+//! and falsified.** It does not make an unchecked write fail to type-check:
+//! `std::fs` takes anything that is `AsRef<Path>`, and every path type here is,
+//! so a new function can always take a bare one. What holds is that a function
+//! **declaring** a `ContainedPath` parameter cannot be called without a proof,
+//! which makes the check a thing somebody chose to skip rather than a thing
+//! nobody noticed.
 
 use crate::AbsPath;
 use std::fmt;

@@ -18,10 +18,13 @@ use std::path::{Path, PathBuf};
 
 /// Where things sit inside one workspace.
 ///
-/// **Every accessor returns a proven path, and there is no accessor that does
-/// not.** That is the round's whole change and it is a structural one: a write
-/// computed from a path nobody checked against the filesystem no longer
-/// compiles.
+/// **Every accessor that hands out a path hands out a proven one.** What that
+/// buys is narrower than it sounds and worth stating exactly, because a broader
+/// version of this sentence was compiled and falsified: `std::fs` accepts
+/// anything that is `AsRef<Path>`, so nothing stops a future function here
+/// taking a bare path. What holds is that `Root::create_dir_all` and
+/// `link_memory` take a `ContainedPath`, so those two cannot be called without
+/// one, and that `prepare` and `write_definitions` use only these accessors.
 ///
 /// The accessors were lexical before, built with [`AbsPath::join`], which clamps
 /// `..` and cannot see through a symlink. A root whose tree carried
@@ -97,10 +100,6 @@ impl<'a> Layout<'a> {
         )
     }
 
-    pub fn root(&self) -> &AbsPath {
-        self.root.as_abs()
-    }
-
     /// The root as the thing that mints proofs, for a caller that has to create
     /// a directory and wants the re-check that comes with it.
     pub fn contained_root(&self) -> &Root {
@@ -158,7 +157,7 @@ pub fn prepare(layout: &Layout<'_>, id: &Identity) -> io::Result<Prepared> {
             let parent = root.contain(&parent).map_err(escaped)?;
             root.create_dir_all(&parent)?;
         }
-        link_memory(root, &link, &memory)?;
+        link_memory(&link, &memory)?;
     }
 
     let definition = layout.definition(id).map_err(escaped)?;
@@ -188,13 +187,16 @@ fn escaped(e: Escapes) -> io::Error {
 /// Relative because an absolute target is a path on one machine, and the link is
 /// committed: a clone elsewhere must resolve it.
 ///
-/// **Both arguments are proven paths and that is not decoration.** This function
+/// **Both arguments are proven paths and that is not decoration.** It took a
+/// `Root` too, for one round, purely to feed a containment check on the computed
+/// body that could not fail. The parameter went with the check. This function
 /// performs `remove_file` and `symlink`, which are two of the most consequential
 /// writes in the crate, and it took two `&Path` while the module above claimed
 /// an unproven write no longer compiled. It was private with one caller, so the
 /// claim was true in practice and false as stated, which is the failure mode
-/// this branch has been correcting for nine rounds.
-fn link_memory(root: &Root, link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
+/// this branch has been correcting since. The claim itself has since been
+/// narrowed everywhere it appears: see the module header.
+fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
     // **The body of a symlink is a path**, in exactly the sense `Root` exists to
     // prove: the kernel follows it on every `open`. Nothing proved it, and both
     // arguments being proven was mistaken for the whole job.
@@ -205,23 +207,29 @@ fn link_memory(root: &Root, link: &ContainedPath, target: &ContainedPath) -> io:
     // climbing a level too far, and the escape was committed, because this link
     // is git mode 120000 by design.
     //
-    // Both ends are resolved first, which makes the result correct by
-    // construction: two paths inside the root have a relative path between them
-    // that ascends only to their common ancestor, which is at or below the root.
-    // It is proven anyway, below, because correct-by-construction is what ten
-    // rounds of paragraph in this crate have each claimed.
+    // Both ends are resolved first, and that is what makes the result correct:
+    // two paths inside the root have a relative path between them that ascends
+    // only to their common ancestor, which is at or below the root.
+    //
+    // **Both ends being inside is not free and is not established here.** The
+    // target is proven by `Layout`; the link's parent is proven by the caller
+    // above, in the branch that creates it, and that check is the one doing the
+    // work. A parent chain that leaves the root while the final component points
+    // back in passes containment on the link itself, because resolution follows
+    // the last component. `a_parent_chain_that_leaves_is_refused_even_when_the_last_link_returns`
+    // is the test, and removing that check fails it and nothing else.
+    //
+    // A round added a `contain` call on the computed body here and called it
+    // proof. It could not fail: `relative_from` expresses the target relative to
+    // a resolved directory, so normalising the join recovers the target exactly,
+    // and the target had been proven one frame earlier. Deleting it changed no
+    // test. A guard that cannot fail is a paragraph with an `if` around it.
     let link_dir = link
         .as_abs()
         .parent()
         .ok_or_else(|| io::Error::other("the memory link has no parent directory"))?
         .resolved()?;
     let relative = relative_from(link_dir.as_path(), target.as_abs().resolved()?.as_path());
-
-    // Where the body actually lands, resolved lexically so `..` is honoured
-    // rather than clamped, then proven.
-    let lands = AbsPath::new(link_dir.as_path().join(&relative))
-        .map_err(|e| io::Error::other(e.to_string()))?;
-    root.contain(&lands).map_err(escaped)?;
 
     let link = link.as_path();
     match fs::symlink_metadata(link) {
@@ -411,6 +419,52 @@ mod tests {
 
         // And preparing again must not refuse what the first pass created.
         prepare(&l, &id).expect("a second prepare must not refuse the first pass's own link");
+    }
+
+    // The eleventh review's reproduction, and the shape that showed the parent
+    // check was live while nothing pinned it. Replacing that check with a bare
+    // `create_dir_all` left all 338 tests green and opened this.
+    //
+    // The trick is that containment on the link itself passes: `resolved`
+    // follows the **final** component, and the final component points back
+    // inside the root. It is the parent chain that leaves, and the parent is
+    // what `remove_file` and `symlink` actually operate in.
+    #[test]
+    fn a_parent_chain_that_leaves_is_refused_even_when_the_last_link_returns() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        let outside = d.path().join("outside");
+        std::fs::create_dir_all(root_dir.join(".shared/hands/paja/memory")).unwrap();
+        std::fs::create_dir_all(outside.join("agent-memory")).unwrap();
+
+        // The parent chain leaves the root.
+        std::os::unix::fs::symlink("../outside", root_dir.join(".claude")).unwrap();
+        // And the final component comes back in, so the link alone looks fine.
+        std::os::unix::fs::symlink(
+            root_dir.join(".shared/hands/paja/memory"),
+            outside.join("agent-memory").join("paja"),
+        )
+        .unwrap();
+
+        let p = Paths::default();
+        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let err = prepare(&l, &hand())
+            .expect_err("the parent chain leaves the root, whatever the last component does");
+        assert!(
+            err.to_string().contains("outside the workspace root"),
+            "must refuse for the right reason: {err}"
+        );
+
+        // And nothing outside was touched on the way to the refusal. Read the
+        // link rather than following it: following it lands back inside, which
+        // is the whole reason this shape hid.
+        let planted = outside.join("agent-memory").join("paja");
+        let body = fs::read_link(&planted).expect("the link we planted is still a link");
+        assert_eq!(
+            body,
+            root_dir.join(".shared/hands/paja/memory"),
+            "homma must not have replaced a link outside the root"
+        );
     }
 
     #[test]
