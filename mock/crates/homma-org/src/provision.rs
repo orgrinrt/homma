@@ -190,7 +190,11 @@ pub fn provision<G: Git>(
             .map_err(ProvisionError::Git)?;
         true
     };
-    git.set_identity(&root, name, email)
+    // The committer defaults to the author, which is every entry but one. The
+    // fallback lives here rather than in the type so that "the same" and
+    // "deliberately the same" stay distinguishable in the registry file.
+    let committer = id.committer_email.as_deref().unwrap_or(email);
+    git.set_identity(&root, name, email, committer)
         .map_err(ProvisionError::Git)?;
 
     // Read back, because the design says a stood-up clone reports its own email
@@ -236,7 +240,7 @@ mod tests {
         enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
         existing: std::cell::RefCell<Vec<AbsPath>>,
         clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
-        identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
+        identities: std::cell::RefCell<Vec<(AbsPath, String, String, String)>>,
         /// When set, `set_identity` reports success and records nothing.
         ///
         /// The read-back exists precisely because a write that never reached
@@ -268,15 +272,24 @@ mod tests {
             self.existing.borrow_mut().push(dest.clone());
             Ok(())
         }
-        fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
+        fn set_identity(
+            &self,
+            path: &AbsPath,
+            name: &str,
+            email: &str,
+            committer: &str,
+        ) -> Result<(), Never> {
             if self.identity_writes_vanish.get() {
                 // Reports success, records nothing. Exactly the shape the
                 // read-back was written for.
                 return Ok(());
             }
-            self.identities
-                .borrow_mut()
-                .push((path.clone(), name.to_string(), email.to_string()));
+            self.identities.borrow_mut().push((
+                path.clone(),
+                name.to_string(),
+                email.to_string(),
+                committer.to_string(),
+            ));
             Ok(())
         }
         fn init(&self, _path: &AbsPath) -> Result<(), Never> {
@@ -310,8 +323,8 @@ mod tests {
                 .borrow()
                 .iter()
                 .rev()
-                .find(|(p, _, _)| p == path)
-                .map(|(_, n, e)| (n.clone(), e.clone())))
+                .find(|(p, _, _, _)| p == path)
+                .map(|(_, n, e, _)| (n.clone(), e.clone())))
         }
     }
 
@@ -415,6 +428,48 @@ mod tests {
     // survived a round. No fake could express that until now, which is the
     // reason rather than an excuse: a double that cannot fail the way production
     // fails certifies nothing.
+    // U-3.2: the registry field reaching the clone. The record settles it for
+    // Vouti, whose author is op and whose committer is a tagged address on op's
+    // own.
+    #[test]
+    fn a_distinct_committer_reaches_the_clone() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("vouti"));
+        let mut id = staffed_hand(&ws);
+        id.git_name = Some("Onni Armas".into());
+        id.git_email = Some("ort@hiisi.digital".into());
+        id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+        let git = FakeGit::default();
+
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
+
+        let written = git.identities.borrow();
+        let (_, name, author, committer) = written.last().expect("an identity was set");
+        assert_eq!(name, "Onni Armas");
+        assert_eq!(author, "ort@hiisi.digital", "the author stays op");
+        assert_eq!(
+            committer, "orgrinrt+vouti@ikiuni.dev",
+            "and the committer is what distinguishes the crew's writes"
+        );
+    }
+
+    #[test]
+    fn an_entry_with_no_committer_commits_as_its_author() {
+        // Every ordinary entry. The fallback lives in `provision` rather than in
+        // the type, so the registry file can still distinguish "the same" from
+        // "deliberately the same".
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("paja"));
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
+
+        let written = git.identities.borrow();
+        let (_, _, author, committer) = written.last().expect("an identity was set");
+        assert_eq!(author, committer);
+    }
+
     #[test]
     fn an_identity_write_that_reports_success_and_lands_nowhere_is_caught() {
         let d = tempfile::tempdir().unwrap();

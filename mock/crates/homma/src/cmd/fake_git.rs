@@ -22,7 +22,7 @@ pub struct FakeGit {
     /// What `origin_url` answers for the workspace root.
     pub root_origin: Option<String>,
     pub cloned: std::cell::RefCell<Vec<(String, AbsPath)>>,
-    pub identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
+    pub identities: std::cell::RefCell<Vec<(AbsPath, String, String, String)>>,
     /// A path, and the repository it sits inside. Empty means nothing is
     /// nested, which is what most tests want.
     pub enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
@@ -89,10 +89,23 @@ impl Git for FakeGit {
         Ok(())
     }
 
-    fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
-        self.identities
-            .borrow_mut()
-            .push((path.clone(), name.to_string(), email.to_string()));
+    fn set_identity(
+        &self,
+        path: &AbsPath,
+        name: &str,
+        email: &str,
+        committer: &str,
+    ) -> Result<(), Never> {
+        // The committer is recorded rather than dropped, so a test can assert
+        // the two differ. A double that discards half its argument cannot fail
+        // the way production fails, which is how a guard on this branch went
+        // four rounds pinned by nothing.
+        self.identities.borrow_mut().push((
+            path.clone(),
+            name.to_string(),
+            email.to_string(),
+            committer.to_string(),
+        ));
         Ok(())
     }
 
@@ -123,8 +136,8 @@ impl Git for FakeGit {
             .borrow()
             .iter()
             .rev()
-            .find(|(p, _, _)| p == path)
-            .map(|(_, n, e)| (n.clone(), e.clone())))
+            .find(|(p, _, _, _)| p == path)
+            .map(|(_, n, e, _)| (n.clone(), e.clone())))
     }
 }
 

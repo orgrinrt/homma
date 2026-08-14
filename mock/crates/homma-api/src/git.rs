@@ -40,7 +40,22 @@ pub trait Git {
     /// Never the global one. An identity written globally is invisible until a
     /// commit lands under whoever the machine belongs to, by which point the
     /// commits carrying the wrong author are already made.
-    fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Self::Error>;
+    /// Set the clone's own author and committer.
+    ///
+    /// **Two addresses, because one clone legitimately carries two identities.**
+    /// The record settles it for Vouti: the author stays op, and the committer is
+    /// a tagged address on op's own so it "just works" while distinguishing what
+    /// the crew wrote. Git expresses that as `author.email` and `committer.email`
+    /// separately, and a single-email signature cannot say it.
+    ///
+    /// `committer` equal to `author` is the ordinary case and every other entry.
+    fn set_identity(
+        &self,
+        path: &AbsPath,
+        name: &str,
+        author: &str,
+        committer: &str,
+    ) -> Result<(), Self::Error>;
 
     /// Create a repository at `path`, which is not one yet.
     ///

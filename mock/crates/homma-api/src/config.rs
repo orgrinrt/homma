@@ -105,6 +105,19 @@ pub struct Identity {
     pub git_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_email: Option<String>,
+    /// The address commits are *committed* by, when it differs from the author.
+    ///
+    /// **Absent means the committer is the author**, which is every ordinary
+    /// entry. Present means one clone carries two identities, which the record
+    /// settles for Vouti alone: the author stays op so attribution is his, and
+    /// the committer is a tagged address on his own so it "just works" while
+    /// distinguishing what the crew wrote.
+    ///
+    /// Optional rather than defaulted to the author in the type, because a
+    /// default here would make "the same" and "deliberately the same"
+    /// indistinguishable in the file, and the file is what a human reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub committer_email: Option<String>,
     /// Where its work happens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
@@ -127,6 +140,7 @@ impl Identity {
             domain: None,
             git_name: None,
             git_email: None,
+            committer_email: None,
             workspace: None,
             session: None,
             repos: Vec::new(),

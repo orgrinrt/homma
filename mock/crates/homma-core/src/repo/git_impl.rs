@@ -27,7 +27,13 @@ impl Git for GixGit {
         GixRepo::clone_into(url, dest).map(|_| ())
     }
 
-    fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Self::Error> {
+    fn set_identity(
+        &self,
+        path: &AbsPath,
+        name: &str,
+        author: &str,
+        committer: &str,
+    ) -> Result<(), Self::Error> {
         // The repository's own config file, edited in place. `gix`'s snapshot
         // API looked like the obvious route and is not: its `commit` updates
         // the in-memory `Repository` and never touches disk, so the identity
@@ -38,7 +44,15 @@ impl Git for GixGit {
         let mut file = file;
         file.set_raw_value(&"user.name", name)
             .map_err(|e| RepoError::Config(e.to_string()))?;
-        file.set_raw_value(&"user.email", email)
+        // All three, and `user.email` as well as the two specific ones. Git
+        // falls back to `user.email` for whichever of author or committer is
+        // unset, and leaving it out would make a later tool that reads only
+        // `user.email` see nothing at all.
+        file.set_raw_value(&"user.email", author)
+            .map_err(|e| RepoError::Config(e.to_string()))?;
+        file.set_raw_value(&"author.email", author)
+            .map_err(|e| RepoError::Config(e.to_string()))?;
+        file.set_raw_value(&"committer.email", committer)
             .map_err(|e| RepoError::Config(e.to_string()))?;
         std::fs::write(config_path(path), file.to_bstring()).map_err(|e| RepoError::Io {
             path: config_path(path).into_path_buf(),
@@ -184,6 +198,59 @@ mod tests {
         run(&["commit", "-q", "-m", "initial", "--no-gpg-sign"]);
     }
 
+    // U-3.1's exit test, and it reads the **commit** rather than the config.
+    //
+    // That is the unit's whole point. A previous round shipped a config write
+    // nothing read, and the guard that caught it then went four rounds pinned by
+    // nothing. Asserting the config asserts the mechanism; asserting the commit
+    // asserts the outcome, and only one of those is what anybody wanted.
+    #[test]
+    fn a_commit_carries_the_author_and_the_committer_separately() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let at = AbsPath::new(&repo).unwrap();
+
+        let git = GixGit;
+        git.init(&at).unwrap();
+        git.set_identity(
+            &at,
+            "Onni Armas",
+            "ort@hiisi.digital",
+            "orgrinrt+vouti@ikiuni.dev",
+        )
+        .unwrap();
+
+        std::fs::write(repo.join("a"), "x").unwrap();
+        let run = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .expect("git should run");
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        run(&["add", "a"]);
+        run(&["commit", "-q", "-m", "one", "--no-gpg-sign"]);
+
+        assert_eq!(
+            run(&["log", "-1", "--format=%ae"]),
+            "ort@hiisi.digital",
+            "the author is op, per the record"
+        );
+        assert_eq!(
+            run(&["log", "-1", "--format=%ce"]),
+            "orgrinrt+vouti@ikiuni.dev",
+            "and the committer is the tagged address that distinguishes it"
+        );
+        assert_eq!(run(&["log", "-1", "--format=%an"]), "Onni Armas");
+    }
+
     #[test]
     fn an_identity_lands_in_the_clones_own_config_and_can_be_read_back() {
         // The defect this prevents is silent: nothing fails, no test goes red,
@@ -200,8 +267,13 @@ mod tests {
             .unwrap();
         assert!(git.is_repo(&abs_into));
 
-        git.set_identity(&abs_into, "paja", "paja@example.invalid")
-            .unwrap();
+        git.set_identity(
+            &abs_into,
+            "paja",
+            "paja@example.invalid",
+            "paja@example.invalid",
+        )
+        .unwrap();
         assert_eq!(
             git.identity(&abs_into).unwrap(),
             Some(("paja".to_string(), "paja@example.invalid".to_string()))
@@ -238,8 +310,13 @@ mod tests {
         let git = GixGit;
         git.clone_repo(src.path().to_str().unwrap(), &abs_into)
             .unwrap();
-        git.set_identity(&abs_into, "paja", "paja@example.invalid")
-            .unwrap();
+        git.set_identity(
+            &abs_into,
+            "paja",
+            "paja@example.invalid",
+            "paja@example.invalid",
+        )
+        .unwrap();
 
         let local = std::fs::read_to_string(into.join(".git/config")).unwrap();
         assert!(
