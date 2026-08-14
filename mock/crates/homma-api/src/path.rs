@@ -37,7 +37,7 @@ impl AbsPath {
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, NotAbsolute> {
         let path = path.into();
         if path.is_absolute() {
-            Ok(Self(path))
+            Ok(Self(normalise(&path)))
         } else {
             Err(NotAbsolute(path))
         }
@@ -51,9 +51,9 @@ impl AbsPath {
     pub fn resolve(base: &AbsPath, path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
         if path.is_absolute() {
-            Self(path.to_path_buf())
+            Self(normalise(path))
         } else {
-            Self(base.0.join(path))
+            Self(normalise(&base.0.join(path)))
         }
     }
 
@@ -73,7 +73,7 @@ impl AbsPath {
 
     /// Joining keeps it absolute, so a child never has to be re-checked.
     pub fn join(&self, path: impl AsRef<Path>) -> Self {
-        Self(self.0.join(path))
+        Self(normalise(&self.0.join(path)))
     }
 
     /// The parent, still absolute. `None` at the filesystem root.
@@ -81,13 +81,51 @@ impl AbsPath {
         self.0.parent().map(|p| Self(p.to_path_buf()))
     }
 
-    /// Symlinks and `..` resolved, where the path exists. Left alone where it
-    /// does not, since a path yet to be created is still absolute.
-    pub fn canonical(&self) -> Self {
-        std::fs::canonicalize(&self.0)
-            .map(Self)
-            .unwrap_or_else(|_| self.clone())
+    /// Symlinks and `..` resolved.
+    ///
+    /// **Absence is not failure and failure is not absence.** A path yet to be
+    /// created is still absolute and is returned as written; a symlink loop or
+    /// a permission error is a real failure and is reported, because the result
+    /// is what a containment guard walks from and an unresolved path there
+    /// answers a different question than the one asked.
+    pub fn canonical(&self) -> std::io::Result<Self> {
+        match std::fs::canonicalize(&self.0) {
+            Ok(p) => Ok(Self(p)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(self.clone()),
+            Err(e) => Err(e),
+        }
     }
+}
+
+/// Remove `.` and resolve `..` lexically.
+///
+/// **An `AbsPath` never carries either**, and that is load-bearing rather than
+/// cosmetic: a containment check walks parents, and `/root/../sibling` walked
+/// lexically reports `/root` as its ancestor, so a sibling directory reads as
+/// nested and a correct workspace is refused. Resolving on the filesystem is not
+/// enough, because the path being created does not exist yet.
+///
+/// Lexical resolution differs from the filesystem's where a symlink is
+/// involved: `/a/link/..` is `/a` here and may be elsewhere in fact. Callers
+/// that need the truth call [`AbsPath::canonical`], which asks the filesystem;
+/// this is what can be known about a path that has yet to exist.
+fn normalise(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Popping past the root leaves the root, which is what every
+                // filesystem does with `/..`.
+                if out.parent().is_some() {
+                    out.pop();
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 impl std::ops::Deref for AbsPath {
@@ -165,6 +203,38 @@ mod tests {
     }
 
     #[test]
+    fn a_path_never_carries_a_parent_component() {
+        // The containment check walks parents lexically, so `/root/../out`
+        // reported `/root` as its ancestor and a sibling read as nested.
+        assert_eq!(
+            AbsPath::new("/a/b/../c").unwrap().as_path(),
+            Path::new("/a/c")
+        );
+        let base = AbsPath::new("/srv/ws").unwrap();
+        assert_eq!(
+            AbsPath::resolve(&base, "../out/rel").as_path(),
+            Path::new("/srv/out/rel")
+        );
+        assert_eq!(
+            base.join("a/../b").as_path(),
+            Path::new("/srv/ws/b")
+        );
+    }
+
+    #[test]
+    fn a_current_directory_component_is_dropped() {
+        assert_eq!(
+            AbsPath::new("/a/./b").unwrap().as_path(),
+            Path::new("/a/b")
+        );
+    }
+
+    #[test]
+    fn popping_past_the_root_stays_at_the_root() {
+        assert_eq!(AbsPath::new("/../..").unwrap().as_path(), Path::new("/"));
+    }
+
+    #[test]
     fn a_child_and_a_parent_are_both_still_absolute() {
         let p = AbsPath::new("/srv/ws").unwrap();
         assert!(p.join("a/b").is_absolute());
@@ -179,7 +249,20 @@ mod tests {
     #[test]
     fn canonicalising_a_path_that_does_not_exist_leaves_it_absolute() {
         let p = AbsPath::new("/srv/does/not/exist").unwrap();
-        assert!(p.canonical().is_absolute());
+        assert!(p.canonical().unwrap().is_absolute());
+    }
+
+    #[test]
+    fn a_symlink_loop_is_reported_rather_than_silently_unresolved() {
+        // Swallowing this yielded an unresolved path, and that path is what a
+        // containment guard walks from, so the guard would answer a question
+        // about a path nobody asked about.
+        let d = tempfile::tempdir().unwrap();
+        let a = d.path().join("a");
+        let b = d.path().join("b");
+        std::os::unix::fs::symlink(&b, &a).unwrap();
+        std::os::unix::fs::symlink(&a, &b).unwrap();
+        assert!(AbsPath::new(a).unwrap().canonical().is_err());
     }
 
     #[test]

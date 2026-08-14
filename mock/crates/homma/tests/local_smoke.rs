@@ -200,11 +200,17 @@ fn a_relative_config_path_does_not_walk_out_of_the_nested_repository_guard() {
         .success();
 
     // Relative config, invoked from the directory it names.
+    //
+    // The reason is asserted, not only the failure. Asserting `.failure()`
+    // alone let this pass on an unrelated error: with the root resolution
+    // removed, a different mechanism refused for a different reason and the
+    // test stayed green while the fix it guards was gone.
     bin()
         .args(["--config", "homma.toml", "org", "up", "h"])
         .current_dir(&nested)
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("sits inside the repository"));
 
     assert!(
         !nested.join(".git").exists(),

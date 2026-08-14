@@ -208,3 +208,42 @@ fn archive_undeclared_forge_override_errors_cleanly() {
             "forge `doesnotexist` not declared",
         ));
 }
+
+#[test]
+fn a_hand_edited_handle_carrying_a_parent_component_is_refused_on_read() {
+    // `check_handle` ran on `org add` only, and the registry is hand-editable
+    // on purpose, so a handle arriving any other way reached `Layout::home`
+    // unchecked and addressed a tree outside the workspace.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg,
+        "content_repo = \"local\"\n\n[org.\"../escape\"]\nrole = \"hand\"\nhandle = \"../escape\"\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("path separator"));
+}
+
+#[test]
+fn a_table_key_disagreeing_with_its_handle_is_refused() {
+    // Two names for one participant, one of which everything addresses and the
+    // other of which is silently ignored.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg,
+        "content_repo = \"local\"\n\n[org.paja]\nrole = \"hand\"\nhandle = \"someone-else\"\n",
+    )
+    .unwrap();
+
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("must agree"));
+}

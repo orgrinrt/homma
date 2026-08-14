@@ -60,10 +60,12 @@ pub trait Git {
 
     /// The URL `path`'s `origin` remote points at, if it has one.
     ///
-    /// This is where a content repository's clone URL comes from. homma runs
-    /// inside a clone of it, so the URL is already on disk and correct; a
-    /// configuration key for it would be a second place for one fact to live
-    /// and therefore a second place for it to be wrong.
+    /// **Not where the clone URL comes from.** That is configuration, and an
+    /// earlier round derived it from here on the reasoning that a configuration
+    /// key would duplicate the fact. The key already existed, the derivation
+    /// consulted neither, and standing up from an unrelated clone cloned that
+    /// unrelated repository. This exists to *cross-check* the configured URL
+    /// against what a tree actually points at.
     fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Self::Error>;
 
     /// The author identity `path`'s own configuration carries, if any.

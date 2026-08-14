@@ -162,12 +162,8 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::cmd::fake_git::{abs, FakeGit, CONTENT};
 
-    /// A tempdir path as the type the contract takes.
-    fn abs(p: impl Into<PathBuf>) -> AbsPath {
-        AbsPath::new(p).expect("a tempdir path is absolute")
-    }
 
     const ORG: &str = r#"
 content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
@@ -200,104 +196,6 @@ domain = "rendering"
     fn ws() -> Workspace {
         Workspace::parse(ORG).unwrap()
     }
-
-    struct FakeGit {
-        /// What `origin_url` reports for the workspace root.
-        root_origin: Option<String>,
-        cloned: std::cell::RefCell<Vec<(String, AbsPath)>>,
-        identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
-    }
-
-    const CONTENT: &str = "git@example.invalid:orgrinrt/clause-dev.git";
-
-    impl FakeGit {
-        /// A root that is a clone of the content repository, which is the
-        /// ordinary case.
-        fn at_the_content_repo() -> Self {
-            Self {
-                root_origin: Some(CONTENT.into()),
-                cloned: Default::default(),
-                identities: Default::default(),
-            }
-        }
-        /// A root that is a clone of something else entirely.
-        fn somewhere_else() -> Self {
-            Self {
-                root_origin: Some("git@example.invalid:orgrinrt/member.git".into()),
-                cloned: Default::default(),
-                identities: Default::default(),
-            }
-        }
-        /// A root that is not a repository at all.
-        fn no_origin() -> Self {
-            Self {
-                root_origin: None,
-                cloned: Default::default(),
-                identities: Default::default(),
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    struct Never;
-    impl std::fmt::Display for Never {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "never")
-        }
-    }
-    impl std::error::Error for Never {}
-
-    impl Git for FakeGit {
-        type Error = Never;
-        fn is_repo(&self, path: &AbsPath) -> bool {
-            self.cloned.borrow().iter().any(|(_, p)| p == path)
-        }
-        fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Never> {
-            self.cloned
-                .borrow_mut()
-                .push((url.to_string(), dest.clone()));
-            Ok(())
-        }
-        fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
-            self.identities
-                .borrow_mut()
-                .push((path.clone(), name.to_string(), email.to_string()));
-            Ok(())
-        }
-        fn init(&self, _path: &AbsPath) -> Result<(), Never> {
-            Ok(())
-        }
-        fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Never> {
-            // The real one refuses a relative path. A fake that accepts one is
-            // a fake that lets a caller ship the bypass.
-            assert!(
-                path.is_absolute(),
-                "the real implementation refuses {path:?}"
-            );
-            Ok(None)
-        }
-        fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Never> {
-            // A cloned workspace reports what it was cloned from; anything else
-            // is the root, and reports what this fake was built to say.
-            Ok(self
-                .cloned
-                .borrow()
-                .iter()
-                .find(|(_, p)| p == path)
-                .map(|(u, _)| u.clone())
-                .or_else(|| self.root_origin.clone()))
-        }
-        fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Never> {
-            Ok(self
-                .identities
-                .borrow()
-                .iter()
-                .rev()
-                .find(|(p, _, _)| p == path)
-                .map(|(_, n, e)| (n.clone(), e.clone())))
-        }
-    }
-
     #[test]
     fn standing_up_clones_the_workspace_and_sets_its_identity() {
         // The defect the previous round shipped: `provision` existed, was

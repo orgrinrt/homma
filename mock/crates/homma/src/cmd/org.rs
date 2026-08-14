@@ -34,7 +34,27 @@ nobody wrote down cannot be acted on later.";
 pub fn load(path: &Path) -> Result<Workspace> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    Workspace::parse(&text).with_context(|| format!("parsing {}", path.display()))
+    let ws: Workspace =
+        Workspace::parse(&text).with_context(|| format!("parsing {}", path.display()))?;
+
+    // Checked on the way in, not only when `org add` writes one. The registry
+    // is hand-editable on purpose, so every handle it carries has arrived by a
+    // route `add` never saw, and a handle is a directory name: one carrying
+    // `..` reaches the layout and addresses a tree outside the workspace.
+    for handle in ws.org.keys() {
+        check_handle(handle)
+            .with_context(|| format!("in {}: `[org.{handle}]`", path.display()))?;
+    }
+    for (key, id) in &ws.org {
+        anyhow::ensure!(
+            &id.handle == key,
+            "in {}: `[org.{key}]` carries handle `{}`. They address the same \
+             participant and must agree, or one of them is silently ignored.",
+            path.display(),
+            id.handle
+        );
+    }
+    Ok(ws)
 }
 
 /// One line per participant, for a listing.

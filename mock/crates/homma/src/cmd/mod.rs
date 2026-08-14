@@ -15,6 +15,8 @@ pub mod agent;
 pub mod aggregate;
 pub mod archive;
 pub mod docs;
+#[cfg(test)]
+pub mod fake_git;
 pub mod forge;
 pub mod gates;
 pub mod migrate;
@@ -116,10 +118,15 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // only place that resolution is a judgement rather than a
                     // type: everything downstream takes `AbsPath`.
                     let root = match homma_api::AbsPath::new(&root) {
-                        Ok(p) => p.canonical(),
-                        Err(_) => homma_api::AbsPath::resolve(&homma_api::AbsPath::cwd()?, &root)
-                            .canonical(),
-                    };
+                        Ok(p) => p,
+                        Err(_) => {
+                            homma_api::AbsPath::resolve(&homma_api::AbsPath::cwd()?, &root)
+                        }
+                    }
+                    .canonical()
+                    .with_context(|| {
+                        format!("resolving the workspace root {}", root.display())
+                    })?;
                     let out = stand::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
                     println!("{} {}", out.handle, out.home.display());
                     println!(

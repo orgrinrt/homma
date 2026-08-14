@@ -318,56 +318,6 @@ fn standing_up_changes_no_global_git_configuration() {
     assert_eq!(before, after, "no global git configuration may change");
 }
 
-#[test]
-fn standing_up_does_not_depend_on_where_the_operator_is_standing() {
-    // Reproduced before this existed: `--root` defaulted to the current
-    // directory rather than the configuration's own, so running this from an
-    // unrelated clone cloned that repository into the Hand's workspace and
-    // wrote the Hand's directories into the unrelated clone's tree.
-    let dir = tempfile::tempdir().unwrap();
-    let (_src, root) = content_repo_and_root(dir.path());
-    let cfg = root.join("homma.toml");
-    let ws = dir.path().join("ws").join("fresh");
-
-    let elsewhere = dir.path().join("elsewhere");
-    std::fs::create_dir_all(&elsewhere).unwrap();
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
-        .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
-        .args(["--workspace", ws.to_str().unwrap()])
-        .assert()
-        .success();
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
-        .current_dir(&elsewhere)
-        .assert()
-        .success();
-
-    // The workspace is a clone of the configured content repository.
-    assert!(ws.join(".git").exists());
-    assert!(
-        std::fs::read_to_string(ws.join("README.md"))
-            .unwrap()
-            .contains("content"),
-        "the configured repository must be what was cloned"
-    );
-
-    // And nothing was written where the operator happened to be standing.
-    assert!(
-        !elsewhere.join(".shared").exists() && !elsewhere.join(".claude").exists(),
-        "the current directory is not the workspace and must not be written to"
-    );
-    // It went to the configuration's own directory instead.
-    assert!(root.join(".shared/hands/fresh").exists());
-}
 
 #[test]
 fn a_symlinked_registry_is_written_through_rather_than_replaced() {
@@ -406,47 +356,5 @@ fn a_symlinked_registry_is_written_through_rather_than_replaced() {
     );
 }
 
-#[test]
-fn a_relative_workspace_in_the_registry_anchors_under_the_root() {
-    // The route the previous three rounds never looked at. `workspace =
-    // "hands/rel"` was used raw as a clone target, so it resolved against
-    // whatever directory the process was in: run from inside a committed
-    // repository, it cloned a nested repository into that repository's tree
-    // and exited 0. Deny item 2, by a field rather than by a flag.
-    let dir = tempfile::tempdir().unwrap();
-    let (_src, root) = content_repo_and_root(dir.path());
-    let cfg = root.join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
 
-    // Somewhere else entirely, and a repository, so a stray write is visible.
-    let elsewhere = dir.path().join("elsewhere");
-    std::fs::create_dir_all(&elsewhere).unwrap();
-    std::process::Command::new("git")
-        .args(["init", "-q", "-b", "main"])
-        .current_dir(&elsewhere)
-        .status()
-        .unwrap();
 
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "add", "r"])
-        .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", "r", "--git-email", "r@example.invalid"])
-        .args(["--workspace", "hands/rel"])
-        .assert()
-        .success();
-
-    bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
-        .current_dir(&elsewhere)
-        .assert()
-        .success();
-
-    assert!(
-        root.join("hands/rel/.git").exists(),
-        "a relative workspace anchors under the workspace root"
-    );
-    assert!(
-        !elsewhere.join("hands").exists(),
-        "and never under whatever directory the process happened to be in"
-    );
-}

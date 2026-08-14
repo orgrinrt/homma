@@ -33,6 +33,11 @@ pub enum ProvisionError<E> {
     },
     /// The identity did not survive being written.
     IdentityNotSet { found: Option<(String, String)> },
+    /// The workspace would sit inside a repository that is not it.
+    InsideAnotherRepo {
+        workspace: homma_api::AbsPath,
+        enclosing: homma_api::AbsPath,
+    },
 }
 
 impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
@@ -47,6 +52,15 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
                  Standing up again will not fix it; move or remove that \
                  workspace first.",
                 found.as_deref().unwrap_or("nothing with an origin")
+            ),
+            ProvisionError::InsideAnotherRepo {
+                workspace,
+                enclosing,
+            } => write!(
+                f,
+                "{workspace} sits inside the repository at {enclosing}. Creating \
+                 a workspace there would write into a tree that is not ours, \
+                 which the deny list forbids. Name a workspace outside it."
             ),
             ProvisionError::IdentityNotSet { found } => write!(
                 f,
@@ -95,6 +109,24 @@ pub fn provision<G: Git>(
         // sign of that is a commit already made.
         _ => return Err(ProvisionError::NoIdentity),
     };
+
+    // **The check that was on the wrong path.** `enclosing_repo` answers "is
+    // this inside somebody's repository", which is the question, and it was
+    // being asked about the workspace root rather than about the thing being
+    // created. A relative `..`, and an absolute path pointing straight into
+    // another tree, both reach the same place and neither is stopped by the
+    // path being absolute.
+    //
+    // A workspace that is already the repository is fine: that is standing up
+    // twice. What is refused is one nested inside a different repository.
+    if let Some(enclosing) = git.enclosing_repo(&root).map_err(ProvisionError::Git)? {
+        if enclosing != root {
+            return Err(ProvisionError::InsideAnotherRepo {
+                workspace: root.clone(),
+                enclosing,
+            });
+        }
+    }
 
     let cloned = if git.is_repo(&root) {
         // Checked rather than trusted. A workspace cloned from the wrong
@@ -164,6 +196,8 @@ mod tests {
         /// for every path cannot enter the refusing arm, which is why the guard
         /// shipped with no test.
         remotes: std::cell::RefCell<Vec<(AbsPath, String)>>,
+        /// A path, and the repository it sits inside.
+        enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
         existing: std::cell::RefCell<Vec<AbsPath>>,
         clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
         identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
@@ -200,13 +234,15 @@ mod tests {
             Ok(())
         }
         fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Never> {
-            // The real one refuses a relative path. A fake that accepts one is
-            // a fake that lets a caller ship the bypass.
-            assert!(
-                path.is_absolute(),
-                "the real implementation refuses {path:?}"
-            );
-            Ok(None)
+            // Answers from a table the test fills in, so the refusing arm is
+            // reachable. The assertion that used to be here asserted what the
+            // parameter type guarantees and was never executed by anything.
+            Ok(self
+                .enclosures
+                .borrow()
+                .iter()
+                .find(|(p, _)| p == path)
+                .map(|(_, e)| e.clone()))
         }
         fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Never> {
             if let Some((_, url)) = self.remotes.borrow().iter().find(|(p, _)| p == path) {
@@ -251,6 +287,52 @@ mod tests {
             git.identity(&ws).unwrap(),
             Some(("paja".into(), "paja@example.invalid".into()))
         );
+    }
+
+    #[test]
+    fn a_workspace_inside_another_repository_is_refused() {
+        // The escape the type did not close. `AbsPath` carries absoluteness and
+        // no containment, so `workspace = "../victim/stolen"` resolved to an
+        // absolute path pointing into an unrelated committed repository, and a
+        // repository was cloned into its working tree. Exit 0.
+        let d = tempfile::tempdir().unwrap();
+        let victim = abs(d.path().join("victim"));
+        let ws = abs(d.path().join("victim").join("stolen"));
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+        git.enclosures.borrow_mut().push((ws.clone(), victim.clone()));
+
+        match provision(&id, &ws, CONTENT, &git).unwrap_err() {
+            ProvisionError::InsideAnotherRepo {
+                workspace,
+                enclosing,
+            } => {
+                assert_eq!(workspace, ws);
+                assert_eq!(enclosing, victim);
+            }
+            other => panic!("must refuse, got {other:?}"),
+        }
+        assert!(
+            git.clones.borrow().is_empty(),
+            "refusing must happen before anything is cloned"
+        );
+    }
+
+    #[test]
+    fn a_workspace_that_is_itself_the_repository_is_not_refused() {
+        // Standing up twice. The guard is about being nested in a *different*
+        // repository, and refusing this would break the idempotence the whole
+        // lifecycle rests on.
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("paja"));
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+        git.existing.borrow_mut().push(ws.clone());
+        git.remotes.borrow_mut().push((ws.clone(), CONTENT.into()));
+        git.enclosures.borrow_mut().push((ws.clone(), ws.clone()));
+
+        let done = provision(&id, &ws, CONTENT, &git).unwrap();
+        assert!(!done.cloned);
     }
 
     #[test]
