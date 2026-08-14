@@ -151,3 +151,52 @@ fn a_dangling_symlink_on_a_definition_path_cannot_carry_the_write_out() {
         "the definition must not be written through the dangling link"
     );
 }
+
+#[test]
+fn standing_up_twice_into_a_tree_with_a_symlink_is_the_same_answer() {
+    // The tenth review's reproduction, and the one the idempotence laws could
+    // not see because both run against a bare tempdir.
+    //
+    // `.claude -> .` is contained without argument: it resolves to the root
+    // itself. It also removes a level from the real depth, and the memory link's
+    // body was computed against the written depth, so the body climbed one level
+    // too far and pointed outside.
+    //
+    // The second `org up` is what settles it. Homma's own guard, run against the
+    // link homma created a command earlier, refused it: the crate contradicted
+    // itself one command apart. So the assertion is not that a write is refused,
+    // it is that the whole thing succeeds twice and the link stays inside.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::os::unix::fs::symlink(".", root.join(".claude")).unwrap();
+
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    for pass in 1..=2 {
+        bin()
+            .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("outside the workspace root").not());
+        let _ = pass;
+    }
+
+    // The link exists and what it points at is inside the root. Reading the body
+    // rather than following it, because following it is what hid the defect: the
+    // target was created, so `exists()` was happy while the path had left.
+    let link = root.join(".claude").join("agent-memory").join("r");
+    let body = std::fs::read_link(&link).expect("the memory link is created");
+    let landed = std::fs::canonicalize(link.parent().unwrap().join(&body))
+        .expect("the link's target resolves");
+    let root_real = std::fs::canonicalize(&root).unwrap();
+    assert!(
+        landed.starts_with(&root_real),
+        "the link body {} resolves to {}, outside the root {}",
+        body.display(),
+        landed.display(),
+        root_real.display()
+    );
+}

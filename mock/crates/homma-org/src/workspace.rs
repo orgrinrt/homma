@@ -329,6 +329,53 @@ mod tests {
         );
     }
 
+    // The tenth review's finding, at the crate rather than through the binary.
+    //
+    // `preparing_twice_changes_nothing` above runs against a bare tempdir, where
+    // this cannot arise, which is why a crate contradicting itself was invisible
+    // at 335 green. Every symlink test on this branch is a *refusal* test; this
+    // is the missing *idempotence under a symlink* test.
+    //
+    // The link body is a path the kernel follows, so it is a path in exactly the
+    // sense `Root` exists to prove, and nothing proved it: it was computed
+    // lexically between as-written paths while the link is created where those
+    // resolve.
+    #[test]
+    fn the_memory_link_body_stays_inside_a_root_that_carries_a_symlink() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        // Contained without argument: it resolves to the root. It also removes a
+        // level from the real depth, which is the whole reproduction.
+        std::os::unix::fs::symlink(".", root_dir.join(".claude")).unwrap();
+
+        let p = Paths::default();
+        let l = Layout::new(&abs(&root_dir), &p).unwrap();
+        let id = hand();
+        let done = prepare(&l, &id).expect("preparing must succeed, the link is contained");
+
+        let body = fs::read_link(done.harness_link.as_path()).expect("the link is created");
+        let landed = fs::canonicalize(
+            done.harness_link
+                .as_path()
+                .parent()
+                .expect("a link has a parent")
+                .join(&body),
+        )
+        .expect("the target resolves");
+        let root_real = fs::canonicalize(&root_dir).unwrap();
+        assert!(
+            landed.starts_with(&root_real),
+            "the body {} resolves to {}, outside {}",
+            body.display(),
+            landed.display(),
+            root_real.display()
+        );
+
+        // And preparing again must not refuse what the first pass created.
+        prepare(&l, &id).expect("a second prepare must not refuse the first pass's own link");
+    }
+
     #[test]
     fn a_real_directory_where_the_link_belongs_is_refused_rather_than_deleted() {
         let (d, p) = fixture();
