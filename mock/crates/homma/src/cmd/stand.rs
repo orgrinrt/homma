@@ -101,6 +101,16 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
             .join(", ")
     );
 
+    // Before `git.init`, which is what actually creates the root under
+    // `content_repo = "local"` and creates every missing ancestor with it. Those
+    // sit above the root, where containment cannot reach, and with the missing
+    // prefix under a home directory this made directories inside `~/.claude/`.
+    //
+    // `Root::new` carries the rule and refuses the same thing, so this is the
+    // same check placed where it fires first rather than a second one: by the
+    // time `Layout` is built the root already exists and the question is moot.
+    homma_api::Root::new(root).with_context(|| format!("standing `{handle}` up at {root}"))?;
+
     // The content repository is configuration, because that is what a workspace
     // is cloned from. An earlier round derived it from the root's own `origin`
     // and justified that by saying a configuration key would be a second place

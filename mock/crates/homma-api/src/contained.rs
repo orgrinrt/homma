@@ -44,7 +44,27 @@ impl Root {
     ///
     /// A root that does not exist yet resolves to itself, which is correct:
     /// nothing can be inside it via a symlink that is not there.
+    ///
+    /// **A root whose own parent does not exist is refused.** `create_dir_all`
+    /// creates every missing ancestor, so a missing root takes its ancestors
+    /// with it, and those are above the root by definition: containment says
+    /// nothing about them and cannot, since they are outside the thing doing the
+    /// containing. With a root under a home directory this created directories
+    /// inside `~/.claude/`, which the record forbids outright.
+    ///
+    /// So the rule is that homma creates the root and never the path to it.
+    /// Creating the root is intended and `content_repo = "local"` relies on it;
+    /// making the road to it is not, and nothing ever asked for it.
     pub fn new(root: &AbsPath) -> std::io::Result<Self> {
+        if let Some(parent) = root.parent() {
+            if !parent.as_path().exists() {
+                return Err(std::io::Error::other(format!(
+                    "{parent} does not exist, so the workspace root {root} cannot be \
+                     created without creating the path to it. homma creates the root \
+                     and never its ancestors; make {parent} first."
+                )));
+            }
+        }
         Ok(Self {
             as_written: root.clone(),
             resolved: root.resolved()?,

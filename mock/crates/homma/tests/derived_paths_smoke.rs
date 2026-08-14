@@ -200,3 +200,32 @@ fn standing_up_twice_into_a_tree_with_a_symlink_is_the_same_answer() {
         root_real.display()
     );
 }
+
+#[test]
+fn standing_up_into_a_root_whose_parent_is_missing_creates_nothing_above_it() {
+    // The twelfth review's reproduction, exit 0 at the time. `create_dir_all`
+    // creates every missing ancestor, so a missing root took its own ancestors
+    // with it, and those sit above the root where containment cannot reach.
+    //
+    // The reviewer's second case is the one that matters: with the missing
+    // prefix under a home directory, this created directories inside
+    // `~/.claude/`, which the record forbids outright.
+    let dir = tempfile::tempdir().unwrap();
+    let cfgdir = dir.path().join("cfg");
+    std::fs::create_dir_all(&cfgdir).unwrap();
+    let cfg = cfgdir.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    let deep = dir.path().join("a").join("b").join("newroot");
+    bin()
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", deep.to_str().unwrap()])
+        .assert()
+        .failure();
+
+    assert!(
+        !dir.path().join("a").exists(),
+        "nothing above the root may be created on the way to standing one up"
+    );
+}
