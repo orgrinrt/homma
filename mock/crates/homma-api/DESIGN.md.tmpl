@@ -67,6 +67,23 @@ relative path resolves against whatever directory the process happens to be in,
 so a guard walking upward from one walks up from the process's directory and
 passes, and a clone target that is one lands wherever the operator was standing.
 
+**Descending and anchoring are different operations and only one may leave.**
+
+*Anchoring* takes a path the caller is entitled to put anywhere. A workspace
+legitimately lives outside the content repository, so a relative one going up is
+correct, and what guards it is a containment check against the filesystem.
+
+*Descending* walks into a tree we own: a repository's own `.git`, a handle's
+directory, a definition's filename. **Nothing descended into has any business
+leaving**, so it cannot: a parent component clamps at the receiver rather than at
+the filesystem root. Every caller passes a literal, and none of them was trying
+to leave.
+
+Sharing one method between the two is how a configured path reached another
+repository's tree. The configured paths additionally carry a type that refuses an
+absolute or escaping value **when the configuration is parsed**, so the failure is
+reported where somebody can act on it rather than where a file lands.
+
 **What the type carries is absoluteness, and nothing else.** It does not carry
 containment: `/a/b/../../etc` is absolute, and so is a path pointing straight
 into somebody else's repository. Containment is a question about the filesystem
