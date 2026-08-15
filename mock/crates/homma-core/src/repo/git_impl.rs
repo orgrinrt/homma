@@ -44,6 +44,11 @@ impl Git for GixGit {
         // `user.name` and `user.email` are written as well as the specific four,
         // because git falls back to them for anything unset and a later tool
         // reading only those keys would otherwise see nothing.
+        //
+        // **`author.*` and `committer.*` need git 2.22.** Older git ignores them
+        // entirely, and because `user.*` is written too there is no error: the
+        // committer silently equals the author, which is the ordinary case for
+        // every entry but one and wrong for that one.
         let file = local_config(path)?;
         let mut file = file;
         for (key, value) in [
@@ -226,6 +231,74 @@ mod tests {
     // Finding 8: widening `identity` silently dropped `.filter(|s| !s.is_empty())`,
     // so a clone configuring empty values reported four empty strings where the
     // trait says `None`. Neither case had a test.
+    // The read side, which the previous round widened and swept nothing of.
+    // Replacing both committer reads with the author's values left the whole
+    // suite green, which restores exactly the hole the widening closed.
+    #[test]
+    fn the_committer_is_read_from_its_own_keys_not_the_authors() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let at = AbsPath::new(&repo).unwrap();
+        let git = GixGit;
+        git.init(&at).unwrap();
+
+        git.set_identity(
+            &at,
+            &CommitIdentity {
+                author_name: "Onni Armas".into(),
+                author_email: "ort@hiisi.digital".into(),
+                committer_name: "Vouti".into(),
+                committer_email: "orgrinrt+vouti@ikiuni.dev".into(),
+            },
+        )
+        .unwrap();
+
+        let got = git
+            .identity(&at)
+            .unwrap()
+            .expect("an identity is configured");
+        assert_eq!(got.author_name, "Onni Armas");
+        assert_eq!(got.author_email, "ort@hiisi.digital");
+        assert_eq!(
+            got.committer_name, "Vouti",
+            "read from committer.name, not fabricated from the author"
+        );
+        assert_eq!(got.committer_email, "orgrinrt+vouti@ikiuni.dev");
+    }
+
+    // The `user.*` fallback, also live and also unswept. A clone configured by
+    // hand, or by an older homma, carries only the `user.*` pair, and dropping
+    // the fallback made `identity` report `None` for it.
+    #[test]
+    fn a_clone_carrying_only_the_user_pair_still_reports_an_identity() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let at = AbsPath::new(&repo).unwrap();
+        let git = GixGit;
+        git.init(&at).unwrap();
+
+        // Written by hand rather than through `set_identity`, which is the
+        // shape this defends: homma did not configure this clone.
+        let cfg = repo.join(".git").join("config");
+        let mut text = std::fs::read_to_string(&cfg).unwrap();
+        text.push_str("[user]\n\tname = By Hand\n\temail = hand@example.invalid\n");
+        std::fs::write(&cfg, text).unwrap();
+
+        let got = git
+            .identity(&at)
+            .unwrap()
+            .expect("the user pair is an identity");
+        assert_eq!(got.author_name, "By Hand");
+        assert_eq!(got.author_email, "hand@example.invalid");
+        assert_eq!(
+            got.committer_name, "By Hand",
+            "with no committer keys, the committer is the author"
+        );
+        assert_eq!(got.committer_email, "hand@example.invalid");
+    }
+
     #[test]
     fn an_empty_configured_value_is_not_a_value() {
         let d = tempfile::tempdir().unwrap();

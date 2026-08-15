@@ -14,3 +14,9 @@ homma-api = { path = "../homma-api" }
 
 [dev-dependencies]
 tempfile = "3"
+# For the seam test only. U-3.1's exit test says "a commit made in a
+# **provisioned** workspace", and `provision` was exercised against a fake while
+# the real `Git` was exercised directly, so the join between them was tested by
+# nothing. A dev-dependency rather than a dependency: nothing in this crate's
+# own code may reach a concrete git implementation.
+homma-core = { path = "../homma-core" }

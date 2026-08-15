@@ -285,6 +285,13 @@ impl Workspace {
             // Serialising sees every field, including the ones nobody has added
             // yet, which is the only version of this that does not need somebody
             // to remember. It costs one serialisation per entry on a file read.
+            // FIXME: this fails open on a check that exists to refuse hostile
+            // strings. An entry whose serialisation fails is skipped silently
+            // rather than reported, so a field that could fail to serialise
+            // would disable the check for its whole entry. No current field can,
+            // and the claim below that the failure surfaces at the write is
+            // unverified: nothing in the tree serialises `Workspace` back to
+            // TOML yet. Unblocked when the store gains a write path.
             let Ok(value) = toml::Value::try_from(id) else {
                 // A value that will not serialise cannot be written to the
                 // registry either, so there is nothing here to check. The
@@ -583,63 +590,70 @@ handle = "silent"
     }
 
     #[test]
-    fn the_list_of_corruptible_fields_is_the_whole_list() {
-        // The other direction, and the half that catches a field added later.
-        // Enumerated here rather than by the production walker, so a walker that
-        // stopped descending into arrays or tables cannot satisfy both this and
-        // the test above.
-        fn strings(v: &toml::Value, at: &str, out: &mut Vec<String>) {
-            match v {
-                toml::Value::String(_) => out.push(at.to_string()),
-                toml::Value::Table(t) => {
-                    for (k, v) in t {
-                        let next = if at.is_empty() {
-                            k.clone()
-                        } else {
-                            format!("{at}.{k}")
-                        };
-                        strings(v, &next, out);
-                    }
-                }
-                toml::Value::Array(a) => {
-                    for v in a {
-                        strings(v, at, out);
-                    }
-                }
-                _ => {}
-            }
-        }
+    fn adding_a_field_to_the_entry_forces_a_decision_about_it() {
+        // **The compiler is what catches a new field, not this body.** The
+        // previous version walked a serialised entry and compared the result
+        // against `CORRUPTIBLE`, which could not catch anything: an `Option`
+        // carrying `skip_serializing_if` never reaches the serialised value when
+        // it is unpopulated, so a field nobody adds to either place is invisible
+        // to both. Its own assertion message and the changelist that shipped it
+        // both claimed otherwise.
+        //
+        // An exhaustive destructuring cannot be satisfied by forgetting. Adding
+        // a field to `Identity` stops this compiling until somebody writes it
+        // down here, and writing it down is the moment to decide whether it is a
+        // free-form string a hostile value can travel through.
+        let Identity {
+            // Not free-form: a closed vocabulary, and a bool.
+            role: _,
+            staffed: _,
+            // Free-form. Every one of these must appear in `CORRUPTIBLE`.
+            handle,
+            nickname,
+            full_name,
+            domain,
+            git_name,
+            git_email,
+            committer_email,
+            committer_name,
+            workspace,
+            session,
+            repos,
+        } = Identity::new(Role::Hand, "paja");
 
-        // Every optional field populated, so none is skipped by being absent.
-        let mut full = Identity::new(Role::Hand, "paja");
-        full.nickname = Some("x".into());
-        full.full_name = Some("x".into());
-        full.domain = Some("x".into());
-        full.git_name = Some("x".into());
-        full.git_email = Some("x".into());
-        full.committer_email = Some("x".into());
-        full.committer_name = Some("x".into());
-        full.workspace = Some("x".into());
-        full.session = Some("x".into());
-        full.repos = vec!["x".into()];
-
-        let mut found = Vec::new();
-        strings(
-            &toml::Value::try_from(&full).expect("an entry serialises"),
-            "",
-            &mut found,
+        // Bound so that deleting a line above without deleting its name below is
+        // also a compile error.
+        let _ = (
+            &handle,
+            &nickname,
+            &full_name,
+            &domain,
+            &git_name,
+            &git_email,
+            &committer_email,
+            &committer_name,
+            &workspace,
+            &session,
+            &repos,
         );
-        found.retain(|f| f != "role");
-        found.sort();
-        found.dedup();
 
-        let mut want: Vec<String> = CORRUPTIBLE.iter().map(|s| s.to_string()).collect();
-        want.sort();
+        let free_form = [
+            "handle",
+            "nickname",
+            "full_name",
+            "domain",
+            "git_name",
+            "git_email",
+            "committer_email",
+            "committer_name",
+            "workspace",
+            "session",
+            "repos",
+        ];
 
         assert_eq!(
-            found, want,
-            "a string field was added to `Identity` without reaching CORRUPTIBLE; \
-             add it there and confirm `unsafe_strings` reports it"
+            free_form, CORRUPTIBLE,
+            "the free-form fields named in this test and in CORRUPTIBLE must agree"
         );
     }
 
