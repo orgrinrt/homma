@@ -234,6 +234,40 @@ mod tests {
     // The read side, which the previous round widened and swept nothing of.
     // Replacing both committer reads with the author's values left the whole
     // suite green, which restores exactly the hole the widening closed.
+    // The order of the fallback, which is deliberate and was pinned by nothing:
+    // reversing both reads to prefer `user.*` left the whole suite green. Git
+    // prefers the specific keys over the general ones, and the comment at the
+    // read site claims this does the same.
+    #[test]
+    fn the_specific_keys_win_over_the_user_pair() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let at = AbsPath::new(&repo).unwrap();
+        let git = GixGit;
+        git.init(&at).unwrap();
+
+        // Both pairs present and disagreeing, which is the only configuration
+        // where the order is observable.
+        let cfg = repo.join(".git").join("config");
+        let mut text = std::fs::read_to_string(&cfg).unwrap();
+        text.push_str(
+            "[user]\n\tname = General\n\temail = general@example.invalid\n\
+             [author]\n\tname = Specific\n\temail = specific@example.invalid\n",
+        );
+        std::fs::write(&cfg, text).unwrap();
+
+        let got = git
+            .identity(&at)
+            .unwrap()
+            .expect("an identity is configured");
+        assert_eq!(
+            got.author_name, "Specific",
+            "author.name wins over user.name, which is what git does"
+        );
+        assert_eq!(got.author_email, "specific@example.invalid");
+    }
+
     #[test]
     fn the_committer_is_read_from_its_own_keys_not_the_authors() {
         let d = tempfile::tempdir().unwrap();
@@ -308,10 +342,33 @@ mod tests {
         let git = GixGit;
         git.init(&at).unwrap();
 
+        // **A global identity, named here rather than hoped for.** The first
+        // assertion below is about reading the clone's own configuration and
+        // never the merged view, and it says nothing unless there is a global
+        // one to be wrongly reported. Under an empty `HOME` it passed green
+        // against an implementation that reads the merged view, which is the
+        // only guarantee it pins.
+        //
+        // The write-side test got a precondition assert two rounds ago and this
+        // one did not, which is the same half-sweep one level up. Setting the
+        // variable is better than asserting the machine has a config, because it
+        // removes the machine from the answer rather than checking it.
+        let global = d.path().join("global.gitconfig");
+        std::fs::write(
+            &global,
+            "[user]\n\tname = Global Person\n\temail = global@example.invalid\n",
+        )
+        .unwrap();
+        // SAFETY: single-threaded test, and the variable is read by `gix` only
+        // when it opens a repository, which happens inside this call.
+        unsafe {
+            std::env::set_var("GIT_CONFIG_GLOBAL", &global);
+        }
+
         assert_eq!(
             git.identity(&at).unwrap(),
             None,
-            "a fresh clone configures no identity"
+            "a fresh clone configures no identity, whatever the global one says"
         );
 
         // Empty is not absent on disk, and it is not a value either.
@@ -325,6 +382,10 @@ mod tests {
             None,
             "an empty configured value is not a value"
         );
+
+        unsafe {
+            std::env::remove_var("GIT_CONFIG_GLOBAL");
+        }
     }
 
     #[test]

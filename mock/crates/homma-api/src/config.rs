@@ -562,17 +562,80 @@ handle = "silent"
 
     #[test]
     fn every_free_form_string_is_reported_when_it_carries_a_control_character() {
-        let mut bad = Identity::new(Role::Hand, "pa\nja");
-        bad.nickname = Some("a\nb".into());
-        bad.full_name = Some("a\nb".into());
-        bad.domain = Some("a\nb".into());
-        bad.git_name = Some("a\nb".into());
-        bad.git_email = Some("a\nb".into());
-        bad.committer_email = Some("a\nb".into());
-        bad.committer_name = Some("a\nb".into());
-        bad.workspace = Some("a\nb".into());
-        bad.session = Some("a\nb".into());
-        bad.repos = vec!["a\nb".into()];
+        // **A struct literal, and that is the gate.** Written as
+        // `Identity::new` plus assignments, a field added later is simply not
+        // populated, `skip_serializing_if` keeps it out of the serialised value,
+        // and nothing here or in production ever sees it. A literal is
+        // exhaustive: `E0063` refuses to compile until the new field is given a
+        // value, that value carries a control character like every other, and
+        // production then has to report it or the assertion below fails.
+        //
+        // So adding a string to `Identity` cannot reach the registry unguarded
+        // without somebody deliberately writing a benign value here.
+        let bad = Identity {
+            role: Role::Hand,
+            staffed: false,
+            handle: "pa\nja".into(),
+            nickname: Some("a\nb".into()),
+            full_name: Some("a\nb".into()),
+            domain: Some("a\nb".into()),
+            git_name: Some("a\nb".into()),
+            git_email: Some("a\nb".into()),
+            committer_email: Some("a\nb".into()),
+            committer_name: Some("a\nb".into()),
+            workspace: Some("a\nb".into()),
+            session: Some("a\nb".into()),
+            repos: vec!["a\nb".into()],
+        };
+
+        // **And every string in it is actually hostile.** `E0063` forces a new
+        // field to be given a value; it cannot force that value to be one the
+        // check should catch, so a benign one would satisfy the compiler and
+        // leave the field unguarded. This closes that: serialise the entry and
+        // require that every string in it carries a control character, so a
+        // benign value fails here rather than silently passing below.
+        //
+        // `role` is the one exception, being a closed vocabulary that
+        // serialises as a string and cannot carry one.
+        {
+            fn every_string(v: &toml::Value, at: &str, out: &mut Vec<(String, String)>) {
+                match v {
+                    toml::Value::String(s) => out.push((at.to_string(), s.clone())),
+                    toml::Value::Table(t) => {
+                        for (k, v) in t {
+                            let next = if at.is_empty() {
+                                k.clone()
+                            } else {
+                                format!("{at}.{k}")
+                            };
+                            every_string(v, &next, out);
+                        }
+                    }
+                    toml::Value::Array(a) => {
+                        for v in a {
+                            every_string(v, at, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut all = Vec::new();
+            every_string(
+                &toml::Value::try_from(&bad).expect("an entry serialises"),
+                "",
+                &mut all,
+            );
+            for (field, value) in all {
+                if field == "role" {
+                    continue;
+                }
+                assert!(
+                    value.chars().any(|c| c.is_control()),
+                    "`{field}` was given a benign value in the hostile entry, so this \
+                     test cannot tell whether the check covers it"
+                );
+            }
+        }
 
         let mut ws = Workspace::parse(MINIMAL).expect("the minimal fixture parses");
         ws.org.insert("paja".into(), bad);
@@ -586,74 +649,6 @@ handle = "silent"
             reported, want,
             "every free-form string carrying a control character must be reported, \
              and nothing else"
-        );
-    }
-
-    #[test]
-    fn adding_a_field_to_the_entry_forces_a_decision_about_it() {
-        // **The compiler is what catches a new field, not this body.** The
-        // previous version walked a serialised entry and compared the result
-        // against `CORRUPTIBLE`, which could not catch anything: an `Option`
-        // carrying `skip_serializing_if` never reaches the serialised value when
-        // it is unpopulated, so a field nobody adds to either place is invisible
-        // to both. Its own assertion message and the changelist that shipped it
-        // both claimed otherwise.
-        //
-        // An exhaustive destructuring cannot be satisfied by forgetting. Adding
-        // a field to `Identity` stops this compiling until somebody writes it
-        // down here, and writing it down is the moment to decide whether it is a
-        // free-form string a hostile value can travel through.
-        let Identity {
-            // Not free-form: a closed vocabulary, and a bool.
-            role: _,
-            staffed: _,
-            // Free-form. Every one of these must appear in `CORRUPTIBLE`.
-            handle,
-            nickname,
-            full_name,
-            domain,
-            git_name,
-            git_email,
-            committer_email,
-            committer_name,
-            workspace,
-            session,
-            repos,
-        } = Identity::new(Role::Hand, "paja");
-
-        // Bound so that deleting a line above without deleting its name below is
-        // also a compile error.
-        let _ = (
-            &handle,
-            &nickname,
-            &full_name,
-            &domain,
-            &git_name,
-            &git_email,
-            &committer_email,
-            &committer_name,
-            &workspace,
-            &session,
-            &repos,
-        );
-
-        let free_form = [
-            "handle",
-            "nickname",
-            "full_name",
-            "domain",
-            "git_name",
-            "git_email",
-            "committer_email",
-            "committer_name",
-            "workspace",
-            "session",
-            "repos",
-        ];
-
-        assert_eq!(
-            free_form, CORRUPTIBLE,
-            "the free-form fields named in this test and in CORRUPTIBLE must agree"
         );
     }
 

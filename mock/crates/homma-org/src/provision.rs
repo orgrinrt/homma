@@ -532,8 +532,14 @@ mod tests {
 
         let written = git.identities.borrow();
         let (_, got) = written.last().expect("an identity was set");
-        assert_eq!(got.author_email, got.committer_email);
-        assert_eq!(got.author_name, got.committer_name);
+        // Against what the registry said, not against each other. Comparing the
+        // two halves of one recorded value catches nothing: it holds for any
+        // implementation that writes the same thing twice, including one that
+        // writes the wrong thing twice.
+        assert_eq!(got.author_name, "paja");
+        assert_eq!(got.author_email, "paja@example.invalid");
+        assert_eq!(got.committer_name, "paja");
+        assert_eq!(got.committer_email, "paja@example.invalid");
     }
 
     // Pins the widened read-back. Narrowing the comparison back to the author
