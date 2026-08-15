@@ -188,15 +188,28 @@ included, because a root inside a workspace is backwards and the workspace is
 required to sit outside the root. The workspace itself is checked against the
 same list minus its own entry, or it would deny itself.
 
-**What none of it reaches**, said plainly because an earlier version of this
-section claimed a guard was satisfied when it was not: the aggregation pass
-writes into a checkout by design, and the central clone is a checkout. That one
-is a question about who homma is acting as rather than a missing check, and it is
-not this mechanism's to answer.
+**The aggregation pass goes through the same mechanism**, and the two rounds
+before this one each got it wrong in a different way. The first left it out and
+called that a question for the record. The second added a check on the directory
+and left every write below it built with an ordinary join, which a symlink one
+component down carries straight out, while refusing the central clone by accident
+and documenting that it had not.
 
-Its writes into a home directory's `.claude` **are** refused, because a home is
-never something a workspace aggregates into. An earlier version bundled the two
-and deferred both under an argument that only covered the first.
+What it may not aggregate into: a home directory's own `.claude`, which is never
+a workspace, and any workspace belonging to another participant. What it may:
+its own.
+
+**Deny item one is not an absolute here, and that is a derivation rather than a
+reading.** The record forbids writes under the central clone. The central clone
+is the lead designer's own workspace, so a Hand may not write there for exactly
+the reason no participant may write into another's, and the owner may, because
+nobody is denied their own workspace. Every Hand's workspace is a clone of the
+same shape, so a Hand regenerating theirs is the ordinary path and the central
+one has a single owner.
+
+That is the same two-list distinction the stand-up already makes, where the
+standee's own workspace is denied under the root and not to itself, so this is a
+second consumer of an existing shape rather than a new rule.
 
 The same question already had an answer, `enclosing_repo`, and it was being asked
 about the root instead of about the thing being created.

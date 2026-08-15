@@ -14,7 +14,9 @@
 
 `homma` is a Rust workspace management tool for developers who work across many independently-versioned repositories that live side-by-side on disk and share design rounds, refactors, and migrations. It replaces ad-hoc shell scripts and provider-specific CLIs with one workspace-aware binary that speaks git and the forge HTTP APIs directly.
 
-The intended workflow shape is a flat workspace directory of cloned repos plus a `homma.toml` at the workspace root that names them, their forge origins, and any workspace-level conventions. `homma` reads the manifest, walks the repos, and runs operations across the set: opening PRs, applying branch protections, performing migrations between forges, enforcing workspace-wide conventions on commit/PR text.
+The intended workflow shape is a flat workspace directory of cloned repos plus a `homma.toml` at the workspace root that names them, their forge origins, and who works in them. `homma` reads the manifest, walks the repos, and runs operations across the set: reporting their state, standing participants up with their own clones and generated definitions, aggregating agent rules and hooks into the workspace, reading forge metadata, and migrating repositories between forges.
+
+Opening pull requests and applying branch protections are not among them. `gh` does the first and a script in the workspace does the second.
 
 ## Status
 
@@ -34,22 +36,18 @@ refused when it would land inside a repository that is not its own, and homma
 creates its immediate parent but never a chain of directories leading to it.
 
 `org add` rewrites the registry at whatever path `--config` names, and that path
-is checked against the same list.
+goes through the same check.
 
-**The gen pass behind `agent regen` is the one worth knowing about**, and it is
-half checked. It writes hook scripts into `<workspace>/.claude/`, marks them
-executable, rewrites `settings.json` to register them, and removes files there.
-Pointed at a home directory it did all of that beside the harness's own settings,
-installing code the harness then runs; that is now refused, because a home
-directory's `.claude` is never something a workspace aggregates into and refusing
-it costs nothing.
+**The aggregation pass behind `agent regen` writes into `<workspace>/.claude/`**:
+hook scripts, marked executable, plus a `settings.json` registering them, and it
+removes the ones it wrote last time. Every one of those targets is proven against
+the filesystem before it is written, through the same mechanism as everything
+else, because a check on the directory says nothing about a path built below it
+with an ordinary join.
 
-**What is not refused is a workspace that is the central clone**, and that one is
-a real question rather than a missing check: aggregating into a checkout is the
-gen pass's entire purpose, the central clone is a checkout, and homma has no
-notion of whose machine it is running on or in what capacity. Answering it needs
-a decision about who homma is acting as, which is not something this mechanism
-can derive.
+What it may not aggregate into is a home directory's own `.claude`, which is
+never a workspace, and any workspace belonging to somebody else. It may aggregate
+into its own, which is the ordinary case and the only one.
 
 The Cargo workspace lives under `mock/`, not at the repository root, which is the
 shape every repository in this ecosystem uses. Build from there:
@@ -59,9 +57,7 @@ cd mock && cargo build
 ```
 
 Design documents live as `*.md.tmpl` templates under `mock/`, and `cargo mock`
-renders them. A previous version of this paragraph said the rendered tree is
-generated into `docs/`; there is no such directory in this repository, tracked or
-untracked.
+renders them.
 
 ## Support
 
