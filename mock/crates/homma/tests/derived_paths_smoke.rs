@@ -552,3 +552,195 @@ fn a_root_inside_the_standees_own_workspace_is_refused_before_anything_is_built(
     );
     assert!(!inside.exists());
 }
+
+/// Whether this filesystem folds case, established rather than assumed.
+///
+/// Creates a directory, stats a differently-cased spelling of it, and compares
+/// `(dev, ino)`. The tests below use it to skip rather than to pass, because a
+/// deny test that cannot tell a real refusal from an inapplicable one is the
+/// shape this branch has shipped repeatedly.
+fn folds_case(at: &std::path::Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let probe = at.join("CaseProbe");
+    if std::fs::create_dir_all(&probe).is_err() {
+        return false;
+    }
+    let folded = at.join("caseprobe");
+    let same = match (std::fs::metadata(&probe), std::fs::metadata(&folded)) {
+        (Ok(a), Ok(b)) => (a.dev(), a.ino()) == (b.dev(), b.ino()),
+        _ => false,
+    };
+    let _ = std::fs::remove_dir(&probe);
+    same
+}
+
+/// A home with no `.claude` in it, which is the condition the round before this
+/// one could not answer for.
+fn a_home_with_no_claude_yet(dir: &std::path::Path) -> std::path::PathBuf {
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    assert!(!home.join(".claude").exists());
+    home
+}
+
+// **The region the previous round's tests never entered.** `under_by_identity`
+// answers nothing about a directory with no inode, so for an absent denied place
+// the component comparison was the only arm running, and an exact one is what
+// folding defeats. Every end-to-end deny test above pre-creates the denied
+// directory, and the one test that entered this path used the identical
+// spelling, so the broken region went unnamed in the round whose subject was
+// this comparison.
+
+#[test]
+fn a_workspace_in_a_folded_spelling_of_a_claude_that_does_not_exist_yet_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    if !folds_case(dir.path()) {
+        eprintln!("skipped: case-sensitive filesystem, the two spellings are two directories");
+        return;
+    }
+    let home = a_home_with_no_claude_yet(dir.path());
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", home.join(".CLAUDE").join("ws").to_str().unwrap());
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing may be written there"));
+
+    assert!(
+        !home.join(".claude").exists() && !home.join(".CLAUDE").exists(),
+        "the denied directory must not have been created on the way to refusing"
+    );
+}
+
+#[test]
+fn a_workspace_in_a_folded_spelling_of_a_central_clone_that_does_not_exist_yet_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    if !folds_case(dir.path()) {
+        eprintln!("skipped: case-sensitive filesystem");
+        return;
+    }
+    let home = a_home_with_no_claude_yet(dir.path());
+    // `Dev` exists and `clause-dev` does not, which is the condition under test.
+    // Without this the parent-must-exist guard refuses first and the deny check
+    // is never reached, so the test would pass while saying nothing.
+    std::fs::create_dir_all(home.join("Dev")).unwrap();
+    // The root is a sibling of the home, so the workspace under the home is not
+    // also inside the root; that guard would otherwise refuse first.
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(
+        &cfg,
+        "r",
+        home.join("Dev")
+            .join("CLAUSE-DEV")
+            .join("ws")
+            .to_str()
+            .unwrap(),
+    );
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("read, never written"));
+
+    assert!(!home.join("Dev").join("clause-dev").exists());
+    assert!(!home.join("Dev").join("CLAUSE-DEV").exists());
+}
+
+#[test]
+fn a_workspace_inside_another_participants_workspace_that_is_not_stood_up_yet_is_refused() {
+    // The ordinary case rather than a contrivance: a participant is declared
+    // long before anybody stands them up, so their workspace routinely does not
+    // exist when the next one is added.
+    let dir = tempfile::tempdir().unwrap();
+    if !folds_case(dir.path()) {
+        eprintln!("skipped: case-sensitive filesystem");
+        return;
+    }
+    let home = a_home_with_no_claude_yet(dir.path());
+    // The root is the configuration's own directory, and a workspace may not sit
+    // inside it, so both live in a sibling. Otherwise that guard refuses first
+    // and this test never reaches the deny list.
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(dir.path().join("out")).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    let theirs = dir.path().join("out").join("ws-a");
+    assert!(!theirs.exists(), "declared and not yet stood up");
+    add_hand(&cfg, "a", theirs.to_str().unwrap());
+    add_hand(
+        &cfg,
+        "b",
+        dir.path()
+            .join("out")
+            .join("WS-A")
+            .join("inner")
+            .to_str()
+            .unwrap(),
+    );
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "b"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("another participant's workspace"));
+
+    assert!(!theirs.exists() && !dir.path().join("out").join("WS-A").exists());
+}
+
+#[test]
+fn a_root_in_a_folded_spelling_of_an_absent_central_clone_builds_nothing_before_refusing() {
+    // **The refusal fired after the write it forbids.** `Root::new` passed
+    // because the denied place had no inode, `git.init` created it through
+    // `create_dir_all`, `provision` cloned the workspace, and only then did
+    // `Layout::new` refuse, because by that point the directory existed and had
+    // one. The guard succeeded precisely because the forbidden write had already
+    // happened, which is the fourth time on this branch that "a refusal leaves
+    // nothing half-built" has needed repairing.
+    let dir = tempfile::tempdir().unwrap();
+    if !folds_case(dir.path()) {
+        eprintln!("skipped: case-sensitive filesystem");
+        return;
+    }
+    let home = a_home_with_no_claude_yet(dir.path());
+    // `Dev` exists and `clause-dev` does not: the condition under test. Without
+    // it the parent-must-exist guard refuses first, which is a correct refusal
+    // for the wrong reason and would leave this asserting nothing.
+    std::fs::create_dir_all(home.join("Dev")).unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    let folded_root = home.join("Dev").join("CLAUSE-DEV");
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", folded_root.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("read, never written"));
+
+    let central = home.join("Dev").join("clause-dev");
+    assert!(
+        !central.exists(),
+        "the central clone's place must not exist"
+    );
+    assert!(!folded_root.exists());
+    assert!(
+        !dir.path().join("ws").exists(),
+        "and the workspace must not have been cloned before the refusal"
+    );
+}

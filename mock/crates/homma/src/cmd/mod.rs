@@ -98,7 +98,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // in the registry survives being added to. Written through a
                     // temporary and renamed, so a short write cannot leave a
                     // registry nothing can parse.
-                    registry::append_entry(&path, &id)?;
+                    // The registry is written at a path the operator named,
+                    // so it is checked like every other operator-named path.
+                    // `for_standing_up` cannot serve here: it needs a standee,
+                    // and nobody is being stood up.
+                    registry::append_entry(&path, &id, &homma_api::Denied::from_env()?)?;
 
                     println!("{} {}", id.handle, org::describe(&staffing));
                 }

@@ -5,7 +5,7 @@
 //! and generating definitions, and the two share nothing but the identity type.
 
 use anyhow::{Context, Result};
-use homma_api::{Identity, Workspace};
+use homma_api::{Denied, Identity, Workspace};
 use std::path::Path;
 
 /// The TOML block for one identity, ready to append to a registry file.
@@ -31,7 +31,19 @@ pub fn render_entry(id: &Identity) -> Result<String> {
 /// later invocation then fails to parse a registry with no backup. Re-parsed
 /// afterwards, because a file homma writes and cannot read is worse than one it
 /// refuses to write.
-pub fn append_entry(path: &Path, id: &Identity) -> Result<()> {
+pub fn append_entry(path: &Path, id: &Identity, denied: &Denied) -> Result<()> {
+    // **Before anything is read or written**, because this writes two files at a
+    // path the operator names and had no deny check at all: `org add` against a
+    // `--config` inside `~/.claude` exited 0 having rewritten a registry there.
+    //
+    // The list is a parameter rather than read here, for the same reason it is
+    // one everywhere else: a default would be the empty list, which is the
+    // answer that silently reintroduces the defect.
+    let abs =
+        homma_api::AbsPath::new(std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    denied.check(&abs, "registry")?;
+
     let existing =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let next = format!("{existing}{}", render_entry(id)?);
@@ -66,6 +78,13 @@ mod tests {
     use super::*;
     use homma_api::Role;
 
+    /// A list denying somewhere no test writes, so these exercise the write
+    /// rather than the refusal. The refusal is asserted end to end, where the
+    /// path actually comes from an operator.
+    fn nothing_denied() -> Denied {
+        Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap())
+    }
+
     #[test]
     fn a_registry_that_would_not_parse_is_never_written() {
         // Deleting the re-validation left the whole suite green, because the
@@ -79,7 +98,12 @@ mod tests {
         std::fs::write(&path, "content_repo = \n").unwrap();
         let before = std::fs::read_to_string(&path).unwrap();
 
-        let err = append_entry(&path, &Identity::new(Role::Hand, "victim")).unwrap_err();
+        let err = append_entry(
+            &path,
+            &Identity::new(Role::Hand, "victim"),
+            &nothing_denied(),
+        )
+        .unwrap_err();
         assert!(
             format!("{err:#}").contains("would not parse"),
             "must say why nothing was written: {err:#}"
@@ -105,7 +129,12 @@ mod tests {
         )
         .unwrap();
 
-        append_entry(&path, &Identity::new(Role::Hand, "ok_handle")).unwrap();
+        append_entry(
+            &path,
+            &Identity::new(Role::Hand, "ok_handle"),
+            &nothing_denied(),
+        )
+        .unwrap();
 
         let strays: Vec<_> = std::fs::read_dir(d.path())
             .unwrap()

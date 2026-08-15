@@ -6,7 +6,8 @@
 //! the record forbids in the first place, which no amount of containment can
 //! answer: a home directory contains itself perfectly.
 //!
-//! The record's list is three absolute locations:
+//! **The record's list has seven items and three of them are locations.** Those
+//! three are this module's:
 //!
 //! ```text
 //! 1  writes under ~/Dev/clause-dev      the central clone
@@ -16,12 +17,19 @@
 //!
 //! Two derive from the home directory and one from the registry.
 //!
+//! The other four are actions rather than places: force-push and history
+//! rewriting, opening or merging a release PR, editing lint severities, and
+//! touching credential-shaped files. They are governed by hooks and by
+//! discipline, and nothing here reaches them. Said because this header used to
+//! say the list *is* three, which leaves a reader with no way to learn four more
+//! exist.
+//!
 //! **The hard part is that `.claude` is not always the denied one.** The record
 //! licenses `.claude/agent-memory/<name>/` inside the content repository, which
 //! is project scope, and denies `~/.claude`, which is user scope. Same directory
 //! name, opposite verdicts, and when the root is a home they are one directory.
-//! So the check is against the operator's own `.claude` by absolute path, never
-//! against the name.
+//! So the check is against the operator's own `.claude` by location, never
+//! against the bare directory name.
 //!
 //! The home directory is therefore an **input** rather than something read
 //! wherever it is needed. That is what makes this testable without setting a
@@ -145,18 +153,26 @@ impl Denied {
 
     /// Refuse a path that resolves under any denied location.
     ///
-    /// **Two comparisons, and neither subsumes the other.** Components, which
-    /// answers for a denied location that does not exist yet and therefore has no
-    /// identity to compare. And `(dev, ino)`, which answers for a location that
-    /// has two names.
+    /// **Two comparisons, and the split between them is by what the filesystem
+    /// can be asked.** [`under_by_components`] answers without consulting it at
+    /// all, which is the only thing available for a denied location that does not
+    /// exist yet, and it is case-insensitive because an exact one is what folding
+    /// defeats. [`under_by_identity`] consults it, which is the only thing that
+    /// reaches two spellings sharing no components.
     ///
-    /// The second is what the fifteenth review reproduced twice. This filesystem
-    /// is case-insensitive, so `~/.CLAUDE` and `~/.claude` are one inode and a
-    /// component comparison says no; and `/Users/<user>` is a macOS firmlink to
-    /// `/System/Volumes/Data/Users/<user>`, which is not a symlink, so no amount
-    /// of link resolution collapses it. Both wrote a workspace, a repository and
-    /// a memory link inside the operator's own `.claude` at exit 0, with every
-    /// containment proof satisfied.
+    /// Three reproductions produced this shape, each writing a workspace, a
+    /// repository and a memory link into a denied place at exit 0 with every
+    /// containment proof satisfied. `~/.CLAUDE` against `~/.claude`, one inode on
+    /// a folding filesystem. `/Users/<user>` against
+    /// `/System/Volumes/Data/Users/<user>`, a macOS firmlink, which is not a
+    /// symlink and which no amount of link resolution collapses. And a denied
+    /// place that did not exist yet, spelled with different case, which the first
+    /// version of this pair missed because identity says nothing about a
+    /// directory that is not there.
+    ///
+    /// **No claim is made that these two are exhaustive.** Each was added after
+    /// a route through it was demonstrated, and the previous two versions of this
+    /// comment each said the pair was total while a route was open.
     pub fn check(&self, path: &AbsPath, what: &str) -> Result<(), Forbidden> {
         let resolved = path.resolved().map_err(|e| Forbidden {
             path: path.clone(),
@@ -171,7 +187,7 @@ impl Denied {
                 what: what.to_string(),
                 why: format!("it could not be resolved: {e}"),
             })?;
-            let under = resolved.as_path().starts_with(denied_resolved.as_path())
+            let under = under_by_components(resolved.as_path(), denied_resolved.as_path())
                 || under_by_identity(resolved.as_path(), denied_resolved.as_path());
             if under {
                 return Err(Forbidden {
@@ -228,6 +244,52 @@ impl fmt::Display for NoHome {
 
 impl std::error::Error for NoHome {}
 
+/// Whether `path` is `denied` or lies under it, comparing components without
+/// case.
+///
+/// **This replaced `Path::starts_with`, and the reason is the one the round
+/// before this missed.** [`under_by_identity`] answers nothing about a location
+/// with no inode, so for a denied place that does not exist yet the component
+/// comparison is the only arm that runs, and an exact one is what a folding
+/// filesystem defeats. Absent plus folded was answered by neither, and all three
+/// deny items were reproduced being written into on exactly that condition. The
+/// control is the same command with the directory pre-created, which refuses.
+///
+/// So the question is not whether two paths *are* one directory, which cannot be
+/// asked of a directory that is not there. It is whether they **could** be, and
+/// the conservative answer is the right one for a deny list.
+///
+/// That over-refuses on a case-sensitive filesystem, deliberately: `CLAUSE-DEV`
+/// beside `clause-dev` would be two directories there and this calls them one.
+/// The operator is refused and told why, which is a cheap thing to lose.
+///
+// FIXME: Unicode normalisation is not covered. APFS folds NFD against NFC as
+// well as case, so `.clauðe` in one form and the other are one directory and two
+// spellings here. The standard library has no normalisation and pulling a crate
+// in for it is a dependency decision rather than a fix. Every current entry is
+// ASCII; a registry-derived workspace path need not be. Unblocked when the
+// dependency question is settled.
+fn under_by_components(path: &std::path::Path, denied: &std::path::Path) -> bool {
+    use std::path::Component;
+    let mut here = path.components();
+    for want in denied.components() {
+        let Some(got) = here.next() else {
+            return false;
+        };
+        let same = match (got, want) {
+            (Component::Normal(a), Component::Normal(b)) => {
+                a.eq_ignore_ascii_case(b)
+                    || a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+            }
+            (a, b) => a == b,
+        };
+        if !same {
+            return false;
+        }
+    }
+    true
+}
+
 /// What a directory actually is, when it exists.
 ///
 /// A path is a way of writing a directory down and a filesystem accepts several
@@ -246,9 +308,16 @@ fn identity_of(p: &std::path::Path) -> Option<(u64, u64)> {
 /// path may name a missing directory below an existing one, which is the
 /// ordinary case here.
 ///
-/// False when `denied` does not exist, which is correct rather than lenient. A
-/// location with no identity is caught by the component comparison beside this,
-/// and one of the tests asserts a denied place that does not exist still denies.
+/// False when `denied` does not exist, and **that is a gap rather than a
+/// correctness argument**, which is what the previous version of this comment
+/// got wrong. It said such a location "is caught by the component comparison
+/// beside this". It was not: an exact component comparison is what a folding
+/// filesystem defeats, so absent-and-folded fell through both arms and was
+/// reproduced writing into all three denied places.
+///
+/// What covers it now is that the comparison beside this is no longer exact.
+/// This one remains for the case components cannot reach at all, where the two
+/// spellings share nothing, which is what a firmlink is.
 fn under_by_identity(path: &std::path::Path, denied: &std::path::Path) -> bool {
     let Some(target) = identity_of(denied) else {
         return false;
@@ -440,6 +509,43 @@ mod tests {
             "a hard link is one inode with two names"
         );
         assert!(under_by_identity(&other, &one));
+    }
+
+    // **The identity arm, pinned through `check` rather than beside it.**
+    //
+    // The test above calls `under_by_identity` directly, so deleting the call in
+    // `check` left the whole suite green: the function was pinned and its wiring
+    // was not, which is this branch's recurring shape and was caught by the
+    // deletion sweep rather than by reading.
+    //
+    // A hard link is the only portable way to give one inode two names that
+    // resolution will not collapse, and that is exactly the property a firmlink
+    // has: `/Users/<user>` and `/System/Volumes/Data/Users/<user>` are one
+    // directory, share no components, and no amount of link resolution turns one
+    // into the other. It cannot be created in a test, so this stands in for it.
+    #[test]
+    fn a_denied_place_reached_under_a_wholly_different_name_is_refused() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("a")).unwrap();
+        std::fs::create_dir_all(d.path().join("b")).unwrap();
+        std::fs::write(d.path().join("a").join("f"), b"x").unwrap();
+        std::fs::hard_link(d.path().join("a").join("f"), d.path().join("b").join("g")).unwrap();
+
+        let one = abs(d.path().join("a").join("f"));
+        let other = abs(d.path().join("b").join("g"));
+
+        // The precondition, established rather than assumed: components disagree
+        // and the filesystem says they are one thing. Without both, this would
+        // pass for a reason unrelated to the arm it exists for.
+        assert!(!under_by_components(other.as_path(), one.as_path()));
+        assert_eq!(identity_of(one.as_path()), identity_of(other.as_path()));
+
+        let denied = Denied::under_home(&abs(d.path().join("nonexistent-home")))
+            .and(one, "it is the same thing under another name");
+        assert!(
+            denied.check(&other, "workspace").is_err(),
+            "the component comparison cannot reach this and the identity one must"
+        );
     }
 
     #[test]
