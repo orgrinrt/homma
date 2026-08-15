@@ -17,9 +17,10 @@ true, and starting it again restores a participant rather than creating a new on
 ## The workspace lifecycle
 
 A workspace is a clone of the content repository with member repositories inside
-it, and it belongs to exactly one identity. Creating one is: clone, set the git
-identity in that clone's own configuration, link the memory directory into the
-place the agent harness expects, and generate the definition.
+it, and it belongs to exactly one identity. Creating one is: clone, set the
+author and committer identities in that clone's own configuration, link the
+memory directory into the place the agent harness expects, and generate the
+definition.
 
 The memory link is worth stating because it is load-bearing and non-obvious. The
 harness writes agent memory to a path it chooses; the layout wants it beside
