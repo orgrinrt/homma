@@ -95,8 +95,13 @@ impl Git for FakeGit {
         // which is how a guard on this branch went four rounds pinned by
         // nothing.
         //
-        // The crate that owns this fake asserts the author path only; the
-        // committer is asserted in `homma-org`, where `provision` lives.
+        // **This line is pinned in `stand.rs`, both halves.** A previous version
+        // of this comment said the committer was asserted in `homma-org`, which
+        // has its own separate `FakeGit`, so nothing anywhere exercised this
+        // one's committer path: substituting `id.author_name` here for the
+        // committer left the suite green. `stand.rs` now stands up one entry
+        // whose four values all differ and one that carries no committer, so
+        // both a substitution and a dropped fallback fail.
         self.identities
             .borrow_mut()
             .push((path.clone(), id.clone()));

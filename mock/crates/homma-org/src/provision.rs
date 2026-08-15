@@ -105,13 +105,13 @@ impl<E: std::error::Error + 'static> std::error::Error for ProvisionError<E> {
     }
 }
 
-/// Clone the content repository into an identity's workspace and set its git
-/// identity in that clone's own configuration.
+/// Clone the content repository into an identity's workspace and set its author
+/// and committer identities in that clone's own configuration.
 ///
 /// **Cloning is skipped when the workspace already holds a repository**, which
-/// is what keeps standing up twice the same answer. The identity is set either
-/// way, because an entry whose email changed should take effect without anyone
-/// deleting a workspace to make it.
+/// is what keeps standing up twice the same answer. Both identities are set
+/// either way, because an entry whose email changed should take effect without
+/// anyone deleting a workspace to make it.
 pub fn provision<G: Git>(
     id: &Identity,
     workspace: &AbsPath,

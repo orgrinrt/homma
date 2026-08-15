@@ -560,29 +560,36 @@ handle = "silent"
         "repos",
     ];
 
-    // **Naming, which the literal below cannot force.** A struct literal makes
-    // `E0063` demand a value for a new field, and the hostile-value assertion
-    // makes that value be one the check should catch. Neither reaches `None`:
-    // `skip_serializing_if` removes an unpopulated `Option` from the serialised
-    // entry, so a field added as `None` satisfies the compiler and is invisible
-    // to everything below.
+    // **This does not close at compile time, and four rounds spent trying to
+    // make it are why that is stated first.** A field added to `Identity`, bound
+    // here as `field: _`, and given `None` in the literal below leaves the suite
+    // green with no warnings. So does `..` in place of the binding. No attribute
+    // reaches either, because neither produces an unused variable, so `deny`
+    // below is silent for both.
     //
-    // An exhaustive destructuring closes it, and it is kept **beside** the
-    // literal rather than instead of it, which is the mistake a previous round
-    // made in each direction.
+    // The guard's own error is what routes a reader there. `E0027` fires when a
+    // field is unnamed, and rustc's three suggested remedies are, verbatim,
+    // `, forge_account }`, `, forge_account: _ }` and `, .. }`. Two of the three
+    // disarm this.
     //
-    // **`E0027` requires a field to be named, not classified**, and that
-    // distinction cost this guard a third round. Binding a new field and adding
-    // it to neither list below produced `warning: unused variable` and a green
-    // suite; the workspace carries no `[lints]` table and no `deny(unused)`, so
-    // the warning was the whole consequence. `deny` here is what makes naming
-    // and classifying the same act.
+    // **The guarantee that covers an unknown field is `unsafe_strings` deriving
+    // its list from the serialised form**, which sees every field including the
+    // ones nobody has added yet and needs no author to remember anything. That
+    // is the mechanism to keep sound. This test is an aid to it.
     //
-    // What the three mechanisms do, exactly, since stating this too strongly is
-    // the recurring defect: the destructure forces a new field to be named and
-    // used, the literal forces it to be given a value, and the hostile-value
-    // assertion forces that value to be one the check should catch. A field can
-    // still be classified wrongly on purpose. It can no longer be omitted.
+    // What it does buy, which is real and is the reason it stays:
+    //
+    // - The destructure makes a field added the obvious way a compile error
+    //   rather than a silent omission, so the escape has to be typed on purpose.
+    // - `deny(unused_variables)` closes the case where a field is bound and then
+    //   classified in neither list, which produced a green suite and one warning
+    //   in an earlier round, because the workspace carries no `[lints]` table.
+    // - The literal is kept **beside** the destructure rather than instead of
+    //   it, so `E0063` demands a value and the assertion below demands that the
+    //   value be one the check should catch.
+    //
+    // A field can still be classified wrongly on purpose, and it can still be
+    // omitted by anybody who writes `_` or `..`.
     #[deny(unused_variables)]
     #[test]
     fn every_field_is_classified_as_free_form_or_not() {
@@ -644,19 +651,25 @@ handle = "silent"
         //
         // So adding a string to `Identity` cannot reach the registry unguarded
         // without somebody deliberately writing a benign value here.
+        //
+        // **The values are not all newlines, and that is deliberate.** They were,
+        // and narrowing production's `is_control()` to `== '\n'` then left the
+        // whole suite green: the property was asserted at one of the sixty-five
+        // characters `char::is_control` covers. Each class appears on at least
+        // one field alone, so narrowing to any one of them fails here.
         let bad = Identity {
             role: Role::Hand,
             staffed: false,
             handle: "pa\nja".into(),
             nickname: Some("a\nb".into()),
-            full_name: Some("a\nb".into()),
-            domain: Some("a\nb".into()),
-            git_name: Some("a\nb".into()),
-            git_email: Some("a\nb".into()),
-            committer_email: Some("a\nb".into()),
-            committer_name: Some("a\nb".into()),
-            workspace: Some("a\nb".into()),
-            session: Some("a\nb".into()),
+            full_name: Some("a\rb".into()),
+            domain: Some("a\tb".into()),
+            git_name: Some("a\0b".into()),
+            git_email: Some("a\x1bb".into()),
+            committer_email: Some("a\rb".into()),
+            committer_name: Some("a\tb".into()),
+            workspace: Some("a\0b".into()),
+            session: Some("a\x1b[31mb".into()),
             repos: vec!["a\nb".into()],
         };
 
@@ -722,6 +735,39 @@ handle = "silent"
             "every free-form string carrying a control character must be reported, \
              and nothing else"
         );
+    }
+
+    #[test]
+    fn each_class_of_control_character_is_reported_on_its_own() {
+        // The fixture above distributes these across fields, which catches a
+        // narrowing but states the law only by arrangement. This states it: one
+        // field, one character, one assertion per class, so a later edit to the
+        // fixture's distribution cannot quietly stop covering a class.
+        //
+        // `\x1b` is the one with a reason of its own. `stand.rs` interpolates
+        // registry strings into terminal output, so an escape sequence in a
+        // nickname writes colour codes, moves the cursor, or clears the line
+        // somebody is reading a refusal on.
+        for (name, c) in [
+            ("newline", '\n'),
+            ("carriage return", '\r'),
+            ("tab", '\t'),
+            ("nul", '\0'),
+            ("escape", '\x1b'),
+            ("vertical tab", '\x0b'),
+            ("delete", '\x7f'),
+        ] {
+            let mut w = Workspace::parse(MINIMAL).unwrap();
+            let mut id = Identity::new(Role::Hand, "paja");
+            id.nickname = Some(format!("Paja{c}memory: project"));
+            w.org.insert("paja".into(), id);
+
+            assert_eq!(
+                w.unsafe_strings(),
+                vec![("paja".to_string(), "nickname".to_string())],
+                "a {name} in a registry string must be reported"
+            );
+        }
     }
 
     #[test]
