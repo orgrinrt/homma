@@ -6,8 +6,9 @@ Who exists, where their work happens, and what is generated for them.
 
 Identity is a configuration entry, never a running process. An entry carries the
 handle everything else addresses, the role that says what kind of participant it
-is, and whatever that role requires: a git name and email, a workspace path, a
-pinned session, the repositories it holds, the path to its generated definition.
+is, and whatever that role requires: an author name and address, optionally a
+committer name and address where the two differ, a workspace path, a pinned
+session, the repositories it holds, the path to its generated definition.
 
 Because identity is configuration, a participant survives its process dying. What
 is lost when a session ends is a transcript; what the entry describes is still
@@ -160,11 +161,18 @@ would otherwise stop a nested repository being initialised there, with a
 participant's directories landing in a tree belonging to somebody else, which the
 deny list forbids outright.
 
-**Setting the git identity in that clone's own configuration is the step whose
+**Setting the identities in that clone's own configuration is the step whose
 absence is invisible.** Nothing fails, no test goes red, and the first sign is a
 commit landing under whoever the machine's global configuration names. So it is
-asserted rather than assumed: after standing up, that clone reports the identity's
-own email, and the machine's global configuration is unchanged.
+asserted rather than assumed: after standing up, that clone reports back all four
+values it was given, and the machine's global configuration is unchanged.
+
+**Four rather than two, and six keys rather than four.** Git resolves an identity
+from `author.*` and `committer.*`, falling back to `user.*` for whatever is unset,
+and it does so across scopes: a global `author.name` beats a local `user.name`.
+So a clone that configured only the `user.*` pair committed under the machine's
+name on any machine that had one, and a read-back that compared only the author
+passed a write that dropped the committer.
 
 **Standing up twice is the same answer**, which now covers the clone as well as
 the directories and the memory. A workspace that already holds the content
