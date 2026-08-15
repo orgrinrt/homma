@@ -158,6 +158,55 @@ impl Root {
     /// residue is visible rather than implied by its absence.
     pub fn create_dir_all(&self, path: &ContainedPath) -> std::io::Result<()> {
         std::fs::create_dir_all(path)?;
+        self.reprove(path)
+    }
+
+    /// Write a file, then prove it is still inside.
+    ///
+    /// **These three doors exist because their absence was the eighth
+    /// relocation of this branch's defect.** The aggregation pass had no way to
+    /// write through this mechanism, so it wrote through `std::fs` with a bare
+    /// path built by `Path::join`, which resolves nothing; a symlink one
+    /// component below the directory somebody had checked carried every write
+    /// out of the workspace, deleting files in the operator's own `.claude` and
+    /// installing executables there.
+    ///
+    /// A guard near a write is not a guard on it. What has to be proven is the
+    /// path `std::fs` receives.
+    pub fn write(&self, path: &ContainedPath, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+        std::fs::write(path, contents)?;
+        self.reprove(path)
+    }
+
+    /// Remove a file, having proven the path first.
+    ///
+    /// Proven **before** rather than after, because there is nothing left to
+    /// re-prove: a removal's damage is done at the call and the path is gone
+    /// afterwards. So this is the one of the three where the window the others
+    /// document is not merely narrowed but is the whole exposure.
+    pub fn remove_file(&self, path: &ContainedPath) -> std::io::Result<()> {
+        self.contain(path.as_abs())
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        std::fs::remove_file(path)
+    }
+
+    /// Mark a file executable, then prove it is still inside.
+    ///
+    /// Separate from [`Root::write`] rather than a flag on it, because the
+    /// executable bit is what turns a file the harness reads into code the
+    /// harness runs, and a mechanism that grants it deserves to be visible at
+    /// every call site that uses it.
+    #[cfg(unix)]
+    pub fn set_executable(&self, path: &ContainedPath) -> std::io::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms)?;
+        self.reprove(path)
+    }
+
+    /// Re-establish containment after a write, turning a silent escape loud.
+    fn reprove(&self, path: &ContainedPath) -> std::io::Result<()> {
         self.contain(path.as_abs())
             .map(|_| ())
             .map_err(|e| std::io::Error::other(e.to_string()))
@@ -432,6 +481,42 @@ mod tests {
         )
         .unwrap();
         assert!(root.contain(&root.as_abs().join("r.md")).is_err());
+    }
+
+    // **`contain_under`'s re-proof, which was live and pinned by nothing.**
+    // Replacing its body with `Ok(ContainedPath(base.0.join(tail)))` left the
+    // whole suite passing with zero compile errors, and that mutation is exactly
+    // the convention the method was created to replace. Eighth instance on this
+    // branch, and this file's own sentence applies: defence nothing pins is
+    // defence somebody deletes.
+    //
+    // A tail alone cannot escape, since `AbsPath::join` clamps `..`. A symlink
+    // can, which is the case the re-proof exists for and the one the mutated
+    // form lets through.
+    #[test]
+    fn deriving_from_a_proven_path_re_proves_and_can_refuse() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        std::fs::create_dir_all(root_dir.join("inside")).unwrap();
+        std::fs::create_dir_all(d.path().join("victim")).unwrap();
+        std::os::unix::fs::symlink(d.path().join("victim"), root_dir.join("inside").join("out"))
+            .unwrap();
+
+        let root = Root::new(
+            &abs(&root_dir),
+            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
+        let base = root.contain(&abs(root_dir.join("inside"))).unwrap();
+
+        assert!(
+            root.contain_under(&base, "stays").is_ok(),
+            "an ordinary tail stays inside"
+        );
+        let err = root
+            .contain_under(&base, "out/stolen")
+            .expect_err("a link under the base leaves, and the derivation must say so");
+        assert!(err.to_string().contains("victim"), "{err}");
     }
 
     #[test]

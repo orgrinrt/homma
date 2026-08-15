@@ -33,6 +33,7 @@
 //! get cleaned on every regen via [`clean_stale`] so upgrades from
 //! older homma versions converge to the current shape automatically.
 
+use homma_api::{ContainedPath, Root};
 use std::fs;
 use std::path::Path;
 
@@ -60,7 +61,7 @@ pub(crate) struct HookEntry {
 /// [`merge_settings`] writes into the workspace `settings.json` after
 /// the per-repo loop completes.
 pub(crate) fn aggregate_repo(
-    workspace: &Path,
+    root: &Root,
     repo_name: &str,
     repo_abs_path: &Path,
     settings_entries: &mut Vec<HookEntry>,
@@ -73,18 +74,29 @@ pub(crate) fn aggregate_repo(
         ));
     }
 
-    let ws_rules = workspace.join(".claude/rules");
-    let ws_hooks = workspace.join(".claude/hooks");
-    fs::create_dir_all(&ws_rules).ok();
-    fs::create_dir_all(&ws_hooks).ok();
+    // **A `Root` rather than a `&Path`, and that is the whole of the eighth
+    // relocation.** A previous round checked `<workspace>/.claude` as one string
+    // and left every path below it built with `Path::join`, which resolves
+    // nothing: a symlink one component down carried these writes into the
+    // operator's own `.claude`, deleted files there and installed executables,
+    // at exit 0 printing `regen: ok`.
+    //
+    // What has to be proven is the path `std::fs` receives, not a directory
+    // above it. `org up` has gone through this mechanism for several rounds;
+    // this pass had a hand-rolled prefix check instead.
+    let ws_rules = contain(root, ".claude/rules")?;
+    let ws_hooks = contain(root, ".claude/hooks")?;
+    root.create_dir_all(&ws_rules).ok();
+    root.create_dir_all(&ws_hooks).ok();
 
     // Cleans both prior-homma aggregated rules (kept after retirement
     // of rule aggregation) and prior-regen hook wrappers (the
     // idempotency guarantee for hooks).
-    clean_stale(&ws_rules, repo_name, ".md")?;
-    clean_stale(&ws_hooks, repo_name, ".sh")?;
+    clean_stale(root, &ws_rules, repo_name, ".md")?;
+    clean_stale(root, &ws_hooks, repo_name, ".sh")?;
 
     let hooks_count = aggregate_hooks(
+        root,
         &claude_dir,
         &ws_hooks,
         repo_name,
@@ -95,19 +107,31 @@ pub(crate) fn aggregate_repo(
     Ok(hooks_count)
 }
 
+/// Prove a workspace-relative path, naming what escaped when it does not.
+fn contain(root: &Root, tail: &str) -> Result<ContainedPath> {
+    root.contain(&root.as_abs().join(tail))
+        .map_err(|e| anyhow!("{e}"))
+}
+
 /// Remove previously-aggregated files for `repo_name` so removed
 /// per-repo entries do not linger at the workspace level.
-fn clean_stale(dir: &Path, repo_name: &str, ext: &str) -> Result<()> {
-    if !dir.is_dir() {
+fn clean_stale(root: &Root, dir: &ContainedPath, repo_name: &str, ext: &str) -> Result<()> {
+    if !dir.as_path().is_dir() {
         return Ok(());
     }
     let prefix = format!("{repo_name}--");
-    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+    for entry in
+        fs::read_dir(dir.as_path()).with_context(|| format!("read {}", dir.as_path().display()))?
+    {
         let entry = entry?;
         let name = entry.file_name();
         let s = name.to_string_lossy();
         if s.starts_with(&prefix) && s.ends_with(ext) {
-            fs::remove_file(entry.path()).ok();
+            // Proven before removing. A removal's damage is done at the call,
+            // and this loop reads a directory that a symlink may have made
+            // somebody else's.
+            let target = root.contain_under(dir, &name).map_err(|e| anyhow!("{e}"))?;
+            root.remove_file(&target).ok();
         }
     }
     Ok(())
@@ -116,8 +140,9 @@ fn clean_stale(dir: &Path, repo_name: &str, ext: &str) -> Result<()> {
 /// Walk per-repo `.claude/hooks/`, write wrapper scripts to workspace
 /// hooks dir, and collect settings.json registrations.
 fn aggregate_hooks(
+    root: &Root,
     repo_claude_dir: &Path,
-    dst_dir: &Path,
+    dst_dir: &ContainedPath,
     repo_name: &str,
     repo_abs_path: &Path,
     settings_entries: &mut Vec<HookEntry>,
@@ -139,7 +164,9 @@ fn aggregate_hooks(
         };
         let stem_path = format!(".claude/hooks/{name}");
         let target_name = format!("{repo_name}--{name}");
-        let target_path = dst_dir.join(&target_name);
+        let target_path = root
+            .contain_under(dst_dir, &target_name)
+            .map_err(|e| anyhow!("{e}"))?;
 
         let orig_abs = repo_abs_path.join(".claude/hooks").join(&name);
         let repo_abs_str = repo_abs_path
@@ -150,15 +177,10 @@ fn aggregate_hooks(
             .ok_or_else(|| anyhow!("non-utf8 path: {}", orig_abs.display()))?;
 
         let wrapper = wrapper_script(repo_name, repo_abs_str, orig_abs_str);
-        fs::write(&target_path, wrapper)
-            .with_context(|| format!("write {}", target_path.display()))?;
+        root.write(&target_path, wrapper)
+            .with_context(|| format!("write {}", target_path.as_path().display()))?;
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&target_path)?.permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&target_path, perms)?;
-        }
+        root.set_executable(&target_path)?;
 
         let matchers = per_repo_settings.get(&stem_path);
         let matchers = match matchers {
@@ -166,8 +188,9 @@ fn aggregate_hooks(
             _ => detect_matchers_from_hook_body(&path).unwrap_or_default(),
         };
         let abs_command = target_path
+            .as_path()
             .to_str()
-            .ok_or_else(|| anyhow!("non-utf8 path: {}", target_path.display()))?
+            .ok_or_else(|| anyhow!("non-utf8 path: {}", target_path.as_path().display()))?
             .to_string();
         for m in matchers {
             settings_entries.push(HookEntry {
@@ -306,17 +329,17 @@ exec "$ORIG_HOOK" <<<"$INPUT"
 /// `.claude/hooks/<known-repo>--*.sh`; those are filtered out, then
 /// fresh `aggregated_entries` are appended.
 pub(crate) fn merge_settings(
-    workspace: &Path,
+    root: &Root,
     known_repos: &[&str],
     aggregated_entries: &[HookEntry],
     gate_entry: Option<&HookEntry>,
 ) -> Result<()> {
-    let settings_path = workspace.join(".claude/settings.json");
-    fs::create_dir_all(workspace.join(".claude")).ok();
+    let settings_path = contain(root, ".claude/settings.json")?;
+    root.create_dir_all(&contain(root, ".claude")?).ok();
 
-    let mut value: serde_json::Value = match fs::read_to_string(&settings_path) {
+    let mut value: serde_json::Value = match fs::read_to_string(settings_path.as_path()) {
         Ok(s) if !s.trim().is_empty() => serde_json::from_str(&s)
-            .with_context(|| format!("parsing {}", settings_path.display()))?,
+            .with_context(|| format!("parsing {}", settings_path.as_path().display()))?,
         _ => serde_json::json!({}),
     };
 
@@ -381,8 +404,8 @@ pub(crate) fn merge_settings(
     }
 
     let serialised = serde_json::to_string_pretty(&value)?;
-    fs::write(&settings_path, serialised + "\n")
-        .with_context(|| format!("write {}", settings_path.display()))?;
+    root.write(&settings_path, serialised + "\n")
+        .with_context(|| format!("write {}", settings_path.as_path().display()))?;
     Ok(())
 }
 
@@ -412,6 +435,19 @@ pub(crate) fn is_aggregated_command(cmd: &str, known_repos: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    /// A `Root` over a test workspace, denying nothing that a test uses.
+    ///
+    /// The real code path, not a variant of it: these go through
+    /// `Root::contain` exactly as production does, which is what makes the
+    /// containment they assert mean anything.
+    fn test_root(workspace: &Path) -> Root {
+        Root::new(
+            &homma_api::AbsPath::new(workspace).expect("a tempdir path is absolute"),
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .expect("a tempdir is a legitimate root")
+    }
     use super::*;
 
     #[test]
@@ -514,7 +550,7 @@ mod tests {
         .unwrap();
 
         let mut settings = Vec::new();
-        let h = aggregate_repo(workspace, "arvo", &repo_abs, &mut settings).unwrap();
+        let h = aggregate_repo(&test_root(workspace), "arvo", &repo_abs, &mut settings).unwrap();
         assert_eq!(h, 1);
 
         // Stale aggregated rule was cleaned.
@@ -544,7 +580,7 @@ mod tests {
             settings[0].command,
         );
 
-        merge_settings(workspace, &["arvo"], &settings, None).unwrap();
+        merge_settings(&test_root(workspace), &["arvo"], &settings, None).unwrap();
         let written = fs::read_to_string(workspace.join(".claude/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&written).unwrap();
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
@@ -572,7 +608,7 @@ mod tests {
             matcher: "Edit".into(),
             command: ".claude/hooks/arvo--no-alloc.sh".into(),
         }];
-        merge_settings(workspace, &["arvo"], &entries, None).unwrap();
+        merge_settings(&test_root(workspace), &["arvo"], &entries, None).unwrap();
         let v: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
         )
@@ -605,7 +641,7 @@ mod tests {
             matcher: "Write".into(),
             command: ".claude/hooks/arvo--new.sh".into(),
         }];
-        merge_settings(workspace, &["arvo"], &entries, None).unwrap();
+        merge_settings(&test_root(workspace), &["arvo"], &entries, None).unwrap();
         let v: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
         )
@@ -647,7 +683,7 @@ mod tests {
             matcher: "Write".into(),
             command: ".claude/hooks/arvo--new.sh".into(),
         }];
-        merge_settings(workspace, &["arvo"], &entries, None).unwrap();
+        merge_settings(&test_root(workspace), &["arvo"], &entries, None).unwrap();
         let v: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
         )
@@ -691,7 +727,7 @@ mod tests {
         )
         .unwrap();
 
-        merge_settings(workspace, &["arvo"], &[], None).unwrap();
+        merge_settings(&test_root(workspace), &["arvo"], &[], None).unwrap();
         let v: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
         )

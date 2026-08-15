@@ -311,30 +311,46 @@ pub mod regen {
 
         let workspace = &cfg.workspace.path;
 
-        // **Before any repository is walked**, because everything below writes.
+        // **A `Root` over the workspace, so every write below is proven against
+        // the filesystem rather than checked as a prefix.** A previous round
+        // checked `<workspace>/.claude` as one string while every path under it
+        // was built with `Path::join`, which resolves nothing; a symlink one
+        // component down carried the writes into the operator's own `.claude`,
+        // deleting files there and installing executables, at exit 0.
         //
-        // With `workspace.path = $HOME` this wrote two mode-0755 scripts into
-        // `$HOME/.claude/hooks/` and rewrote `$HOME/.claude/settings.json` to
-        // register them as `PreToolUse` hooks, at exit 0. That is the record's
-        // third denied location verbatim, and it installs code the harness then
-        // executes, beside the credentials that live there.
+        // **The deny list is derived from the registry**, and deny item one is
+        // not an absolute in it. The record forbids writes under the central
+        // clone; the central clone is the lead designer's own workspace, so it
+        // is denied to a Hand for the same reason no participant may write into
+        // another's, and permitted to its owner, because nobody is denied their
+        // own workspace. Every Hand's workspace is a clone of the same shape, so
+        // regenerating one's own is the ordinary path.
         //
-        // **The workspace's own `.claude` is what is checked, not the
-        // workspace.** A workspace is allowed to be almost anywhere; what must
-        // not be a home's is the directory this pass aggregates into.
-        //
-        // **The central clone is deliberately not checked here.** Aggregating
-        // into a checkout is this pass's purpose, `~/Dev/clause-dev/homma.toml`
-        // ships `path = "/Users/orgrinrt/Dev/clause-dev"`, and refusing it would
-        // forbid the tool its own purpose. Answering that needs a decision about
-        // who homma is acting as. A previous round bundled the two questions and
-        // deferred both under an argument that only covered this one.
-        let target = homma_api::AbsPath::new(
-            std::path::absolute(workspace.join(".claude"))
-                .unwrap_or_else(|_| workspace.join(".claude")),
+        // Per op, put to him as a blocking question after the previous round
+        // refused the central clone by accident through `Denied::from_env` and
+        // broke `agent regen` on the configuration that ships. The derivation
+        // from his answer is recorded in the round's topic file.
+        let ws_abs = homma_api::AbsPath::new(
+            std::path::absolute(workspace).unwrap_or_else(|_| workspace.clone()),
         )
         .map_err(|e| anyhow!("{e}"))?;
-        homma_api::Denied::from_env()?.check(&target, "workspace")?;
+        let denied = denied_for_aggregating(cfg, &ws_abs)?;
+
+        // **Refused here as well as per write, and the reason is the message
+        // rather than the safety.** The `Root` below is what actually stops the
+        // write, and it stops it correctly: nothing is created. But it fails
+        // once per repository, inside the results table, where each line is
+        // truncated, so an operator pointing homma at their own home saw several
+        // clipped sentences instead of one reason.
+        //
+        // A denied aggregation target is a fact about the whole run, so it is
+        // reported once, before any of it.
+        denied
+            .check(&ws_abs.join(".claude"), "workspace")
+            .map_err(|e| anyhow!("{e}"))?;
+
+        let root = homma_api::Root::new(&ws_abs, denied)
+            .with_context(|| format!("aggregating into {}", ws_abs))?;
 
         let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
         let mut results = Vec::new();
@@ -384,7 +400,7 @@ pub mod regen {
             } else if !claude_present {
                 (0, StageStatus::Skipped("no .claude/ to aggregate".into()))
             } else {
-                match aggregate::aggregate_repo(workspace, name, &local, &mut settings_entries) {
+                match aggregate::aggregate_repo(&root, name, &local, &mut settings_entries) {
                     Ok(h) => (h, StageStatus::Success),
                     Err(e) => {
                         had_failure = true;
@@ -418,8 +434,7 @@ pub mod regen {
                     (name.clone(), abs.to_string_lossy().to_string())
                 })
                 .collect();
-            let gate_entry = match crate::cmd::gates::install_workspace_gate(workspace, &repo_paths)
-            {
+            let gate_entry = match crate::cmd::gates::install_workspace_gate(&root, &repo_paths) {
                 Ok(e) => Some(e),
                 Err(e) => {
                     had_failure = true;
@@ -434,7 +449,7 @@ pub mod regen {
             };
 
             if let Err(e) = aggregate::merge_settings(
-                workspace,
+                &root,
                 &known_repos,
                 &settings_entries,
                 gate_entry.as_ref(),
@@ -568,3 +583,41 @@ pub mod regen {
 }
 
 // Tests for `status::probe` live inside the `status` module (see above).
+
+/// The places this pass may not aggregate into.
+///
+/// A home's own `.claude`, which is never a workspace, plus **every
+/// participant's workspace except the one being written into**, which is the
+/// actor's by definition. That last exclusion is what makes deny item one
+/// correct rather than paralysing: the central clone is one participant's
+/// workspace, denied to every other and permitted to its owner.
+///
+/// The registry is optional in this configuration, and its absence means the
+/// list is the home-derived pair alone. That is a real state rather than a gap:
+/// a workspace with no participants has no participant workspaces to protect.
+fn denied_for_aggregating(
+    cfg: &Config,
+    workspace: &homma_api::AbsPath,
+) -> Result<homma_api::Denied> {
+    let mut denied = homma_api::Denied::from_env()?;
+    let Some(org) = cfg.org.as_ref() else {
+        return Ok(denied);
+    };
+    let Ok(ws) = org
+        .clone()
+        .try_into::<std::collections::BTreeMap<String, homma_api::Identity>>()
+    else {
+        return Ok(denied);
+    };
+    for id in ws.values() {
+        let Some(w) = id.workspace.as_ref() else {
+            continue;
+        };
+        let theirs = homma_api::AbsPath::resolve(workspace, w);
+        if theirs == *workspace {
+            continue;
+        }
+        denied = denied.and(theirs, "it is another participant's workspace");
+    }
+    Ok(denied)
+}

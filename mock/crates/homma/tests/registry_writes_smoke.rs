@@ -64,3 +64,37 @@ fn a_registry_somewhere_ordinary_is_still_written() {
 
     assert!(std::fs::read_to_string(&cfg).unwrap().contains("ordinary"));
 }
+
+#[test]
+fn a_registry_inside_another_participants_workspace_is_refused() {
+    // Deny item two on the `org add` path, which carried only the home-derived
+    // pair. Reproduced at exit 0: a registry rewritten inside a workspace the
+    // registry itself declares as somebody's.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+
+    let theirs = dir.path().join("ws-a");
+    std::fs::create_dir_all(&theirs).unwrap();
+    let cfg = theirs.join("homma.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "content_repo = \"local\"\n\n[org.a]\nrole = \"hand\"\nstaffed = true\nhandle = \"a\"\ngit_name = \"a\"\ngit_email = \"a@example.invalid\"\nworkspace = \"{}\"\n",
+            theirs.display()
+        ),
+    )
+    .unwrap();
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "intruder"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "i", "--git-email", "i@example.invalid"])
+        .args(["--workspace", dir.path().join("ws").to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("another participant's workspace"));
+
+    assert!(!std::fs::read_to_string(&cfg).unwrap().contains("intruder"));
+}
