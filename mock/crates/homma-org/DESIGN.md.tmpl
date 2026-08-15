@@ -67,9 +67,12 @@ was taken as written, while the write followed it anyway.
 
 **And containment is not the only question.** It asks whether a path stays inside
 a root the operator named, which says nothing about whether that root was
-somewhere the record forbids. The deny list is three absolute locations, two
-derived from the home directory and one from the registry, and a `Root` carries
-them so that neither check can be performed without the other.
+somewhere the record forbids. **The record's list has seven items and three of
+them are locations**; the other four are actions rather than places (force-push,
+release merges, lint severity edits, credential-shaped files) and are governed by
+discipline and by hooks rather than by this mechanism. Of the three, two derive
+from the home directory and one from the registry, and a `Root` carries them so
+that neither check can be performed without the other.
 
 The distinction that makes it awkward: `.claude/agent-memory/<name>/` inside the
 content repository is project scope and licensed, while `~/.claude` is user scope
@@ -89,10 +92,25 @@ stats each one that exists, and compares that pair against the denied location's
 because the leaf is usually about to be created and the answer lives at the
 deepest existing prefix.
 
-The component comparison stays **beside** the identity one rather than being
-replaced by it. A denied location that does not exist yet has no inode to compare
-and must still deny; a location with two names has an inode and only one of the
-names. Neither subsumes the other.
+**The two together were still not enough, and the region they missed is the one
+that mattered.** The identity comparison answers nothing about a directory that
+does not exist yet, so for an absent denied location only the component
+comparison ran, and that is the comparison folding defeats. Absent plus folded
+was answered by neither, and all three deny items were reproduced being written
+into on exactly that condition.
+
+So the comparison stops trying to be exact. It asks whether two paths **could**
+denote one directory, which is the honest question when one of them cannot be
+consulted, and the components are compared case-insensitively whether or not the
+target exists. The identity comparison stays beside it, because a firmlink shares
+no components at all.
+
+That over-refuses on a case-sensitive filesystem, deliberately. An operator who
+wants `~/Dev/CLAUSE-DEV` to be a different directory from `~/Dev/clause-dev` is
+refused and told why, which is a strange thing to want and a cheap thing to lose.
+Unicode normalisation is the residual: APFS folds NFD against NFC as well as
+case, the standard library has no normalisation, and every current entry is ASCII
+while a registry-derived one need not be.
 
 **Two guards, answering two questions, and neither implies the other.**
 `enclosing_repo` asks whether a path sits inside a repository that is not itself,

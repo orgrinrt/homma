@@ -33,8 +33,17 @@ own clone is deliberately outside that root and is guarded differently: it is
 refused when it would land inside a repository that is not its own, and homma
 creates its immediate parent but never a chain of directories leading to it.
 
-Other things homma writes, the aggregated hooks and settings the gen pass
-produces, do not go through that check yet.
+**Two other writers do not go through that check at all, and the second is the
+one worth knowing about.** `org add` rewrites the registry at whatever path
+`--config` names. The gen pass behind `agent regen` writes hook scripts into
+`<workspace>/.claude/`, marks them executable, rewrites `settings.json` to
+register them, and removes files there; pointed at a home directory it does all
+of that beside the harness's own settings.
+
+That is deliberate rather than pending. The gen pass writing into a checkout is
+its purpose, and homma has no notion of whose machine it is running on, so the
+question of which of those writes are somebody's to make is not one this
+mechanism can answer.
 
 The Cargo workspace lives under `mock/`, not at the repository root, which is the
 shape every repository in this ecosystem uses. Build from there:
