@@ -1430,6 +1430,7 @@ name = "homma-org"
 version = "0.0.0"
 dependencies = [
  "homma-api",
+ "homma-core",
  "tempfile",
 ]
 
