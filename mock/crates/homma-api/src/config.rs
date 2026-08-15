@@ -569,8 +569,21 @@ handle = "silent"
     //
     // An exhaustive destructuring closes it, and it is kept **beside** the
     // literal rather than instead of it, which is the mistake a previous round
-    // made in each direction. There are no `_` patterns: a field can still be
-    // classified wrongly on purpose, which is the bar, but not by omission.
+    // made in each direction.
+    //
+    // **`E0027` requires a field to be named, not classified**, and that
+    // distinction cost this guard a third round. Binding a new field and adding
+    // it to neither list below produced `warning: unused variable` and a green
+    // suite; the workspace carries no `[lints]` table and no `deny(unused)`, so
+    // the warning was the whole consequence. `deny` here is what makes naming
+    // and classifying the same act.
+    //
+    // What the three mechanisms do, exactly, since stating this too strongly is
+    // the recurring defect: the destructure forces a new field to be named and
+    // used, the literal forces it to be given a value, and the hostile-value
+    // assertion forces that value to be one the check should catch. A field can
+    // still be classified wrongly on purpose. It can no longer be omitted.
+    #[deny(unused_variables)]
     #[test]
     fn every_field_is_classified_as_free_form_or_not() {
         let Identity {

@@ -1,6 +1,12 @@
 //! That `Git::identity` reads the clone's own configuration, never git's merged
 //! view.
 //!
+//! **Do not add a second test to this file.** The one below sets a process-wide
+//! environment variable, and its safety rests entirely on being the only thing
+//! in this process. A second test here reintroduces the race this file exists to
+//! escape, silently and without a compiler complaint. A second binary beside it
+//! is free.
+//!
 //! **Its own binary, and that is the point rather than an organisational
 //! preference.** The test needs a global configuration to exist, so that
 //! reporting one would be observably wrong, and the only way to guarantee that
