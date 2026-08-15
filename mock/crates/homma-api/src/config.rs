@@ -528,23 +528,33 @@ handle = "silent"
         assert_eq!(bad[0], ("paja".to_string(), "nickname".to_string()));
     }
 
+    /// Every free-form string an entry carries, by dotted path.
+    ///
+    /// **A literal list, on purpose.** The previous version of this test derived
+    /// the expected set with the same walker the production code uses, so both
+    /// sides of its equality were one computation on one value and it could not
+    /// fail: deleting the array arm, so the one array field went unscanned,
+    /// left it green. A list is worse to maintain and is the only thing here
+    /// that a wrong walker cannot satisfy.
+    ///
+    /// `role` is absent because it is a closed vocabulary that serialises as a
+    /// string and cannot carry a control character.
+    const CORRUPTIBLE: &[&str] = &[
+        "handle",
+        "nickname",
+        "full_name",
+        "domain",
+        "git_name",
+        "git_email",
+        "committer_email",
+        "committer_name",
+        "workspace",
+        "session",
+        "repos",
+    ];
+
     #[test]
-    fn every_string_field_is_checked_including_ones_nobody_has_added() {
-        // **This replaces a hand-written enumeration**, which is the defect it
-        // was written to prevent, one iteration later. The old version listed
-        // the fields it expected `unsafe_strings` to cover; `committer_email`
-        // was added without reaching either the check or the list, and the test
-        // stayed green because it could only see what somebody had typed into
-        // it.
-        //
-        // The property asserted here has no list in it: **corrupt every
-        // free-form string on an entry, then require that the set reported is
-        // exactly the set corrupted**, with both sides derived from the entry's
-        // own serialisation. A field added later is corrupted by the same code
-        // that finds it, so it cannot be missed by forgetting to mention it.
-        //
-        // `role` is deliberately not corrupted: it is a closed vocabulary that
-        // serialises as a string and cannot carry one.
+    fn every_free_form_string_is_reported_when_it_carries_a_control_character() {
         let mut bad = Identity::new(Role::Hand, "pa\nja");
         bad.nickname = Some("a\nb".into());
         bad.full_name = Some("a\nb".into());
@@ -557,25 +567,79 @@ handle = "silent"
         bad.session = Some("a\nb".into());
         bad.repos = vec!["a\nb".into()];
 
-        // What is actually bad, read off the value rather than remembered.
-        let value = toml::Value::try_from(&bad).expect("an entry serialises");
-        let mut corrupted = std::collections::BTreeSet::new();
-        walk_for_control_characters(&value, "", &mut |field| {
-            corrupted.insert(field.to_string());
-        });
-        assert!(
-            corrupted.len() >= 10,
-            "the entry should carry at least ten corruptible strings, found {corrupted:?}"
-        );
-
         let mut ws = Workspace::parse(MINIMAL).expect("the minimal fixture parses");
         ws.org.insert("paja".into(), bad);
+
         let reported: std::collections::BTreeSet<String> =
             ws.unsafe_strings().into_iter().map(|(_, f)| f).collect();
+        let want: std::collections::BTreeSet<String> =
+            CORRUPTIBLE.iter().map(|s| s.to_string()).collect();
 
         assert_eq!(
-            reported, corrupted,
-            "every corrupted field must be reported, and nothing else"
+            reported, want,
+            "every free-form string carrying a control character must be reported, \
+             and nothing else"
+        );
+    }
+
+    #[test]
+    fn the_list_of_corruptible_fields_is_the_whole_list() {
+        // The other direction, and the half that catches a field added later.
+        // Enumerated here rather than by the production walker, so a walker that
+        // stopped descending into arrays or tables cannot satisfy both this and
+        // the test above.
+        fn strings(v: &toml::Value, at: &str, out: &mut Vec<String>) {
+            match v {
+                toml::Value::String(_) => out.push(at.to_string()),
+                toml::Value::Table(t) => {
+                    for (k, v) in t {
+                        let next = if at.is_empty() {
+                            k.clone()
+                        } else {
+                            format!("{at}.{k}")
+                        };
+                        strings(v, &next, out);
+                    }
+                }
+                toml::Value::Array(a) => {
+                    for v in a {
+                        strings(v, at, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Every optional field populated, so none is skipped by being absent.
+        let mut full = Identity::new(Role::Hand, "paja");
+        full.nickname = Some("x".into());
+        full.full_name = Some("x".into());
+        full.domain = Some("x".into());
+        full.git_name = Some("x".into());
+        full.git_email = Some("x".into());
+        full.committer_email = Some("x".into());
+        full.committer_name = Some("x".into());
+        full.workspace = Some("x".into());
+        full.session = Some("x".into());
+        full.repos = vec!["x".into()];
+
+        let mut found = Vec::new();
+        strings(
+            &toml::Value::try_from(&full).expect("an entry serialises"),
+            "",
+            &mut found,
+        );
+        found.retain(|f| f != "role");
+        found.sort();
+        found.dedup();
+
+        let mut want: Vec<String> = CORRUPTIBLE.iter().map(|s| s.to_string()).collect();
+        want.sort();
+
+        assert_eq!(
+            found, want,
+            "a string field was added to `Identity` without reaching CORRUPTIBLE; \
+             add it there and confirm `unsafe_strings` reports it"
         );
     }
 

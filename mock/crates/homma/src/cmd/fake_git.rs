@@ -22,7 +22,7 @@ pub struct FakeGit {
     /// What `origin_url` answers for the workspace root.
     pub root_origin: Option<String>,
     pub cloned: std::cell::RefCell<Vec<(String, AbsPath)>>,
-    pub identities: std::cell::RefCell<Vec<(AbsPath, String, String, String, String)>>,
+    pub identities: std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
     /// A path, and the repository it sits inside. Empty means nothing is
     /// nested, which is what most tests want.
     pub enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
@@ -89,29 +89,17 @@ impl Git for FakeGit {
         Ok(())
     }
 
-    fn set_identity(
-        &self,
-        path: &AbsPath,
-        name: &str,
-        email: &str,
-        committer_name: &str,
-        committer: &str,
-    ) -> Result<(), Never> {
-        // Every argument is recorded rather than dropped. A double that discards
-        // half its argument cannot fail the way production fails, which is how a
-        // guard on this branch went four rounds pinned by nothing.
+    fn set_identity(&self, path: &AbsPath, id: &homma_api::CommitIdentity) -> Result<(), Never> {
+        // The whole identity is recorded rather than half of it. A double that
+        // discards part of its argument cannot fail the way production fails,
+        // which is how a guard on this branch went four rounds pinned by
+        // nothing.
         //
         // The crate that owns this fake asserts the author path only; the
-        // committer is asserted in `homma-org`, where `provision` lives. The
-        // fields are here so a future test in this crate can, and a review found
-        // an earlier comment claiming one already did.
-        self.identities.borrow_mut().push((
-            path.clone(),
-            name.to_string(),
-            email.to_string(),
-            committer_name.to_string(),
-            committer.to_string(),
-        ));
+        // committer is asserted in `homma-org`, where `provision` lives.
+        self.identities
+            .borrow_mut()
+            .push((path.clone(), id.clone()));
         Ok(())
     }
 
@@ -142,13 +130,8 @@ impl Git for FakeGit {
             .borrow()
             .iter()
             .rev()
-            .find(|(p, _, _, _, _)| p == path)
-            .map(|(_, n, e, cn, ce)| homma_api::CommitIdentity {
-                author_name: n.clone(),
-                author_email: e.clone(),
-                committer_name: cn.clone(),
-                committer_email: ce.clone(),
-            }))
+            .find(|(p, _)| p == path)
+            .map(|(_, id)| id.clone()))
     }
 }
 

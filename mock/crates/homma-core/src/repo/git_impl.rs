@@ -27,47 +27,36 @@ impl Git for GixGit {
         GixRepo::clone_into(url, dest).map(|_| ())
     }
 
-    fn set_identity(
-        &self,
-        path: &AbsPath,
-        name: &str,
-        author: &str,
-        committer_name: &str,
-        committer: &str,
-    ) -> Result<(), Self::Error> {
+    fn set_identity(&self, path: &AbsPath, id: &CommitIdentity) -> Result<(), Self::Error> {
         // The repository's own config file, edited in place. `gix`'s snapshot
         // API looked like the obvious route and is not: its `commit` updates
         // the in-memory `Repository` and never touches disk, so the identity
         // appeared to be set, read back correctly through the merged view, and
         // was absent from the file. The file is the only thing a later `git
         // commit` reads.
-        let file = local_config(path)?;
-        let mut file = file;
+        //
         // All six keys, and the names are not optional extras: a **global**
-        // `author.name` overrides a **local** `user.name`, so writing only
-        // `user.name` left a provisioned workspace committing under a name homma
-        // never configured, on any machine carrying one. The same holds for
-        // `author.email` against `user.email`.
+        // `author.name` overrides a **local** `user.name`, so writing only the
+        // `user.*` pair left a provisioned workspace committing under a name
+        // homma never configured, on any machine carrying one. The same holds
+        // for `author.email` against `user.email`.
         //
         // `user.name` and `user.email` are written as well as the specific four,
         // because git falls back to them for anything unset and a later tool
         // reading only those keys would otherwise see nothing.
-        file.set_raw_value(&"user.name", name)
-            .map_err(|e| RepoError::Config(e.to_string()))?;
-        file.set_raw_value(&"author.name", name)
-            .map_err(|e| RepoError::Config(e.to_string()))?;
-        file.set_raw_value(&"committer.name", committer_name)
-            .map_err(|e| RepoError::Config(e.to_string()))?;
-        // All three, and `user.email` as well as the two specific ones. Git
-        // falls back to `user.email` for whichever of author or committer is
-        // unset, and leaving it out would make a later tool that reads only
-        // `user.email` see nothing at all.
-        file.set_raw_value(&"user.email", author)
-            .map_err(|e| RepoError::Config(e.to_string()))?;
-        file.set_raw_value(&"author.email", author)
-            .map_err(|e| RepoError::Config(e.to_string()))?;
-        file.set_raw_value(&"committer.email", committer)
-            .map_err(|e| RepoError::Config(e.to_string()))?;
+        let file = local_config(path)?;
+        let mut file = file;
+        for (key, value) in [
+            (&"user.name", &id.author_name),
+            (&"user.email", &id.author_email),
+            (&"author.name", &id.author_name),
+            (&"author.email", &id.author_email),
+            (&"committer.name", &id.committer_name),
+            (&"committer.email", &id.committer_email),
+        ] {
+            file.set_raw_value(key, value.as_str())
+                .map_err(|e| RepoError::Config(e.to_string()))?;
+        }
         std::fs::write(config_path(path), file.to_bstring()).map_err(|e| RepoError::Io {
             path: config_path(path).into_path_buf(),
             source: e,
@@ -136,6 +125,11 @@ impl Git for GixGit {
             file.raw_value(format!("{section}.{key}"))
                 .ok()
                 .map(|v| v.to_string())
+                // An empty value is not a value, and the trait says `None` when
+                // the clone configures none. Widening this method silently
+                // dropped the filter, so a clone with empty values reported four
+                // empty strings.
+                .filter(|s| !s.is_empty())
         };
         // The author's own keys first, falling back to `user.*` the way git
         // does. Reading only `user.*` is what let a write that dropped the
@@ -229,6 +223,37 @@ mod tests {
     // author and committer, and homma's values have to beat them rather than
     // coincide with them. That also makes this runnable somewhere else, which it
     // was not.
+    // Finding 8: widening `identity` silently dropped `.filter(|s| !s.is_empty())`,
+    // so a clone configuring empty values reported four empty strings where the
+    // trait says `None`. Neither case had a test.
+    #[test]
+    fn an_empty_configured_value_is_not_a_value() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let at = AbsPath::new(&repo).unwrap();
+        let git = GixGit;
+        git.init(&at).unwrap();
+
+        assert_eq!(
+            git.identity(&at).unwrap(),
+            None,
+            "a fresh clone configures no identity"
+        );
+
+        // Empty is not absent on disk, and it is not a value either.
+        let cfg = repo.join(".git").join("config");
+        let mut text = std::fs::read_to_string(&cfg).unwrap();
+        text.push_str("[user]\n\tname = \n\temail = \n");
+        std::fs::write(&cfg, text).unwrap();
+
+        assert_eq!(
+            git.identity(&at).unwrap(),
+            None,
+            "an empty configured value is not a value"
+        );
+    }
+
     #[test]
     fn a_commit_carries_the_author_and_the_committer_separately() {
         let d = tempfile::tempdir().unwrap();
@@ -253,10 +278,12 @@ mod tests {
         git.init(&at).unwrap();
         git.set_identity(
             &at,
-            "Onni Armas",
-            "ort@hiisi.digital",
-            "Onni Armas",
-            "orgrinrt+vouti@ikiuni.dev",
+            &CommitIdentity {
+                author_name: "Onni Armas".into(),
+                author_email: "ort@hiisi.digital".into(),
+                committer_name: "Onni Armas".into(),
+                committer_email: "orgrinrt+vouti@ikiuni.dev".into(),
+            },
         )
         .unwrap();
 
@@ -315,10 +342,12 @@ mod tests {
 
         git.set_identity(
             &abs_into,
-            "paja",
-            "paja@example.invalid",
-            "paja",
-            "paja@example.invalid",
+            &CommitIdentity {
+                author_name: "paja".into(),
+                author_email: "paja@example.invalid".into(),
+                committer_name: "paja".into(),
+                committer_email: "paja@example.invalid".into(),
+            },
         )
         .unwrap();
         assert_eq!(
@@ -364,10 +393,12 @@ mod tests {
             .unwrap();
         git.set_identity(
             &abs_into,
-            "paja",
-            "paja@example.invalid",
-            "paja",
-            "paja@example.invalid",
+            &CommitIdentity {
+                author_name: "paja".into(),
+                author_email: "paja@example.invalid".into(),
+                committer_name: "paja".into(),
+                committer_email: "paja@example.invalid".into(),
+            },
         )
         .unwrap();
 
@@ -376,6 +407,27 @@ mod tests {
             local.contains("paja@example.invalid"),
             "the identity must be in the clone's own config, got:\n{local}"
         );
+
+        // **The `user.*` pair specifically**, which was written deliberately and
+        // pinned by nothing: deleting both left the whole suite green. The
+        // reason they exist is that git falls back to them for anything unset
+        // and a later tool reading only those keys would otherwise see nothing,
+        // so a test that only checks the four specific keys does not check the
+        // guarantee the comment makes.
+        let key = |k: &str| {
+            let out = std::process::Command::new("git")
+                .args(["config", "--local", "--get", k])
+                .current_dir(&into)
+                .output()
+                .expect("git should run");
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        assert_eq!(
+            key("user.name"),
+            "paja",
+            "user.name is the documented fallback"
+        );
+        assert_eq!(key("user.email"), "paja@example.invalid");
 
         // The half the name claimed and the body did not check. "Never
         // globally" is the entire content of the requirement, and reading the

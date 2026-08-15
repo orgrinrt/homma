@@ -65,14 +65,7 @@ pub trait Git {
     ///
     /// A committer equal to the author is the ordinary case and every entry but
     /// one.
-    fn set_identity(
-        &self,
-        path: &AbsPath,
-        name: &str,
-        author: &str,
-        committer_name: &str,
-        committer: &str,
-    ) -> Result<(), Self::Error>;
+    fn set_identity(&self, path: &AbsPath, id: &CommitIdentity) -> Result<(), Self::Error>;
 
     /// Create a repository at `path`, which is not one yet.
     ///
@@ -107,15 +100,20 @@ pub trait Git {
     /// against what a tree actually points at.
     fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Self::Error>;
 
-    /// The author identity `path`'s own configuration carries, if any.
-    ///
-    /// Present so setting it can be asserted rather than assumed. A write with
-    /// no read is a write nobody checks.
     /// The clone's configured author and committer, read back.
     ///
     /// **Four values, not two.** It returned the author alone, so a
     /// `set_identity` that wrote the committer nowhere passed the guard that
     /// exists because a write which never reached disk survived a round. The
     /// write half was widened and the read half was not.
+    ///
+    /// Present so setting it can be asserted rather than assumed. A write with
+    /// no read is a write nobody checks.
+    ///
+    /// **The clone's own configuration, never the merged view.** A merged read
+    /// reports the machine's global identity as though it were this
+    /// repository's, which is exactly the confusion this exists to prevent.
+    ///
+    /// `None` when the clone configures none. An empty value is not a value.
     fn identity(&self, path: &AbsPath) -> Result<Option<CommitIdentity>, Self::Error>;
 }

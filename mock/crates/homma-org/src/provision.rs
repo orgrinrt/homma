@@ -198,9 +198,13 @@ pub fn provision<G: Git>(
     // The committer defaults to the author, which is every entry but one. The
     // fallback lives here rather than in the type so that "the same" and
     // "deliberately the same" stay distinguishable in the registry file.
-    let committer = id.committer_email.as_deref().unwrap_or(email);
-    let committer_name = id.committer_name.as_deref().unwrap_or(name);
-    git.set_identity(&root, name, email, committer_name, committer)
+    let want = homma_api::CommitIdentity {
+        author_name: name.to_string(),
+        author_email: email.to_string(),
+        committer_name: id.committer_name.as_deref().unwrap_or(name).to_string(),
+        committer_email: id.committer_email.as_deref().unwrap_or(email).to_string(),
+    };
+    git.set_identity(&root, &want)
         .map_err(ProvisionError::Git)?;
 
     // Read back, because the design says a stood-up clone reports its own email
@@ -212,12 +216,6 @@ pub fn provision<G: Git>(
     // ignored the committer, so a `set_identity` that wrote the committer
     // nowhere passed the guard whose entire purpose is that a write which never
     // landed does not.
-    let want = homma_api::CommitIdentity {
-        author_name: name.to_string(),
-        author_email: email.to_string(),
-        committer_name: committer_name.to_string(),
-        committer_email: committer.to_string(),
-    };
     match git.identity(&root).map_err(ProvisionError::Git)? {
         Some(ref got) if *got == want => {}
         found => return Err(ProvisionError::IdentityNotSet { found }),
@@ -257,7 +255,7 @@ mod tests {
         enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
         existing: std::cell::RefCell<Vec<AbsPath>>,
         clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
-        identities: std::cell::RefCell<Vec<(AbsPath, String, String, String, String)>>,
+        identities: std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
         /// When set, `set_identity` records the author and drops the committer.
         ///
         /// The shape the widened read-back exists for. Without it, narrowing the
@@ -298,19 +296,17 @@ mod tests {
         fn set_identity(
             &self,
             path: &AbsPath,
-            name: &str,
-            email: &str,
-            committer_name: &str,
-            committer: &str,
+            id: &homma_api::CommitIdentity,
         ) -> Result<(), Never> {
             if self.committer_writes_vanish.get() {
                 // Reports success, records the author, loses the committer.
                 self.identities.borrow_mut().push((
                     path.clone(),
-                    name.to_string(),
-                    email.to_string(),
-                    name.to_string(),
-                    email.to_string(),
+                    homma_api::CommitIdentity {
+                        committer_name: id.author_name.clone(),
+                        committer_email: id.author_email.clone(),
+                        ..id.clone()
+                    },
                 ));
                 return Ok(());
             }
@@ -319,13 +315,9 @@ mod tests {
                 // read-back was written for.
                 return Ok(());
             }
-            self.identities.borrow_mut().push((
-                path.clone(),
-                name.to_string(),
-                email.to_string(),
-                committer_name.to_string(),
-                committer.to_string(),
-            ));
+            self.identities
+                .borrow_mut()
+                .push((path.clone(), id.clone()));
             Ok(())
         }
         fn init(&self, _path: &AbsPath) -> Result<(), Never> {
@@ -359,13 +351,8 @@ mod tests {
                 .borrow()
                 .iter()
                 .rev()
-                .find(|(p, _, _, _, _)| p == path)
-                .map(|(_, n, e, cn, ce)| homma_api::CommitIdentity {
-                    author_name: n.clone(),
-                    author_email: e.clone(),
-                    committer_name: cn.clone(),
-                    committer_email: ce.clone(),
-                }))
+                .find(|(p, _)| p == path)
+                .map(|(_, id)| id.clone()))
         }
     }
 
@@ -490,17 +477,44 @@ mod tests {
         provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
 
         let written = git.identities.borrow();
-        let (_, name, author, committer_name, committer) =
-            written.last().expect("an identity was set");
-        assert_eq!(name, "Onni Armas");
-        assert_eq!(author, "ort@hiisi.digital", "the author stays op");
+        let (_, got) = written.last().expect("an identity was set");
+        assert_eq!(got.author_name, "Onni Armas");
+        assert_eq!(got.author_email, "ort@hiisi.digital", "the author stays op");
         assert_eq!(
-            committer, "orgrinrt+vouti@ikiuni.dev",
+            got.committer_email, "orgrinrt+vouti@ikiuni.dev",
             "and the committer is what distinguishes the crew's writes"
         );
         assert_eq!(
-            committer_name, "Onni Armas",
+            got.committer_name, "Onni Armas",
             "the committer name defaults to the author's when the entry names none"
+        );
+    }
+
+    // `committer_name` reached nothing when it was added: ignoring the registry
+    // field entirely left the whole suite green. It shipped as unread plumbing,
+    // which is the exact shape U-3.1 exists to prevent, in the round that added
+    // it because the unit named it.
+    #[test]
+    fn a_distinct_committer_name_reaches_the_clone() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("vouti"));
+        let mut id = staffed_hand(&ws);
+        id.git_name = Some("Onni Armas".into());
+        id.git_email = Some("ort@hiisi.digital".into());
+        id.committer_name = Some("Vouti".into());
+        let git = FakeGit::default();
+
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
+
+        let written = git.identities.borrow();
+        let (_, got) = written.last().expect("an identity was set");
+        assert_eq!(
+            got.author_name, "Onni Armas",
+            "the author's name is unchanged"
+        );
+        assert_eq!(
+            got.committer_name, "Vouti",
+            "and the committer's name is the one the registry gave"
         );
     }
 
@@ -517,8 +531,9 @@ mod tests {
         provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
 
         let written = git.identities.borrow();
-        let (_, _, author, _, committer) = written.last().expect("an identity was set");
-        assert_eq!(author, committer);
+        let (_, got) = written.last().expect("an identity was set");
+        assert_eq!(got.author_email, got.committer_email);
+        assert_eq!(got.author_name, got.committer_name);
     }
 
     // Pins the widened read-back. Narrowing the comparison back to the author
