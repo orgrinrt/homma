@@ -333,60 +333,15 @@ mod tests {
         assert_eq!(got.committer_email, "hand@example.invalid");
     }
 
-    #[test]
-    fn an_empty_configured_value_is_not_a_value() {
-        let d = tempfile::tempdir().unwrap();
-        let repo = d.path().join("repo");
-        std::fs::create_dir_all(&repo).unwrap();
-        let at = AbsPath::new(&repo).unwrap();
-        let git = GixGit;
-        git.init(&at).unwrap();
-
-        // **A global identity, named here rather than hoped for.** The first
-        // assertion below is about reading the clone's own configuration and
-        // never the merged view, and it says nothing unless there is a global
-        // one to be wrongly reported. Under an empty `HOME` it passed green
-        // against an implementation that reads the merged view, which is the
-        // only guarantee it pins.
-        //
-        // The write-side test got a precondition assert two rounds ago and this
-        // one did not, which is the same half-sweep one level up. Setting the
-        // variable is better than asserting the machine has a config, because it
-        // removes the machine from the answer rather than checking it.
-        let global = d.path().join("global.gitconfig");
-        std::fs::write(
-            &global,
-            "[user]\n\tname = Global Person\n\temail = global@example.invalid\n",
-        )
-        .unwrap();
-        // SAFETY: single-threaded test, and the variable is read by `gix` only
-        // when it opens a repository, which happens inside this call.
-        unsafe {
-            std::env::set_var("GIT_CONFIG_GLOBAL", &global);
-        }
-
-        assert_eq!(
-            git.identity(&at).unwrap(),
-            None,
-            "a fresh clone configures no identity, whatever the global one says"
-        );
-
-        // Empty is not absent on disk, and it is not a value either.
-        let cfg = repo.join(".git").join("config");
-        let mut text = std::fs::read_to_string(&cfg).unwrap();
-        text.push_str("[user]\n\tname = \n\temail = \n");
-        std::fs::write(&cfg, text).unwrap();
-
-        assert_eq!(
-            git.identity(&at).unwrap(),
-            None,
-            "an empty configured value is not a value"
-        );
-
-        unsafe {
-            std::env::remove_var("GIT_CONFIG_GLOBAL");
-        }
-    }
+    // The merged-view guarantee lives in `tests/reads_the_local_config.rs`.
+    //
+    // Its assertion says nothing unless a global configuration exists to be
+    // wrongly reported, so it has to write one and point `GIT_CONFIG_GLOBAL` at
+    // it, which is process-wide. In this binary that races with
+    // `the_identity_is_written_to_the_local_config_file_and_nowhere_else` below,
+    // which reads the same variable through `testing::global_config_paths`, and
+    // whose own comment had already refused the trick for that reason. An
+    // integration test is its own process, so the race cannot be written there.
 
     #[test]
     fn a_commit_carries_the_author_and_the_committer_separately() {

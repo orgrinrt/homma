@@ -560,6 +560,65 @@ handle = "silent"
         "repos",
     ];
 
+    // **Naming, which the literal below cannot force.** A struct literal makes
+    // `E0063` demand a value for a new field, and the hostile-value assertion
+    // makes that value be one the check should catch. Neither reaches `None`:
+    // `skip_serializing_if` removes an unpopulated `Option` from the serialised
+    // entry, so a field added as `None` satisfies the compiler and is invisible
+    // to everything below.
+    //
+    // An exhaustive destructuring closes it, and it is kept **beside** the
+    // literal rather than instead of it, which is the mistake a previous round
+    // made in each direction. There are no `_` patterns: a field can still be
+    // classified wrongly on purpose, which is the bar, but not by omission.
+    #[test]
+    fn every_field_is_classified_as_free_form_or_not() {
+        let Identity {
+            // Not free-form. A closed vocabulary and a flag; neither can carry a
+            // control character.
+            role,
+            staffed,
+            // Free-form. Each must appear in `CORRUPTIBLE`, and each must be
+            // populated with a hostile value in the test below.
+            handle,
+            nickname,
+            full_name,
+            domain,
+            git_name,
+            git_email,
+            committer_email,
+            committer_name,
+            workspace,
+            session,
+            repos,
+        } = Identity::new(Role::Hand, "paja");
+
+        // Bound, so deleting a line above without deleting its name here is also
+        // a compile error rather than a silent narrowing.
+        let not_free_form = [format!("{role:?}"), format!("{staffed:?}")];
+        let free_form = [
+            ("handle", format!("{handle:?}")),
+            ("nickname", format!("{nickname:?}")),
+            ("full_name", format!("{full_name:?}")),
+            ("domain", format!("{domain:?}")),
+            ("git_name", format!("{git_name:?}")),
+            ("git_email", format!("{git_email:?}")),
+            ("committer_email", format!("{committer_email:?}")),
+            ("committer_name", format!("{committer_name:?}")),
+            ("workspace", format!("{workspace:?}")),
+            ("session", format!("{session:?}")),
+            ("repos", format!("{repos:?}")),
+        ];
+        assert_eq!(not_free_form.len(), 2);
+
+        let named: Vec<&str> = free_form.iter().map(|(n, _)| *n).collect();
+        assert_eq!(
+            named, CORRUPTIBLE,
+            "a field classified free-form here must appear in CORRUPTIBLE, which is \
+             what the hostile-entry test asserts production reports"
+        );
+    }
+
     #[test]
     fn every_free_form_string_is_reported_when_it_carries_a_control_character() {
         // **A struct literal, and that is the gate.** Written as
