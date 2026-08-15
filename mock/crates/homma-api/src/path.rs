@@ -171,9 +171,12 @@ impl AbsPath {
                 out.pop();
                 continue;
             }
-            if name == "." {
-                continue;
-            }
+            // No `.` arm, and the omission is the point rather than an oversight.
+            // `pending` receives only `Component::Normal`, which the parser never
+            // yields for `.`, and a link target's `Component::CurDir` is dropped
+            // where the target is expanded below. One shipped here for a round,
+            // could not execute, and sat four lines under the paragraph above
+            // calling dead defence a paragraph with an `if` around it.
             let candidate = out.join(&name);
             match std::fs::symlink_metadata(&candidate) {
                 Ok(meta) if meta.file_type().is_symlink() => {

@@ -111,20 +111,12 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // second, which left `org up --root ~/.claude/crewroot` succeeding at exit 0
     // with every containment proof satisfied.
     //
-    // Deny item two is every other participant's workspace, and the registry is
-    // the thing that knows where those are.
-    let mut denied = homma_api::Denied::from_env();
-    for (other, entry) in ws.org.iter() {
-        if other == handle {
-            continue;
-        }
-        if let Some(w) = entry.workspace.as_ref() {
-            denied = denied.and(
-                AbsPath::resolve(root, w),
-                "it is another participant's workspace",
-            );
-        }
-    }
+    // Deny item two is every participant's workspace, and the registry is the
+    // thing that knows where those are. It is derived by the constructor rather
+    // than by a loop here: the loop that used to do it was live and pinned by
+    // nothing, and deleting it left the whole suite passing.
+    let denied = homma_api::Denied::for_standing_up(ws, handle, root)
+        .with_context(|| format!("standing `{handle}` up at {root}"))?;
     // Before `git.init`, which is what actually creates the root under
     // `content_repo = "local"` and creates every missing ancestor with it. Those
     // sit above the root, where containment cannot reach, and with the missing
@@ -133,7 +125,7 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // `Root::new` carries the rule and refuses the same thing, so this is the
     // same check placed where it fires first rather than a second one: by the
     // time `Layout` is built the root already exists and the question is moot.
-    homma_api::Root::new(root, denied.clone())
+    homma_api::Root::new(root, denied.under_root.clone())
         .with_context(|| format!("standing `{handle}` up at {root}"))?;
 
     // The content repository is configuration, because that is what a workspace
@@ -179,7 +171,10 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
          outside it."
     );
 
-    denied.check(&workspace, "workspace")?;
+    // Against the list without this participant's own workspace, or it would
+    // deny itself. The root above uses the list with it, because a root inside
+    // any workspace is backwards.
+    denied.for_the_workspace.check(&workspace, "workspace")?;
 
     // And the workspace against the filesystem, not only lexically, and still
     // before anything is initialised. The lexical check above only catches a
@@ -249,7 +244,7 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     let provisioned = provision(id, &workspace, &url, git)
         .map_err(|e| anyhow::anyhow!("provisioning `{handle}`: {e}"))?;
 
-    let layout = Layout::new(root, &ws.paths, denied.clone())
+    let layout = Layout::new(root, &ws.paths, denied.under_root.clone())
         .with_context(|| format!("resolving the workspace root at {root}"))?;
     let prepared =
         prepare(&layout, id).with_context(|| format!("preparing the workspace for `{handle}`"))?;

@@ -441,3 +441,114 @@ fn a_workspace_whose_path_is_missing_leaves_no_git_behind() {
     );
     assert!(!dir.path().join("nested").exists());
 }
+
+#[test]
+fn a_differently_cased_root_inside_the_operators_claude_is_refused() {
+    // **The fifteenth review's reproduction, and one character is the whole
+    // exploit.** With `--root $HOME/.CLAUDE/crewroot` this exited 0 and wrote a
+    // workspace, a repository, both definitions and the memory link into the
+    // operator's own `.claude`, beside the credentials the record names, with
+    // the deny list active and every containment proof satisfied. `starts_with`
+    // compares components and this filesystem folds case.
+    //
+    // It establishes that the two spellings reach one directory before asserting
+    // anything, so on a case-sensitive filesystem it reports that and stops
+    // rather than passing for a reason unrelated to the guard.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+
+    let folded = home.join(".CLAUDE");
+    let (Ok(a), Ok(b)) = (
+        std::fs::metadata(&folded),
+        std::fs::metadata(home.join(".claude")),
+    ) else {
+        eprintln!("skipped: this filesystem is case-sensitive, so there is nothing to catch");
+        return;
+    };
+    {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(
+            (a.dev(), a.ino()),
+            (b.dev(), b.ino()),
+            "the two spellings must reach one inode for this to test anything"
+        );
+    }
+
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    let cfg = root.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    let inside = folded.join("crewroot");
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", inside.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing may be written there"));
+
+    assert!(
+        !home.join(".claude").join("crewroot").exists(),
+        "and nothing may have been created under the directory the two spellings share"
+    );
+}
+
+#[test]
+fn a_root_inside_another_participants_workspace_is_refused() {
+    // Deny item two, end to end, which had no test anywhere in the production
+    // path: no fixture built a registry with two staffed participants, so
+    // deleting the derivation left the whole suite green.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    let theirs = dir.path().join("ws-a");
+    std::fs::create_dir_all(&theirs).unwrap();
+    add_hand(&cfg, "a", theirs.to_str().unwrap());
+    add_hand(&cfg, "b", dir.path().join("ws-b").to_str().unwrap());
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "b"])
+        .args(["--root", theirs.join("subroot").to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("another participant's workspace"));
+
+    assert!(!theirs.join("subroot").exists());
+}
+
+#[test]
+fn a_root_inside_the_standees_own_workspace_is_refused_before_anything_is_built() {
+    // The skip that made deny item two miss the standee itself. A root inside
+    // its own workspace passed the list, `git.init` ran, and the run failed in
+    // `provision` having left a `.git` behind: the third instance on this branch
+    // of a refusal leaving something half-built, and the first inside the guard
+    // added to close the list.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    let own = dir.path().join("ws-own");
+    std::fs::create_dir_all(&own).unwrap();
+    add_hand(&cfg, "r", own.to_str().unwrap());
+
+    let inside = own.join("subroot");
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", inside.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nothing may be written there"));
+
+    assert!(
+        !inside.join(".git").exists(),
+        "a refusal leaves nothing half-built, and this is where that stopped being true"
+    );
+    assert!(!inside.exists());
+}
