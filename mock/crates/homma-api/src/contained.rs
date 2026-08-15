@@ -447,9 +447,23 @@ mod tests {
             crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
         )
         .unwrap();
-        // Either answer is acceptable except hanging, so the assertion is that
-        // it returns at all. A cycle inside the root is not an escape.
-        let _ = root.contain(&root.as_abs().join("a"));
+        // **The name says reported, so it asserts reported.** This was
+        // `let _ = ...` under a comment reasoning that either answer is
+        // acceptable so long as it does not hang. That is true of hanging and
+        // false of the test: it passed whether `contain` reported or returned
+        // `Ok`, while the name claimed the first. `contain` does report today,
+        // so the assertion was available and simply was not written.
+        //
+        // If a later design decides `Ok` is right for a cycle inside the root,
+        // that is a change to make deliberately here rather than something this
+        // test should permit in advance.
+        let err = root
+            .contain(&root.as_abs().join("a"))
+            .expect_err("a cycle is reported rather than resolved");
+        assert!(
+            err.to_string().contains("symbolic link"),
+            "and the message says what happened: {err}"
+        );
     }
 
     // `resolved` is a reimplementation of something the kernel already does, so

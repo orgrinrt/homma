@@ -269,6 +269,12 @@ impl std::error::Error for NoHome {}
 // in for it is a dependency decision rather than a fix. Every current entry is
 // ASCII; a registry-derived workspace path need not be. Unblocked when the
 // dependency question is settled.
+//
+// This list used to say normalisation was the only gap, and two of what it was
+// covering for were case rather than normalisation: `straße` against `STRASSE`
+// and `Σigma` against `ςigma` are each one directory here, and lowercasing alone
+// answers no to both. `folded` closes those, so the sentence above is now true
+// as written rather than approximately.
 fn under_by_components(path: &std::path::Path, denied: &std::path::Path) -> bool {
     use std::path::Component;
     let mut here = path.components();
@@ -277,10 +283,7 @@ fn under_by_components(path: &std::path::Path, denied: &std::path::Path) -> bool
             return false;
         };
         let same = match (got, want) {
-            (Component::Normal(a), Component::Normal(b)) => {
-                a.eq_ignore_ascii_case(b)
-                    || a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
-            }
+            (Component::Normal(a), Component::Normal(b)) => folded(a) == folded(b),
             (a, b) => a == b,
         };
         if !same {
@@ -288,6 +291,17 @@ fn under_by_components(path: &std::path::Path, denied: &std::path::Path) -> bool
         }
     }
     true
+}
+
+/// Case-fold an `OsStr` for comparison, through uppercase and back.
+///
+/// **Uppercase first, and that is a correctness fix rather than a refinement.**
+/// Lowercasing alone answers "not under" for `straße` against `STRASSE`, because
+/// `ß` lowercases to itself while uppercasing expands it to `SS`; and for `Σigma`
+/// against `ςigma`, because the two sigmas lowercase differently and uppercase
+/// to the same letter. Both pairs are one directory on a folding filesystem.
+fn folded(s: &std::ffi::OsStr) -> String {
+    s.to_string_lossy().to_uppercase().to_lowercase()
 }
 
 /// What a directory actually is, when it exists.
@@ -546,6 +560,72 @@ mod tests {
             denied.check(&other, "workspace").is_err(),
             "the component comparison cannot reach this and the identity one must"
         );
+    }
+
+    // **The comparison was two disjuncts and is now one, because the sweep found
+    // the first unpinnable rather than unpinned.**
+    //
+    // It read `a.eq_ignore_ascii_case(b) || folded(a) == folded(b)`. Deleting the
+    // second left the suite green, which is how it was reported: live and pinned
+    // by nothing, in the round about this comparison. Deleting the **first** also
+    // leaves it green, and that is a different result: `folded` handles ASCII
+    // case too, so `eq_ignore_ascii_case` was a fast path wearing a guard's
+    // clothes and no test could ever have failed for its absence.
+    //
+    // The sweep had missed both because **a compound condition replaced
+    // wholesale is one mutation, not two.** Mutating the whole `Normal` arm
+    // caught the arm and said nothing about either half.
+    #[test]
+    fn a_denied_place_spelled_in_ascii_of_another_case_is_refused() {
+        // The behaviour, which survives the disjunct that used to carry it.
+        let d = tempfile::tempdir().unwrap();
+        let home = abs(d.path());
+        assert!(Denied::under_home(&home)
+            .check(
+                &abs(d.path().join("DEV").join("Clause-Dev").join("x")),
+                "root"
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn a_denied_place_spelled_with_non_ascii_case_differences_is_refused() {
+        // The case an ASCII comparison cannot reach at all: the Kelvin sign
+        // against `k`, and `ß` against `SS`, are outside ASCII entirely, and each
+        // pair is one directory on a folding filesystem.
+        let d = tempfile::tempdir().unwrap();
+        let home = abs(d.path());
+        let denied = Denied::under_home(&home).and(
+            abs(d.path().join("straße")),
+            "it stands in for a registry-derived path",
+        );
+
+        assert!(
+            denied
+                .check(&abs(d.path().join("STRASSE").join("x")), "workspace")
+                .is_err(),
+            "`ß` uppercases to `SS`, and lowercasing alone answers no"
+        );
+        assert!(
+            denied
+                .check(&abs(d.path().join("\u{212A}elvin").join("x")), "workspace")
+                .is_ok(),
+            "and a name that is genuinely different is still allowed"
+        );
+    }
+
+    #[test]
+    fn folding_is_through_uppercase_and_back() {
+        // The mechanism, stated where a later reader can see why the order
+        // matters. Each of these is one directory on a folding filesystem and
+        // `to_lowercase` alone says they are two.
+        assert_eq!(folded("stra\u{df}e".as_ref()), folded("STRASSE".as_ref()));
+        assert_eq!(
+            folded("\u{3a3}igma".as_ref()),
+            folded("\u{3c2}igma".as_ref())
+        );
+        assert_eq!(folded("\u{212a}elvin".as_ref()), folded("kelvin".as_ref()));
+        assert_ne!(folded("alpha".as_ref()), folded("beta".as_ref()));
     }
 
     #[test]

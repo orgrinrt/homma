@@ -533,4 +533,37 @@ mod tests {
         assert!(e.to_string().contains("hands/rel"));
         assert!(e.to_string().contains("process"));
     }
+
+    // **The hop ceiling, whose absence hangs rather than fails.** Raising
+    // `MAX_HOPS` to 100000 kept the whole suite green and removing it hung the
+    // suite, which is the worst detection there is: an unattended run reports
+    // nothing and never finishes, and that is where this work happens.
+    //
+    // It asserts the error rather than the number, so the ceiling stays tunable
+    // and its existence does not.
+    #[test]
+    fn a_chain_of_links_longer_than_the_ceiling_is_refused_rather_than_followed() {
+        let d = tempfile::tempdir().unwrap();
+        let base = d.path();
+        std::fs::write(base.join("end"), b"x").unwrap();
+        // One more than the ceiling, built as a chain rather than a cycle, so
+        // this fails for the length and not for looping.
+        std::os::unix::fs::symlink(base.join("end"), base.join("l0")).unwrap();
+        for i in 1..64u32 {
+            std::os::unix::fs::symlink(
+                base.join(format!("l{}", i - 1)),
+                base.join(format!("l{i}")),
+            )
+            .unwrap();
+        }
+
+        let err = AbsPath::new(base.join("l63"))
+            .unwrap()
+            .resolved()
+            .expect_err("a chain past the ceiling is refused");
+        assert!(
+            err.to_string().contains("too many symbolic links"),
+            "and it says why: {err}"
+        );
+    }
 }

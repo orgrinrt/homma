@@ -310,6 +310,32 @@ pub mod regen {
         }
 
         let workspace = &cfg.workspace.path;
+
+        // **Before any repository is walked**, because everything below writes.
+        //
+        // With `workspace.path = $HOME` this wrote two mode-0755 scripts into
+        // `$HOME/.claude/hooks/` and rewrote `$HOME/.claude/settings.json` to
+        // register them as `PreToolUse` hooks, at exit 0. That is the record's
+        // third denied location verbatim, and it installs code the harness then
+        // executes, beside the credentials that live there.
+        //
+        // **The workspace's own `.claude` is what is checked, not the
+        // workspace.** A workspace is allowed to be almost anywhere; what must
+        // not be a home's is the directory this pass aggregates into.
+        //
+        // **The central clone is deliberately not checked here.** Aggregating
+        // into a checkout is this pass's purpose, `~/Dev/clause-dev/homma.toml`
+        // ships `path = "/Users/orgrinrt/Dev/clause-dev"`, and refusing it would
+        // forbid the tool its own purpose. Answering that needs a decision about
+        // who homma is acting as. A previous round bundled the two questions and
+        // deferred both under an argument that only covered this one.
+        let target = homma_api::AbsPath::new(
+            std::path::absolute(workspace.join(".claude"))
+                .unwrap_or_else(|_| workspace.join(".claude")),
+        )
+        .map_err(|e| anyhow!("{e}"))?;
+        homma_api::Denied::from_env()?.check(&target, "workspace")?;
+
         let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
         let mut results = Vec::new();
         let mut had_failure = false;
