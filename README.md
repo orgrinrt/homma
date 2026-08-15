@@ -22,9 +22,8 @@ Working, and narrow. homma reads a workspace manifest, reports the state of ever
 member repository and its forge mapping, drives each member's own tooling, and
 carries a registry of the participants who work in the workspace.
 
-It also stands one of them up: cloning a workspace for a participant, setting its
-author and committer identities inside that clone, linking its memory where the agent harness looks
-for it, and generating its definitions.
+It also stands one of them up: cloning a workspace for a participant, setting its author and committer identities inside that clone, linking its memory
+where the agent harness looks for it, and generating its definitions.
 
 The participant's directories, definitions and memory link go through a path
 proven against the filesystem to resolve inside the workspace root, rather than
