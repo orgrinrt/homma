@@ -1,0 +1,50 @@
+324a294 chore: lock the src changelist
+aff59f0 test: make naming a field mean classifying it
+8fada5a chore: open the src changelist
+047394c chore: lock the doc changelist
+0707c11 docs: the fifth instance, in the file the sweep was editing
+ba53e3c chore: open the doc changelist
+7e64e40 chore: open a round on named versus classified
+4d39c76 chore: close the round
+6451676 chore: lock the src changelist
+993cbb1 test: move the racy test to its own process and close the none escape
+33b3a70 chore: open the src changelist
+e905a52 chore: lock the doc changelist
+0361889 chore: open and close an empty doc phase
+59bdf12 chore: open a round on a refusal the file already carried
+28e5169 chore: close the round
+7c857e5 chore: lock the src changelist
+e71ba9a test: remove the machine from three answers and gate the entry
+b7bac87 chore: open the src changelist
+9a91bfe chore: lock the doc changelist
+d3b6c69 docs: two identities in every document that said one
+a8e6a34 chore: open the doc changelist
+b600fe7 chore: open a round on sweeping the documents
+998ab83 chore: lock the new dev-dependency
+581ca7e chore: close the round
+927201d chore: lock the src changelist
+cbdf002 test: point the sweep at the read side and the seam
+e6a1755 chore: open the src changelist
+5c168bc chore: lock the doc changelist
+6781aee docs: rewrap a line the previous round overran
+e9a8267 chore: open the doc changelist
+71004ef chore: open a round on the sweep that pointed one way
+4f95242 chore: close the round
+14bacab chore: lock the src changelist
+2ec2100 fix: delete a test that could not fail, pin three that had none
+04d42df chore: open the src changelist
+fc744b3 docs: a clone carries two identities, not one
+8cb0179 chore: lock the doc changelist
+9c42b8d chore: open the doc changelist
+133e438 chore: open a round on fixes that failed as they fixed
+f8da42f chore: close the needless-borrow round
+f867cd4 chore: lock the src changelist
+1737c96 style: drop a needless borrow clippy flags
+75492de chore: open the src changelist
+79548f2 chore: lock the doc changelist
+22e453f chore: open and close an empty doc phase
+e9ea642 chore: open a round on the needless borrow
+0146077 chore: close the hostile-config round
+3808e2b chore: lock the src changelist
+e529f37 fix: write the identity names, read back all four, derive the string check
+13d9d5a test: run the identity check against a hostile global config, red
