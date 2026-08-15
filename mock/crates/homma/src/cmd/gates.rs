@@ -26,9 +26,6 @@
 //! the case where the per-repo hook would not fire because the bootstrap
 //! was never run or `core.hooksPath` got reset.
 
-use std::fs;
-use std::path::Path;
-
 use anyhow::{Context, Result};
 
 use crate::cmd::aggregate::HookEntry;
