@@ -33,17 +33,23 @@ own clone is deliberately outside that root and is guarded differently: it is
 refused when it would land inside a repository that is not its own, and homma
 creates its immediate parent but never a chain of directories leading to it.
 
-**Two other writers do not go through that check at all, and the second is the
-one worth knowing about.** `org add` rewrites the registry at whatever path
-`--config` names. The gen pass behind `agent regen` writes hook scripts into
-`<workspace>/.claude/`, marks them executable, rewrites `settings.json` to
-register them, and removes files there; pointed at a home directory it does all
-of that beside the harness's own settings.
+`org add` rewrites the registry at whatever path `--config` names, and that path
+is checked against the same list.
 
-That is deliberate rather than pending. The gen pass writing into a checkout is
-its purpose, and homma has no notion of whose machine it is running on, so the
-question of which of those writes are somebody's to make is not one this
-mechanism can answer.
+**The gen pass behind `agent regen` is the one worth knowing about**, and it is
+half checked. It writes hook scripts into `<workspace>/.claude/`, marks them
+executable, rewrites `settings.json` to register them, and removes files there.
+Pointed at a home directory it did all of that beside the harness's own settings,
+installing code the harness then runs; that is now refused, because a home
+directory's `.claude` is never something a workspace aggregates into and refusing
+it costs nothing.
+
+**What is not refused is a workspace that is the central clone**, and that one is
+a real question rather than a missing check: aggregating into a checkout is the
+gen pass's entire purpose, the central clone is a checkout, and homma has no
+notion of whose machine it is running on or in what capacity. Answering it needs
+a decision about who homma is acting as, which is not something this mechanism
+can derive.
 
 The Cargo workspace lives under `mock/`, not at the repository root, which is the
 shape every repository in this ecosystem uses. Build from there:
@@ -52,8 +58,10 @@ shape every repository in this ecosystem uses. Build from there:
 cd mock && cargo build
 ```
 
-Design documents are generated into `docs/` from templates under `mock/`; the
-templates are the source and the rendered tree is not hand-edited.
+Design documents live as `*.md.tmpl` templates under `mock/`, and `cargo mock`
+renders them. A previous version of this paragraph said the rendered tree is
+generated into `docs/`; there is no such directory in this repository, tracked or
+untracked.
 
 ## Support
 

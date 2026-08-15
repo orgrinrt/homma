@@ -108,7 +108,12 @@ no components at all.
 That over-refuses on a case-sensitive filesystem, deliberately. An operator who
 wants `~/Dev/CLAUSE-DEV` to be a different directory from `~/Dev/clause-dev` is
 refused and told why, which is a strange thing to want and a cheap thing to lose.
-Unicode normalisation is the residual: APFS folds NFD against NFC as well as
+Case folding is done through uppercase and back rather than by lowercasing, which
+is not a refinement but a correctness fix: `straße` against `STRASSE` and `Σigma`
+against `ςigma` are each one directory here, and lowercasing alone answers no to
+both.
+
+Unicode normalisation is what remains: APFS folds NFD against NFC as well as
 case, the standard library has no normalisation, and every current entry is ASCII
 while a registry-derived one need not be.
 
@@ -184,9 +189,14 @@ required to sit outside the root. The workspace itself is checked against the
 same list minus its own entry, or it would deny itself.
 
 **What none of it reaches**, said plainly because an earlier version of this
-section claimed a guard was satisfied when it was not: the aggregation pass. The
-writes `homma agent regen` performs do not pass through this check at all, so the
-deny list is at present a property of one subcommand rather than of homma.
+section claimed a guard was satisfied when it was not: the aggregation pass
+writes into a checkout by design, and the central clone is a checkout. That one
+is a question about who homma is acting as rather than a missing check, and it is
+not this mechanism's to answer.
+
+Its writes into a home directory's `.claude` **are** refused, because a home is
+never something a workspace aggregates into. An earlier version bundled the two
+and deferred both under an argument that only covered the first.
 
 The same question already had an answer, `enclosing_repo`, and it was being asked
 about the root instead of about the thing being created.
