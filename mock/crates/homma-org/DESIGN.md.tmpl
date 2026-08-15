@@ -74,7 +74,25 @@ them so that neither check can be performed without the other.
 The distinction that makes it awkward: `.claude/agent-memory/<name>/` inside the
 content repository is project scope and licensed, while `~/.claude` is user scope
 and denied. Same directory name, opposite verdicts, and when the root is a home
-they are one directory. So the check is by absolute path and never by name.
+they are one directory.
+
+**So the comparison is against the directory, not against the path that names
+it.** A path is a way of writing a directory down and a filesystem is free to
+accept several: this one is case-insensitive, so `~/.CLAUDE` and `~/.claude` are
+one inode, and `/Users/<user>` is a firmlink to `/System/Volumes/Data/Users/<user>`,
+which is not a symlink and which no amount of link resolution collapses. Both
+were reproduced against a live deny list. A comparison of path components
+answers no in each case and the write lands beside the operator's credentials.
+
+What a directory is, is `(dev, ino)`. The check walks the candidate's ancestors,
+stats each one that exists, and compares that pair against the denied location's,
+because the leaf is usually about to be created and the answer lives at the
+deepest existing prefix.
+
+The component comparison stays **beside** the identity one rather than being
+replaced by it. A denied location that does not exist yet has no inode to compare
+and must still deny; a location with two names has an inode and only one of the
+names. Neither subsumes the other.
 
 **Two guards, answering two questions, and neither implies the other.**
 `enclosing_repo` asks whether a path sits inside a repository that is not itself,
@@ -135,11 +153,22 @@ That is the same rule as the root, stated for the other directory homma creates.
 The two are separate because the workspace is deliberately outside the
 containment root, so no `Root` covers it and none can.
 
-**What neither rule reaches**, said here because an earlier version of this
-section claimed the deny list was satisfied and it was not: a workspace pointed
-at a directory that **already exists** inside somebody's home is still accepted.
-Refusing to build a path into a home is not the same as refusing to write into
-one, and the second wants a guard that knows where home is.
+A workspace pointed at a directory that already exists inside the operator's
+`.claude`, or inside another participant's workspace, is refused: the deny list
+is checked against the workspace as well as against the root, and refusing to
+build a path into a home was never the same question as refusing to write into
+one.
+
+**The list that governs the root is not the list that checks the workspace.**
+Every participant's workspace is denied under the root, the standee's own
+included, because a root inside a workspace is backwards and the workspace is
+required to sit outside the root. The workspace itself is checked against the
+same list minus its own entry, or it would deny itself.
+
+**What none of it reaches**, said plainly because an earlier version of this
+section claimed a guard was satisfied when it was not: the aggregation pass. The
+writes `homma agent regen` performs do not pass through this check at all, so the
+deny list is at present a property of one subcommand rather than of homma.
 
 The same question already had an answer, `enclosing_repo`, and it was being asked
 about the root instead of about the thing being created.
