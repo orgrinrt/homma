@@ -253,7 +253,6 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-
     /// A `Root` over a test workspace, denying nothing that a test uses.
     ///
     /// The real code path, not a variant of it: these go through

@@ -110,10 +110,13 @@ impl Store {
     /// rather than trusted. `create_dir_all` would otherwise make traversal
     /// succeed rather than fail.
     fn check_kind_name(kind: &str) -> Result<(), Error> {
+        // No component scan, because `||` short-circuits and there is nothing
+        // left to scan by the time one would run: reaching past the two
+        // `contains` arms means the name holds no separator, so it is one
+        // component, so the only parent name it can be is the whole string.
         let bad = kind.is_empty()
             || kind.contains('/')
             || kind.contains('\\')
-            || kind.split(['/', '\\']).any(|c| c == "..")
             || kind == ".."
             || kind.contains('\0');
         if bad {
