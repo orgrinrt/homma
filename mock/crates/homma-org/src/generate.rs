@@ -155,11 +155,11 @@ pub fn write_definitions(
         let parent = root.contain(&parent).map_err(escaped)?;
         root.create_dir_all(&parent)?;
     }
-    fs::write(
+    root.write(
         &prime,
         definition(id, Form::Prime, discipline, &character).render(),
     )?;
-    fs::write(
+    root.write(
         &twin,
         definition(id, Form::Twin, discipline, &character).render(),
     )?;
