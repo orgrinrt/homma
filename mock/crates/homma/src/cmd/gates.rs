@@ -250,6 +250,9 @@ exit 0
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::Path;
+
 
     /// A `Root` over a test workspace, denying nothing that a test uses.
     ///
