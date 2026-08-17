@@ -12,7 +12,7 @@
 
 ## What it is
 
-`homma` is a Rust workspace management tool for developers who work across many independently-versioned repositories that live side-by-side on disk and share design rounds, refactors, and migrations. It replaces ad-hoc shell scripts and provider-specific CLIs with one workspace-aware binary that speaks git and the forge HTTP APIs directly.
+`homma` is a Rust workspace management tool for developers who work across many independently-versioned repositories that live side-by-side on disk and share refactors, dependency bumps, and migrations. It replaces ad-hoc shell scripts and provider-specific CLIs with one workspace-aware binary that speaks git and the forge HTTP APIs directly.
 
 The intended workflow shape is a flat workspace directory of cloned repos plus a `homma.toml` at the workspace root that names them, their forge origins, and any workspace-level conventions. `homma` reads the manifest, walks the repos, and runs operations across the set: reporting each member's state, driving each member's own tooling, and migrating repositories from one forge to another.
 
@@ -49,4 +49,4 @@ Whether you use this project, have learned something from it, or just like it, p
 
 `SPDX-License-Identifier: MPL-2.0`
 
-> You can check out the full license [here](https://github.com/orgrinrt/homma/blob/dev/LICENSE)
+> You can check out the full license [here](https://github.com/orgrinrt/homma/blob/main/LICENSE)
