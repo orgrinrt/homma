@@ -134,7 +134,7 @@ impl Git for GixGit {
     fn identity(&self, path: &AbsPath) -> Result<Option<CommitIdentity>, Self::Error> {
         let file = local_config(path)?;
         let get = |section: &str, key: &str| {
-            file.raw_value(format!("{section}.{key}"))
+            file.raw_value(&format!("{section}.{key}"))
                 .ok()
                 .map(|v| v.to_string())
                 // An empty value is not a value, and the trait says `None` when
@@ -184,7 +184,7 @@ fn config_path(repo: &AbsPath) -> AbsPath {
 }
 
 /// The repository's own configuration, with no global or system file merged in.
-fn local_config(repo: &AbsPath) -> Result<gix::config::File<'static>, RepoError> {
+fn local_config(repo: &AbsPath) -> Result<gix::config::File, RepoError> {
     let path = config_path(repo);
     if !path.exists() {
         return Err(RepoError::Config(format!(

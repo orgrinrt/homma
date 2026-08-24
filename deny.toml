@@ -37,16 +37,22 @@ allow = [
 ]
 confidence-threshold = 0.9
 
-# `webpki-roots` is Mozilla's CA root certificate bundle, reached through
-# `ureq`, and CDLA-Permissive-2.0 is a data-sharing agreement rather than a
-# software licence. Its only obligation is section 2.1, ship the agreement text
-# alongside the data, which cargo already does: the LICENSE file is inside the
-# published crate. Section 3.1 disclaims any obligation on Results, so nothing
-# reaches this repo's own MPL-2.0 sources.
+# Both of these are Mozilla's CA root certificates from the rustls project,
+# `webpki-roots` as parsed trust anchors and `webpki-root-certs` as self-signed
+# X.509, and they ship the identical licence file. CDLA-Permissive-2.0 is a
+# data-sharing agreement rather than a software licence. Its only obligation is
+# section 2.1, ship the agreement text alongside the data, which cargo already
+# does since the LICENSE sits inside the published crate. Section 3.1 disclaims
+# any obligation on Results, so nothing reaches this repo's own MPL-2.0 sources.
 #
 # Named rather than allowlisted, so a future crate carrying the same licence for
-# a reason nobody has looked at still stops the gate.
-exceptions = [{ name = "webpki-roots", allow = ["CDLA-Permissive-2.0"] }]
+# a reason nobody has looked at still stops the gate. That is not theoretical:
+# the `gix` bump swapped one of these two in and the gate caught it, which an
+# allowlist would have waved through.
+exceptions = [
+    { name = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    { name = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
 
 [licenses.private]
 ignore = false

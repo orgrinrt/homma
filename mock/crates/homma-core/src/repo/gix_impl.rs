@@ -26,7 +26,7 @@ impl GixRepo {
     pub fn open(path: &Path) -> Result<Self, RepoError> {
         let handle = gix::open(path).map_err(|e| RepoError::Open(Box::new(e)))?;
         let root = handle
-            .work_dir()
+            .workdir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| handle.git_dir().to_path_buf());
         Ok(Self {
@@ -47,7 +47,7 @@ impl GixRepo {
             .main_worktree(Discard, &interrupt)
             .map_err(|e| RepoError::Checkout(Box::new(e)))?;
         let root = handle
-            .work_dir()
+            .workdir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| handle.git_dir().to_path_buf());
         Ok(Self {
@@ -146,7 +146,7 @@ impl RepoOps for GixRepo {
             let mut r = r.map_err(|e| RepoError::References(e.to_string()))?;
             let name = strip_heads_prefix(r.name().as_bstr());
             let head_commit = r
-                .peel_to_id_in_place()
+                .peel_to_id()
                 .map_err(|e| RepoError::References(e.to_string()))?
                 .to_string();
             out.push(Branch {
@@ -163,7 +163,7 @@ impl RepoOps for GixRepo {
         for name in names {
             let remote = self
                 .handle
-                .find_remote(name.as_ref())
+                .find_remote(&name)
                 .map_err(|e| RepoError::Remote(e.to_string()))?;
             let url = remote
                 .url(gix::remote::Direction::Fetch)
@@ -196,15 +196,15 @@ impl RepoOps for GixRepo {
         // Drop any pre-existing block so we don't end up with duplicates.
         file.remove_section("remote", Some(name.into()));
         let mut section = file
-            .new_section("remote", Some(std::borrow::Cow::Owned(name.into())))
+            .new_section("remote", Some(gix::bstr::BString::from(name)))
             .map_err(|e| RepoError::Remote(e.to_string()))?;
-        let key_url = gix::config::parse::section::ValueName::try_from("url")
+        section
+            .push("url", Some(url.into()))
             .map_err(|e| RepoError::Remote(e.to_string()))?;
-        section.push(key_url, Some(url.into()));
         let fetch_spec = format!("+refs/heads/*:refs/remotes/{name}/*");
-        let key_fetch = gix::config::parse::section::ValueName::try_from("fetch")
+        section
+            .push("fetch", Some(fetch_spec.as_str().into()))
             .map_err(|e| RepoError::Remote(e.to_string()))?;
-        section.push(key_fetch, Some(fetch_spec.as_str().into()));
         write_config_to_disk(&self.handle, &file)?;
         self.reload()?;
         Ok(())
@@ -291,7 +291,7 @@ impl GixRepo {
             .handle
             .branch_remote_tracking_ref_name(head_full.as_ref(), gix::remote::Direction::Fetch)
         {
-            Some(Ok(name)) => name.into_owned(),
+            Some(Ok(name)) => name.to_owned(),
             Some(Err(e)) => return Err(RepoError::References(e.to_string())),
             None => return Ok(None),
         };
@@ -300,12 +300,12 @@ impl GixRepo {
             .handle
             .find_reference(head_full.as_ref())
             .map_err(|e| RepoError::References(e.to_string()))?
-            .peel_to_id_in_place()
+            .peel_to_id()
             .map_err(|e| RepoError::References(e.to_string()))?
             .detach();
         let upstream_id = match self.handle.find_reference(tracking_ref.as_ref()) {
             Ok(mut r) => {
-                r.peel_to_id_in_place()
+                r.peel_to_id()
                     .map_err(|e| RepoError::References(e.to_string()))?
                     .detach()
             },
@@ -370,7 +370,7 @@ fn walk_to_set(
 
 fn write_config_to_disk(
     repo: &gix::Repository,
-    file: &gix::config::File<'static>,
+    file: &gix::config::File,
 ) -> Result<(), RepoError> {
     let path = repo.git_dir().join("config");
     let rendered = file.to_bstring();
