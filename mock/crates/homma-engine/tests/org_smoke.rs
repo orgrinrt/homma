@@ -17,7 +17,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn bin() -> Command {
-    Command::cargo_bin("homma").expect("binary built")
+    Command::cargo_bin("homma-engine").expect("binary built")
 }
 
 /// A registry with a comment and one entry, to add to.

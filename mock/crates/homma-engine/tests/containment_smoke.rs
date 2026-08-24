@@ -15,7 +15,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn bin() -> Command {
-    Command::cargo_bin("homma").expect("binary built")
+    Command::cargo_bin("homma-engine").expect("binary built")
 }
 
 /// A content repository with one commit, and a clone of it to run homma from.

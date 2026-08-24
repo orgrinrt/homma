@@ -56,10 +56,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         Command::Org {
             op,
         } => {
-            let path = cli
-                .config
-                .clone()
-                .unwrap_or_else(|| std::path::PathBuf::from("homma.toml"));
+            let path = config_path(&cli);
             let ws = org::load(&path)?;
             match op {
                 OrgOp::List => {
@@ -290,11 +287,105 @@ pub fn run(cli: Cli) -> Result<Outcome> {
     }
 }
 
-/// Resolve the config path (CLI flag wins; otherwise `./homma.toml`) and parse.
+/// Where the configuration is, from the two flags that can say so.
+///
+/// `--config` names the file and wins. `--dir` names the directory it sits in,
+/// which is what the launcher passes, resolved absolutely, so the command
+/// operates on the same workspace whichever directory it was typed in. With
+/// neither, the bare name is left relative and resolves against the current
+/// directory, which is the shape a hand-run command in a workspace root wants.
+///
+/// One function rather than a computation repeated per command: the `org` arm
+/// carried its own copy and would have kept reading `./homma.toml` while every
+/// other command honoured `--dir`.
+pub(crate) fn config_path(cli: &Cli) -> std::path::PathBuf {
+    if let Some(path) = &cli.config {
+        return path.clone();
+    }
+    match &cli.dir {
+        Some(dir) => dir.join("homma.toml"),
+        None => std::path::PathBuf::from("homma.toml"),
+    }
+}
+
+/// Resolve the config path and parse it.
 pub(crate) fn load_config(cli: &Cli) -> Result<Config> {
-    let path = cli
-        .config
-        .clone()
-        .unwrap_or_else(|| std::path::PathBuf::from("homma.toml"));
+    let path = config_path(cli);
     Config::from_path(&path).with_context(|| format!("loading config from {}", path.display()))
+}
+
+#[cfg(test)]
+mod config_path_tests {
+    use clap::Parser;
+
+    use super::*;
+
+    /// Parse a `homma-engine` command line the way `main` does.
+    fn parsed(args: &[&str]) -> Cli {
+        let mut argv = vec!["homma-engine"];
+        argv.extend_from_slice(args);
+        Cli::try_parse_from(argv).expect("these arguments should parse")
+    }
+
+    #[test]
+    fn the_dir_flag_is_accepted_at_all() {
+        // The launcher passes it unconditionally, so an engine that rejects it
+        // cannot be run through the launcher at all. That is how it was found:
+        // `error: unexpected argument '--dir' found`, on every subcommand.
+        let cli = parsed(&["--dir", "/tmp/ws", "status"]);
+        assert_eq!(cli.dir.as_deref(), Some(std::path::Path::new("/tmp/ws")));
+    }
+
+    #[test]
+    fn the_config_sits_in_the_directory_the_dir_flag_names() {
+        let cli = parsed(&["--dir", "/tmp/ws", "status"]);
+        assert_eq!(
+            config_path(&cli),
+            std::path::PathBuf::from("/tmp/ws/homma.toml")
+        );
+    }
+
+    #[test]
+    fn a_named_config_wins_over_the_directory() {
+        let cli = parsed(&["--dir", "/tmp/ws", "-c", "/elsewhere/other.toml", "status"]);
+        assert_eq!(
+            config_path(&cli),
+            std::path::PathBuf::from("/elsewhere/other.toml")
+        );
+    }
+
+    #[test]
+    fn with_neither_flag_the_bare_name_resolves_against_the_current_directory() {
+        let cli = parsed(&["status"]);
+        let path = config_path(&cli);
+        assert_eq!(path, std::path::PathBuf::from("homma.toml"));
+        assert!(
+            path.is_relative(),
+            "a hand-run command in a workspace root reads that root's config"
+        );
+    }
+
+    #[test]
+    fn the_flag_parses_through_a_nested_subcommand_too() {
+        // `org list` is two levels down, and a flag that is global on the root
+        // but not inherited would be rejected there. This is about parsing;
+        // that the `org` body actually honours it is
+        // `runs_from_anywhere.rs`, which runs the binary.
+        let cli = parsed(&["--dir", "/tmp/ws", "org", "list"]);
+        assert_eq!(
+            config_path(&cli),
+            std::path::PathBuf::from("/tmp/ws/homma.toml")
+        );
+    }
+
+    #[test]
+    fn the_flag_is_taken_after_the_subcommand_too() {
+        // Which is how a user types it, and how anything forwarding arguments
+        // through a subcommand would end up ordering them.
+        let cli = parsed(&["status", "--dir", "/tmp/ws"]);
+        assert_eq!(
+            config_path(&cli),
+            std::path::PathBuf::from("/tmp/ws/homma.toml")
+        );
+    }
 }
