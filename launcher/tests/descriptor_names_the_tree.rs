@@ -25,33 +25,6 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Every `name = "..."` in one TOML section, by section header.
-///
-/// A text scan rather than a parser, because pulling a TOML dependency into a
-/// launcher whose whole point is having almost none would cost more than it
-/// buys, and the two lines this reads are the two least likely in the file to
-/// grow exotic syntax.
-fn names_in_section(manifest: &str, header: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut inside = false;
-    for line in manifest.lines() {
-        let line = line.trim();
-        if line.starts_with('[') {
-            inside = line == header;
-            continue;
-        }
-        if !inside {
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("name") {
-            if let Some(v) = rest.trim_start().strip_prefix('=') {
-                out.push(v.trim().trim_matches('"').to_string());
-            }
-        }
-    }
-    out
-}
-
 #[test]
 fn the_engine_crate_names_a_package_that_is_there() {
     let at = repo_root()
@@ -67,7 +40,7 @@ fn the_engine_crate_names_a_package_that_is_there() {
         )
     });
     assert_eq!(
-        names_in_section(&manifest, "[package]"),
+        homma::names_in_section(&manifest, "[package]"),
         vec![homma::TOOL.engine_crate.to_string()],
         "the package at {} is not the one the descriptor names",
         at.display()
@@ -86,7 +59,7 @@ fn the_engine_binary_is_named_for_the_crate_because_that_is_what_gets_run() {
         .join("Cargo.toml");
     let manifest = std::fs::read_to_string(&at).expect("engine manifest");
     assert_eq!(
-        names_in_section(&manifest, "[[bin]]"),
+        homma::names_in_section(&manifest, "[[bin]]"),
         vec![homma::TOOL.engine_crate.to_string()],
         "the binary at {} is not named for the crate the launcher runs",
         at.display()

@@ -78,16 +78,55 @@ fn a_directory_with_no_manifest_reports_the_manifest_and_not_something_vaguer() 
     );
 }
 
-#[test]
-fn a_package_merely_mentioning_the_engine_is_not_the_engine() {
-    // A consumer's manifest names `homma-engine` in its dependency table, and
-    // a check looking for the bare word would take it for the engine itself.
+fn with_manifest(body: &str) -> Result<(), String> {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("Cargo.toml"),
-        b"[package]\nname = \"consumer\"\nversion = \"0.1.0\"\n\n\
-          [dependencies]\nhomma-engine = \"0.1\"\n",
-    )
-    .unwrap();
-    check(dir.path()).expect_err("a consumer of the engine was taken for the engine");
+    std::fs::write(dir.path().join("Cargo.toml"), body).unwrap();
+    check(dir.path())
+}
+
+#[test]
+fn the_engine_name_counts_only_where_a_package_declares_itself() {
+    // Every one of these holds the engine's name somewhere a substring scan
+    // reads, and none of them is a package `cargo install` would build as the
+    // engine. All four were accepted by a scan for the bare text.
+    let mentions = [
+        (
+            "a bin target under the engine's name in some other package",
+            "[package]\nname = \"totally-not-homma\"\nversion = \"0.1.0\"\n\n\
+             [[bin]]\nname = \"homma-engine\"\npath = \"src/main.rs\"\n",
+        ),
+        (
+            "a comment saying what the file is not",
+            "# the engine is name = \"homma-engine\", this is not it\n\
+             [package]\nname = \"other\"\nversion = \"0.1.0\"\n",
+        ),
+        (
+            "a renamed dependency on the engine",
+            "[package]\nname = \"consumer\"\nversion = \"0.1.0\"\n\n\
+             [dependencies.eng]\nname = \"homma-engine\"\nversion = \"0.1\"\n",
+        ),
+        (
+            "an ordinary dependency on the engine",
+            "[package]\nname = \"consumer\"\nversion = \"0.1.0\"\n\n\
+             [dependencies]\nhomma-engine = \"0.1\"\n",
+        ),
+    ];
+    for (what, manifest) in mentions {
+        with_manifest(manifest).expect_err(what);
+    }
+}
+
+#[test]
+fn a_package_declaring_itself_the_engine_is_accepted_however_it_spells_it() {
+    // The control on the one above. Refusing everything would pass that test
+    // and break the flag entirely, and TOML has three spellings of the same
+    // assignment that a scan for one literal string gets wrong.
+    for manifest in [
+        "[package]\nname = \"homma-engine\"\nversion = \"0.1.0\"\n",
+        "[package]\nname=\"homma-engine\"\nversion = \"0.1.0\"\n",
+        "[package]\nname = 'homma-engine'\nversion = \"0.1.0\"\n",
+        "[package]\nname   =    \"homma-engine\"   # with a trailing comment\n",
+    ] {
+        with_manifest(manifest).unwrap_or_else(|e| panic!("refused {manifest:?}: {e}"));
+    }
 }

@@ -64,7 +64,7 @@ pub const ENGINE_SUBDIR: &str = "mock/crates/homma-engine";
 fn engine_dir_holds_the_engine(dir: &Path) -> Result<(), String> {
     let manifest = std::fs::read_to_string(dir.join("Cargo.toml"))
         .map_err(|e| format!("{}: {e}", dir.join("Cargo.toml").display()))?;
-    if manifest.contains("name = \"homma-engine\"") {
+    if package_name(&manifest).as_deref() == Some(TOOL.engine_crate) {
         return Ok(());
     }
     let suggestion = dir.join(ENGINE_SUBDIR);
@@ -79,6 +79,55 @@ fn engine_dir_holds_the_engine(dir: &Path) -> Result<(), String> {
         "{} is not a homma-engine checkout. The engine lives at {ENGINE_SUBDIR} inside one",
         dir.display()
     ))
+}
+
+/// Every `name` declared in one section of a manifest, by section header.
+///
+/// A text scan rather than a parser, because pulling a TOML dependency into a
+/// launcher whose whole point is having almost none would cost more than it
+/// buys, and the one line this reads is the least likely in the file to grow
+/// exotic syntax.
+///
+/// The section matters, and matching the bare text does not do. A package named
+/// something else entirely can declare a `[[bin]]` under the engine's name, a
+/// dependency table can carry a renamed dependency, and a comment can say
+/// anything at all. All three read as the engine to a substring scan, and none
+/// of them is a package `cargo install` would build as the engine.
+#[must_use]
+pub fn names_in_section(manifest: &str, header: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in manifest.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.starts_with('[') {
+            inside = line == header;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("name")
+            && let Some(value) = rest.trim_start().strip_prefix('=')
+        {
+            let value = value.trim();
+            let Some(quote) = value.chars().next() else {
+                continue;
+            };
+            if quote != '"' && quote != '\'' {
+                continue;
+            }
+            if let Some(name) = value[1 ..].split(quote).next() {
+                out.push(name.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// The name a manifest's `[package]` section declares, if it has one.
+#[must_use]
+pub fn package_name(manifest: &str) -> Option<String> {
+    names_in_section(manifest, "[package]").into_iter().next()
 }
 
 /// The process entry, over the descriptor.
