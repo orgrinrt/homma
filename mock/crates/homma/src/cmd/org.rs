@@ -18,7 +18,7 @@ pub(crate) const DISCIPLINE: &str = "\
 Read the workspace rules before touching anything, and prefer the precedent \
 already in the tree over inventing a convention.
 
-Work happens in your own workspace. The central clone is for reading.
+Work happens in your own workspace. Everyone else's is theirs.
 
 Never commit to a trunk. Branch first, always: `dev` and `main` are landed \
 through review, never written to directly. If you find yourself on one, you are \

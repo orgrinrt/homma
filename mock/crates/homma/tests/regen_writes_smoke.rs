@@ -6,9 +6,9 @@
 //! the record's third denied location verbatim, and it installs code the harness
 //! then executes, beside the credentials that live there.
 //!
-//! **What is deliberately not refused is a workspace that is the central clone.**
+//! **What is deliberately not refused is a workspace that is somebody's own.**
 //! Aggregating into a checkout is this pass's whole purpose, and the workspace
-//! configuration that ships in clause-dev names the central clone as its own
+//! configuration that ships in the workspace repo names that workspace as its own
 //! path. Refusing it forbids the tool its purpose, and answering that needs a
 //! decision about who homma is acting as. A previous round bundled the two
 //! questions and deferred both under an argument covering only the first.
@@ -233,7 +233,7 @@ workspace = "{}"
 #[test]
 fn a_participant_may_aggregate_into_their_own_workspace() {
     // **The other half of op's answer, and the reason deny item one is not an
-    // absolute here.** The central clone is one participant's workspace: denied
+    // absolute here.** Op's own workspace is one participant's: denied
     // to every other participant, and permitted to its owner, because nobody is
     // denied their own.
     //
@@ -294,5 +294,179 @@ workspace = "{}"
     assert!(
         mine.join(".claude").join("settings.json").is_file(),
         "the pass reported success and wrote no settings: {stderr}"
+    );
+}
+
+/// A workspace with one Rust repo declared and one shared config to hand out.
+fn workspace_with_a_repo_and_a_config(dir: &std::path::Path) -> (std::path::PathBuf, String) {
+    let ws = dir.join("workspace");
+    std::fs::create_dir_all(ws.join(".shared").join("configs")).unwrap();
+    std::fs::write(
+        ws.join(".shared").join("configs").join("rustfmt.toml"),
+        "max_width = 100\n",
+    )
+    .unwrap();
+
+    let repo = ws.join("arvo");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"arvo\"\n").unwrap();
+
+    let cfg = format!(
+        "{}\n[repos.arvo]\nforge = \"github\"\nowner = \"orgrinrt\"\nlocal_path = \"arvo\"\n",
+        config_at(&ws)
+    );
+    (ws, cfg)
+}
+
+#[test]
+fn regen_places_a_missing_shared_config_and_leaves_it_there() {
+    // End to end through the built binary, because the unit tests exercise the
+    // stage and say nothing about whether `agent regen` actually calls it.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let (ws, cfg_body) = workspace_with_a_repo_and_a_config(dir.path());
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, cfg_body).unwrap();
+
+    let placed = ws.join("arvo").join("rustfmt.toml");
+    assert!(!placed.exists(), "the fixture starts without the config");
+
+    bin()
+        .env("HOME", &home)
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "agent",
+            "regen",
+            "--skip-cargo-mock",
+            "--continue-on-error",
+        ])
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(
+        std::fs::read_to_string(&placed).unwrap(),
+        "max_width = 100\n",
+        "regen did not place the shared config"
+    );
+}
+
+#[test]
+fn a_second_regen_reports_the_config_as_matching_rather_than_placing_it_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let (ws, cfg_body) = workspace_with_a_repo_and_a_config(dir.path());
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, cfg_body).unwrap();
+
+    let run = || {
+        bin()
+            .env("HOME", &home)
+            .args([
+                "--config",
+                cfg.to_str().unwrap(),
+                "agent",
+                "regen",
+                "--skip-cargo-mock",
+                "--continue-on-error",
+            ])
+            .output()
+            .expect("the binary runs")
+    };
+
+    let first = String::from_utf8_lossy(&run().stdout).to_string();
+    assert!(first.contains("placed rustfmt.toml"), "first run: {first}");
+
+    let second = String::from_utf8_lossy(&run().stdout).to_string();
+    assert!(
+        second.contains("rustfmt.toml matches"),
+        "second run should be a no-op: {second}"
+    );
+    assert!(
+        !second.contains("placed rustfmt.toml"),
+        "the second run placed it again: {second}"
+    );
+    let _ = ws;
+}
+
+#[test]
+fn a_repo_whose_config_differs_is_warned_about_and_the_run_still_succeeds() {
+    // The asymmetry, end to end: a difference may be deliberate, so it is
+    // reported, the file is left alone, and the exit status stays clean.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let (ws, cfg_body) = workspace_with_a_repo_and_a_config(dir.path());
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, cfg_body).unwrap();
+
+    let theirs = ws.join("arvo").join("rustfmt.toml");
+    std::fs::write(&theirs, "max_width = 80\n").unwrap();
+
+    let out = bin()
+        .env("HOME", &home)
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "agent",
+            "regen",
+            "--skip-cargo-mock",
+            "--skip-aggregate",
+            "--continue-on-error",
+        ])
+        .output()
+        .expect("the binary runs");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("differs from the shared copy"),
+        "the divergence was not reported: {stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&theirs).unwrap(),
+        "max_width = 80\n",
+        "the repo's own config was overwritten"
+    );
+}
+
+#[test]
+fn skipping_every_stage_is_refused_but_skipping_two_is_not() {
+    // The guard counts stages, and there are three. It counted two until the
+    // configs stage arrived, at which point it refused a run that does real
+    // work: the test above skips both of the others and depends on this.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let (_ws, cfg_body) = workspace_with_a_repo_and_a_config(dir.path());
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, cfg_body).unwrap();
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["--config", cfg.to_str().unwrap(), "agent", "regen"];
+        args.extend_from_slice(extra);
+        bin()
+            .env("HOME", &home)
+            .args(args)
+            .output()
+            .expect("the binary runs")
+    };
+
+    let all_three = run(&["--skip-cargo-mock", "--skip-configs", "--skip-aggregate"]);
+    assert!(
+        String::from_utf8_lossy(&all_three.stderr).contains("would do nothing"),
+        "skipping every stage should be refused"
+    );
+
+    let two = run(&["--skip-cargo-mock", "--skip-aggregate", "--continue-on-error"]);
+    let stderr = String::from_utf8_lossy(&two.stderr);
+    assert!(
+        !stderr.contains("would do nothing"),
+        "skipping two of three still runs the configs stage: {stderr}"
+    );
+    assert!(
+        String::from_utf8_lossy(&two.stdout).contains("rustfmt.toml"),
+        "the configs stage did not run"
     );
 }

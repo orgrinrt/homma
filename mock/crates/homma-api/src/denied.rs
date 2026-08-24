@@ -10,7 +10,7 @@
 //! three are this module's:
 //!
 //! ```text
-//! 1  writes under ~/Dev/clause-dev      the central clone
+//! 1  writes under ~/Dev/clause-dev      op's own workspace
 //! 2  writes under another Hand's workspace
 //! 3  writes under ~/.claude/            settings, hooks, live credentials
 //! ```
@@ -59,7 +59,7 @@ impl Denied {
                 ),
                 (
                     home.join("Dev").join("clause-dev"),
-                    "the central clone is read, never written",
+                    "that workspace is its owner's, not yours to write in",
                 ),
             ],
         }
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn the_central_clone_is_refused() {
+    fn ops_own_workspace_is_refused() {
         let d = tempfile::tempdir().unwrap();
         let home = abs(d.path());
         std::fs::create_dir_all(d.path().join("Dev").join("clause-dev")).unwrap();

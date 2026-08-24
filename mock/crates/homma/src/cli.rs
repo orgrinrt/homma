@@ -202,6 +202,9 @@ pub enum AgentOp {
         /// aggregation against the already-rendered per-repo `.claude/`.
         #[arg(long)]
         skip_cargo_mock: bool,
+        /// Skip comparing each repo against the shared tool configs.
+        #[arg(long)]
+        skip_configs: bool,
         /// Skip the workspace aggregation step; only run per-repo
         /// `cargo mock`.
         #[arg(long)]

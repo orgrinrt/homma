@@ -228,6 +228,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 repo,
                 continue_on_error,
                 skip_cargo_mock,
+                skip_configs,
                 skip_aggregate,
             } => {
                 let cfg = load_config(&cli)?;
@@ -237,6 +238,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     agent::regen::Opts {
                         continue_on_error: *continue_on_error,
                         skip_cargo_mock: *skip_cargo_mock,
+                        skip_configs: *skip_configs,
                         skip_aggregate: *skip_aggregate,
                     },
                     cli.output,
