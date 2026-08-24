@@ -41,8 +41,12 @@ const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 /// fires on every Bash tool call; the script itself decides which
 /// commands warrant inspection.
 ///
-/// `repos` is the list of `(repo_name, absolute_path)` pairs that the
-/// gate should consider as "member repos" worth validating.
+/// `repos` is the list of `(repo_name, workspace_relative_path)` pairs that
+/// the gate should consider as "member repos" worth validating. Relative,
+/// because the gate script is tracked and a path naming the workspace that
+/// generated it matches nothing in any other clone. A repo declared outside
+/// the workspace has no relative form and keeps its absolute one; the script
+/// handles both.
 pub(crate) fn install_workspace_gate(
     root: &homma_api::Root,
     repos: &[(String, String)],
@@ -62,14 +66,13 @@ pub(crate) fn install_workspace_gate(
         .with_context(|| format!("writing {}", target.as_path().display()))?;
     #[cfg(unix)]
     root.set_executable(&target)?;
-    let abs_command = target
-        .as_path()
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("non-utf8 path: {}", target.as_path().display()))?
-        .to_string();
+    // `${CLAUDE_PROJECT_DIR}`, for the same reason the per-repo wrappers use
+    // it: the host substitutes the project root regardless of the working
+    // directory the hook runs in, so one tracked `settings.json` names this
+    // workspace's gate in every clone.
     Ok(HookEntry {
         matcher: "Bash".to_string(),
-        command: abs_command,
+        command: format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{GATE_SCRIPT_NAME}"),
     })
 }
 
@@ -105,6 +108,11 @@ fn gate_script(repos: &[(String, String)]) -> String {
 
 set -u
 
+# The workspace this file sits in, found from its own location: a gate script
+# lives at `<workspace>/.claude/hooks/`, a fixed depth, so it needs no baked
+# prefix and no environment variable to know where the member repos are.
+WS=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd) || exit 0
+
 INPUT=$(cat)
 
 command_line=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -128,7 +136,8 @@ if [ -z "$target_dir" ]; then
     target_dir="$PWD"
 fi
 
-# Member-repo table: each entry is `<name>|<absolute_path>`.
+# Member-repo table: each entry is `<name>|<path>`, where the path is
+# relative to the workspace unless the manifest declared the repo outside it.
 REPOS=(
 {repo_table})
 
@@ -137,7 +146,11 @@ match_name=""
 match_path=""
 for entry in "${{REPOS[@]}}"; do
     name="${{entry%%|*}}"
-    path="${{entry#*|}}"
+    raw="${{entry#*|}}"
+    case "$raw" in
+        /*) path="$raw" ;;
+        *)  path="$WS/$raw" ;;
+    esac
     case "$target_dir" in
         "$path"|"$path"/*)
             # Prefer the most specific (longest) path.
@@ -272,22 +285,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path();
         let repos = vec![
-            (
-                "arvo".to_string(),
-                "/Users/x/Dev/clause-dev/arvo".to_string(),
-            ),
-            (
-                "notko".to_string(),
-                "/Users/x/Dev/clause-dev/notko".to_string(),
-            ),
+            ("arvo".to_string(), "arvo".to_string()),
+            ("notko".to_string(), "notko".to_string()),
         ];
         let entry = install_workspace_gate(&test_root(workspace), &repos).unwrap();
         assert_eq!(entry.matcher, "Bash");
+        assert_eq!(
+            entry.command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_workspace--mockspace-gate.sh",
+            "the registered command must name the host's project-root placeholder",
+        );
         assert!(
-            entry
-                .command
-                .ends_with("/.claude/hooks/_workspace--mockspace-gate.sh"),
-            "expected absolute path, got: {}",
+            !entry.command.contains(workspace.to_str().unwrap()),
+            "the command named the workspace that generated it: {}",
             entry.command,
         );
 
@@ -295,10 +304,14 @@ mod tests {
         assert!(script.exists());
         let body = fs::read_to_string(&script).unwrap();
         assert!(body.starts_with("#!/usr/bin/env bash"));
-        assert!(body.contains("'arvo|/Users/x/Dev/clause-dev/arvo'"));
-        assert!(body.contains("'notko|/Users/x/Dev/clause-dev/notko'"));
+        assert!(body.contains("'arvo|arvo'"));
+        assert!(body.contains("'notko|notko'"));
         assert!(body.contains("git commit"));
         assert!(body.contains("git push"));
+        assert!(
+            !body.contains(workspace.to_str().unwrap()),
+            "the gate baked the generating workspace's path"
+        );
 
         #[cfg(unix)]
         {
@@ -320,6 +333,28 @@ mod tests {
         assert!(!is_workspace_gate_command(
             ".claude/hooks/arvo--no-alloc.sh"
         ));
+    }
+
+    #[test]
+    fn a_relative_repo_entry_resolves_against_the_workspace_the_gate_sits_in() {
+        // The gate is tracked, so its repo table travels to every clone. A
+        // relative entry has to be joined to the workspace the script is
+        // running from rather than to whichever one wrote it, and an absolute
+        // entry, which is what a repo declared outside the workspace leaves,
+        // has to be left alone.
+        let probe = |raw: &str, ws: &str| -> String {
+            let out = std::process::Command::new("bash")
+                .arg("-c")
+                .arg(format!(
+                    r#"WS='{ws}'; raw='{raw}'; case "$raw" in /*) path="$raw";; *) path="$WS/$raw";; esac; printf '%s' "$path""#
+                ))
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap()
+        };
+        assert_eq!(probe("arvo", "/here"), "/here/arvo");
+        // The control on the other arm, so the join is not unconditional.
+        assert_eq!(probe("/elsewhere/arvo", "/here"), "/elsewhere/arvo");
     }
 
     #[test]

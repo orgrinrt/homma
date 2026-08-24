@@ -389,6 +389,10 @@ pub mod regen {
         };
 
         let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
+        // The repos whose hooks this run actually aggregated. A repo the
+        // manifest declares but this workspace has not cloned is absent, and
+        // its existing registrations are left alone rather than swept.
+        let mut visited: Vec<String> = Vec::new();
         let mut results = Vec::new();
         let mut had_failure = false;
         let mut needs_a_human: Vec<String> = Vec::new();
@@ -482,7 +486,10 @@ pub mod regen {
                 (0, StageStatus::Skipped("no .claude/ to aggregate".into()))
             } else {
                 match aggregate::aggregate_repo(&root, name, &local, &mut settings_entries) {
-                    Ok(h) => (h, StageStatus::Success),
+                    Ok(h) => {
+                        visited.push(name.clone());
+                        (h, StageStatus::Success)
+                    },
                     Err(e) => {
                         had_failure = true;
                         (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
@@ -508,13 +515,15 @@ pub mod regen {
         // settings.json.
         if !opts.skip_aggregate {
             let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
+            let visited_repos: Vec<&str> = visited.iter().map(String::as_str).collect();
+            // The manifest's own `local_path`, workspace-relative, rather than
+            // the absolute form this run resolved. The gate script is tracked,
+            // so an absolute path in it names the workspace that generated it
+            // and matches nothing anywhere else.
             let repo_paths: Vec<(String, String)> = cfg
                 .repos
                 .iter()
-                .map(|(name, rc)| {
-                    let abs = util::resolve_local_path(workspace, &rc.local_path);
-                    (name.clone(), abs.to_string_lossy().to_string())
-                })
+                .map(|(name, rc)| (name.clone(), rc.local_path.to_string_lossy().to_string()))
                 .collect();
             let gate_entry = match crate::cmd::gates::install_workspace_gate(&root, &repo_paths) {
                 Ok(e) => Some(e),
@@ -534,6 +543,7 @@ pub mod regen {
             if let Err(e) = aggregate::merge_settings(
                 &root,
                 &known_repos,
+                &visited_repos,
                 &settings_entries,
                 gate_entry.as_ref(),
             ) {
