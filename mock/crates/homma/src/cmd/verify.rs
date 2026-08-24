@@ -218,6 +218,17 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
     }
 
     for (name, forge) in &cfg.forges {
+        // Only where the variable is the sole declared source. A profile
+        // naming a `token_cmd` has said where its credential comes from, so an
+        // unset variable is the ordinary case rather than a gap, and warning
+        // about it told the operator that mutating operations would fail
+        // unauthorized on a forge `--forge` then authenticated to in the same
+        // run. Running the command here would cost this function the offline
+        // purity that is the reason it is separate; `--forge` reports a command
+        // that produces nothing, and names it.
+        if forge.token_cmd.is_some() {
+            continue;
+        }
         if let Some(var) = forge.token_env.as_deref() {
             match std::env::var(var) {
                 Ok(v) if !v.is_empty() => {}
@@ -389,6 +400,52 @@ local_path = "somerepo"
 
     fn kinds(f: &[Finding]) -> Vec<&str> {
         f.iter().map(|f| f.kind.as_str()).collect()
+    }
+
+    fn offline(body: &str) -> Vec<String> {
+        check(&Config::parse(body).unwrap())
+            .findings
+            .into_iter()
+            .map(|f| f.kind)
+            .collect()
+    }
+
+    const VARIABLE_ONLY: &str = r#"
+[workspace]
+name = "w"
+[forges.gh]
+kind = "github"
+base_url = "https://example.invalid"
+api_url = "https://example.invalid/api"
+token_env = "HOMMA_TEST_OFFLINE_UNSET"
+"#;
+
+    #[test]
+    fn a_variable_that_is_the_only_declared_source_is_still_reported_when_unset() {
+        // The control on the test below, and a real finding on its own: a
+        // manifest saying the credential comes from this variable, about a
+        // variable holding nothing.
+        unsafe { std::env::remove_var("HOMMA_TEST_OFFLINE_UNSET") };
+        assert!(offline(VARIABLE_ONLY).contains(&"forge_token_unset".to_string()));
+
+        unsafe { std::env::set_var("HOMMA_TEST_OFFLINE_UNSET", "") };
+        assert!(offline(VARIABLE_ONLY).contains(&"forge_token_empty".to_string()));
+        unsafe { std::env::remove_var("HOMMA_TEST_OFFLINE_UNSET") };
+    }
+
+    #[test]
+    fn a_profile_naming_a_command_is_not_reported_for_an_unset_variable() {
+        // The defect: against the workspace's own manifest this warned that
+        // mutating operations would fail unauthorized on a forge that `--forge`
+        // authenticated to successfully in the same run.
+        unsafe { std::env::remove_var("HOMMA_TEST_OFFLINE_UNSET") };
+        let with_cmd = format!("{VARIABLE_ONLY}token_cmd = [\"gh\", \"auth\", \"token\"]\n");
+        let kinds = offline(&with_cmd);
+        assert!(
+            !kinds.contains(&"forge_token_unset".to_string())
+                && !kinds.contains(&"forge_token_empty".to_string()),
+            "{kinds:?}"
+        );
     }
 
     #[test]
