@@ -1,0 +1,50 @@
+4889e9c chore: lock the src changelist for 202608242145
+96bb749 fix: the retired absolute command shape is swept, not preserved
+d95d6fb docs: open the src changelist for 202608242145
+74b96f2 chore: lock the doc changelist for 202608242145
+f772fd8 docs: topic and doc changelist on the retired absolute command shape
+d1507ac chore: close design round 202608242120
+e1636d2 chore: lock the src changelist for 202608242120
+c87e95b docs: the changelist records where the normalisation is reachable
+0e0e98d refactor: the gate normalises its own repo table
+f28a404 refactor: the gate normalises its own repo table
+41753de test: the curdir case is checked where a manifest path actually reaches a script
+42cf2fc fix: anchor a relative config path before deriving the workspace from it
+c9ed265 docs: correct the round, the anchoring is the cause not the manifest
+5e95576 fix: normalise a manifest path before it reaches a wrapper
+0768811 docs: open the src changelist for 202608242120
+a4455ee chore: lock the doc changelist for 202608242120
+9f995b7 docs: topic and doc changelist on the curdir component
+67ecf89 chore: close design round 202608242101
+23e39d9 chore: lock the src changelist for 202608242101
+e3f5e67 docs: the src changelist names every file the round touches
+47bd6e6 test: the not-cloned case is checked inside the absent repo
+2732ba1 fix: an aggregated hook finds its own workspace
+8204b4d docs: move the config anchoring fix out of this round
+88e9503 docs: open the src changelist for the wrapper fix
+0c69060 chore: lock the doc changelist for 202608242101
+e2b5850 docs: open the doc changelist for the wrapper fix
+582610f docs: topic on aggregated hooks being inert outside their workspace
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round
+de1d474 chore: lock the src changelist
+ad13abe fix: permit the workspace being aggregated into, which was denied
+c661a1c chore: open the src changelist
+6308d25 chore: lock the doc changelist
+97eafe3 docs: open an empty doc window, the change is source-only
+6f0bcd6 topic: the aggregation pass is denied its own workspace
+3408176 Merge remote-tracking branch 'origin/dev' into fix/the-root-is-not-the-cwd
+0e53261 Merge pull request #27 from orgrinrt/chore/patch-pass-2026-08
+113b828 docs: drop workspace-internal vocabulary and point license at main
+0aac773 chore: remove github actions workflows
+93b4109 docs: describe the shipped command set and drop the unbuilt claims
+9180763 chore: close the round
+fc77192 chore: lock the src changelist
+6adda43 fix: drop the clause that could never decide, and the stray blank line
+31a676c chore: lock doc changelist and open the src window
