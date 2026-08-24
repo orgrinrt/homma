@@ -151,6 +151,39 @@ impl Denied {
         self
     }
 
+    /// Drop every entry denoting the same place as `path`.
+    ///
+    /// The actor's own workspace is the case. Deny item two is every *other*
+    /// participant's workspace, and the home-derived list names one particular
+    /// workspace without knowing whose it is, so aggregating into that one was
+    /// refused by an entry describing it as somebody else's.
+    ///
+    /// **The same place, never a place under it.** An entry inside `path` stays
+    /// denied: a harness's own `.claude` sitting inside a workspace is still the
+    /// harness's, and permitting a workspace must not permit everything in it.
+    /// Mutual containment is what says "the same", and it uses both comparisons
+    /// [`Denied::check`] uses, so a firmlink spelling and a case-folded spelling
+    /// are both recognised. A permission that missed either would leave the
+    /// refusal standing under a spelling nobody typed, which is the shape every
+    /// reproduction in `check`'s own comment took.
+    pub fn permitting(mut self, path: &AbsPath) -> Self {
+        let Ok(want) = path.resolved() else {
+            // an unresolvable path denotes nothing, so it permits nothing.
+            return self;
+        };
+        self.entries.retain(|(denied, _)| {
+            let Ok(there) = denied.resolved() else {
+                return true;
+            };
+            let same = (under_by_components(want.as_path(), there.as_path())
+                && under_by_components(there.as_path(), want.as_path()))
+                || (under_by_identity(want.as_path(), there.as_path())
+                    && under_by_identity(there.as_path(), want.as_path()));
+            !same
+        });
+        self
+    }
+
     /// Refuse a path that resolves under any denied location.
     ///
     /// **Two comparisons, and the split between them is by what the filesystem
@@ -732,5 +765,105 @@ handle = "op"
         .unwrap();
         let s = Denied::for_standing_up(&ws, "paja", &abs("/srv")).unwrap();
         assert!(s.under_root.check(&abs("/srv/anywhere"), "root").is_ok());
+    }
+
+    #[test]
+    fn permitting_drops_the_entry_for_that_place_and_nothing_else() {
+        let d = tempfile::tempdir().unwrap();
+        let home = AbsPath::new(d.path().canonicalize().unwrap()).unwrap();
+        let ws = home.join("Dev").join("clause-dev");
+        std::fs::create_dir_all(ws.as_path()).unwrap();
+        std::fs::create_dir_all(home.join(".claude").as_path()).unwrap();
+
+        // the control first: without the permission the workspace is refused,
+        // by an entry that describes it as somebody else's.
+        let before = Denied::under_home(&home);
+        assert!(
+            before.check(&ws.join(".claude"), "aggregating").is_err(),
+            "control: the workspace is denied to begin with"
+        );
+
+        let after = Denied::under_home(&home).permitting(&ws);
+        assert!(
+            after.check(&ws.join(".claude"), "aggregating").is_ok(),
+            "the workspace is still refused after being permitted"
+        );
+        // and the other home-derived entry is untouched, so this permitted one
+        // place rather than emptying the list.
+        assert!(
+            after.check(&home.join(".claude"), "aggregating").is_err(),
+            "permitting one place emptied the list"
+        );
+    }
+
+    #[test]
+    fn permitting_a_place_does_not_permit_a_denied_place_inside_it() {
+        // the asymmetry the doc claims. A harness `.claude` that happens to sit
+        // inside the workspace is still the harness's, so permitting the
+        // workspace must not reach it.
+        let d = tempfile::tempdir().unwrap();
+        let home = AbsPath::new(d.path().canonicalize().unwrap()).unwrap();
+        std::fs::create_dir_all(home.join(".claude").as_path()).unwrap();
+
+        // the home itself as the "workspace": the `.claude` entry is under it.
+        let after = Denied::under_home(&home).permitting(&home);
+        assert!(
+            after
+                .check(&home.join(".claude").join("x"), "writing")
+                .is_err(),
+            "permitting a place permitted a denied place inside it"
+        );
+    }
+
+    #[test]
+    fn permitting_a_place_inside_an_entry_leaves_the_entry_standing() {
+        // the other direction, and the one that would quietly open the whole
+        // deny list if `permitting` tested containment instead of sameness.
+        let d = tempfile::tempdir().unwrap();
+        let home = AbsPath::new(d.path().canonicalize().unwrap()).unwrap();
+        let inside = home.join("Dev").join("clause-dev").join("member");
+        std::fs::create_dir_all(inside.as_path()).unwrap();
+
+        let after = Denied::under_home(&home).permitting(&inside);
+        assert!(
+            after.check(&inside.join("x"), "writing").is_err(),
+            "a path inside a denied place permitted itself out of it"
+        );
+    }
+
+    #[test]
+    fn permitting_matches_a_case_folded_spelling_of_the_same_place() {
+        // the spelling nobody types, which is the shape every reproduction in
+        // `check`'s own comment took. Skipped where the filesystem does not
+        // fold, since there the two spellings are genuinely two places.
+        let d = tempfile::tempdir().unwrap();
+        let home = AbsPath::new(d.path().canonicalize().unwrap()).unwrap();
+        let ws = home.join("Dev").join("clause-dev");
+        std::fs::create_dir_all(ws.as_path()).unwrap();
+        let folded = home.join("Dev").join("CLAUSE-DEV");
+        if !folded.as_path().is_dir() {
+            return; // the filesystem does not fold; nothing to test here
+        }
+
+        let after = Denied::under_home(&home).permitting(&folded);
+        assert!(
+            after.check(&ws.join(".claude"), "aggregating").is_ok(),
+            "a case-folded spelling of the same place did not permit it"
+        );
+    }
+
+    #[test]
+    fn permitting_something_the_list_does_not_name_changes_nothing() {
+        let d = tempfile::tempdir().unwrap();
+        let home = AbsPath::new(d.path().canonicalize().unwrap()).unwrap();
+        std::fs::create_dir_all(home.join(".claude").as_path()).unwrap();
+        let elsewhere = home.join("unrelated");
+        std::fs::create_dir_all(elsewhere.as_path()).unwrap();
+
+        let after = Denied::under_home(&home).permitting(&elsewhere);
+        assert!(after.check(&home.join(".claude"), "writing").is_err());
+        assert!(after
+            .check(&home.join("Dev").join("clause-dev"), "writing")
+            .is_err());
     }
 }

@@ -235,14 +235,18 @@ fn a_participant_may_aggregate_into_their_own_workspace() {
     // **The other half of op's answer, and the reason deny item one is not an
     // absolute here.** The central clone is one participant's workspace: denied
     // to every other participant, and permitted to its owner, because nobody is
-    // denied their own. Without this the previous round's shape refused the
-    // configuration that actually ships and `agent regen` exited 1 on every real
-    // invocation.
+    // denied their own.
+    //
+    // The workspace sits at `<home>/Dev/clause-dev` deliberately. That is the
+    // one path the home-derived deny list hard-codes, so it is the only fixture
+    // that reaches the branch this test is about; a workspace anywhere else
+    // passes without the permission existing at all, which is what the previous
+    // fixture did while its comment described this case.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join(".claude")).unwrap();
 
-    let mine = dir.path().join("mine");
+    let mine = home.join("Dev").join("clause-dev");
     std::fs::create_dir_all(&mine).unwrap();
 
     let cfg = dir.path().join("homma.toml");
@@ -279,8 +283,16 @@ workspace = "{}"
         .output()
         .expect("the binary runs");
     let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // succeeded, rather than merely not having said one particular sentence. A
+    // run that fails for any other reason also omits it.
     assert!(
-        !stderr.contains("nothing may be written there"),
-        "a participant's own workspace is not denied to them: {stderr}"
+        out.status.success(),
+        "aggregating into a participant's own workspace failed: {stderr}"
+    );
+    // and it wrote, rather than succeeding by finding nothing to do.
+    assert!(
+        mine.join(".claude").join("settings.json").is_file(),
+        "the pass reported success and wrote no settings: {stderr}"
     );
 }

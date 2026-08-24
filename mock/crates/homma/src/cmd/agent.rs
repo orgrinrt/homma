@@ -599,7 +599,11 @@ fn denied_for_aggregating(
     cfg: &Config,
     workspace: &homma_api::AbsPath,
 ) -> Result<homma_api::Denied> {
-    let mut denied = homma_api::Denied::from_env()?;
+    // The home-derived list names one particular workspace without knowing
+    // whose it is, so the exclusion the registry loop performs below has to
+    // cover it too, or aggregating into that workspace is refused by an entry
+    // describing it as somebody else's.
+    let mut denied = homma_api::Denied::from_env()?.permitting(workspace);
     let Some(org) = cfg.org.as_ref() else {
         return Ok(denied);
     };
