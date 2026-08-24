@@ -14,9 +14,9 @@ use tempfile::TempDir;
 fn init_with_one_commit() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     gix::init(dir.path()).expect("git init");
-    // Use the git CLI for commit creation. gix doesn't ship a high-level
-    // commit-from-tree-and-message API in 0.66; the CLI keeps the fixture
-    // simple and unambiguous.
+    // The git CLI builds the fixture rather than gix. Keeps it simple, and it
+    // means the repository these tests drive was made by the thing that has to
+    // be able to read it afterwards.
     run_git(dir.path(), &["config", "user.name", "Test"]);
     run_git(dir.path(), &["config", "user.email", "test@example.com"]);
     run_git(dir.path(), &["config", "commit.gpgsign", "false"]);
@@ -47,6 +47,28 @@ fn run_git(cwd: &Path, args: &[&str]) {
         .status()
         .expect("git invocable");
     assert!(status.success(), "git {args:?} failed in {cwd:?}");
+}
+
+/// Run git and return its trimmed stdout, failing loudly on a non-zero exit.
+///
+/// Separate from `run_git` because the point here is the answer, not that the
+/// command worked, and a silent empty string would make an assertion pass for
+/// the wrong reason.
+fn git_stdout(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap_or_else(|e| panic!("running git {args:?}: {e}"));
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("git stdout is utf8")
+        .trim()
+        .to_string()
 }
 
 #[test]
@@ -143,6 +165,60 @@ fn checkout_unknown_branch_fails() {
     let mut repo = GixRepo::open(dir.path()).expect("open");
     let err = repo.checkout("nope").unwrap_err();
     assert!(format!("{err}").contains("branch not found"));
+}
+
+#[test]
+fn what_add_remote_writes_is_what_git_itself_reads_back() {
+    // `remotes_round_trip_add_then_remove` writes through gix and reads back
+    // through gix, so a wrong key spelling agrees with itself and passes. Ask
+    // git instead, which is the implementation that actually has to read this
+    // file, and check the fetch refspec too, which nothing else asserts at all.
+    let dir = init_with_one_commit();
+    let mut repo = GixRepo::open(dir.path()).expect("open");
+    repo.add_remote("upstream", "https://example.invalid/u.git")
+        .expect("add upstream");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["remote", "get-url", "upstream"]),
+        "https://example.invalid/u.git",
+        "git could not read back the url gix wrote"
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["config", "--get", "remote.upstream.fetch"]),
+        "+refs/heads/*:refs/remotes/upstream/*",
+        "the fetch refspec is missing or malformed"
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["remote"]),
+        "upstream",
+        "git sees a different set of remotes than the one that was written"
+    );
+}
+
+#[test]
+fn adding_a_remote_twice_leaves_one_section_and_the_second_url() {
+    // The section is removed before it is written, so a second add replaces
+    // rather than duplicating. A duplicate is invisible to `git remote get-url`,
+    // which answers from the first match, so count the sections instead.
+    let dir = init_with_one_commit();
+    let mut repo = GixRepo::open(dir.path()).expect("open");
+    repo.add_remote("origin", "https://example.invalid/one.git")
+        .expect("first add");
+    repo.add_remote("origin", "https://example.invalid/two.git")
+        .expect("second add");
+
+    let config =
+        std::fs::read_to_string(dir.path().join(".git").join("config")).expect("read .git/config");
+    assert_eq!(
+        config.matches("[remote \"origin\"]").count(),
+        1,
+        "the remote section was duplicated:\n{config}"
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["remote", "get-url", "origin"]),
+        "https://example.invalid/two.git",
+        "the second add did not replace the first url"
+    );
 }
 
 #[test]

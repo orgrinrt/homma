@@ -1,0 +1,89 @@
+# cargo-deny configuration. Checks dependency advisories (RustSec), license
+# compatibility across the full transitive graph, dependency bans, and source
+# registries. Run with `cargo deny check`; mockspace's pre-push gate runs it
+# best-effort when cargo-deny is installed (opt out with `deny_check = false`
+# in mockspace.toml).
+
+# `targets` filters which platform's dependency tree cargo-deny analyses; it
+# takes rustc target triples, not cargo build-target names. An empty list
+# evaluates the graph for every platform, so a license or advisory problem on
+# any target is caught, not just the host's.
+[graph]
+targets = []
+exclude = []
+all-features = true
+no-default-features = false
+features = []
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-path = "$CARGO_HOME/advisory-dbs"
+db-urls = ["https://github.com/RustSec/advisory-db"]
+ignore = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+# Both of these are Mozilla's CA root certificates from the rustls project,
+# `webpki-roots` as parsed trust anchors and `webpki-root-certs` as self-signed
+# X.509, and they ship the identical licence file. CDLA-Permissive-2.0 is a
+# data-sharing agreement rather than a software licence. Its only obligation is
+# section 2.1, ship the agreement text alongside the data, which cargo already
+# does since the LICENSE sits inside the published crate. Section 3.1 disclaims
+# any obligation on Results, so nothing reaches this repo's own MPL-2.0 sources.
+#
+# Named rather than allowlisted, so a future crate carrying the same licence for
+# a reason nobody has looked at still stops the gate. That is not theoretical:
+# the `gix` bump swapped one of these two in and the gate caught it, which an
+# allowlist would have waved through.
+exceptions = [
+    { name = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    { name = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[licenses.private]
+ignore = false
+registries = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace-internal crates are path deps without a version; that is not a
+# real wildcard hazard, so allow it.
+allow-wildcard-paths = true
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+unknown-registry = "deny"
+unknown-git = "deny"
+# Codeberg (Forgejo) is not a built-in allow-org provider, so its org sources
+# are listed here as URL prefixes. Add hiisi-digital's codeberg org when it
+# migrates.
+allow-git = ["https://codeberg.org/orgrinrt"]
+
+# Only these git hosts + orgs are allowed as crate sources. allow-org supports
+# the three built-in providers; codeberg goes in allow-git above.
+[sources.allow-org]
+github = ["orgrinrt", "hiisi-digital"]
+gitlab = []
+bitbucket = []
