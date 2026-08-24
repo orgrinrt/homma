@@ -47,10 +47,17 @@ fn from_env(forge: &ForgeConfig) -> Option<String> {
 /// it. A trailing newline carried into an `Authorization` header is a header
 /// the forge rejects for a reason nobody can see.
 ///
-/// Silent on failure. A command that is missing, that exits non-zero, or that
-/// prints nothing leaves the client anonymous, and the caller reports that as
-/// the credential problem it is. Printing here would put a diagnostic in the
-/// middle of whatever output the command the operator actually ran produces.
+/// A first line carrying internal whitespace is not taken. No forge credential
+/// contains a space, and the things that do look like one are a helper printing
+/// `Password: hunter2`, an error it wrote to stdout instead of stderr, or a
+/// prompt. Sending any of those as a bearer token asks the forge to reject a
+/// value that the operator can then find in their process list.
+///
+/// Silent on failure. A command that is missing, that exits non-zero, that
+/// prints nothing, or that prints something that is not a token leaves the
+/// client anonymous, and the caller reports that as the credential problem it
+/// is. Printing here would put a diagnostic in the middle of whatever output
+/// the command the operator actually ran produces.
 fn from_command(argv: Option<&[String]>) -> Option<String> {
     let (program, args) = argv?.split_first()?;
     let out = Command::new(program).args(args).output().ok()?;
@@ -63,7 +70,10 @@ fn from_command(argv: Option<&[String]>) -> Option<String> {
         .unwrap_or("")
         .trim()
         .to_string();
-    (!token.is_empty()).then_some(token)
+    if token.is_empty() || token.chars().any(char::is_whitespace) {
+        return None;
+    }
+    Some(token)
 }
 
 #[cfg(test)]

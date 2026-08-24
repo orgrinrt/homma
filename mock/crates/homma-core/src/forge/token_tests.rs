@@ -62,6 +62,29 @@ fn surrounding_whitespace_is_not_part_of_the_token() {
 }
 
 #[test]
+fn a_first_line_carrying_a_space_is_not_a_token() {
+    // No forge credential has a space in it. What does look like this is a
+    // helper printing a prompt, or writing its error to stdout instead of
+    // stderr, and sending either as a bearer token puts it in the process list
+    // for a request the forge was always going to reject.
+    assert_eq!(resolve(&forge(None, Some(&["printf", "Password: hunter2\n"]))), None);
+    assert_eq!(
+        resolve(&forge(None, Some(&["printf", "error: not logged in\n"]))),
+        None
+    );
+    // A tab is whitespace too, and is what a helper printing columns emits.
+    assert_eq!(resolve(&forge(None, Some(&["printf", "tok\tstale\n"]))), None);
+}
+
+#[test]
+fn a_token_that_merely_looks_unusual_is_still_taken() {
+    // The control for the check above. Real credentials carry punctuation, and
+    // rejecting on anything broader than whitespace would refuse them.
+    let f = forge(None, Some(&["printf", "ghp_aB3-x_9.z~qQ\n"]));
+    assert_eq!(resolve(&f).as_deref(), Some("ghp_aB3-x_9.z~qQ"));
+}
+
+#[test]
 fn a_command_that_fails_leaves_the_client_anonymous() {
     // `auth token <name>` exits 1 with its message on stderr when nothing is
     // stored, which is the ordinary case on a machine that has not minted one.

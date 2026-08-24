@@ -98,10 +98,17 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
     in_use.sort();
     in_use.dedup();
 
-    // Which forges can be believed. A forge is usable only when its credential
-    // is one the forge accepts, and every reason it might not be gets its own
-    // finding, because they are different things to go and fix.
-    let mut usable: Vec<&String> = Vec::new();
+    // Which forges can be believed, paired with the client that established it.
+    // A forge is usable only when its credential is one the forge accepts, and
+    // every reason it might not be gets its own finding, because they are
+    // different things to go and fix.
+    //
+    // The client is kept rather than dropped. Constructing one resolves the
+    // credential, and a credential that comes from a command means a process,
+    // so a client built per repo is a process per repo. Nothing about a repo
+    // changes which client would serve it: the credential and the base url
+    // belong to the forge.
+    let mut usable: Vec<(&String, Box<dyn Forge>)> = Vec::new();
     for forge in in_use {
         let Some(forge_cfg) = cfg.forges.get(forge) else {
             // `check` already reported this as `repo_forge_undeclared`.
@@ -125,8 +132,9 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
         // credential at all, so without this probe a bad token turns every
         // private repo into a reported absence and the report reads as a
         // manifest defect.
-        match make(forge_cfg).credential_works() {
-            Ok(true) => usable.push(forge),
+        let client = make(forge_cfg);
+        match client.credential_works() {
+            Ok(true) => usable.push((forge, client)),
             Ok(false) => {
                 findings.push(Finding {
                     level:   Level::Warn,
@@ -153,13 +161,10 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
     }
 
     for (name, repo) in &cfg.repos {
-        if !usable.contains(&&repo.forge) {
-            continue;
-        }
-        let Some(forge_cfg) = cfg.forges.get(&repo.forge) else {
+        let Some((_, client)) = usable.iter().find(|(f, _)| *f == &repo.forge) else {
             continue;
         };
-        match make(forge_cfg).repo_exists(&repo.owner, name) {
+        match client.repo_exists(&repo.owner, name) {
             Ok(true) => {},
             Ok(false) => {
                 findings.push(Finding {
@@ -379,6 +384,71 @@ local_path = "somerepo"
 "#
         ))
         .unwrap()
+    }
+
+    /// The same manifest shape, with three repos on the one usable forge, so
+    /// the count of constructions and the count of repos cannot be confused
+    /// for each other.
+    fn cfg_three_repos(token_var: &str) -> Config {
+        Config::parse(&format!(
+            r#"
+content_repo = "c"
+[workspace]
+name = "w"
+[forges.gh]
+kind = "github"
+base_url = "https://example.invalid"
+api_url = "https://example.invalid/api"
+token_env = "{token_var}"
+[repos.one]
+forge = "gh"
+owner = "someone"
+local_path = "one"
+[repos.two]
+forge = "gh"
+owner = "someone"
+local_path = "two"
+[repos.three]
+forge = "gh"
+owner = "someone"
+local_path = "three"
+"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_client_is_built_once_per_forge_and_not_once_per_repo() {
+        // Constructing a client resolves the credential, and a credential that
+        // comes from a command is a process. So this counts what a manifest of
+        // twenty-four repos would actually spawn.
+        //
+        // No other test in this file can see the difference: the findings are
+        // identical whether the client is built once or four times, and
+        // findings are all any of them assert.
+        let var = "HOMMA_TEST_ONE_CLIENT_PER_FORGE";
+        // SAFETY: single-threaded within this test, and the variable name is
+        // unique to it so no other test observes the change.
+        unsafe { std::env::set_var(var, "t") };
+        let built = std::cell::Cell::new(0usize);
+        let findings = resolve_with(&cfg_three_repos(var), &|_fc| {
+            built.set(built.get() + 1);
+            Box::new(Stub {
+                credential: Ok(true),
+                exists:     true,
+            })
+        });
+        unsafe { std::env::remove_var(var) };
+
+        assert_eq!(
+            built.get(),
+            1,
+            "one forge is in use, so one client should have been built"
+        );
+        assert!(
+            findings.is_empty(),
+            "a usable forge that has every repo should report nothing: {findings:?}"
+        );
     }
 
     fn run(token_var: &str, stub: Stub) -> Vec<Finding> {
