@@ -272,7 +272,10 @@ mod tests {
         std::fs::write(&at, "[workspace]\nname = \"w\"\n").unwrap();
 
         let cfg = Config::from_path(&at).unwrap();
-        assert_eq!(cfg.workspace.path, ws, "the default did not anchor on the config");
+        assert_eq!(
+            cfg.workspace.path, ws,
+            "the default did not anchor on the config"
+        );
         assert!(cfg.workspace.path.is_absolute());
     }
 

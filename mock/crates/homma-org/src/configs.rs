@@ -241,7 +241,10 @@ impl std::fmt::Display for Finding {
                 write!(f, "{n} is not there and nothing says which repos want it")
             },
             Self::NoVariantFits(n, why) => {
-                write!(f, "{n} is not there and the shared copy does not fit: {why}")
+                write!(
+                    f,
+                    "{n} is not there and the shared copy does not fit: {why}"
+                )
             },
             Self::Failed(n, e) => write!(f, "could not place {n}: {e}"),
         }
@@ -381,7 +384,11 @@ mod tests {
     fn a_repo_whose_copy_matches_is_reported_and_not_rewritten() {
         let f = Fixture::new(&[("deny.toml", "[bans]\nmultiple-versions = \"deny\"\n")]);
         let repo = f.repo("arvo", true);
-        std::fs::write(repo.as_path().join("deny.toml"), "[bans]\nmultiple-versions = \"deny\"\n").unwrap();
+        std::fs::write(
+            repo.as_path().join("deny.toml"),
+            "[bans]\nmultiple-versions = \"deny\"\n",
+        )
+        .unwrap();
         let before = std::fs::metadata(repo.as_path().join("deny.toml"))
             .unwrap()
             .modified()
@@ -406,7 +413,11 @@ mod tests {
         // undo somebody's exception.
         let f = Fixture::new(&[("deny.toml", "[bans]\nmultiple-versions = \"deny\"\n")]);
         let repo = f.repo("arvo", true);
-        std::fs::write(repo.as_path().join("deny.toml"), "[bans]\nmultiple-versions = \"warn\"\n").unwrap();
+        std::fs::write(
+            repo.as_path().join("deny.toml"),
+            "[bans]\nmultiple-versions = \"warn\"\n",
+        )
+        .unwrap();
         let found = ensure(&f.root, &repo, &f.templates());
         assert_eq!(found, vec![Finding::Differs("deny.toml".into())]);
         assert_eq!(
@@ -525,7 +536,11 @@ mod tests {
     fn a_rust_repo_pinned_to_nightly_gets_the_nightly_only_config() {
         let f = Fixture::new(&[("rustfmt.toml", "wrap_comments = true\n")]);
         let repo = f.repo("arvo", true);
-        f.pin("arvo", "", "[toolchain]\nchannel = \"nightly-2026-05-28\"\n");
+        f.pin(
+            "arvo",
+            "",
+            "[toolchain]\nchannel = \"nightly-2026-05-28\"\n",
+        );
         assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
             Finding::Placed("rustfmt.toml".into())
         ]);
@@ -581,14 +596,22 @@ mod tests {
         let f = Fixture::new(&[("rustfmt.toml", "wrap_comments = true\n")]);
         let repo = f.repo("hilavitkutin", false);
         std::fs::create_dir_all(repo.as_path().join("mock")).unwrap();
-        std::fs::write(repo.as_path().join("mock").join("Cargo.toml"), "[workspace]\n").unwrap();
+        std::fs::write(
+            repo.as_path().join("mock").join("Cargo.toml"),
+            "[workspace]\n",
+        )
+        .unwrap();
         assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
             Finding::NoVariantFits(
                 "rustfmt.toml".into(),
                 "it sets nightly-only options and this repo pins no nightly toolchain".into()
             )
         ]);
-        f.pin("hilavitkutin", "mock", "[toolchain]\nchannel = \"nightly\"\n");
+        f.pin(
+            "hilavitkutin",
+            "mock",
+            "[toolchain]\nchannel = \"nightly\"\n",
+        );
         assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
             Finding::Placed("rustfmt.toml".into())
         ]);

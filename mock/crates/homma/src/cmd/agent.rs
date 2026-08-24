@@ -701,16 +701,12 @@ pub mod regen {
             ))
             .unwrap();
 
-            let out = regen(
-                &cfg,
-                None,
-                Opts {
-                    skip_cargo_mock: true,
-                    skip_configs: true,
-                    skip_aggregate: false,
-                    ..Default::default()
-                },
-            )
+            let out = regen(&cfg, None, Opts {
+                skip_cargo_mock: true,
+                skip_configs: true,
+                skip_aggregate: false,
+                ..Default::default()
+            })
             .unwrap();
 
             let absent = out

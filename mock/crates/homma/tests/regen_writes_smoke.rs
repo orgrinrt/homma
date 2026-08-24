@@ -373,8 +373,11 @@ fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_o
     for (name, pinned) in [("arvo", true), ("renki", false)] {
         let repo = ws.join(name);
         std::fs::create_dir_all(&repo).unwrap();
-        std::fs::write(repo.join("Cargo.toml"), format!("[package]\nname = \"{name}\"\n"))
-            .unwrap();
+        std::fs::write(
+            repo.join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\n"),
+        )
+        .unwrap();
         if pinned {
             std::fs::write(
                 repo.join("rust-toolchain.toml"),
