@@ -88,13 +88,27 @@ pub fn api_root(forge: &ForgeConfig) -> String {
 /// assert_eq!(host_of("https://codeberg.org/"), "codeberg.org");
 /// assert_eq!(host_of("https://codeberg.org/api/v1"), "codeberg.org");
 /// assert_eq!(host_of("codeberg.org"), "codeberg.org");
+/// assert_eq!(host_of("https://user:pw@codeberg.org/x"), "codeberg.org");
 /// ```
+///
+/// Userinfo is dropped rather than carried. A host is what this names, and a
+/// url that happens to carry credentials would otherwise hand them to whatever
+/// reads the result. The token command takes the host as an argument, and an
+/// argument is visible in `ps` to every process on the machine.
+///
+/// The split is on the **last** `@` in the authority, which is where RFC 3986
+/// puts the boundary: a `@` inside userinfo is percent-encoded, so the last one
+/// is the separator.
 pub fn host_of(url: &str) -> &str {
     let after_scheme = match url.find("://") {
         Some(i) => &url[i + 3 ..],
         None => url,
     };
-    after_scheme.split('/').next().unwrap_or(after_scheme)
+    let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
+    match authority.rfind('@') {
+        Some(i) => &authority[i + 1 ..],
+        None => authority,
+    }
 }
 
 fn trim_trailing_slash(s: &str) -> &str {
@@ -112,6 +126,7 @@ mod tests {
             base_url:  base.into(),
             api_url:   api.into(),
             token_env: None,
+            token_cmd: None,
         }
     }
 
@@ -122,6 +137,28 @@ mod tests {
         assert_eq!(host_of("https://codeberg.org/api/v1"), "codeberg.org");
         assert_eq!(host_of("http://localhost:3000"), "localhost:3000");
         assert_eq!(host_of("codeberg.org"), "codeberg.org");
+    }
+
+    #[test]
+    fn host_of_drops_userinfo_rather_than_handing_it_on() {
+        // The token command takes the host as an argument, and an argument is
+        // in `ps` for every process on the machine. A url carrying credentials
+        // must not reach it.
+        assert_eq!(host_of("https://user:pw@codeberg.org"), "codeberg.org");
+        assert_eq!(
+            host_of("https://user:pw@codeberg.org/api/v1"),
+            "codeberg.org"
+        );
+        assert_eq!(host_of("https://user@codeberg.org"), "codeberg.org");
+        assert_eq!(host_of("https://user:pw@localhost:3000"), "localhost:3000");
+        // The last `@` is the separator, since one inside userinfo is
+        // percent-encoded. A naive split on the first would keep half a
+        // password in the host.
+        assert_eq!(host_of("https://us%40er:pw@codeberg.org"), "codeberg.org");
+        // Without a scheme it is still an authority and still stripped.
+        assert_eq!(host_of("user:pw@codeberg.org/x"), "codeberg.org");
+        // And a path that contains an `@` is not userinfo.
+        assert_eq!(host_of("https://codeberg.org/a@b"), "codeberg.org");
     }
 
     #[test]

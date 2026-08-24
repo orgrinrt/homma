@@ -98,10 +98,17 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
     in_use.sort();
     in_use.dedup();
 
-    // Which forges can be believed. A forge is usable only when its credential
-    // is one the forge accepts, and every reason it might not be gets its own
-    // finding, because they are different things to go and fix.
-    let mut usable: Vec<&String> = Vec::new();
+    // Which forges can be believed, paired with the client that established it.
+    // A forge is usable only when its credential is one the forge accepts, and
+    // every reason it might not be gets its own finding, because they are
+    // different things to go and fix.
+    //
+    // The client is kept rather than dropped. Constructing one resolves the
+    // credential, and a credential that comes from a command means a process,
+    // so a client built per repo is a process per repo. Nothing about a repo
+    // changes which client would serve it: the credential and the base url
+    // belong to the forge.
+    let mut usable: Vec<(&String, Box<dyn Forge>)> = Vec::new();
     for forge in in_use {
         let Some(forge_cfg) = cfg.forges.get(forge) else {
             // `check` already reported this as `repo_forge_undeclared`.
@@ -112,9 +119,10 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
                 level:   Level::Warn,
                 kind:    "forge_answers_are_not_evidence".into(),
                 message: format!(
-                    "forge `{forge}` has no token in the environment, so a private repo there \
-                     is indistinguishable from one that does not exist; not asking about its \
-                     repos"
+                    "no credential for forge `{forge}`: {}. A private repo there is \
+                     indistinguishable from one that does not exist, so its repos were not \
+                     asked about",
+                    where_it_looked(forge_cfg)
                 ),
             });
             continue;
@@ -124,8 +132,9 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
         // credential at all, so without this probe a bad token turns every
         // private repo into a reported absence and the report reads as a
         // manifest defect.
-        match make(forge_cfg).credential_works() {
-            Ok(true) => usable.push(forge),
+        let client = make(forge_cfg);
+        match client.credential_works() {
+            Ok(true) => usable.push((forge, client)),
             Ok(false) => {
                 findings.push(Finding {
                     level:   Level::Warn,
@@ -152,13 +161,10 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
     }
 
     for (name, repo) in &cfg.repos {
-        if !usable.contains(&&repo.forge) {
-            continue;
-        }
-        let Some(forge_cfg) = cfg.forges.get(&repo.forge) else {
+        let Some((_, client)) = usable.iter().find(|(f, _)| *f == &repo.forge) else {
             continue;
         };
-        match make(forge_cfg).repo_exists(&repo.owner, name) {
+        match client.repo_exists(&repo.owner, name) {
             Ok(true) => {},
             Ok(false) => {
                 findings.push(Finding {
@@ -217,6 +223,17 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
     }
 
     for (name, forge) in &cfg.forges {
+        // Only where the variable is the sole declared source. A profile
+        // naming a `token_cmd` has said where its credential comes from, so an
+        // unset variable is the ordinary case rather than a gap, and warning
+        // about it told the operator that mutating operations would fail
+        // unauthorized on a forge `--forge` then authenticated to in the same
+        // run. Running the command here would cost this function the offline
+        // purity that is the reason it is separate; `--forge` reports a command
+        // that produces nothing, and names it.
+        if forge.token_cmd.is_some() {
+            continue;
+        }
         if let Some(var) = forge.token_env.as_deref() {
             match std::env::var(var) {
                 Ok(v) if !v.is_empty() => {}
@@ -263,16 +280,32 @@ impl HumanRender for VerifyReport {
     }
 }
 
-/// Whether the forge's configured token is present and non-empty.
+/// Whether a credential can be obtained for this forge at all.
 ///
-/// A forge that declares no `token_env` at all is treated the same as one whose
-/// variable is unset: there is no credential either way.
-fn has_a_token(forge: &homma_core::config::ForgeConfig) -> bool {
-    forge
-        .token_env
-        .as_deref()
-        .and_then(|var| std::env::var(var).ok())
-        .is_some_and(|v| !v.is_empty())
+/// Both sources, because a forge configured only with a `token_cmd` has a
+/// perfectly good credential and reporting it as tokenless would send the
+/// operator to set a variable the manifest never asked for.
+///
+/// A forge that declares neither is treated the same as one whose variable is
+/// unset: no credential either way.
+/// The sources this forge declares, named in the order they are tried, so a
+/// reader is told where to go rather than being told a credential is missing.
+fn where_it_looked(forge: &ForgeConfig) -> String {
+    let mut tried = Vec::new();
+    if let Some(var) = &forge.token_env {
+        tried.push(format!("`{var}` is unset or empty"));
+    }
+    if let Some(argv) = &forge.token_cmd {
+        tried.push(format!("`{}` produced none", argv.join(" ")));
+    }
+    if tried.is_empty() {
+        return "it declares neither `token_env` nor `token_cmd`".to_string();
+    }
+    tried.join(", and ")
+}
+
+fn has_a_token(forge: &ForgeConfig) -> bool {
+    homma_core::forge::token::resolve(forge).is_some()
 }
 
 #[cfg(test)]
@@ -353,6 +386,71 @@ local_path = "somerepo"
         .unwrap()
     }
 
+    /// The same manifest shape, with three repos on the one usable forge, so
+    /// the count of constructions and the count of repos cannot be confused
+    /// for each other.
+    fn cfg_three_repos(token_var: &str) -> Config {
+        Config::parse(&format!(
+            r#"
+content_repo = "c"
+[workspace]
+name = "w"
+[forges.gh]
+kind = "github"
+base_url = "https://example.invalid"
+api_url = "https://example.invalid/api"
+token_env = "{token_var}"
+[repos.one]
+forge = "gh"
+owner = "someone"
+local_path = "one"
+[repos.two]
+forge = "gh"
+owner = "someone"
+local_path = "two"
+[repos.three]
+forge = "gh"
+owner = "someone"
+local_path = "three"
+"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_client_is_built_once_per_forge_and_not_once_per_repo() {
+        // Constructing a client resolves the credential, and a credential that
+        // comes from a command is a process. So this counts what a manifest of
+        // twenty-four repos would actually spawn.
+        //
+        // No other test in this file can see the difference: the findings are
+        // identical whether the client is built once or four times, and
+        // findings are all any of them assert.
+        let var = "HOMMA_TEST_ONE_CLIENT_PER_FORGE";
+        // SAFETY: single-threaded within this test, and the variable name is
+        // unique to it so no other test observes the change.
+        unsafe { std::env::set_var(var, "t") };
+        let built = std::cell::Cell::new(0usize);
+        let findings = resolve_with(&cfg_three_repos(var), &|_fc| {
+            built.set(built.get() + 1);
+            Box::new(Stub {
+                credential: Ok(true),
+                exists:     true,
+            })
+        });
+        unsafe { std::env::remove_var(var) };
+
+        assert_eq!(
+            built.get(),
+            1,
+            "one forge is in use, so one client should have been built"
+        );
+        assert!(
+            findings.is_empty(),
+            "a usable forge that has every repo should report nothing: {findings:?}"
+        );
+    }
+
     fn run(token_var: &str, stub: Stub) -> Vec<Finding> {
         resolve_with(&cfg(token_var), &|_fc| {
             Box::new(Stub {
@@ -372,6 +470,52 @@ local_path = "somerepo"
 
     fn kinds(f: &[Finding]) -> Vec<&str> {
         f.iter().map(|f| f.kind.as_str()).collect()
+    }
+
+    fn offline(body: &str) -> Vec<String> {
+        check(&Config::parse(body).unwrap())
+            .findings
+            .into_iter()
+            .map(|f| f.kind)
+            .collect()
+    }
+
+    const VARIABLE_ONLY: &str = r#"
+[workspace]
+name = "w"
+[forges.gh]
+kind = "github"
+base_url = "https://example.invalid"
+api_url = "https://example.invalid/api"
+token_env = "HOMMA_TEST_OFFLINE_UNSET"
+"#;
+
+    #[test]
+    fn a_variable_that_is_the_only_declared_source_is_still_reported_when_unset() {
+        // The control on the test below, and a real finding on its own: a
+        // manifest saying the credential comes from this variable, about a
+        // variable holding nothing.
+        unsafe { std::env::remove_var("HOMMA_TEST_OFFLINE_UNSET") };
+        assert!(offline(VARIABLE_ONLY).contains(&"forge_token_unset".to_string()));
+
+        unsafe { std::env::set_var("HOMMA_TEST_OFFLINE_UNSET", "") };
+        assert!(offline(VARIABLE_ONLY).contains(&"forge_token_empty".to_string()));
+        unsafe { std::env::remove_var("HOMMA_TEST_OFFLINE_UNSET") };
+    }
+
+    #[test]
+    fn a_profile_naming_a_command_is_not_reported_for_an_unset_variable() {
+        // The defect: against the workspace's own manifest this warned that
+        // mutating operations would fail unauthorized on a forge that `--forge`
+        // authenticated to successfully in the same run.
+        unsafe { std::env::remove_var("HOMMA_TEST_OFFLINE_UNSET") };
+        let with_cmd = format!("{VARIABLE_ONLY}token_cmd = [\"gh\", \"auth\", \"token\"]\n");
+        let kinds = offline(&with_cmd);
+        assert!(
+            !kinds.contains(&"forge_token_unset".to_string())
+                && !kinds.contains(&"forge_token_empty".to_string()),
+            "{kinds:?}"
+        );
     }
 
     #[test]

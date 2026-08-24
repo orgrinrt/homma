@@ -34,15 +34,15 @@ pub struct ForgejoClient {
 impl ForgejoClient {
     /// Construct from a [`ForgeConfig`].
     ///
-    /// Reads the token from the env var named by `forge.token_env` when set.
-    /// A missing env var produces a tokenless client (read-only ops still work
-    /// for public repos; mutating ops return [`ForgeError::Unauthorized`]).
+    /// Takes the token from the environment variable named by
+    /// `forge.token_env`, or from `forge.token_cmd` when that names none or
+    /// holds nothing. See [`crate::forge::token`].
+    ///
+    /// Neither producing one gives a tokenless client, which is anonymous
+    /// access rather than an error: read-only operations still work for public
+    /// repos, and mutating ones return [`ForgeError::Unauthorized`].
     pub fn new(forge: &ForgeConfig) -> Self {
-        let token = forge
-            .token_env
-            .as_deref()
-            .and_then(|name| std::env::var(name).ok());
-        Self::with_token_opt(api_root(forge), token)
+        Self::with_token_opt(api_root(forge), crate::forge::token::resolve(forge))
     }
 
     /// Construct with an explicit token override.

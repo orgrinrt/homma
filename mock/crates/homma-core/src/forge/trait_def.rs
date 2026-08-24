@@ -52,9 +52,17 @@ pub trait Forge {
     /// A negative answer from [`Self::repo_exists`] is evidence only when the
     /// asker could have seen a positive one. Both forges answer `404` for a
     /// private repo the credential cannot see, identically to one that is not
-    /// there, so a missing, expired, revoked or under-scoped token turns every
-    /// private repo into a false absence. Checking that a token is *set* does
-    /// not cover any of the last three.
+    /// there, so a missing, expired or revoked token turns every private repo
+    /// into a false absence. Checking that a token is *set* covers none of
+    /// those, and this does.
+    ///
+    /// **Scope is not covered, and the shipped clients cannot cover it.** Both
+    /// ask `GET /user`, which answers whether the forge knows the credential,
+    /// not what the credential is allowed to read. A token that authenticates
+    /// and lacks repository read still turns a private repo into a reported
+    /// absence, and this returns `Ok(true)` for it. Covering that means probing
+    /// a repository the caller already expects to be there, which is a
+    /// different question with a different signature.
     ///
     /// `Ok(false)` is the forge rejecting the credential. Anything that leaves
     /// the question unanswered, a network failure or an unexpected status, is
