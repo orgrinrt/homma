@@ -15,12 +15,23 @@ pub mod repo;
 pub mod testing;
 
 pub use config::{
-    Config, ConfigError, Defaults, ForgeConfig, ForgeKind, RepoConfig, WorkspaceConfig,
+    Config,
+    ConfigError,
+    Defaults,
+    ForgeConfig,
+    ForgeKind,
+    RepoConfig,
+    WorkspaceConfig,
 };
 pub use forge::{
-    CreateRepoSpec, Forge, ForgeError, ForgejoClient, GitHubClient, RepoMetadata, Visibility,
+    CreateRepoSpec,
+    Forge,
+    ForgeError,
+    ForgejoClient,
+    GitHubClient,
+    RepoMetadata,
+    Visibility,
 };
-pub use repo::{Branch, GixRepo, MirrorOpts, Remote, RepoError, RepoOps, Status, TrackingStatus};
-
 pub use mockspace_config as mockspace;
 pub use mockspace_template as template;
+pub use repo::{Branch, GixRepo, MirrorOpts, Remote, RepoError, RepoOps, Status, TrackingStatus};

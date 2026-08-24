@@ -6,22 +6,22 @@ use homma_core::Config;
 pub mod status {
     use std::io::Write;
 
-    use anyhow::{anyhow, Context};
+    use anyhow::{Context, anyhow};
     use homma_core::{GixRepo, RepoOps};
     use serde::Serialize;
 
     use super::*;
     use crate::cli::OutputFormat;
     use crate::cmd::util;
-    use crate::output::{emit, HumanRender};
+    use crate::output::{HumanRender, emit};
 
     #[derive(Debug, Serialize)]
     pub struct RepoStatusReport {
-        pub repo: String,
-        pub local_path: String,
-        pub current_branch: Option<String>,
+        pub repo:             String,
+        pub local_path:       String,
+        pub current_branch:   Option<String>,
         pub worktree_changes: usize,
-        pub clean: bool,
+        pub clean:            bool,
     }
 
     impl HumanRender for RepoStatusReport {

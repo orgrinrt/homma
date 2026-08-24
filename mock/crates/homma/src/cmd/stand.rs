@@ -5,10 +5,11 @@
 //! for one of them are different jobs against different things: one reads
 //! configuration, the other clones repositories and writes into trees.
 
-use super::org::DISCIPLINE;
 use anyhow::{Context, Result};
 use homma_api::{AbsPath, ContainedPath, Git, Staffing, Workspace};
-use homma_org::{prepare, provision, write_definitions, Layout, Registry};
+use homma_org::{Layout, Registry, prepare, provision, write_definitions};
+
+use super::org::DISCIPLINE;
 
 /// Refuse a path that lies inside a repository which is not itself.
 ///
@@ -40,13 +41,13 @@ fn refuse_if_nested<G: Git>(git: &G, path: &AbsPath, what: &str) -> Result<()> {
 /// What standing an identity up produced.
 #[derive(Debug)]
 pub struct StoodUp {
-    pub handle: String,
-    pub home: ContainedPath,
+    pub handle:          String,
+    pub home:            ContainedPath,
     /// The workspace clone itself, which is what the identity commits in.
-    pub workspace: AbsPath,
+    pub workspace:       AbsPath,
     /// False when the workspace already held the content repository.
-    pub cloned: bool,
-    pub definition: ContainedPath,
+    pub cloned:          bool,
+    pub definition:      ContainedPath,
     pub twin_definition: ContainedPath,
 }
 
@@ -68,25 +69,31 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
         .with_context(|| format!("no identity `{handle}` in the registry"))?;
 
     match id.staffing() {
-        Staffing::Staffed => {}
-        Staffing::NoWorkspace => anyhow::bail!(
-            "`{handle}` holds a role that owns no workspace, so there is nothing \
+        Staffing::Staffed => {},
+        Staffing::NoWorkspace => {
+            anyhow::bail!(
+                "`{handle}` holds a role that owns no workspace, so there is nothing \
              to stand up. Generating one anyway would manufacture a dispatchable \
              agent for someone who is not one."
-        ),
+            )
+        },
         // Named as mapped rather than reported as missing three fields, which
         // is true and misleading: the fields are absent because somebody
         // decided they should be. Promotion is an edit to the registry, made on
         // purpose, so that a typo cannot become a workspace.
-        Staffing::Mapped => anyhow::bail!(
-            "`{handle}` is mapped, not staffed: it records that a domain is \
+        Staffing::Mapped => {
+            anyhow::bail!(
+                "`{handle}` is mapped, not staffed: it records that a domain is \
              taken and is not meant to have a workspace. Set `staffed = true` \
              on its entry to change that."
-        ),
-        Staffing::Incomplete(gaps) => anyhow::bail!(
-            "`{handle}` is staffed but cannot be stood up: its entry is missing {}",
-            gaps.join(", ")
-        ),
+            )
+        },
+        Staffing::Incomplete(gaps) => {
+            anyhow::bail!(
+                "`{handle}` is staffed but cannot be stood up: its entry is missing {}",
+                gaps.join(", ")
+            )
+        },
     }
 
     // A registry string carrying a control character writes arbitrary keys into
@@ -253,11 +260,11 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
         .with_context(|| format!("generating definitions for `{handle}`"))?;
 
     Ok(StoodUp {
-        handle: id.handle.clone(),
-        home: prepared.home,
-        workspace: provisioned.root,
-        cloned: provisioned.cloned,
-        definition: prime,
+        handle:          id.handle.clone(),
+        home:            prepared.home,
+        workspace:       provisioned.root,
+        cloned:          provisioned.cloned,
+        definition:      prime,
         twin_definition: twin,
     })
 }
@@ -265,7 +272,7 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cmd::fake_git::{abs, FakeGit, CONTENT};
+    use crate::cmd::fake_git::{CONTENT, FakeGit, abs};
 
     const ORG: &str = r#"
 content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
@@ -375,7 +382,15 @@ domain = "rendering"
         // fallback that produced that equality is asserted separately below.
         assert_eq!(
             git.identity(&out.workspace).unwrap(),
-            Some(homma_api::CommitIdentity::split("paja", "paja@example.invalid", "Vouti", "orgrinrt+vouti@example.invalid").unwrap()),
+            Some(
+                homma_api::CommitIdentity::split(
+                    "paja",
+                    "paja@example.invalid",
+                    "Vouti",
+                    "orgrinrt+vouti@example.invalid"
+                )
+                .unwrap()
+            ),
             "the identity must be set in the clone, or the Hand commits as the machine's owner"
         );
     }
@@ -521,13 +536,15 @@ domain = "rendering"
     #[test]
     fn standing_up_an_unknown_handle_is_refused() {
         let d = tempfile::tempdir().unwrap();
-        assert!(stand_up(
-            &ws(),
-            &abs(d.path()),
-            "stranger",
-            &FakeGit::at_the_content_repo()
-        )
-        .is_err());
+        assert!(
+            stand_up(
+                &ws(),
+                &abs(d.path()),
+                "stranger",
+                &FakeGit::at_the_content_repo()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -550,10 +567,12 @@ domain = "rendering"
         assert!(prime.contains(DISCIPLINE.lines().next().unwrap()));
 
         let link = d.path().join(".claude/agent-memory/paja");
-        assert!(std::fs::symlink_metadata(&link)
-            .unwrap()
-            .file_type()
-            .is_symlink());
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         std::fs::write(link.as_path().join("MEMORY.md"), "x").unwrap();
         assert!(out.home.as_path().join("memory/MEMORY.md").exists());
     }

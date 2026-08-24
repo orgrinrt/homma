@@ -13,10 +13,11 @@
 //! that says append-only cannot have a record rewritten under it, whatever the
 //! caller intended.
 
-use homma_api::{Kind, Mutability, Record};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+
+use homma_api::{Kind, Mutability, Record};
 
 /// Why a store operation did not happen.
 #[derive(Debug)]
@@ -24,19 +25,19 @@ pub enum Error {
     /// The kind says its records are written once.
     Immutable {
         kind: String,
-        id: String,
+        id:   String,
     },
     /// Nothing under this kind carries that id.
     NotFound {
         kind: String,
-        id: String,
+        id:   String,
     },
     /// The kind's name would address a file outside the store.
     UnsafeKind(String),
     /// Something already carries that id under this kind.
     Duplicate {
         kind: String,
-        id: String,
+        id:   String,
     },
     /// The record does not satisfy the kind it claims.
     Invalid(homma_api::record::Invalid),
@@ -47,23 +48,38 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Immutable { kind, id } => write!(
-                f,
-                "kind `{kind}` is append-only, so record `{id}` cannot be rewritten. \
+            Error::Immutable {
+                kind,
+                id,
+            } => {
+                write!(
+                    f,
+                    "kind `{kind}` is append-only, so record `{id}` cannot be rewritten. \
                  Append a record that supersedes it instead."
-            ),
-            Error::NotFound { kind, id } => write!(f, "no record `{id}` of kind `{kind}`"),
-            Error::UnsafeKind(k) => write!(
-                f,
-                "kind name `{k}` would address a file outside the store; a kind \
+                )
+            },
+            Error::NotFound {
+                kind,
+                id,
+            } => write!(f, "no record `{id}` of kind `{kind}`"),
+            Error::UnsafeKind(k) => {
+                write!(
+                    f,
+                    "kind name `{k}` would address a file outside the store; a kind \
                  name carries no path separator and no parent component"
-            ),
-            Error::Duplicate { kind, id } => write!(
-                f,
-                "kind `{kind}` already carries a record `{id}`. Appending a second \
+                )
+            },
+            Error::Duplicate {
+                kind,
+                id,
+            } => {
+                write!(
+                    f,
+                    "kind `{kind}` already carries a record `{id}`. Appending a second \
                  under one id lets an append-only kind be contradicted without \
                  ever rewriting anything."
-            ),
+                )
+            },
             Error::Invalid(e) => write!(f, "{e}"),
             Error::Io(e) => write!(f, "{e}"),
             Error::Encoding(e) => write!(f, "{e}"),
@@ -97,7 +113,9 @@ pub struct Store {
 
 impl Store {
     pub fn open(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+        }
     }
 
     /// Where a kind's records live. One file per kind keeps a read of one kind
@@ -135,7 +153,7 @@ impl Store {
         if self.read(&kind.name)?.iter().any(|r| r.id == record.id) {
             return Err(Error::Duplicate {
                 kind: kind.name.clone(),
-                id: record.id.clone(),
+                id:   record.id.clone(),
             });
         }
         if let Some(parent) = self.path_for(&kind.name).parent() {
@@ -182,18 +200,17 @@ impl Store {
         if kind.mutability == Mutability::AppendOnly {
             return Err(Error::Immutable {
                 kind: kind.name.clone(),
-                id: record.id.clone(),
+                id:   record.id.clone(),
             });
         }
         record.check(kind).map_err(Error::Invalid)?;
         let mut all = self.read(&kind.name)?;
-        let slot = all
-            .iter_mut()
-            .find(|r| r.id == record.id)
-            .ok_or_else(|| Error::NotFound {
+        let slot = all.iter_mut().find(|r| r.id == record.id).ok_or_else(|| {
+            Error::NotFound {
                 kind: kind.name.clone(),
-                id: record.id.clone(),
-            })?;
+                id:   record.id.clone(),
+            }
+        })?;
         *slot = record.clone();
         self.rewrite(&kind.name, &all)
     }
@@ -232,8 +249,9 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use homma_api::{Attr, AttrType, Reference};
+
+    use super::*;
 
     fn message() -> Kind {
         Kind::new("message", Mutability::AppendOnly)
@@ -331,9 +349,11 @@ mod tests {
             .read("message")
             .unwrap()
             .iter()
-            .map(|r| match &r.attrs["body"] {
-                Attr::Text(t) => t.clone(),
-                _ => unreachable!(),
+            .map(|r| {
+                match &r.attrs["body"] {
+                    Attr::Text(t) => t.clone(),
+                    _ => unreachable!(),
+                }
             })
             .collect();
         assert_eq!(got, vec!["first", "second", "third"]);

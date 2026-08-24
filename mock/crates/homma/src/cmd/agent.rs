@@ -13,14 +13,13 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use homma_core::Config;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
-use crate::cmd::util;
-use crate::cmd::Outcome;
-use crate::output::{emit, HumanRender};
+use crate::cmd::{Outcome, util};
+use crate::output::{HumanRender, emit};
 
 pub mod status {
     use super::*;
@@ -34,10 +33,10 @@ pub mod status {
     /// Discovery result for one repo.
     #[derive(Debug, Serialize)]
     pub struct RepoAgentState {
-        pub repo: String,
+        pub repo:       String,
         pub local_path: String,
-        pub state: AgentState,
-        pub surfaces: Surfaces,
+        pub state:      AgentState,
+        pub surfaces:   Surfaces,
     }
 
     /// Roll-up state.
@@ -58,11 +57,11 @@ pub mod status {
     /// Individual surface probes.
     #[derive(Debug, Serialize)]
     pub struct Surfaces {
-        pub mock_dir: bool,
-        pub mock_agent_dir: bool,
-        pub claude_dir: bool,
+        pub mock_dir:            bool,
+        pub mock_agent_dir:      bool,
+        pub claude_dir:          bool,
         pub github_instructions: bool,
-        pub cargo_mock_alias: bool,
+        pub cargo_mock_alias:    bool,
     }
 
     pub fn run(cfg: &Config, repo: Option<&str>, format: OutputFormat) -> Result<()> {
@@ -95,11 +94,11 @@ pub mod status {
 
     fn probe(name: &str, local: &Path) -> RepoAgentState {
         let surfaces = Surfaces {
-            mock_dir: local.join("mock").is_dir(),
-            mock_agent_dir: local.join("mock/agent").is_dir(),
-            claude_dir: local.join(".claude").is_dir(),
+            mock_dir:            local.join("mock").is_dir(),
+            mock_agent_dir:      local.join("mock/agent").is_dir(),
+            claude_dir:          local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
-            cargo_mock_alias: has_cargo_mock_alias(local),
+            cargo_mock_alias:    has_cargo_mock_alias(local),
         };
         let state = roll_up(local, &surfaces);
         RepoAgentState {
@@ -118,11 +117,7 @@ pub mod status {
             return AgentState::NotConfigured;
         }
         let core = s.mock_agent_dir && s.claude_dir && s.github_instructions && s.cargo_mock_alias;
-        if core {
-            AgentState::Configured
-        } else {
-            AgentState::Partial
-        }
+        if core { AgentState::Configured } else { AgentState::Partial }
     }
 
     /// Lightweight check: does `.cargo/config.toml` contain a `mock` alias?
@@ -166,17 +161,14 @@ pub mod status {
     }
 
     fn yn(b: bool) -> &'static str {
-        if b {
-            "yes"
-        } else {
-            "no"
-        }
+        if b { "yes" } else { "no" }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::*;
         use std::fs;
+
+        use super::*;
 
         #[test]
         fn configured_when_all_surfaces_present() {
@@ -251,12 +243,12 @@ pub mod regen {
     /// Roll-up regen report across all repos.
     #[derive(Debug, Serialize)]
     pub struct RegenReport {
-        pub results: Vec<RegenResult>,
-        pub ok: bool,
+        pub results:       Vec<RegenResult>,
+        pub ok:            bool,
         /// Configs that differ from the shared copy, across the whole run.
         /// **A warning, never a failure**: a difference may be deliberate.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub diverged: Vec<String>,
+        pub diverged:      Vec<String>,
         /// Configs nothing could place, and why the stage could not run at all.
         /// These want somebody to act.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -266,10 +258,10 @@ pub mod regen {
     /// Per-repo regen outcome covering both pipeline stages.
     #[derive(Debug, Serialize)]
     pub struct RegenResult {
-        pub repo: String,
-        pub cargo_mock: StageStatus,
-        pub configs: Vec<String>,
-        pub aggregate: StageStatus,
+        pub repo:             String,
+        pub cargo_mock:       StageStatus,
+        pub configs:          Vec<String>,
+        pub aggregate:        StageStatus,
         pub aggregated_hooks: usize,
     }
 
@@ -293,9 +285,9 @@ pub mod regen {
     #[derive(Debug, Clone, Copy, Default)]
     pub struct Opts {
         pub continue_on_error: bool,
-        pub skip_cargo_mock: bool,
-        pub skip_configs: bool,
-        pub skip_aggregate: bool,
+        pub skip_cargo_mock:   bool,
+        pub skip_configs:      bool,
+        pub skip_aggregate:    bool,
     }
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
@@ -469,7 +461,7 @@ pub mod regen {
                     Err(e) => {
                         had_failure = true;
                         (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
-                    }
+                    },
                 }
             };
 
@@ -504,14 +496,14 @@ pub mod regen {
                 Err(e) => {
                     had_failure = true;
                     results.push(RegenResult {
-                        repo: "(workspace gate)".into(),
-                        cargo_mock: StageStatus::Skipped("not a repo".into()),
-                        configs: Vec::new(),
-                        aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                        repo:             "(workspace gate)".into(),
+                        cargo_mock:       StageStatus::Skipped("not a repo".into()),
+                        configs:          Vec::new(),
+                        aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
                         aggregated_hooks: 0,
                     });
                     None
-                }
+                },
             };
 
             if let Err(e) = aggregate::merge_settings(
@@ -522,10 +514,10 @@ pub mod regen {
             ) {
                 had_failure = true;
                 results.push(RegenResult {
-                    repo: "(settings.json)".into(),
-                    cargo_mock: StageStatus::Skipped("not a repo".into()),
-                    configs: Vec::new(),
-                    aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                    repo:             "(settings.json)".into(),
+                    cargo_mock:       StageStatus::Skipped("not a repo".into()),
+                    configs:          Vec::new(),
+                    aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
                     aggregated_hooks: 0,
                 });
             }
@@ -550,11 +542,7 @@ pub mod regen {
             },
             format,
         )?;
-        Ok(if ok {
-            Outcome::Ok
-        } else {
-            Outcome::ReportedFailure
-        })
+        Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
     }
 
     /// Run `cargo mock` from the repo root. Errors carry the exit status +
@@ -621,7 +609,10 @@ pub mod regen {
             // and the whole point of the stage is the handful of lines an
             // operator has to do something about.
             if !self.diverged.is_empty() {
-                writeln!(out, "\nconfigs that differ from the shared copy (left as they are):")?;
+                writeln!(
+                    out,
+                    "\nconfigs that differ from the shared copy (left as they are):"
+                )?;
                 for d in &self.diverged {
                     writeln!(out, "  {d}")?;
                 }

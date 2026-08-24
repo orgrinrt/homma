@@ -217,12 +217,7 @@ fn standing_up_does_not_depend_on_where_the_operator_is_standing() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();
@@ -255,12 +250,14 @@ fn standing_up_does_not_depend_on_where_the_operator_is_standing() {
 fn repo_at(at: &std::path::Path) {
     std::fs::create_dir_all(at).unwrap();
     let run = |args: &[&str]| {
-        assert!(std::process::Command::new("git")
-            .args(args)
-            .current_dir(at)
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(at)
+                .status()
+                .unwrap()
+                .success()
+        );
     };
     run(&["init", "-q", "-b", "main"]);
     run(&["config", "user.name", "s"]);
@@ -356,11 +353,13 @@ fn a_bare_repository_ancestor_is_seen() {
     // bare repository there is.
     let dir = tempfile::tempdir().unwrap();
     let bare = dir.path().join("bare.git");
-    assert!(std::process::Command::new("git")
-        .args(["init", "-q", "--bare", bare.to_str().unwrap()])
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "-q", "--bare", bare.to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success()
+    );
 
     let root = bare.join("ws");
     std::fs::create_dir_all(&root).unwrap();

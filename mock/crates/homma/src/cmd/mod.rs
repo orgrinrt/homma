@@ -52,8 +52,10 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             let cfg = load_config(&cli)?;
             status::run(&cfg, cli.output)?;
             Ok(Outcome::Ok)
-        }
-        Command::Org { op } => {
+        },
+        Command::Org {
+            op,
+        } => {
             let path = cli
                 .config
                 .clone()
@@ -70,7 +72,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             line.domain,
                         );
                     }
-                }
+                },
                 OrgOp::Add {
                     handle,
                     role,
@@ -134,8 +136,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     registry::append_entry(&path, &id, &denied)?;
 
                     println!("{} {}", id.handle, org::describe(&staffing));
-                }
-                OrgOp::Up { handle, root } => {
+                },
+                OrgOp::Up {
+                    handle,
+                    root,
+                } => {
                     // The configuration file's own directory, never the current
                     // one. The current directory says where somebody happened to
                     // be standing; treating that as the workspace cloned an
@@ -161,39 +166,51 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     println!(
                         "  workspace  {} ({})",
                         out.workspace.display(),
-                        if out.cloned {
-                            "cloned"
-                        } else {
-                            "already there"
-                        }
+                        if out.cloned { "cloned" } else { "already there" }
                     );
                     println!("  definition {}", out.definition);
                     println!("  twin       {}", out.twin_definition);
-                }
+                },
             }
             Ok(Outcome::Ok)
-        }
+        },
         Command::Verify => {
             let cfg = load_config(&cli)?;
             verify::run(&cfg, cli.output)
-        }
-        Command::Repo { op } => match op {
-            RepoOp::Status { repo } => {
-                let cfg = load_config(&cli)?;
-                repo::status::run(&cfg, repo, cli.output)?;
-                Ok(Outcome::Ok)
+        },
+        Command::Repo {
+            op,
+        } => {
+            match op {
+                RepoOp::Status {
+                    repo,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    repo::status::run(&cfg, repo, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
             }
         },
-        Command::Forge { op } => match op {
-            ForgeOp::Show { forge, slug } => {
-                let cfg = load_config(&cli)?;
-                forge::show::run(&cfg, forge, slug, cli.output)?;
-                Ok(Outcome::Ok)
-            }
-            ForgeOp::Exists { forge, slug } => {
-                let cfg = load_config(&cli)?;
-                forge::exists::run(&cfg, forge, slug, cli.output)?;
-                Ok(Outcome::Ok)
+        Command::Forge {
+            op,
+        } => {
+            match op {
+                ForgeOp::Show {
+                    forge,
+                    slug,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    forge::show::run(&cfg, forge, slug, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                ForgeOp::Exists {
+                    forge,
+                    slug,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    forge::exists::run(&cfg, forge, slug, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
             }
         },
         Command::Migrate {
@@ -207,49 +224,65 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             let cfg = load_config(&cli)?;
             let opts = migrate::Opts {
                 to_owner: to_owner.as_deref(),
-                to_org: *to_org,
-                source: source.as_deref(),
-                dry_run: *dry_run,
+                to_org:   *to_org,
+                source:   source.as_deref(),
+                dry_run:  *dry_run,
             };
             migrate::run(&cfg, repo, to, opts, cli.output)
-        }
-        Command::Archive { repo, from, owner } => {
+        },
+        Command::Archive {
+            repo,
+            from,
+            owner,
+        } => {
             let cfg = load_config(&cli)?;
             archive::run(&cfg, repo, from.as_deref(), owner.as_deref(), cli.output)?;
             Ok(Outcome::Ok)
-        }
-        Command::Agent { op } => match op {
-            AgentOp::Status { repo } => {
-                let cfg = load_config(&cli)?;
-                agent::status::run(&cfg, repo.as_deref(), cli.output)?;
-                Ok(Outcome::Ok)
-            }
-            AgentOp::Regen {
-                repo,
-                continue_on_error,
-                skip_cargo_mock,
-                skip_configs,
-                skip_aggregate,
-            } => {
-                let cfg = load_config(&cli)?;
-                agent::regen::run_with(
-                    &cfg,
-                    repo.as_deref(),
-                    agent::regen::Opts {
-                        continue_on_error: *continue_on_error,
-                        skip_cargo_mock: *skip_cargo_mock,
-                        skip_configs: *skip_configs,
-                        skip_aggregate: *skip_aggregate,
-                    },
-                    cli.output,
-                )
+        },
+        Command::Agent {
+            op,
+        } => {
+            match op {
+                AgentOp::Status {
+                    repo,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    agent::status::run(&cfg, repo.as_deref(), cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                AgentOp::Regen {
+                    repo,
+                    continue_on_error,
+                    skip_cargo_mock,
+                    skip_configs,
+                    skip_aggregate,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    agent::regen::run_with(
+                        &cfg,
+                        repo.as_deref(),
+                        agent::regen::Opts {
+                            continue_on_error: *continue_on_error,
+                            skip_cargo_mock:   *skip_cargo_mock,
+                            skip_configs:      *skip_configs,
+                            skip_aggregate:    *skip_aggregate,
+                        },
+                        cli.output,
+                    )
+                },
             }
         },
-        Command::Docs { op } => match op {
-            DocsOp::Status { repo } => {
-                let cfg = load_config(&cli)?;
-                docs::status::run(&cfg, repo.as_deref(), cli.output)?;
-                Ok(Outcome::Ok)
+        Command::Docs {
+            op,
+        } => {
+            match op {
+                DocsOp::Status {
+                    repo,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    docs::status::run(&cfg, repo.as_deref(), cli.output)?;
+                    Ok(Outcome::Ok)
+                },
             }
         },
     }

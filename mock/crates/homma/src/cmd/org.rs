@@ -4,10 +4,11 @@
 //! a Hand is beyond what a role says, because homma runs against workspaces it
 //! has never seen.
 
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use homma_api::{Identity, Role, Staffing, Workspace};
 use homma_org::Registry;
-use std::path::Path;
 
 /// The standing instruction every generated definition carries.
 ///
@@ -59,9 +60,9 @@ pub fn load(path: &Path) -> Result<Workspace> {
 /// One line per participant, for a listing.
 #[derive(Debug)]
 pub struct Line {
-    pub handle: String,
-    pub role: Role,
-    pub domain: String,
+    pub handle:   String,
+    pub role:     Role,
+    pub domain:   String,
     pub staffing: Staffing,
 }
 
@@ -70,11 +71,13 @@ pub fn list(ws: &Workspace) -> Vec<Line> {
     registry
         .all()
         .into_iter()
-        .map(|id| Line {
-            handle: id.handle.clone(),
-            role: id.role,
-            domain: id.domain.clone().unwrap_or_default(),
-            staffing: id.staffing(),
+        .map(|id| {
+            Line {
+                handle:   id.handle.clone(),
+                role:     id.role,
+                domain:   id.domain.clone().unwrap_or_default(),
+                staffing: id.staffing(),
+            }
         })
         .collect()
 }

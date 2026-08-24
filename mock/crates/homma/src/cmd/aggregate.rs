@@ -33,11 +33,11 @@
 //! get cleaned on every regen via [`clean_stale`] so upgrades from
 //! older homma versions converge to the current shape automatically.
 
-use homma_api::{ContainedPath, Root};
 use std::fs;
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
+use homma_api::{ContainedPath, Root};
 use serde::Serialize;
 
 /// One aggregated `hooks.PreToolUse` entry destined for the workspace
@@ -338,8 +338,10 @@ pub(crate) fn merge_settings(
     root.create_dir_all(&contain(root, ".claude")?).ok();
 
     let mut value: serde_json::Value = match fs::read_to_string(settings_path.as_path()) {
-        Ok(s) if !s.trim().is_empty() => serde_json::from_str(&s)
-            .with_context(|| format!("parsing {}", settings_path.as_path().display()))?,
+        Ok(s) if !s.trim().is_empty() => {
+            serde_json::from_str(&s)
+                .with_context(|| format!("parsing {}", settings_path.as_path().display()))?
+        },
         _ => serde_json::json!({}),
     };
 
@@ -615,12 +617,14 @@ mod tests {
         .unwrap();
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        assert!(arr
-            .iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
-        assert!(arr
-            .iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--no-alloc.sh"));
+        assert!(
+            arr.iter()
+                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh")
+        );
+        assert!(
+            arr.iter()
+                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--no-alloc.sh")
+        );
     }
 
     #[test]
@@ -648,15 +652,18 @@ mod tests {
         .unwrap();
         let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(arr.len(), 2);
-        assert!(!arr
-            .iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh"));
-        assert!(arr
-            .iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh"));
-        assert!(arr
-            .iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh"));
+        assert!(
+            !arr.iter()
+                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh")
+        );
+        assert!(
+            arr.iter()
+                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh")
+        );
+        assert!(
+            arr.iter()
+                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh")
+        );
     }
 
     #[test]

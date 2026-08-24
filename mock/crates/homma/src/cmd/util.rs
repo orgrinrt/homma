@@ -1,7 +1,8 @@
 //! Cross-command helpers.
 
-use homma_api::AbsPath;
 use std::path::{Path, PathBuf};
+
+use homma_api::AbsPath;
 
 /// Resolve a repo-relative path against the workspace root.
 ///
@@ -25,7 +26,7 @@ pub(crate) fn resolve_local_path(workspace_root: &Path, repo_path: &Path) -> Pat
             } else {
                 workspace_root.join(repo_path)
             }
-        }
+        },
     }
 }
 

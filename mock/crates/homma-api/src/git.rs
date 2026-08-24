@@ -33,9 +33,9 @@ use crate::path::AbsPath;
 /// covered one way of obtaining one and no other.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitIdentity {
-    author_name: String,
-    author_email: String,
-    committer_name: String,
+    author_name:     String,
+    author_email:    String,
+    committer_name:  String,
     committer_email: String,
 }
 
@@ -97,9 +97,9 @@ impl CommitIdentity {
         committer_email: impl Into<String>,
     ) -> Result<Self, EmptyPart> {
         let it = Self {
-            author_name: author_name.into(),
-            author_email: author_email.into(),
-            committer_name: committer_name.into(),
+            author_name:     author_name.into(),
+            author_email:    author_email.into(),
+            committer_name:  committer_name.into(),
             committer_email: committer_email.into(),
         };
         for (part, value) in [
@@ -279,7 +279,10 @@ mod tests {
             CommitIdentity::same("", "op@example.test"),
             Err(EmptyPart(Part::AuthorName))
         );
-        assert_eq!(CommitIdentity::same("op", ""), Err(EmptyPart(Part::AuthorEmail)));
+        assert_eq!(
+            CommitIdentity::same("op", ""),
+            Err(EmptyPart(Part::AuthorEmail))
+        );
     }
 
     #[test]

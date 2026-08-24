@@ -32,11 +32,11 @@ pub fn emit<T: Serialize + HumanRender>(value: &T, format: OutputFormat) -> std:
             value.render_human(&mut out)?;
             // A trailing newline keeps shells from concatenating prompts.
             writeln!(out)?;
-        }
+        },
         OutputFormat::Json => {
             let s = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
             writeln!(out, "{s}")?;
-        }
+        },
     }
     Ok(())
 }

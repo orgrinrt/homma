@@ -9,11 +9,11 @@
 pub enum Remote {
     /// A repository on a host, which is what nearly every remote is.
     Hosted {
-        host: String,
+        host:  String,
         /// Everything between the host and the name, which is an owner on every
         /// forge worth naming and occasionally a group above one.
         owner: String,
-        name: String,
+        name:  String,
     },
     /// A path on this machine, resolved so that two spellings of one directory
     /// compare equal.
@@ -102,21 +102,25 @@ fn hosted(authority: &str, path: &str) -> Remote {
 
     let path = strip_git_suffix(path.trim_matches('/'));
     match path.rsplit_once('/') {
-        Some((owner, name)) => Remote::Hosted {
-            host: host.to_ascii_lowercase(),
-            // A forge treats an owner case-insensitively, so two spellings of
-            // one owner are one owner.
-            owner: owner.trim_matches('/').to_ascii_lowercase(),
-            // Folded for the same reason the owner is. Folding one and not the
-            // other refused a correct workspace permanently, which is the
-            // adjacent field the previous round left alone.
-            name: name.to_ascii_lowercase(),
+        Some((owner, name)) => {
+            Remote::Hosted {
+                host:  host.to_ascii_lowercase(),
+                // A forge treats an owner case-insensitively, so two spellings of
+                // one owner are one owner.
+                owner: owner.trim_matches('/').to_ascii_lowercase(),
+                // Folded for the same reason the owner is. Folding one and not the
+                // other refused a correct workspace permanently, which is the
+                // adjacent field the previous round left alone.
+                name:  name.to_ascii_lowercase(),
+            }
         },
         // A host and a bare name, with nobody owning it.
-        None => Remote::Hosted {
-            host: host.to_ascii_lowercase(),
-            owner: String::new(),
-            name: path.to_ascii_lowercase(),
+        None => {
+            Remote::Hosted {
+                host:  host.to_ascii_lowercase(),
+                owner: String::new(),
+                name:  path.to_ascii_lowercase(),
+            }
         },
     }
 }
@@ -131,22 +135,28 @@ pub fn repo_name(url: &str) -> String {
     let trimmed = trimmed.strip_prefix("file://").unwrap_or(trimmed);
     let after_authority = match trimmed.split_once("://") {
         Some((_, rest)) => rest.split_once('/').map(|(_, p)| p).unwrap_or(rest),
-        None => match trimmed.split_once(':') {
-            Some((authority, path))
-                if !path.starts_with('/') && !authority.contains('/') && authority.len() > 1 =>
-            {
-                path
+        None => {
+            match trimmed.split_once(':') {
+                Some((authority, path))
+                    if !path.starts_with('/')
+                        && !authority.contains('/')
+                        && authority.len() > 1 =>
+                {
+                    path
+                },
+                _ => trimmed,
             }
-            _ => trimmed,
         },
     };
     let path = strip_git_suffix(after_authority.trim_matches('/'));
     match path.rsplit_once('/') {
         // Two segments, which is an owner and a name on every forge worth
         // naming. More than two, and the last two are the part that identifies.
-        Some((owner, name)) => match owner.rsplit_once('/') {
-            Some((_, nearest)) => format!("{nearest}/{name}"),
-            None => format!("{owner}/{name}"),
+        Some((owner, name)) => {
+            match owner.rsplit_once('/') {
+                Some((_, nearest)) => format!("{nearest}/{name}"),
+                None => format!("{owner}/{name}"),
+            }
         },
         None => path.to_string(),
     }
@@ -278,9 +288,9 @@ mod tests {
         assert_eq!(
             parse("https://git.example.org/group/sub/thing.git"),
             Remote::Hosted {
-                host: "git.example.org".into(),
+                host:  "git.example.org".into(),
                 owner: "group/sub".into(),
-                name: "thing".into(),
+                name:  "thing".into(),
             }
         );
     }

@@ -10,20 +10,20 @@
 
 use std::io::Write;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use homma_core::Config;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
 use crate::cmd::forge::{client_from_config, resolve_forge};
-use crate::output::{emit, HumanRender};
+use crate::output::{HumanRender, emit};
 
 /// Result payload for `homma archive`.
 #[derive(Debug, Serialize)]
 pub struct ArchiveReport {
     pub forge: String,
     pub owner: String,
-    pub name: String,
+    pub name:  String,
 }
 
 impl HumanRender for ArchiveReport {
@@ -59,7 +59,7 @@ pub fn run(
         &ArchiveReport {
             forge: forge_name.into(),
             owner: owner.into(),
-            name: repo_name.into(),
+            name:  repo_name.into(),
         },
         format,
     )?;

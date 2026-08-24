@@ -13,19 +13,20 @@
 
 #![cfg(test)]
 
-use homma_api::{AbsPath, Git};
 use std::path::PathBuf;
+
+use homma_api::{AbsPath, Git};
 
 pub const CONTENT: &str = "git@example.invalid:orgrinrt/clause-dev.git";
 
 pub struct FakeGit {
     /// What `origin_url` answers for the workspace root.
     pub root_origin: Option<String>,
-    pub cloned: std::cell::RefCell<Vec<(String, AbsPath)>>,
-    pub identities: std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
+    pub cloned:      std::cell::RefCell<Vec<(String, AbsPath)>>,
+    pub identities:  std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
     /// A path, and the repository it sits inside. Empty means nothing is
     /// nested, which is what most tests want.
-    pub enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
+    pub enclosures:  std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
 }
 
 impl FakeGit {
@@ -33,9 +34,9 @@ impl FakeGit {
     pub fn at_the_content_repo() -> Self {
         Self {
             root_origin: Some(CONTENT.into()),
-            cloned: Default::default(),
-            identities: Default::default(),
-            enclosures: Default::default(),
+            cloned:      Default::default(),
+            identities:  Default::default(),
+            enclosures:  Default::default(),
         }
     }
 
@@ -43,9 +44,9 @@ impl FakeGit {
     pub fn somewhere_else() -> Self {
         Self {
             root_origin: Some("git@example.invalid:orgrinrt/member.git".into()),
-            cloned: Default::default(),
-            identities: Default::default(),
-            enclosures: Default::default(),
+            cloned:      Default::default(),
+            identities:  Default::default(),
+            enclosures:  Default::default(),
         }
     }
 
@@ -53,9 +54,9 @@ impl FakeGit {
     pub fn no_origin() -> Self {
         Self {
             root_origin: None,
-            cloned: Default::default(),
-            identities: Default::default(),
-            enclosures: Default::default(),
+            cloned:      Default::default(),
+            identities:  Default::default(),
+            enclosures:  Default::default(),
         }
     }
 }

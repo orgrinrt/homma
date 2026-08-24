@@ -4,14 +4,15 @@
 //! landed. The two are different jobs: that one arranges directories homma owns,
 //! this one runs git against a tree it does not.
 
-use crate::remote::same_repo;
 use homma_api::{AbsPath, Git, Identity};
+
+use crate::remote::same_repo;
 
 /// What provisioning a workspace did, so a caller reports rather than guesses.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Provisioned {
     /// Where the workspace is.
-    pub root: AbsPath,
+    pub root:   AbsPath,
     /// False when the workspace already held the content repository.
     pub cloned: bool,
 }
@@ -33,11 +34,14 @@ pub enum ProvisionError<E> {
     /// (os error 2)". The whole reason one level is created here is that the
     /// alternative error read as a network fault; an unreadable message at this
     /// layer would be the same defect one layer up.
-    ParentMissing { parent: AbsPath, workspace: AbsPath },
+    ParentMissing {
+        parent:    AbsPath,
+        workspace: AbsPath,
+    },
     /// A workspace already exists and was cloned from something else.
     WrongRemote {
         expected: String,
-        found: Option<String>,
+        found:    Option<String>,
     },
     /// The identity did not survive being written.
     IdentityNotSet {
@@ -63,47 +67,63 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
             ProvisionError::NoIdentity => write!(f, "the entry carries no git identity"),
             ProvisionError::Git(e) => write!(f, "git: {e}"),
             ProvisionError::Parent(e) => write!(f, "creating the parent directory: {e}"),
-            ProvisionError::ParentMissing { parent, workspace } => write!(
-                f,
-                "{parent} does not exist, so the workspace {workspace} cannot be \
+            ProvisionError::ParentMissing {
+                parent,
+                workspace,
+            } => {
+                write!(
+                    f,
+                    "{parent} does not exist, so the workspace {workspace} cannot be \
                  created without building the path to it. homma creates the \
                  workspace's own parent and never a chain of them; make {parent} \
                  first."
-            ),
-            ProvisionError::WrongRemote { expected, found } => write!(
-                f,
-                "the workspace is already a clone of {}, not of {expected}. \
+                )
+            },
+            ProvisionError::WrongRemote {
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "the workspace is already a clone of {}, not of {expected}. \
                  Standing up again will not fix it; move or remove that \
                  workspace first.",
-                found.as_deref().unwrap_or("nothing with an origin")
-            ),
+                    found.as_deref().unwrap_or("nothing with an origin")
+                )
+            },
             ProvisionError::InsideAnotherRepo {
                 workspace,
                 enclosing,
-            } => write!(
-                f,
-                "{workspace} sits inside the repository at {enclosing}. Creating \
+            } => {
+                write!(
+                    f,
+                    "{workspace} sits inside the repository at {enclosing}. Creating \
                  a workspace there would write into a tree that is not ours, \
                  Name a workspace outside it."
-            ),
-            ProvisionError::EmptyIdentityPart(e) => write!(
-                f,
-                "the entry's git identity is incomplete: {e}"
-            ),
-            ProvisionError::IdentityNotSet { found } => write!(
-                f,
-                "the identity did not survive being written; the clone reports {}",
-                match found {
-                    Some(i) => format!(
-                        "author {} <{}>, committer {} <{}>",
-                        i.author_name(),
-                        i.author_email(),
-                        i.committer_name(),
-                        i.committer_email()
-                    ),
-                    None => "none".to_string(),
-                }
-            ),
+                )
+            },
+            ProvisionError::EmptyIdentityPart(e) => {
+                write!(f, "the entry's git identity is incomplete: {e}")
+            },
+            ProvisionError::IdentityNotSet {
+                found,
+            } => {
+                write!(
+                    f,
+                    "the identity did not survive being written; the clone reports {}",
+                    match found {
+                        Some(i) =>
+                            format!(
+                                "author {} <{}>, committer {} <{}>",
+                                i.author_name(),
+                                i.author_email(),
+                                i.committer_name(),
+                                i.committer_email()
+                            ),
+                        None => "none".to_string(),
+                    }
+                )
+            },
         }
     }
 }
@@ -113,7 +133,9 @@ impl<E: std::error::Error + 'static> std::error::Error for ProvisionError<E> {
         match self {
             ProvisionError::Git(e) => Some(e),
             ProvisionError::Parent(e) => Some(e),
-            ProvisionError::ParentMissing { .. } => None,
+            ProvisionError::ParentMissing {
+                ..
+            } => None,
             _ => None,
         }
     }
@@ -171,9 +193,9 @@ pub fn provision<G: Git>(
             other => {
                 return Err(ProvisionError::WrongRemote {
                     expected: content_repo_url.to_string(),
-                    found: other,
-                })
-            }
+                    found:    other,
+                });
+            },
         }
     } else {
         // gix will not create the parent, and a clone into a path whose parent
@@ -194,14 +216,14 @@ pub fn provision<G: Git>(
         // never the path to the thing.
         if let Some(parent) = root.parent() {
             match std::fs::create_dir(&parent) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Ok(()) => {},
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {},
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     return Err(ProvisionError::ParentMissing {
-                        parent: parent.clone(),
+                        parent:    parent.clone(),
                         workspace: root.clone(),
-                    })
-                }
+                    });
+                },
                 Err(e) => return Err(ProvisionError::Parent(e)),
             }
         }
@@ -232,18 +254,27 @@ pub fn provision<G: Git>(
     // nowhere passed the guard whose entire purpose is that a write which never
     // landed does not.
     match git.identity(&root).map_err(ProvisionError::Git)? {
-        Some(ref got) if *got == want => {}
-        found => return Err(ProvisionError::IdentityNotSet { found }),
+        Some(ref got) if *got == want => {},
+        found => {
+            return Err(ProvisionError::IdentityNotSet {
+                found,
+            });
+        },
     }
 
-    Ok(Provisioned { root, cloned })
+    Ok(Provisioned {
+        root,
+        cloned,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use homma_api::Role;
     use std::path::PathBuf;
+
+    use homma_api::Role;
+
+    use super::*;
 
     fn abs(p: impl Into<PathBuf>) -> AbsPath {
         AbsPath::new(p).expect("a tempdir path is absolute")
@@ -265,12 +296,12 @@ mod tests {
         /// What `origin_url` answers for a given path. A fake answering one URL
         /// for every path cannot enter the refusing arm, which is why the guard
         /// shipped with no test.
-        remotes: std::cell::RefCell<Vec<(AbsPath, String)>>,
+        remotes:                 std::cell::RefCell<Vec<(AbsPath, String)>>,
         /// A path, and the repository it sits inside.
-        enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
-        existing: std::cell::RefCell<Vec<AbsPath>>,
-        clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
-        identities: std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
+        enclosures:              std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
+        existing:                std::cell::RefCell<Vec<AbsPath>>,
+        clones:                  std::cell::RefCell<Vec<(String, AbsPath)>>,
+        identities:              std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
         /// When set, `set_identity` records the author and drops the committer.
         ///
         /// The shape the widened read-back exists for. Without it, narrowing the
@@ -284,7 +315,7 @@ mod tests {
         /// shipped pinned by nothing: replacing it with a discard left the whole
         /// suite green. A double that cannot fail the way production fails is a
         /// double that certifies nothing.
-        identity_writes_vanish: std::cell::Cell<bool>,
+        identity_writes_vanish:  std::cell::Cell<bool>,
     }
 
     #[derive(Debug)]
@@ -298,9 +329,11 @@ mod tests {
 
     impl Git for FakeGit {
         type Error = Never;
+
         fn is_repo(&self, path: &AbsPath) -> bool {
             self.existing.borrow().iter().any(|p| p == path)
         }
+
         fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Never> {
             self.clones
                 .borrow_mut()
@@ -308,6 +341,7 @@ mod tests {
             self.existing.borrow_mut().push(dest.clone());
             Ok(())
         }
+
         fn set_identity(
             &self,
             path: &AbsPath,
@@ -332,9 +366,11 @@ mod tests {
                 .push((path.clone(), id.clone()));
             Ok(())
         }
+
         fn init(&self, _path: &AbsPath) -> Result<(), Never> {
             Ok(())
         }
+
         fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Never> {
             // Answers from a table the test fills in, so the refusing arm is
             // reachable. The assertion that used to be here asserted what the
@@ -346,6 +382,7 @@ mod tests {
                 .find(|(p, _)| p == path)
                 .map(|(_, e)| e.clone()))
         }
+
         fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Never> {
             if let Some((_, url)) = self.remotes.borrow().iter().find(|(p, _)| p == path) {
                 return Ok(Some(url.clone()));
@@ -357,6 +394,7 @@ mod tests {
                 .find(|(_, p)| p == path)
                 .map(|(u, _)| u.clone()))
         }
+
         fn identity(&self, path: &AbsPath) -> Result<Option<homma_api::CommitIdentity>, Never> {
             Ok(self
                 .identities
@@ -413,7 +451,7 @@ mod tests {
             } => {
                 assert_eq!(workspace, ws);
                 assert_eq!(enclosing, victim);
-            }
+            },
             other => panic!("must refuse, got {other:?}"),
         }
         assert!(
@@ -486,13 +524,19 @@ mod tests {
         let written = git.identities.borrow();
         let (_, got) = written.last().expect("an identity was set");
         assert_eq!(got.author_name(), "Onni Armas");
-        assert_eq!(got.author_email(), "ort@hiisi.digital", "the author stays op");
         assert_eq!(
-            got.committer_email(), "orgrinrt+vouti@ikiuni.dev",
+            got.author_email(),
+            "ort@hiisi.digital",
+            "the author stays op"
+        );
+        assert_eq!(
+            got.committer_email(),
+            "orgrinrt+vouti@ikiuni.dev",
             "and the committer is what distinguishes the crew's writes"
         );
         assert_eq!(
-            got.committer_name(), "Onni Armas",
+            got.committer_name(),
+            "Onni Armas",
             "the committer name defaults to the author's when the entry names none"
         );
     }
@@ -516,11 +560,13 @@ mod tests {
         let written = git.identities.borrow();
         let (_, got) = written.last().expect("an identity was set");
         assert_eq!(
-            got.author_name(), "Onni Armas",
+            got.author_name(),
+            "Onni Armas",
             "the author's name is unchanged"
         );
         assert_eq!(
-            got.committer_name(), "Vouti",
+            got.committer_name(),
+            "Vouti",
             "and the committer's name is the one the registry gave"
         );
     }
@@ -637,13 +683,16 @@ mod tests {
 
         let err = provision(&id, &ws, CONTENT, &git).unwrap_err();
         match err {
-            ProvisionError::WrongRemote { expected, found } => {
+            ProvisionError::WrongRemote {
+                expected,
+                found,
+            } => {
                 assert_eq!(expected, CONTENT);
                 assert_eq!(
                     found.as_deref(),
                     Some("git@example.invalid:someone-else/content.git")
                 );
-            }
+            },
             other => panic!("must refuse with the remote it found, got {other:?}"),
         }
         assert!(
@@ -682,7 +731,10 @@ mod tests {
         git.existing.borrow_mut().push(ws.clone());
 
         match provision(&id, &ws, CONTENT, &git).unwrap_err() {
-            ProvisionError::WrongRemote { found, .. } => assert!(found.is_none()),
+            ProvisionError::WrongRemote {
+                found,
+                ..
+            } => assert!(found.is_none()),
             other => panic!("got {other:?}"),
         }
     }

@@ -4,9 +4,11 @@
 //! outlives whatever was running it, so starting one again restores a
 //! participant rather than creating a new one.
 
-use crate::path::RelPath;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::path::RelPath;
 
 /// What kind of participant an entry describes.
 ///
@@ -81,30 +83,30 @@ impl Staffing {
 /// The optional fields are optional for that reason rather than for tidiness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
-    pub role: Role,
+    pub role:            Role,
     /// What everything else addresses it by.
-    pub handle: String,
+    pub handle:          String,
     /// Whether this entry is meant to have a workspace.
     ///
     /// Declared rather than inferred from an absent workspace. Inference is
     /// cheaper and wrong: an entry whose workspace was mistyped or dropped would
     /// read as a deliberate decision, which is the confusion this removes.
     #[serde(default)]
-    pub staffed: bool,
+    pub staffed:         bool,
     /// The short name a human uses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub nickname: Option<String>,
+    pub nickname:        Option<String>,
     /// The full form, for when the short one is too familiar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub full_name: Option<String>,
+    pub full_name:       Option<String>,
     /// What it is good at. A default for routing and an answer to who to ask,
     /// never a partition: work is assigned, not confined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub domain: Option<String>,
+    pub domain:          Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_name: Option<String>,
+    pub git_name:        Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_email: Option<String>,
+    pub git_email:       Option<String>,
     /// The address commits are *committed* by, when it differs from the author.
     ///
     /// **Absent means the committer is the author**, which is every ordinary
@@ -125,16 +127,16 @@ pub struct Identity {
     /// key that a global one can override, so the omission was a hole rather
     /// than a simplification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub committer_name: Option<String>,
+    pub committer_name:  Option<String>,
     /// Where its work happens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace: Option<String>,
+    pub workspace:       Option<String>,
     /// Pinned, so restarting reaches the same participant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<String>,
+    pub session:         Option<String>,
     /// Added as work needs them rather than up front.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub repos: Vec<String>,
+    pub repos:           Vec<String>,
 }
 
 impl Identity {
@@ -183,11 +185,7 @@ impl Identity {
         if self.workspace.is_none() {
             gaps.push("workspace");
         }
-        if gaps.is_empty() {
-            Staffing::Staffed
-        } else {
-            Staffing::Incomplete(gaps)
-        }
+        if gaps.is_empty() { Staffing::Staffed } else { Staffing::Incomplete(gaps) }
     }
 }
 
@@ -199,11 +197,11 @@ impl Identity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Paths {
-    pub hands: RelPath,
-    pub experts: RelPath,
+    pub hands:    RelPath,
+    pub experts:  RelPath,
     pub channels: RelPath,
-    pub agents: RelPath,
-    pub index: RelPath,
+    pub agents:   RelPath,
+    pub index:    RelPath,
 }
 
 impl Default for Paths {
@@ -213,11 +211,11 @@ impl Default for Paths {
         // which is the only way it can fail.
         let rel = |s: &str| RelPath::new(s).expect("a default path is relative and contained");
         Self {
-            hands: rel(".shared/hands"),
-            experts: rel(".shared/experts"),
+            hands:    rel(".shared/hands"),
+            experts:  rel(".shared/experts"),
             channels: rel(".shared/channels"),
-            agents: rel(".claude/agents"),
-            index: rel(".shared/.index"),
+            agents:   rel(".claude/agents"),
+            index:    rel(".shared/.index"),
         }
     }
 }
@@ -248,10 +246,10 @@ pub struct Workspace {
     #[serde(default = "local")]
     pub content_repo: String,
     #[serde(default)]
-    pub paths: Paths,
+    pub paths:        Paths,
     /// Handle to entry.
     #[serde(default)]
-    pub org: BTreeMap<String, Identity>,
+    pub org:          BTreeMap<String, Identity>,
 }
 
 impl Workspace {
@@ -351,23 +349,19 @@ fn walk_for_control_characters(value: &toml::Value, path: &str, found: &mut impl
             if s.chars().any(|c| c.is_control()) {
                 found(path);
             }
-        }
+        },
         toml::Value::Table(t) => {
             for (k, v) in t {
-                let next = if path.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{path}.{k}")
-                };
+                let next = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
                 walk_for_control_characters(v, &next, found);
             }
-        }
+        },
         toml::Value::Array(a) => {
             for v in a {
                 walk_for_control_characters(v, path, found);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -399,7 +393,7 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
     #[derive(serde::Serialize)]
     struct Readable {
         nickname: String,
-        nested: Nested,
+        nested:   Nested,
     }
 
     #[derive(serde::Serialize)]
@@ -423,10 +417,10 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
         // reporting that the fail-open version got wrong.
         let handle = "vouti".to_string();
         let entries = std::collections::BTreeMap::from([(handle.clone(), WillNotSerialise::new())]);
-        assert_eq!(
-            unsafe_strings_of(&entries),
-            vec![(handle, UNREADABLE.to_string())]
-        );
+        assert_eq!(unsafe_strings_of(&entries), vec![(
+            handle,
+            UNREADABLE.to_string()
+        )]);
     }
 
     #[test]
@@ -436,7 +430,7 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
         // is still the dotted one an operator can go and find.
         let got = control_character_fields(&Readable {
             nickname: "vou\nti".to_string(),
-            nested: Nested {
+            nested:   Nested {
                 note: "fine".to_string(),
             },
         })
@@ -445,7 +439,7 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
 
         let got = control_character_fields(&Readable {
             nickname: "fine".to_string(),
-            nested: Nested {
+            nested:   Nested {
                 note: "one\ttwo".to_string(),
             },
         })
@@ -460,7 +454,7 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
         assert_eq!(
             control_character_fields(&Readable {
                 nickname: "vouti".to_string(),
-                nested: Nested {
+                nested:   Nested {
                     note: "fine".to_string(),
                 },
             }),
@@ -799,19 +793,19 @@ handle = "silent"
         // characters `char::is_control` covers. Each class appears on at least
         // one field alone, so narrowing to any one of them fails here.
         let bad = Identity {
-            role: Role::Hand,
-            staffed: false,
-            handle: "pa\nja".into(),
-            nickname: Some("a\nb".into()),
-            full_name: Some("a\rb".into()),
-            domain: Some("a\tb".into()),
-            git_name: Some("a\0b".into()),
-            git_email: Some("a\x1bb".into()),
+            role:            Role::Hand,
+            staffed:         false,
+            handle:          "pa\nja".into(),
+            nickname:        Some("a\nb".into()),
+            full_name:       Some("a\rb".into()),
+            domain:          Some("a\tb".into()),
+            git_name:        Some("a\0b".into()),
+            git_email:       Some("a\x1bb".into()),
             committer_email: Some("a\rb".into()),
-            committer_name: Some("a\tb".into()),
-            workspace: Some("a\0b".into()),
-            session: Some("a\x1b[31mb".into()),
-            repos: vec!["a\nb".into()],
+            committer_name:  Some("a\tb".into()),
+            workspace:       Some("a\0b".into()),
+            session:         Some("a\x1b[31mb".into()),
+            repos:           vec!["a\nb".into()],
         };
 
         // **And every string in it is actually hostile.** `E0063` forces a new
@@ -829,20 +823,16 @@ handle = "silent"
                     toml::Value::String(s) => out.push((at.to_string(), s.clone())),
                     toml::Value::Table(t) => {
                         for (k, v) in t {
-                            let next = if at.is_empty() {
-                                k.clone()
-                            } else {
-                                format!("{at}.{k}")
-                            };
+                            let next = if at.is_empty() { k.clone() } else { format!("{at}.{k}") };
                             every_string(v, &next, out);
                         }
-                    }
+                    },
                     toml::Value::Array(a) => {
                         for v in a {
                             every_string(v, at, out);
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
             let mut all = Vec::new();
@@ -913,10 +903,12 @@ handle = "silent"
 
     #[test]
     fn a_clean_registry_reports_nothing_unsafe() {
-        assert!(Workspace::parse(WITH_ORG)
-            .unwrap()
-            .unsafe_strings()
-            .is_empty());
+        assert!(
+            Workspace::parse(WITH_ORG)
+                .unwrap()
+                .unsafe_strings()
+                .is_empty()
+        );
     }
 
     #[test]

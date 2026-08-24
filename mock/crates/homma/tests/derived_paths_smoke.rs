@@ -175,7 +175,7 @@ fn standing_up_twice_into_a_tree_with_a_symlink_is_the_same_answer() {
     std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
     add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
 
-    for pass in 1..=2 {
+    for pass in 1 ..= 2 {
         bin()
             .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
             .assert()
@@ -734,10 +734,7 @@ fn a_root_in_a_folded_spelling_of_an_absent_denied_place_builds_nothing_before_r
         .stderr(predicate::str::contains("not yours to write in"));
 
     let central = home.join("Dev").join("clause-dev");
-    assert!(
-        !central.exists(),
-        "the denied place must not exist"
-    );
+    assert!(!central.exists(), "the denied place must not exist");
     assert!(!folded_root.exists());
     assert!(
         !dir.path().join("ws").exists(),

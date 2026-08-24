@@ -74,9 +74,9 @@ pub struct Template {
     /// mapping, so there is nothing to drift.
     pub file_name: String,
     /// Which repos want it.
-    pub applies: Applies,
+    pub applies:   Applies,
     /// The bytes.
-    pub body: Vec<u8>,
+    pub body:      Vec<u8>,
 }
 
 /// Reading `.shared/configs/` failed.
@@ -91,11 +91,13 @@ pub enum TemplateError {
 impl std::fmt::Display for TemplateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Missing(p) => write!(
-                f,
-                "no shared configs at {}; nothing to compare a repo against",
-                p.display()
-            ),
+            Self::Missing(p) => {
+                write!(
+                    f,
+                    "no shared configs at {}; nothing to compare a repo against",
+                    p.display()
+                )
+            },
             Self::Io(p, e) => write!(f, "reading {}: {e}", p.display()),
         }
     }
@@ -236,10 +238,10 @@ mod tests {
     /// A workspace with the canonical configs in it and a repo directory to
     /// compare, returning both plus the `Root` a placement writes through.
     struct Fixture {
-        _dir: tempfile::TempDir,
+        _dir:  tempfile::TempDir,
         _home: tempfile::TempDir,
-        root: Root,
-        ws: PathBuf,
+        root:  Root,
+        ws:    PathBuf,
     }
 
     impl Fixture {
@@ -258,8 +260,7 @@ mod tests {
             // variant of it. The workspace is not under this home, so nothing
             // here is denied and the placements are the ones being tested.
             let home = tempfile::tempdir().unwrap();
-            let home_abs =
-                homma_api::AbsPath::new(home.path().canonicalize().unwrap()).unwrap();
+            let home_abs = homma_api::AbsPath::new(home.path().canonicalize().unwrap()).unwrap();
             let abs = homma_api::AbsPath::new(ws.clone()).unwrap();
             let root = Root::new(&abs, homma_api::Denied::under_home(&home_abs)).unwrap();
             Self {
@@ -310,10 +311,9 @@ mod tests {
             .unwrap()
             .modified()
             .unwrap();
-        assert_eq!(
-            ensure(&f.root, &repo, &f.templates()),
-            vec![Finding::Matches("rustfmt.toml".into())]
-        );
+        assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
+            Finding::Matches("rustfmt.toml".into())
+        ]);
         assert_eq!(
             std::fs::metadata(repo.as_path().join("rustfmt.toml"))
                 .unwrap()
@@ -339,7 +339,10 @@ mod tests {
             "max_width = 80\n",
             "the repo's own config was overwritten"
         );
-        assert!(!found[0].needs_a_human(), "a difference is a warning, not an error");
+        assert!(
+            !found[0].needs_a_human(),
+            "a difference is a warning, not an error"
+        );
     }
 
     #[test]
@@ -362,11 +365,14 @@ mod tests {
         let f = Fixture::new(&[("rustfmt.toml", "x\n")]);
         let repo = f.repo("homma", false);
         std::fs::create_dir_all(repo.as_path().join("mock")).unwrap();
-        std::fs::write(repo.as_path().join("mock").join("Cargo.toml"), "[workspace]\n").unwrap();
-        assert_eq!(
-            ensure(&f.root, &repo, &f.templates()),
-            vec![Finding::Placed("rustfmt.toml".into())]
-        );
+        std::fs::write(
+            repo.as_path().join("mock").join("Cargo.toml"),
+            "[workspace]\n",
+        )
+        .unwrap();
+        assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
+            Finding::Placed("rustfmt.toml".into())
+        ]);
     }
 
     #[test]
@@ -375,7 +381,10 @@ mod tests {
         let repo = f.repo("arvo", true);
         let found = ensure(&f.root, &repo, &f.templates());
         assert_eq!(found, vec![Finding::CannotInfer("mystery.toml".into())]);
-        assert!(found[0].needs_a_human(), "an unplaceable config must reach somebody");
+        assert!(
+            found[0].needs_a_human(),
+            "an unplaceable config must reach somebody"
+        );
         assert!(
             !repo.as_path().join("mystery.toml").exists(),
             "a template of unknown applicability was placed anyway"
@@ -423,21 +432,15 @@ mod tests {
 
     #[test]
     fn several_templates_are_each_answered_and_the_order_is_stable() {
-        let f = Fixture::new(&[
-            ("rustfmt.toml", "a\n"),
-            ("deny.toml", "b\n"),
-            (".taplo.toml", "c\n"),
-        ]);
+        let f =
+            Fixture::new(&[("rustfmt.toml", "a\n"), ("deny.toml", "b\n"), (".taplo.toml", "c\n")]);
         let repo = f.repo("arvo", true);
         std::fs::write(repo.as_path().join("deny.toml"), "b\n").unwrap();
         std::fs::write(repo.as_path().join(".taplo.toml"), "different\n").unwrap();
-        assert_eq!(
-            ensure(&f.root, &repo, &f.templates()),
-            vec![
-                Finding::Differs(".taplo.toml".into()),
-                Finding::Matches("deny.toml".into()),
-                Finding::Placed("rustfmt.toml".into()),
-            ]
-        );
+        assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
+            Finding::Differs(".taplo.toml".into()),
+            Finding::Matches("deny.toml".into()),
+            Finding::Placed("rustfmt.toml".into()),
+        ]);
     }
 }

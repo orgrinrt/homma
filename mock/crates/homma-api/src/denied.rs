@@ -35,8 +35,9 @@
 //! wherever it is needed. That is what makes this testable without setting a
 //! process-global environment variable in a parallel test run.
 
-use crate::AbsPath;
 use std::fmt;
+
+use crate::AbsPath;
 
 /// The absolute locations nothing may be written under.
 #[derive(Debug, Clone)]
@@ -79,9 +80,11 @@ impl Denied {
     pub fn from_env() -> Result<Self, NoHome> {
         match std::env::var_os("HOME") {
             None => Err(NoHome::Unset),
-            Some(v) => match AbsPath::new(&v) {
-                Ok(home) => Ok(Self::under_home(&home)),
-                Err(_) => Err(NoHome::Relative(v.to_string_lossy().into_owned())),
+            Some(v) => {
+                match AbsPath::new(&v) {
+                    Ok(home) => Ok(Self::under_home(&home)),
+                    Err(_) => Err(NoHome::Relative(v.to_string_lossy().into_owned())),
+                }
             },
         }
     }
@@ -128,11 +131,13 @@ impl Denied {
         // standee let a root inside its own workspace through, `git.init` ran,
         // and the run failed in `provision` having left a `.git` behind.
         let under_root = match own {
-            Some(w) => for_the_workspace.clone().and(
-                w,
-                "it is this participant's own workspace, and a workspace lives \
+            Some(w) => {
+                for_the_workspace.clone().and(
+                    w,
+                    "it is this participant's own workspace, and a workspace lives \
                  inside the root rather than the other way round",
-            ),
+                )
+            },
             None => for_the_workspace.clone(),
         };
 
@@ -207,27 +212,31 @@ impl Denied {
     /// a route through it was demonstrated, and the previous two versions of this
     /// comment each said the pair was total while a route was open.
     pub fn check(&self, path: &AbsPath, what: &str) -> Result<(), Forbidden> {
-        let resolved = path.resolved().map_err(|e| Forbidden {
-            path: path.clone(),
-            denied: path.clone(),
-            what: what.to_string(),
-            why: format!("it could not be resolved: {e}"),
+        let resolved = path.resolved().map_err(|e| {
+            Forbidden {
+                path:   path.clone(),
+                denied: path.clone(),
+                what:   what.to_string(),
+                why:    format!("it could not be resolved: {e}"),
+            }
         })?;
         for (denied, why) in &self.entries {
-            let denied_resolved = denied.resolved().map_err(|e| Forbidden {
-                path: path.clone(),
-                denied: denied.clone(),
-                what: what.to_string(),
-                why: format!("it could not be resolved: {e}"),
+            let denied_resolved = denied.resolved().map_err(|e| {
+                Forbidden {
+                    path:   path.clone(),
+                    denied: denied.clone(),
+                    what:   what.to_string(),
+                    why:    format!("it could not be resolved: {e}"),
+                }
             })?;
             let under = under_by_components(resolved.as_path(), denied_resolved.as_path())
                 || under_by_identity(resolved.as_path(), denied_resolved.as_path());
             if under {
                 return Err(Forbidden {
-                    path: path.clone(),
+                    path:   path.clone(),
                     denied: denied.clone(),
-                    what: what.to_string(),
-                    why: (*why).to_string(),
+                    what:   what.to_string(),
+                    why:    (*why).to_string(),
                 });
             }
         }
@@ -243,7 +252,7 @@ impl Denied {
 #[derive(Debug, Clone)]
 pub struct Standing {
     /// Everything forbidden under the root, every workspace included.
-    pub under_root: Denied,
+    pub under_root:        Denied,
     /// The same without the standee's own workspace, for checking that
     /// workspace, which would otherwise deny itself.
     pub for_the_workspace: Denied,
@@ -259,18 +268,22 @@ pub enum NoHome {
 impl fmt::Display for NoHome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NoHome::Unset => write!(
-                f,
-                "HOME is not set, so the places nothing may be written cannot be \
+            NoHome::Unset => {
+                write!(
+                    f,
+                    "HOME is not set, so the places nothing may be written cannot be \
                  determined. Two of the three are derived from it, and running \
                  without them would permit exactly the writes they forbid. Set \
                  HOME to an absolute path."
-            ),
-            NoHome::Relative(v) => write!(
-                f,
-                "HOME is `{v}`, which is relative, so the places nothing may be \
+                )
+            },
+            NoHome::Relative(v) => {
+                write!(
+                    f,
+                    "HOME is `{v}`, which is relative, so the places nothing may be \
                  written cannot be determined. Set it to an absolute path."
-            ),
+                )
+            },
         }
     }
 }
@@ -295,7 +308,6 @@ impl std::error::Error for NoHome {}
 /// That over-refuses on a case-sensitive filesystem, deliberately: `CLAUSE-DEV`
 /// beside `clause-dev` would be two directories there and this calls them one.
 /// The operator is refused and told why, which is a cheap thing to lose.
-///
 // FIXME: Unicode normalisation is not covered. APFS folds NFD against NFC as
 // well as case, so `.clauðe` in one form and the other are one directory and two
 // spellings here. The standard library has no normalisation and pulling a crate
@@ -376,10 +388,10 @@ fn under_by_identity(path: &std::path::Path, denied: &std::path::Path) -> bool {
 /// A path that lies under a location the record denies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Forbidden {
-    pub path: AbsPath,
+    pub path:   AbsPath,
     pub denied: AbsPath,
-    what: String,
-    why: String,
+    what:       String,
+    why:        String,
 }
 
 impl fmt::Display for Forbidden {
@@ -424,9 +436,11 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let home = abs(d.path());
         std::fs::create_dir_all(d.path().join("Dev").join("clause-dev")).unwrap();
-        assert!(Denied::under_home(&home)
-            .check(&home.join("Dev").join("clause-dev").join("x"), "workspace")
-            .is_err());
+        assert!(
+            Denied::under_home(&home)
+                .check(&home.join("Dev").join("clause-dev").join("x"), "workspace")
+                .is_err()
+        );
     }
 
     // The distinction the whole type exists for. `.claude` inside a content
@@ -440,9 +454,11 @@ mod tests {
         let repo = abs(d.path().join("repo"));
         std::fs::create_dir_all(d.path().join("repo").join(".claude")).unwrap();
 
-        assert!(Denied::under_home(&home)
-            .check(&repo.join(".claude").join("agents"), "definition")
-            .is_ok());
+        assert!(
+            Denied::under_home(&home)
+                .check(&repo.join(".claude").join("agents"), "definition")
+                .is_ok()
+        );
     }
 
     // A symlink is how a path reaches somewhere it does not appear to name, and
@@ -460,12 +476,14 @@ mod tests {
         .unwrap();
 
         let denied = Denied::under_home(&home);
-        assert!(denied
-            .check(
-                &abs(d.path().join("elsewhere").join("innocent").join("x")),
-                "workspace"
-            )
-            .is_err());
+        assert!(
+            denied
+                .check(
+                    &abs(d.path().join("elsewhere").join("innocent").join("x")),
+                    "workspace"
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -474,9 +492,11 @@ mod tests {
         // `.claude` yet for one to be forbidden.
         let d = tempfile::tempdir().unwrap();
         let home = abs(d.path());
-        assert!(Denied::under_home(&home)
-            .check(&home.join(".claude").join("x"), "workspace")
-            .is_err());
+        assert!(
+            Denied::under_home(&home)
+                .check(&home.join(".claude").join("x"), "workspace")
+                .is_err()
+        );
         assert!(!d.path().join(".claude").exists());
     }
 
@@ -613,12 +633,14 @@ mod tests {
         // The behaviour, which survives the disjunct that used to carry it.
         let d = tempfile::tempdir().unwrap();
         let home = abs(d.path());
-        assert!(Denied::under_home(&home)
-            .check(
-                &abs(d.path().join("DEV").join("Clause-Dev").join("x")),
-                "root"
-            )
-            .is_err());
+        assert!(
+            Denied::under_home(&home)
+                .check(
+                    &abs(d.path().join("DEV").join("Clause-Dev").join("x")),
+                    "root"
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -677,12 +699,14 @@ mod tests {
     fn an_ordinary_path_is_allowed() {
         let d = tempfile::tempdir().unwrap();
         let home = abs(d.path().join("home"));
-        assert!(Denied::under_home(&home)
-            .check(
-                &abs(d.path().join("Dev").join("crew").join("paja")),
-                "workspace"
-            )
-            .is_ok());
+        assert!(
+            Denied::under_home(&home)
+                .check(
+                    &abs(d.path().join("Dev").join("crew").join("paja")),
+                    "workspace"
+                )
+                .is_ok()
+        );
     }
 
     // `for_standing_up` reads `HOME`, and these say nothing about it: what they
@@ -721,14 +745,16 @@ workspace = "/srv/vouti"
         // staffed participants, so deleting the derivation left everything
         // green.
         let s = standing("paja");
-        assert!(s
-            .for_the_workspace
-            .check(&abs("/srv/vouti/inside"), "workspace")
-            .is_err());
-        assert!(s
-            .under_root
-            .check(&abs("/srv/vouti/inside"), "workspace root")
-            .is_err());
+        assert!(
+            s.for_the_workspace
+                .check(&abs("/srv/vouti/inside"), "workspace")
+                .is_err()
+        );
+        assert!(
+            s.under_root
+                .check(&abs("/srv/vouti/inside"), "workspace root")
+                .is_err()
+        );
     }
 
     #[test]
@@ -862,8 +888,10 @@ handle = "op"
 
         let after = Denied::under_home(&home).permitting(&elsewhere);
         assert!(after.check(&home.join(".claude"), "writing").is_err());
-        assert!(after
-            .check(&home.join("Dev").join("clause-dev"), "writing")
-            .is_err());
+        assert!(
+            after
+                .check(&home.join("Dev").join("clause-dev"), "writing")
+                .is_err()
+        );
     }
 }

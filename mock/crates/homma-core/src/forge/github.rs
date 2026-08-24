@@ -49,8 +49,8 @@ const API_VERSION: &str = "2022-11-28";
 /// A [`Forge`] backed by the GitHub REST v3 API.
 pub struct GitHubClient {
     api_url: String,
-    token: Option<String>,
-    agent: ureq::Agent,
+    token:   Option<String>,
+    agent:   ureq::Agent,
 }
 
 impl GitHubClient {
@@ -148,7 +148,7 @@ impl Forge for GitHubClient {
             Ok(resp) => {
                 let wire: GitHubRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
-            }
+            },
             Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }
@@ -181,7 +181,7 @@ impl Forge for GitHubClient {
             Ok(resp) => {
                 let wire: GitHubRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
-            }
+            },
             // GitHub uses 422 Unprocessable Entity for "name already exists";
             // Forgejo uses 409. Both map to RepoAlreadyExists here.
             Err(ureq::Error::Status(422, resp)) => {
@@ -191,15 +191,15 @@ impl Forge for GitHubClient {
                 {
                     Err(ForgeError::RepoAlreadyExists {
                         owner: owner.into(),
-                        name: spec.name.clone(),
+                        name:  spec.name.clone(),
                     })
                 } else {
                     Err(ForgeError::UnexpectedStatus {
                         status: 422,
-                        body: truncate(body, 512),
+                        body:   truncate(body, 512),
                     })
                 }
-            }
+            },
             Err(e) => Err(map_ureq_error(e, owner, &spec.name)),
         }
     }
@@ -207,7 +207,7 @@ impl Forge for GitHubClient {
     fn archive_repo(&self, owner: &str, name: &str) -> Result<(), ForgeError> {
         let url = self.repo_path(owner, name);
         let body = GitHubPatchBody {
-            archived: Some(true),
+            archived:       Some(true),
             default_branch: None,
         };
         match self.patch_json(&url, &body) {
@@ -229,23 +229,23 @@ impl Forge for GitHubClient {
 /// Captures the migrate-relevant fields; ignores the rest.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct GitHubRepo {
-    pub name: String,
-    pub owner: GitHubOwner,
-    pub description: Option<String>,
+    pub name:           String,
+    pub owner:          GitHubOwner,
+    pub description:    Option<String>,
     pub default_branch: String,
-    pub private: bool,
+    pub private:        bool,
     /// GitHub's newer visibility enum (`public` / `private` / `internal`).
     /// Returned alongside `private` on Enterprise installations. On
     /// `github.com` Free plans this is usually present but only carries
     /// `public` or `private`. Missing is tolerated for older API surfaces
     /// or proxied installations that strip it.
     #[serde(default)]
-    pub visibility: Option<String>,
+    pub visibility:     Option<String>,
     #[serde(default)]
-    pub archived: bool,
-    pub clone_url: String,
+    pub archived:       bool,
+    pub clone_url:      String,
     #[serde(default)]
-    pub topics: Vec<String>,
+    pub topics:         Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -270,7 +270,7 @@ impl GitHubRepo {
                 } else {
                     Visibility::Public
                 }
-            }
+            },
         };
         RepoMetadata {
             owner: self.owner.login,
@@ -294,20 +294,20 @@ impl GitHubRepo {
 /// see [`GitHubClient::create_repo`] for the follow-up PATCH path.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GitHubCreateBody {
-    pub name: String,
+    pub name:        String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub private: bool,
-    pub auto_init: bool,
+    pub private:     bool,
+    pub auto_init:   bool,
 }
 
 impl GitHubCreateBody {
     pub(crate) fn from_spec(spec: &CreateRepoSpec) -> Self {
         Self {
-            name: spec.name.clone(),
+            name:        spec.name.clone(),
             description: spec.description.clone(),
-            private: matches!(spec.visibility, Visibility::Private | Visibility::Internal),
-            auto_init: spec.auto_init,
+            private:     matches!(spec.visibility, Visibility::Private | Visibility::Internal),
+            auto_init:   spec.auto_init,
         }
     }
 }
@@ -320,7 +320,7 @@ impl GitHubCreateBody {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GitHubPatchBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub archived: Option<bool>,
+    pub archived:       Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_branch: Option<String>,
 }
@@ -336,7 +336,7 @@ pub(crate) fn map_ureq_error(e: ureq::Error, owner: &str, name: &str) -> ForgeEr
         ureq::Error::Status(code, resp) => {
             let body = resp.into_string().unwrap_or_default();
             map_status(code, owner, name, body)
-        }
+        },
         ureq::Error::Transport(t) => ForgeError::Backend(Box::new(t)),
     }
 }
@@ -350,14 +350,22 @@ pub(crate) fn map_ureq_error(e: ureq::Error, owner: &str, name: &str) -> ForgeEr
 /// treat unmatched 422s as `UnexpectedStatus`.
 pub(crate) fn map_status(status: u16, owner: &str, name: &str, body: String) -> ForgeError {
     match status {
-        404 => ForgeError::RepoNotFound {
-            owner: owner.into(),
-            name: name.into(),
+        404 => {
+            ForgeError::RepoNotFound {
+                owner: owner.into(),
+                name:  name.into(),
+            }
         },
-        401 | 403 => ForgeError::Unauthorized { reason: body },
-        _ => ForgeError::UnexpectedStatus {
-            status,
-            body: truncate(body, 512),
+        401 | 403 => {
+            ForgeError::Unauthorized {
+                reason: body,
+            }
+        },
+        _ => {
+            ForgeError::UnexpectedStatus {
+                status,
+                body: truncate(body, 512),
+            }
         },
     }
 }
@@ -393,9 +401,9 @@ mod tests {
 
     fn cfg() -> ForgeConfig {
         ForgeConfig {
-            kind: ForgeKind::Github,
-            base_url: "https://github.com".into(),
-            api_url: "https://api.github.com".into(),
+            kind:      ForgeKind::Github,
+            base_url:  "https://github.com".into(),
+            api_url:   "https://api.github.com".into(),
             token_env: None,
         }
     }
@@ -482,10 +490,13 @@ mod tests {
     fn map_status_other_carries_status_and_body() {
         let e = map_status(502, "o", "n", "bad gateway".into());
         match e {
-            ForgeError::UnexpectedStatus { status, body } => {
+            ForgeError::UnexpectedStatus {
+                status,
+                body,
+            } => {
                 assert_eq!(status, 502);
                 assert!(body.contains("bad gateway"));
-            }
+            },
             _ => panic!("wrong variant"),
         }
     }
@@ -496,10 +507,10 @@ mod tests {
         // needs inspection to disambiguate "duplicate name" from other 422
         // causes (invalid name, missing required field, etc.).
         let e = map_status(422, "o", "n", "Validation Failed".into());
-        assert!(matches!(
-            e,
-            ForgeError::UnexpectedStatus { status: 422, .. }
-        ));
+        assert!(matches!(e, ForgeError::UnexpectedStatus {
+            status: 422,
+            ..
+        }));
     }
 
     #[test]
@@ -507,10 +518,13 @@ mod tests {
         let big = "x".repeat(2048);
         let e = map_status(500, "o", "n", big);
         match e {
-            ForgeError::UnexpectedStatus { body, .. } => {
+            ForgeError::UnexpectedStatus {
+                body,
+                ..
+            } => {
                 assert!(body.len() <= 512 + "... [truncated]".len());
                 assert!(body.ends_with("... [truncated]"));
-            }
+            },
             _ => panic!("wrong variant"),
         }
     }
@@ -521,10 +535,13 @@ mod tests {
         let big = "ä".repeat(300);
         let e = map_status(500, "o", "n", big);
         match e {
-            ForgeError::UnexpectedStatus { body, .. } => {
+            ForgeError::UnexpectedStatus {
+                body,
+                ..
+            } => {
                 assert!(body.ends_with("... [truncated]"));
                 assert!(std::str::from_utf8(body.as_bytes()).is_ok());
-            }
+            },
             _ => panic!("wrong variant"),
         }
     }
@@ -532,17 +549,17 @@ mod tests {
     #[test]
     fn github_repo_into_metadata_public() {
         let wire = GitHubRepo {
-            name: "homma".into(),
-            owner: GitHubOwner {
+            name:           "homma".into(),
+            owner:          GitHubOwner {
                 login: "orgrinrt".into(),
             },
-            description: Some("workspace tooling".into()),
+            description:    Some("workspace tooling".into()),
             default_branch: "dev".into(),
-            private: false,
-            visibility: Some("public".into()),
-            archived: false,
-            clone_url: "https://github.com/orgrinrt/homma.git".into(),
-            topics: vec!["rust".into()],
+            private:        false,
+            visibility:     Some("public".into()),
+            archived:       false,
+            clone_url:      "https://github.com/orgrinrt/homma.git".into(),
+            topics:         vec!["rust".into()],
         };
         let m = wire.into_metadata();
         assert_eq!(m.owner, "orgrinrt");
@@ -556,15 +573,17 @@ mod tests {
     #[test]
     fn github_repo_into_metadata_private_via_string() {
         let wire = GitHubRepo {
-            name: "x".into(),
-            owner: GitHubOwner { login: "o".into() },
-            description: None,
+            name:           "x".into(),
+            owner:          GitHubOwner {
+                login: "o".into(),
+            },
+            description:    None,
             default_branch: "main".into(),
-            private: true,
-            visibility: Some("private".into()),
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        true,
+            visibility:     Some("private".into()),
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert_eq!(wire.into_metadata().visibility, Visibility::Private);
     }
@@ -574,15 +593,17 @@ mod tests {
         // Enterprise-only on github.com REST v3, but the wire shape supports
         // it. Mapping must surface Internal so migrate can act on it.
         let wire = GitHubRepo {
-            name: "x".into(),
-            owner: GitHubOwner { login: "o".into() },
-            description: None,
+            name:           "x".into(),
+            owner:          GitHubOwner {
+                login: "o".into(),
+            },
+            description:    None,
             default_branch: "main".into(),
-            private: false,
-            visibility: Some("internal".into()),
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        false,
+            visibility:     Some("internal".into()),
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert_eq!(wire.into_metadata().visibility, Visibility::Internal);
     }
@@ -592,15 +613,17 @@ mod tests {
         // No visibility string in response (older API surface or proxy):
         // fall back to the private bool.
         let wire = GitHubRepo {
-            name: "x".into(),
-            owner: GitHubOwner { login: "o".into() },
-            description: None,
+            name:           "x".into(),
+            owner:          GitHubOwner {
+                login: "o".into(),
+            },
+            description:    None,
             default_branch: "main".into(),
-            private: true,
-            visibility: None,
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        true,
+            visibility:     None,
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert_eq!(wire.into_metadata().visibility, Visibility::Private);
     }
@@ -608,15 +631,17 @@ mod tests {
     #[test]
     fn github_repo_into_metadata_unknown_string_falls_back_to_private_bool() {
         let wire = GitHubRepo {
-            name: "x".into(),
-            owner: GitHubOwner { login: "o".into() },
-            description: None,
+            name:           "x".into(),
+            owner:          GitHubOwner {
+                login: "o".into(),
+            },
+            description:    None,
             default_branch: "main".into(),
-            private: false,
-            visibility: Some("weird".into()),
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        false,
+            visibility:     Some("weird".into()),
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         // Unknown string with private=false falls back to Public.
         assert_eq!(wire.into_metadata().visibility, Visibility::Public);
@@ -625,15 +650,17 @@ mod tests {
     #[test]
     fn github_repo_into_metadata_drops_empty_description() {
         let wire = GitHubRepo {
-            name: "x".into(),
-            owner: GitHubOwner { login: "o".into() },
-            description: Some(String::new()),
+            name:           "x".into(),
+            owner:          GitHubOwner {
+                login: "o".into(),
+            },
+            description:    Some(String::new()),
             default_branch: "main".into(),
-            private: false,
-            visibility: Some("public".into()),
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        false,
+            visibility:     Some("public".into()),
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert!(wire.into_metadata().description.is_none());
     }
@@ -641,12 +668,12 @@ mod tests {
     #[test]
     fn github_create_body_maps_visibility_to_private() {
         let spec = CreateRepoSpec {
-            name: "homma".into(),
-            description: Some("hi".into()),
-            visibility: Visibility::Private,
-            owner_kind: OwnerKind::User,
+            name:           "homma".into(),
+            description:    Some("hi".into()),
+            visibility:     Visibility::Private,
+            owner_kind:     OwnerKind::User,
             default_branch: Some("dev".into()),
-            auto_init: false,
+            auto_init:      false,
         };
         let body = GitHubCreateBody::from_spec(&spec);
         assert!(body.private);
@@ -673,12 +700,12 @@ mod tests {
         // GitHub rejects default_branch in the create body. Ensure we never
         // send it, regardless of what the spec carries.
         let spec = CreateRepoSpec {
-            name: "homma".into(),
-            description: None,
-            visibility: Visibility::Public,
-            owner_kind: OwnerKind::User,
+            name:           "homma".into(),
+            description:    None,
+            visibility:     Visibility::Public,
+            owner_kind:     OwnerKind::User,
             default_branch: Some("dev".into()),
-            auto_init: false,
+            auto_init:      false,
         };
         let body = GitHubCreateBody::from_spec(&spec);
         let json = serde_json::to_string(&body).unwrap();
@@ -689,7 +716,7 @@ mod tests {
     #[test]
     fn github_patch_body_serializes_only_set_fields() {
         let body = GitHubPatchBody {
-            archived: Some(true),
+            archived:       Some(true),
             default_branch: None,
         };
         let json = serde_json::to_string(&body).unwrap();
@@ -700,7 +727,7 @@ mod tests {
     #[test]
     fn github_patch_body_can_carry_default_branch_only() {
         let body = GitHubPatchBody {
-            archived: None,
+            archived:       None,
             default_branch: Some("dev".into()),
         };
         let json = serde_json::to_string(&body).unwrap();

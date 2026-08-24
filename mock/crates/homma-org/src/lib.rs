@@ -10,12 +10,11 @@ pub mod provision;
 pub mod remote;
 pub mod workspace;
 
-pub use generate::{definition, write_definitions, Form, Generated};
-pub use provision::{provision, ProvisionError, Provisioned};
-pub use remote::{repo_name, same_repo};
-pub use workspace::{prepare, Layout, Prepared};
-
+pub use generate::{Form, Generated, definition, write_definitions};
 use homma_api::{Identity, Role, Staffing, Workspace};
+pub use provision::{ProvisionError, Provisioned, provision};
+pub use remote::{repo_name, same_repo};
+pub use workspace::{Layout, Prepared, prepare};
 
 /// The registry, read from a workspace's configuration.
 pub struct Registry<'a> {
@@ -24,7 +23,9 @@ pub struct Registry<'a> {
 
 impl<'a> Registry<'a> {
     pub fn new(workspace: &'a Workspace) -> Self {
-        Self { workspace }
+        Self {
+            workspace,
+        }
     }
 
     pub fn get(&self, handle: &str) -> Option<&'a Identity> {
@@ -58,9 +59,11 @@ impl<'a> Registry<'a> {
         self.workspace
             .org
             .values()
-            .filter_map(|i| match i.staffing() {
-                Staffing::Incomplete(gaps) => Some((i, gaps)),
-                _ => None,
+            .filter_map(|i| {
+                match i.staffing() {
+                    Staffing::Incomplete(gaps) => Some((i, gaps)),
+                    _ => None,
+                }
             })
             .collect()
     }

@@ -20,9 +20,10 @@
 //! whatever repository the operator was standing in, which is what every guard
 //! in this crate exists to stop.
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
 
 /// A path known to be absolute.
 ///
@@ -92,14 +93,14 @@ impl AbsPath {
         let mut out = self.0.clone();
         for c in path.as_ref().components() {
             match c {
-                Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+                Component::CurDir | Component::RootDir | Component::Prefix(_) => {},
                 Component::ParentDir => {
                     // Clamped at the receiver. Popping past it is what leaving
                     // means, and nothing descending has business doing it.
                     if out != self.0 {
                         out.pop();
                     }
-                }
+                },
                 Component::Normal(n) => out.push(n),
             }
         }
@@ -156,10 +157,12 @@ impl AbsPath {
         let mut pending: VecDeque<OsString> = self
             .0
             .components()
-            .filter_map(|c| match c {
-                std::path::Component::Normal(n) => Some(n.to_os_string()),
-                // No `ParentDir` arm: `normalise` removed them before this ran.
-                _ => None,
+            .filter_map(|c| {
+                match c {
+                    std::path::Component::Normal(n) => Some(n.to_os_string()),
+                    // No `ParentDir` arm: `normalise` removed them before this ran.
+                    _ => None,
+                }
             })
             .collect();
 
@@ -195,8 +198,8 @@ impl AbsPath {
                     for c in target.components() {
                         match c {
                             std::path::Component::RootDir => out = PathBuf::from("/"),
-                            std::path::Component::Prefix(_) => {}
-                            std::path::Component::CurDir => {}
+                            std::path::Component::Prefix(_) => {},
+                            std::path::Component::CurDir => {},
                             std::path::Component::ParentDir => front.push(OsString::from("..")),
                             std::path::Component::Normal(n) => front.push(n.to_os_string()),
                         }
@@ -207,7 +210,7 @@ impl AbsPath {
                     for n in front.into_iter().rev() {
                         pending.push_front(n);
                     }
-                }
+                },
                 // Present and not a link, or absent. Either way it is taken as
                 // written: an absent component cannot redirect anything, and a
                 // real directory is where it says it is.
@@ -250,7 +253,7 @@ fn normalise(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in path.components() {
         match c {
-            Component::CurDir => {}
+            Component::CurDir => {},
             Component::ParentDir => {
                 // Popping past the root leaves the root, which is what every
                 // filesystem does with `/..`, and `PathBuf::pop` already does
@@ -259,7 +262,7 @@ fn normalise(path: &Path) -> PathBuf {
                 // and it could not be false in any way that mattered, which
                 // makes it a condition that reads as a guard and is not one.
                 out.pop();
-            }
+            },
             other => out.push(other.as_os_str()),
         }
     }
@@ -268,6 +271,7 @@ fn normalise(path: &Path) -> PathBuf {
 
 impl std::ops::Deref for AbsPath {
     type Target = Path;
+
     fn deref(&self) -> &Path {
         &self.0
     }
@@ -310,13 +314,13 @@ impl RelPath {
         let mut depth: i32 = 0;
         for c in path.components() {
             match c {
-                std::path::Component::CurDir => {}
+                std::path::Component::CurDir => {},
                 std::path::Component::ParentDir => {
                     depth -= 1;
                     if depth < 0 {
                         return Err(NotContained(path));
                     }
-                }
+                },
                 std::path::Component::Normal(_) => depth += 1,
                 _ => return Err(NotContained(path)),
             }
@@ -549,7 +553,7 @@ mod tests {
         // One more than the ceiling, built as a chain rather than a cycle, so
         // this fails for the length and not for looping.
         std::os::unix::fs::symlink(base.join("end"), base.join("l0")).unwrap();
-        for i in 1..64u32 {
+        for i in 1 .. 64u32 {
             std::os::unix::fs::symlink(
                 base.join(format!("l{}", i - 1)),
                 base.join(format!("l{i}")),

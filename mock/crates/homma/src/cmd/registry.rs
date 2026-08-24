@@ -4,9 +4,10 @@
 //! and appending it to a text file is a different job from cloning a repository
 //! and generating definitions, and the two share nothing but the identity type.
 
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use homma_api::{Denied, Identity, Workspace};
-use std::path::Path;
 
 /// The TOML block for one identity, ready to append to a registry file.
 ///
@@ -75,8 +76,9 @@ pub fn append_entry(path: &Path, id: &Identity, denied: &Denied) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use homma_api::Role;
+
+    use super::*;
 
     /// A list denying somewhere no test writes, so these exercise the write
     /// rather than the refusal. The refusal is asserted end to end, where the

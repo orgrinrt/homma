@@ -11,40 +11,40 @@ use homma_core::{Config, ForgeKind};
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
-use crate::output::{emit, HumanRender};
+use crate::output::{HumanRender, emit};
 
 /// Top-level success payload for `homma status`.
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
     pub workspace: WorkspaceLine,
-    pub forges: Vec<ForgeLine>,
-    pub repos: Vec<RepoLine>,
+    pub forges:    Vec<ForgeLine>,
+    pub repos:     Vec<RepoLine>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct WorkspaceLine {
-    pub name: String,
-    pub path: String,
-    pub default_public_branch: String,
+    pub name:                   String,
+    pub path:                   String,
+    pub default_public_branch:  String,
     pub default_working_branch: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ForgeLine {
-    pub name: String,
-    pub kind: String,
-    pub base_url: String,
-    pub api_url: String,
+    pub name:      String,
+    pub kind:      String,
+    pub base_url:  String,
+    pub api_url:   String,
     pub token_env: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct RepoLine {
-    pub name: String,
-    pub forge: String,
-    pub owner: String,
-    pub local_path: String,
-    pub public_branch: String,
+    pub name:           String,
+    pub forge:          String,
+    pub owner:          String,
+    pub local_path:     String,
+    pub public_branch:  String,
     pub working_branch: String,
 }
 
@@ -56,32 +56,36 @@ pub fn run(cfg: &Config, format: OutputFormat) -> Result<()> {
 
 fn build_report(cfg: &Config) -> StatusReport {
     let workspace = WorkspaceLine {
-        name: cfg.workspace.name.clone(),
-        path: cfg.workspace.path.display().to_string(),
-        default_public_branch: cfg.defaults.public_branch.clone(),
+        name:                   cfg.workspace.name.clone(),
+        path:                   cfg.workspace.path.display().to_string(),
+        default_public_branch:  cfg.defaults.public_branch.clone(),
         default_working_branch: cfg.defaults.working_branch.clone(),
     };
     let forges = cfg
         .forges
         .iter()
-        .map(|(name, f)| ForgeLine {
-            name: name.clone(),
-            kind: forge_kind_str(f.kind).to_string(),
-            base_url: f.base_url.clone(),
-            api_url: f.api_url.clone(),
-            token_env: f.token_env.clone(),
+        .map(|(name, f)| {
+            ForgeLine {
+                name:      name.clone(),
+                kind:      forge_kind_str(f.kind).to_string(),
+                base_url:  f.base_url.clone(),
+                api_url:   f.api_url.clone(),
+                token_env: f.token_env.clone(),
+            }
         })
         .collect();
     let repos = cfg
         .repos
         .iter()
-        .map(|(name, r)| RepoLine {
-            name: name.clone(),
-            forge: r.forge.clone(),
-            owner: r.owner.clone(),
-            local_path: r.local_path.display().to_string(),
-            public_branch: r.resolved_public_branch(&cfg.defaults).to_string(),
-            working_branch: r.resolved_working_branch(&cfg.defaults).to_string(),
+        .map(|(name, r)| {
+            RepoLine {
+                name:           name.clone(),
+                forge:          r.forge.clone(),
+                owner:          r.owner.clone(),
+                local_path:     r.local_path.display().to_string(),
+                public_branch:  r.resolved_public_branch(&cfg.defaults).to_string(),
+                working_branch: r.resolved_working_branch(&cfg.defaults).to_string(),
+            }
         })
         .collect();
     StatusReport {
