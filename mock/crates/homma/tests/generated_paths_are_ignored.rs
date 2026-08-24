@@ -144,8 +144,8 @@ fn the_ignore_list_holds_before_anything_has_generated_into_it() {
         eprintln!("skipped: {} is not a git work tree", root.display());
         return;
     }
-    let ignore = std::fs::read_to_string(root.join(".gitignore"))
-        .expect("this repository has a .gitignore");
+    let ignore =
+        std::fs::read_to_string(root.join(".gitignore")).expect("this repository has a .gitignore");
 
     let clean = tempfile::tempdir().unwrap();
     let ok = std::process::Command::new("git")
