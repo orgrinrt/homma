@@ -65,7 +65,10 @@ fn git_stdout(dir: &Path, args: &[&str]) -> String {
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8(out.stdout).expect("git stdout is utf8").trim().to_string()
+    String::from_utf8(out.stdout)
+        .expect("git stdout is utf8")
+        .trim()
+        .to_string()
 }
 
 #[test]
@@ -204,8 +207,8 @@ fn adding_a_remote_twice_leaves_one_section_and_the_second_url() {
     repo.add_remote("origin", "https://example.invalid/two.git")
         .expect("second add");
 
-    let config = std::fs::read_to_string(dir.path().join(".git").join("config"))
-        .expect("read .git/config");
+    let config =
+        std::fs::read_to_string(dir.path().join(".git").join("config")).expect("read .git/config");
     assert_eq!(
         config.matches("[remote \"origin\"]").count(),
         1,
