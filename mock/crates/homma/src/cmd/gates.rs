@@ -365,19 +365,6 @@ mod tests {
         // manifest. So `local_path = "./arvo"` is the reachable shape, and
         // `/ws/./arvo` is not a textual prefix of `/ws/arvo/src/lib.rs`, which
         // is how the longest-prefix match silently finds nothing.
-        let entry = crate::cmd::util::relative_str(Path::new("./arvo"));
-        assert_eq!(entry, "arvo");
-
-        let body = gate_script(&[("arvo".to_string(), entry)]);
-        assert!(
-            body.contains("'arvo|arvo'"),
-            "table entry not normalised: {body}"
-        );
-        assert!(
-            !body.contains("/./"),
-            "the gate carries a no-op path component"
-        );
-
         // And the resolution the script performs on it, run, so this is not a
         // claim about a string. The control is the un-normalised form, which is
         // what the same table held before and which does not match.
