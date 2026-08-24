@@ -518,6 +518,11 @@ mod tests {
 
     /// Run an emitted wrapper with a tool-input payload naming `target`.
     fn run_wrapper(wrapper: &Path, target: &Path) {
+        run_wrapper_output(wrapper, target);
+    }
+
+    /// As `run_wrapper`, keeping what the process said and how it exited.
+    fn run_wrapper_output(wrapper: &Path, target: &Path) -> std::process::Output {
         use std::io::Write;
         let payload = format!(r#"{{"tool_input":{{"file_path":"{}"}}}}"#, target.display());
         let mut child = std::process::Command::new("bash")
@@ -533,7 +538,7 @@ mod tests {
             .unwrap()
             .write_all(payload.as_bytes())
             .unwrap();
-        child.wait_with_output().unwrap();
+        child.wait_with_output().unwrap()
     }
 
     use super::*;
@@ -615,10 +620,15 @@ mod tests {
 
     #[test]
     fn a_wrapper_declines_when_the_repo_is_not_cloned_here() {
-        // A tracked wrapper travels to workspaces that hold a different subset
-        // of the manifest. There is no guard to run there, and the wrapper has
-        // to say so by declining rather than by exiting 0 the way an approval
-        // does.
+        // A tracked wrapper travels to workspaces holding a different subset of
+        // the manifest. There is no guard to run there.
+        //
+        // The target has to be INSIDE the absent repo, and that is the whole of
+        // this test. A path outside it exits 0 through the scope check whether
+        // or not the executable check exists, so a test aiming there passes
+        // against the defect and measures nothing. Inside, the two arms
+        // separate: with the check the wrapper declines, and without it the
+        // wrapper reaches `exec` on a file that is not there and fails.
         let ws = tempfile::tempdir().unwrap();
         let hooks = ws.path().join(".claude/hooks");
         fs::create_dir_all(&hooks).unwrap();
@@ -632,26 +642,18 @@ mod tests {
         .unwrap();
         make_executable(&wrapper);
 
-        let out = std::process::Command::new("bash")
-            .arg(&wrapper)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut c| {
-                use std::io::Write;
-                c.stdin
-                    .as_mut()
-                    .unwrap()
-                    .write_all(br#"{"tool_input":{"file_path":"/anywhere/x.rs"}}"#)?;
-                c.wait_with_output()
-            })
-            .unwrap();
-        assert!(out.status.success(), "declining is exit 0, not a failure");
+        let inside = ws.path().join("arvo/src/lib.rs");
+        let out = run_wrapper_output(&wrapper, &inside);
         assert!(
-            out.stdout.is_empty(),
-            "a wrapper with nothing to run emitted a decision: {}",
-            String::from_utf8_lossy(&out.stdout)
+            out.status.success(),
+            "a wrapper with nothing to run failed instead of declining: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.stdout.is_empty() && out.stderr.is_empty(),
+            "a wrapper with nothing to run said something: out={} err={}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
         );
     }
 
