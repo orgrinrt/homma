@@ -110,10 +110,13 @@ impl Store {
     /// rather than trusted. `create_dir_all` would otherwise make traversal
     /// succeed rather than fail.
     fn check_kind_name(kind: &str) -> Result<(), Error> {
+        // No component scan, because `||` short-circuits and there is nothing
+        // left to scan by the time one would run: reaching past the two
+        // `contains` arms means the name holds no separator, so it is one
+        // component, so the only parent name it can be is the whole string.
         let bad = kind.is_empty()
             || kind.contains('/')
             || kind.contains('\\')
-            || kind.split(['/', '\\']).any(|c| c == "..")
             || kind == ".."
             || kind.contains('\0');
         if bad {
@@ -150,6 +153,10 @@ impl Store {
 
     /// Every record of a kind, in the order it was written.
     pub fn read(&self, kind: &str) -> Result<Vec<Record>, Error> {
+        // A read escapes the root exactly as a write does, and this one was
+        // open: `append` validated, `read` did not, and `replace` reaches
+        // `rewrite` through here. A traversing kind whose target exists outside
+        // the root was therefore readable, and then rewritable.
         Self::check_kind_name(kind)?;
         let path = self.path_for(kind);
         if !path.exists() {
@@ -192,6 +199,12 @@ impl Store {
     }
 
     fn rewrite(&self, kind: &str, all: &[Record]) -> Result<(), Error> {
+        // Validated here rather than trusted from the caller, even though the
+        // only caller now reaches `read` first and `read` checks too. Relying on
+        // that would be a guard held in a different method, which is the shape
+        // this branch's defect took fourteen times and which survives exactly
+        // until someone adds a second caller.
+        Self::check_kind_name(kind)?;
         let path = self.path_for(kind);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -252,6 +265,60 @@ mod tests {
     fn reading_a_kind_nothing_has_written_is_empty_rather_than_an_error() {
         let (_d, s) = store();
         assert!(s.read("message").unwrap().is_empty());
+    }
+
+    #[test]
+    fn read_refuses_a_traversing_kind_rather_than_opening_a_file_outside_the_root() {
+        // This one was reachable through the public surface. `append` checked
+        // the name and `read` did not, so a kind naming a path outside the root
+        // was read and parsed from there.
+        // The store is rooted one level inside the tempdir, so `..` reaches a
+        // real file that is still cleaned up with the tempdir.
+        let d = tempfile::tempdir().unwrap();
+        let s = Store::open(d.path().join("root"));
+        let outside = d.path().join("outside.ndjson");
+        fs::write(
+            &outside,
+            serde_json::to_string(&tsk("t1", "not the store's")).unwrap() + "\n",
+        )
+        .unwrap();
+
+        // The control: the same call against a name that does not traverse
+        // reads nothing and is not an error, so a refusal below is about the
+        // traversal rather than about the file being absent.
+        assert!(s.read("ordinary").unwrap().is_empty());
+
+        let err = s.read("../outside").unwrap_err();
+        assert!(
+            matches!(err, Error::UnsafeKind(ref k) if k == "../outside"),
+            "expected the kind to be refused by name, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn rewrite_refuses_a_traversing_kind_without_help_from_its_caller() {
+        // `rewrite` is private and its only caller validates before reaching
+        // it, so this cannot be provoked through the public surface today. It
+        // is asserted directly because the guard's whole purpose is to hold
+        // when a second caller appears, and a guard nothing names is one a
+        // later edit deletes without any test going red.
+        let d = tempfile::tempdir().unwrap();
+        let s = Store::open(d.path().join("root"));
+        let escaped = d.path().join("escaped.ndjson");
+        assert!(
+            !escaped.exists(),
+            "the control: nothing is at the traversal target before the call"
+        );
+
+        let err = s.rewrite("../escaped", &[]).unwrap_err();
+        assert!(
+            matches!(err, Error::UnsafeKind(ref k) if k == "../escaped"),
+            "expected the kind to be refused by name, got {err:?}"
+        );
+        assert!(
+            !escaped.exists(),
+            "and nothing may be written outside the store root"
+        );
     }
 
     #[test]

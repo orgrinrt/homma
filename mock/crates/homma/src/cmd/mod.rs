@@ -98,7 +98,40 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // in the registry survives being added to. Written through a
                     // temporary and renamed, so a short write cannot leave a
                     // registry nothing can parse.
-                    registry::append_entry(&path, &id)?;
+                    // The registry is written at a path the operator named,
+                    // so it is checked like every other operator-named path.
+                    //
+                    // **Against the full list, which it was not.** This passed
+                    // `Denied::from_env()` alone, which is two of the record's
+                    // three locations, so a registry could be rewritten inside a
+                    // participant's workspace while the README said it was
+                    // checked against the same list as everything else.
+                    //
+                    // `for_standing_up` still cannot serve: it needs a standee
+                    // and nobody is being stood up. What it needs is every
+                    // participant's workspace with no exclusion, since the
+                    // registry belongs to the workspace it configures rather
+                    // than to any of them.
+                    let mut denied = homma_api::Denied::from_env()?;
+                    for entry in ws.org.values() {
+                        if let Some(w) = entry.workspace.as_ref() {
+                            denied = denied.and(
+                                homma_api::AbsPath::resolve(
+                                    &homma_api::AbsPath::new(
+                                        std::path::absolute(&path)
+                                            .unwrap_or_else(|_| path.clone())
+                                            .parent()
+                                            .unwrap_or(std::path::Path::new("/"))
+                                            .to_path_buf(),
+                                    )
+                                    .map_err(|e| anyhow::anyhow!("{e}"))?,
+                                    w,
+                                ),
+                                "it is another participant's workspace",
+                            );
+                        }
+                    }
+                    registry::append_entry(&path, &id, &denied)?;
 
                     println!("{} {}", id.handle, org::describe(&staffing));
                 }

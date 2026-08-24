@@ -69,14 +69,55 @@ was taken as written, while the write followed it anyway.
 
 **And containment is not the only question.** It asks whether a path stays inside
 a root the operator named, which says nothing about whether that root was
-somewhere the record forbids. The deny list is three absolute locations, two
-derived from the home directory and one from the registry, and a `Root` carries
-them so that neither check can be performed without the other.
+somewhere the record forbids. **The record's list has seven items and three of
+them are locations**; the other four are actions rather than places (force-push,
+release merges, lint severity edits, credential-shaped files) and are governed by
+discipline and by hooks rather than by this mechanism. Of the three, two derive
+from the home directory and one from the registry, and a `Root` carries them so
+that neither check can be performed without the other.
 
 The distinction that makes it awkward: `.claude/agent-memory/<name>/` inside the
 content repository is project scope and licensed, while `~/.claude` is user scope
 and denied. Same directory name, opposite verdicts, and when the root is a home
-they are one directory. So the check is by absolute path and never by name.
+they are one directory.
+
+**So the comparison is against the directory, not against the path that names
+it.** A path is a way of writing a directory down and a filesystem is free to
+accept several: this one is case-insensitive, so `~/.CLAUDE` and `~/.claude` are
+one inode, and `/Users/<user>` is a firmlink to `/System/Volumes/Data/Users/<user>`,
+which is not a symlink and which no amount of link resolution collapses. Both
+were reproduced against a live deny list. A comparison of path components
+answers no in each case and the write lands beside the operator's credentials.
+
+What a directory is, is `(dev, ino)`. The check walks the candidate's ancestors,
+stats each one that exists, and compares that pair against the denied location's,
+because the leaf is usually about to be created and the answer lives at the
+deepest existing prefix.
+
+**The two together were still not enough, and the region they missed is the one
+that mattered.** The identity comparison answers nothing about a directory that
+does not exist yet, so for an absent denied location only the component
+comparison ran, and that is the comparison folding defeats. Absent plus folded
+was answered by neither, and all three deny items were reproduced being written
+into on exactly that condition.
+
+So the comparison stops trying to be exact. It asks whether two paths **could**
+denote one directory, which is the honest question when one of them cannot be
+consulted, and the components are compared case-insensitively whether or not the
+target exists. The identity comparison stays beside it, because a firmlink shares
+no components at all.
+
+That over-refuses on a case-sensitive filesystem, deliberately. An operator who
+wants `~/Dev/CLAUSE-DEV` to be a different directory from `~/Dev/clause-dev` is
+refused and told why, which is a strange thing to want and a cheap thing to lose.
+Case folding is done through uppercase and back rather than by lowercasing, which
+is not a refinement but a correctness fix: `straße` against `STRASSE` and `Σigma`
+against `ςigma` are each one directory here, and lowercasing alone answers no to
+both.
+
+Unicode normalisation is what remains: APFS folds NFD against NFC as well as
+case, the standard library has no normalisation, and every current entry is ASCII
+while a registry-derived one need not be.
 
 **Two guards, answering two questions, and neither implies the other.**
 `enclosing_repo` asks whether a path sits inside a repository that is not itself,
@@ -137,11 +178,40 @@ That is the same rule as the root, stated for the other directory homma creates.
 The two are separate because the workspace is deliberately outside the
 containment root, so no `Root` covers it and none can.
 
-**What neither rule reaches**, said here because an earlier version of this
-section claimed the deny list was satisfied and it was not: a workspace pointed
-at a directory that **already exists** inside somebody's home is still accepted.
-Refusing to build a path into a home is not the same as refusing to write into
-one, and the second wants a guard that knows where home is.
+A workspace pointed at a directory that already exists inside the operator's
+`.claude`, or inside another participant's workspace, is refused: the deny list
+is checked against the workspace as well as against the root, and refusing to
+build a path into a home was never the same question as refusing to write into
+one.
+
+**The list that governs the root is not the list that checks the workspace.**
+Every participant's workspace is denied under the root, the standee's own
+included, because a root inside a workspace is backwards and the workspace is
+required to sit outside the root. The workspace itself is checked against the
+same list minus its own entry, or it would deny itself.
+
+**The aggregation pass goes through the same mechanism**, and the two rounds
+before this one each got it wrong in a different way. The first left it out and
+called that a question for the record. The second added a check on the directory
+and left every write below it built with an ordinary join, which a symlink one
+component down carries straight out, while refusing the central clone by accident
+and documenting that it had not.
+
+What it may not aggregate into: a home directory's own `.claude`, which is never
+a workspace, and any workspace belonging to another participant. What it may:
+its own.
+
+**Deny item one is not an absolute here, and that is a derivation rather than a
+reading.** The record forbids writes under the central clone. The central clone
+is the lead designer's own workspace, so a Hand may not write there for exactly
+the reason no participant may write into another's, and the owner may, because
+nobody is denied their own workspace. Every Hand's workspace is a clone of the
+same shape, so a Hand regenerating theirs is the ordinary path and the central
+one has a single owner.
+
+That is the same two-list distinction the stand-up already makes, where the
+standee's own workspace is denied under the root and not to itself, so this is a
+second consumer of an existing shape rather than a new rule.
 
 The same question already had an answer, `enclosing_repo`, and it was being asked
 about the root instead of about the thing being created.
