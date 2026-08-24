@@ -365,12 +365,9 @@ mod tests {
             cli.config.as_deref().map(|p| p.to_str().unwrap()),
             Some("alt.toml")
         );
-        assert!(matches!(
-            cli.command,
-            Command::Verify {
-                forge: false
-            }
-        ));
+        assert!(matches!(cli.command, Command::Verify {
+            forge: false,
+        }));
     }
 
     #[test]

@@ -54,7 +54,10 @@ pub fn run(cfg: &Config, forge: bool, format: OutputFormat) -> Result<Outcome> {
     let mut report = check(cfg);
     if forge {
         report.findings.extend(resolve_on_their_forges(cfg));
-        report.ok = !report.findings.iter().any(|f| matches!(f.level, Level::Error));
+        report.ok = !report
+            .findings
+            .iter()
+            .any(|f| matches!(f.level, Level::Error));
     }
     let ok = report.ok;
     emit(&report, format)?;
