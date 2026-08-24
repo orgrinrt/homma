@@ -2,10 +2,15 @@
 name = "homma"
 version = "0.0.0"
 edition = "2024"
-# The one crate in this repo that publishes. The engine (`homma-engine`) stays
-# `publish = false`; this launcher git-installs the workspace's pinned engine
+# The crate that will publish, once it can. The engine (`homma-engine`) stays
+# private either way; this launcher git-installs the workspace's pinned engine
 # itself, so it needs no version relationship to it.
-publish = true
+#
+# `false` today because `renki` is not on crates.io, and crates.io rejects a git
+# dependency outright, so `true` here would be a claim the manifest cannot
+# honour. `cargo deny check bans` reports it as a wildcard dependency for
+# exactly that reason. This flips the day renki publishes.
+publish = false
 description = "Launcher for the homma workspace harness: resolves the engine a workspace pins, builds it once per version into a shared cache, and runs it from any working directory."
 license = "MPL-2.0"
 repository = "https://github.com/orgrinrt/homma"
