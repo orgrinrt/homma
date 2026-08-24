@@ -25,3 +25,22 @@ target
 # tests/, and research sketches. A leading-slash /target would miss those.
 target/
 # === end mockspace-managed build artifacts ===
+
+# Generated agent instructions, rewritten by `mock` on any normal invocation.
+# Listed per path rather than as a blanket `.claude/` or `.github/`, so a
+# hand-written workflow or a settings file somebody edits stays tracked. They
+# were untracked and unignored, which is the one state the workspace rule does
+# not allow: invisible to review, absent from history, and deleted by a clean
+# with nothing left behind.
+#
+# The source is `mock/agent/`, which is tracked. Committing the render as well
+# would be a second copy of the same content, drifting whenever somebody
+# regenerates and forgets.
+/.claude/rules/
+/.claude/skills/
+/.claude/hooks/
+/.claude/settings.json
+/.github/instructions/
+/.github/skills/
+/.github/hooks/
+/.github/copilot-instructions.md
