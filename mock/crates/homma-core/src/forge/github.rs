@@ -83,6 +83,18 @@ impl GitHubClient {
             token,
             agent: ureq::AgentBuilder::new()
                 .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
+                // GitHub answers `301` for a repo that has been renamed, to
+                // `/repositories/{id}` on the same host. ureq's default is to
+                // drop `Authorization` on every redirect, so the followed
+                // request arrives anonymous, a private repo answers `404`, and
+                // `repo_exists` reports a repo that exists as absent. A rename
+                // is the ordinary reason an owner or name goes stale, which is
+                // the case the existence check is for.
+                //
+                // `SameHost` keeps the credential where the redirect stays on
+                // the host it was issued for and drops it where it does not,
+                // which is the property worth having rather than `Always`.
+                .redirect_auth_headers(ureq::RedirectAuthHeaders::SameHost)
                 .build(),
         }
     }
@@ -221,6 +233,20 @@ impl Forge for GitHubClient {
         match self.delete(&url) {
             Ok(_) => Ok(()),
             Err(e) => Err(map_ureq_error(e, owner, name)),
+        }
+    }
+
+    /// `GET {api}/user`: the endpoint both forges answer only for an accepted
+    /// credential. `401` is the rejection; `403` counts as accepted, because it
+    /// says the credential was recognised and the account is not permitted,
+    /// which is a different problem and not one this question asks about.
+    fn credential_works(&self) -> Result<bool, ForgeError> {
+        let url = format!("{}/user", self.api_url);
+        match self.get(&url) {
+            Ok(_) => Ok(true),
+            Err(ureq::Error::Status(401, _)) => Ok(false),
+            Err(ureq::Error::Status(403, _)) => Ok(true),
+            Err(e) => Err(map_ureq_error(e, "", "user")),
         }
     }
 }
@@ -772,5 +798,92 @@ mod tests {
         assert_eq!(m.default_branch, "dev");
         assert_eq!(m.visibility, Visibility::Public);
         assert_eq!(m.topics, vec!["rust".to_string(), "workspace".into()]);
+    }
+}
+
+#[cfg(test)]
+mod redirect_tests {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+
+    use super::*;
+    use crate::forge::Forge;
+
+    /// A stub of the one GitHub behaviour that matters here: a renamed repo
+    /// answers `301` to a new path, and that path is private, so it answers
+    /// `404` to anyone without credentials and `200` to anyone with them.
+    ///
+    /// Returns the base url. The thread ends when the listener is dropped
+    /// after the last request, which is bounded because each test makes a
+    /// fixed number.
+    fn renamed_private_repo(requests: usize) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for _ in 0 .. requests {
+                let Ok((mut sock, _)) = listener.accept() else {
+                    return;
+                };
+                let mut reader = BufReader::new(sock.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                let mut authorized = false;
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap() == 0 {
+                        break;
+                    }
+                    if header.trim().is_empty() {
+                        break;
+                    }
+                    if header.to_ascii_lowercase().starts_with("authorization:") {
+                        authorized = true;
+                    }
+                }
+                let response = if request_line.contains("/repos/o/renamed") {
+                    "HTTP/1.1 301 Moved Permanently\r\nLocation: /repositories/123\r\n\
+                     Content-Length: 0\r\n\r\n"
+                        .to_string()
+                } else if request_line.contains("/repositories/123") {
+                    if authorized {
+                        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}".to_string()
+                    } else {
+                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_string()
+                    }
+                } else {
+                    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_string()
+                };
+                let _ = sock.write_all(response.as_bytes());
+                let _ = sock.flush();
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn a_renamed_private_repo_is_still_found_across_the_redirect() {
+        // The failure this pins: ureq defaults to dropping `Authorization` on
+        // any redirect, GitHub answers 301 for a renamed repo, and the
+        // followed request then arrives anonymous. A private repo answers 404
+        // to that, `repo_exists` maps 404 to `Ok(false)`, and `verify --forge`
+        // reports a repo that exists as absent. A rename is the normal reason
+        // an owner or name goes stale, which is the case the check exists for.
+        let url = renamed_private_repo(2);
+        let client = GitHubClient::with_token(&url, "t");
+        assert_eq!(
+            client.repo_exists("o", "renamed").unwrap(),
+            true,
+            "the credential was dropped following the redirect, so a repo that \
+             exists was reported absent"
+        );
+    }
+
+    #[test]
+    fn the_stub_answers_absent_without_a_credential() {
+        // The control. Without it the test above passes for a stub that says
+        // 200 to everyone, which would prove nothing about the header at all.
+        let url = renamed_private_repo(2);
+        let client = GitHubClient::anonymous(&url);
+        assert_eq!(client.repo_exists("o", "renamed").unwrap(), false);
     }
 }

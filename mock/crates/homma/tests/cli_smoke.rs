@@ -192,18 +192,27 @@ local_path = "somerepo"
     )
     .unwrap();
 
+    // Without the flag, nothing about the forge at all.
     bin()
         .env("HOMMA_TEST_NOWHERE_TOKEN", "t")
         .args(["-c", cfg_path.to_str().unwrap(), "verify"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("somerepo").not());
+        .stdout(predicate::str::contains("nowhere").not())
+        .stdout(predicate::str::contains("forge_unreachable").not());
 
+    // With it, a connection was attempted and refused. The assertion is on the
+    // finding kind rather than on the repo name: the repo is not named here,
+    // because the credential check runs per forge and fails before any repo is
+    // asked about, and matching a repo name would have been satisfied by three
+    // different findings with three different meanings.
     bin()
         .env("HOMMA_TEST_NOWHERE_TOKEN", "t")
         .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
         .assert()
-        .stdout(predicate::str::contains("somerepo"));
+        .success()
+        .stdout(predicate::str::contains("forge_unreachable"))
+        .stdout(predicate::str::contains("Connection refused"));
 }
 
 #[test]
@@ -244,13 +253,17 @@ local_path = "somerepo"
         .stdout(predicate::str::contains("repo_not_on_forge").not());
 
     // An empty token counts as no token, which is the case a bare
-    // `is_some()` check would have got wrong.
+    // `is_some()` check would have got wrong. Asserted the same way as the
+    // unset arm above, both halves: the warning appears AND nothing is said
+    // about the repo. Asserting only the warning leaves the half that matters
+    // uncovered on the subtler of the two cases.
     bin()
         .env("HOMMA_TEST_NOWHERE_TOKEN", "")
         .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("forge_answers_are_not_evidence"));
+        .stdout(predicate::str::contains("forge_answers_are_not_evidence"))
+        .stdout(predicate::str::contains("repo_not_on_forge").not());
 }
 
 #[test]

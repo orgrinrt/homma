@@ -183,6 +183,20 @@ impl Forge for ForgejoClient {
             Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }
+
+    /// `GET {api}/user`: the endpoint both forges answer only for an accepted
+    /// credential. `401` is the rejection; `403` counts as accepted, because it
+    /// says the credential was recognised and the account is not permitted,
+    /// which is a different problem and not one this question asks about.
+    fn credential_works(&self) -> Result<bool, ForgeError> {
+        let url = format!("{}/user", self.api_url);
+        match self.get(&url) {
+            Ok(_) => Ok(true),
+            Err(ureq::Error::Status(401, _)) => Ok(false),
+            Err(ureq::Error::Status(403, _)) => Ok(true),
+            Err(e) => Err(map_ureq_error(e, "", "user")),
+        }
+    }
 }
 
 /// Wire shape of `GET /repos/{owner}/{name}` (and the response of create-repo
