@@ -127,3 +127,57 @@ fn the_check_can_report_both_answers() {
         "a tracked file at the root is not ignored"
     );
 }
+
+#[test]
+fn the_ignore_list_holds_before_anything_has_generated_into_it() {
+    // A fresh clone is the ordinary state, and it is the one state the test
+    // above cannot run under: it asks the repository root, where the generator
+    // has already created every directory it names. Six of the patterns
+    // carried a trailing slash, which matches only a path that exists as a
+    // directory, so every one of them reported unignored on a clean checkout
+    // and the whole workspace run aborted on the assertion.
+    //
+    // So this constructs the clean state rather than observing whichever state
+    // the tree happens to be in: the same ignore file, and none of the output.
+    let root = repo_root();
+    if !in_a_work_tree(&root) {
+        eprintln!("skipped: {} is not a git work tree", root.display());
+        return;
+    }
+    let ignore = std::fs::read_to_string(root.join(".gitignore"))
+        .expect("this repository has a .gitignore");
+
+    let clean = tempfile::tempdir().unwrap();
+    let ok = std::process::Command::new("git")
+        .args(["init", "-q", "."])
+        .current_dir(clean.path())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !ok {
+        eprintln!("skipped: could not init a temporary git repository");
+        return;
+    }
+    std::fs::write(clean.path().join(".gitignore"), &ignore).unwrap();
+
+    let unignored: Vec<&str> = GENERATED
+        .iter()
+        .copied()
+        .filter(|p| is_ignored(clean.path(), p) == Some(false))
+        .collect();
+    assert!(
+        unignored.is_empty(),
+        "these are ignored only once something has created them, so a fresh \
+         clone reports them untracked: {unignored:?}"
+    );
+
+    // The control. Without it this passes for a `check-ignore` answering zero
+    // to everything, which is what a malformed ignore file or a git that could
+    // not read one would produce.
+    assert_eq!(
+        is_ignored(clean.path(), "src/main.rs"),
+        Some(false),
+        "the temporary repository ignores a path nothing names, so the \
+         assertion above says nothing"
+    );
+}
