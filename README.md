@@ -48,15 +48,18 @@ What it may not aggregate into is a home directory's own `.claude`, which is
 never a workspace, and any workspace belonging to somebody else. It may aggregate
 into its own, which is the ordinary case and the only one.
 
-The Cargo workspace lives under `mock/`, not at the repository root, which is the
-shape every repository in this ecosystem uses. Build from there:
+What goes on `PATH` is a small launcher. It finds the workspace, reads the
+version of the engine the workspace pins, builds that once into a shared cache,
+and hands over. So the workspace decides which homma runs in it, and a checkout
+you installed from months ago does not.
 
 ```
-cd mock && cargo build
-cargo install --path crates/homma   # puts the homma binary on PATH
+cargo install --path launcher
 ```
 
-The design documents live under `mock/` beside the code they describe.
+The engine is a separate package and is not installed by hand. The launcher
+builds the pinned one on first use, and `--engine <path>` points it at a
+checkout while you are working on the engine itself.
 
 ## Support
 

@@ -10,12 +10,12 @@
 //! a per-version cache, execing it with an absolute working directory, keeping
 //! itself current. None of that is this tool's and none of it lives here.
 //!
-//! What lives here is the descriptor, and that is the whole crate. `mockspace`
-//! needs four hooks beside its own, for a lint-rules dependency pinned to the
-//! engine's revision, a durable git-hook gate, a retired alias to refuse and a
-//! legacy lock pin. This tool needs none of them, which is the thing the
-//! extraction was for.
+//! What lives here is the descriptor, and one hook: the engine is not at the
+//! top of this repo, so `--engine` pointed at a checkout of it needs to say
+//! where. Everything else a tool can hook is left alone, which is the thing
+//! the extraction was for.
 
+use std::path::Path;
 use std::process::ExitCode;
 
 use renki::{Anchor, Cli, Hooks, Locate, Tool};
@@ -46,8 +46,40 @@ pub const TOOL: Tool = Tool {
     dir_flag:        Cli::DIR_FLAG,
     engine_flag:     Cli::ENGINE_FLAG,
     locate:          Locate::DEFAULT,
-    hooks:           Hooks::NONE,
+    hooks:           Hooks {
+        verify_engine_dir: Some(engine_dir_holds_the_engine),
+        ..Hooks::NONE
+    },
 };
+
+/// The engine package inside a checkout of this repo.
+pub const ENGINE_SUBDIR: &str = "mock/crates/homma-engine";
+
+/// Refuse an `--engine` path that is not the engine's own package directory.
+///
+/// The engine sits well inside the tree rather than at the top of it, and the
+/// top of the tree is what somebody reaches for. Left to cargo, that comes back
+/// as a virtual manifest complaint naming neither the flag that caused it nor
+/// the directory that would have worked.
+fn engine_dir_holds_the_engine(dir: &Path) -> Result<(), String> {
+    let manifest = std::fs::read_to_string(dir.join("Cargo.toml"))
+        .map_err(|e| format!("{}: {e}", dir.join("Cargo.toml").display()))?;
+    if manifest.contains("name = \"homma-engine\"") {
+        return Ok(());
+    }
+    let suggestion = dir.join(ENGINE_SUBDIR);
+    if suggestion.join("Cargo.toml").is_file() {
+        return Err(format!(
+            "{} is the repository, not the engine package. Try {}",
+            dir.display(),
+            suggestion.display()
+        ));
+    }
+    Err(format!(
+        "{} is not a homma-engine checkout. The engine lives at {ENGINE_SUBDIR} inside one",
+        dir.display()
+    ))
+}
 
 /// The process entry, over the descriptor.
 pub fn run_cli() -> ExitCode {
