@@ -52,10 +52,59 @@ pushed on.
 
 ## Configuration
 
-One required key names the content repository. Everything else has a default
-homma will create and an override for a workspace whose convention differs.
+**No key is required.** The content repository defaults to `local`, meaning the
+configuration's own directory, which homma initialises if it is not a repository
+yet; a git URI names one elsewhere. Every path likewise has a default homma will
+create and an override for a workspace whose convention differs, so a directory
+holding an empty registry is already a workspace.
 Identities are blocks: a role, a handle, and whatever that role needs. A person
 needs a git identity and a workspace; a consultant needs neither.
+
+## What the git contract promises
+
+**Every path handed to it is an `AbsPath`, a type that cannot be relative.** A
+relative path resolves against whatever directory the process happens to be in,
+so a guard walking upward from one walks up from the process's directory and
+passes, and a clone target that is one lands wherever the operator was standing.
+
+**Descending and anchoring are different operations and only one may leave.**
+
+*Anchoring* takes a path the caller is entitled to put anywhere. A workspace
+legitimately lives outside the content repository, so a relative one going up is
+correct, and what guards it is a containment check against the filesystem.
+
+*Descending* walks into a tree we own: a repository's own `.git`, a handle's
+directory, a definition's filename. **Nothing descended into has any business
+leaving**, so it cannot: a parent component clamps at the receiver rather than at
+the filesystem root. Every caller passes a literal, and none of them was trying
+to leave.
+
+Sharing one method between the two is how a configured path reached another
+repository's tree. The configured paths additionally carry a type that refuses an
+absolute or escaping value **when the configuration is parsed**, so the failure is
+reported where somebody can act on it rather than where a file lands.
+
+**What the type carries is absoluteness, and nothing else.** It does not carry
+containment: `/a/b/../../etc` is absolute, and so is a path pointing straight
+into somebody else's repository. Containment is a question about the filesystem
+rather than about the value, so it stays a runtime check, and the check belongs
+on **the path being written to** rather than on the one it was resolved against.
+A round that put the type in place and left that check on the wrong path shipped
+the same escape it was closing.
+
+**The type is the point, and prose was tried first.** Stating the precondition in
+a comment means re-checking it at every call. Checking it at runtime in one
+implementation leaves the other six unchecked, which is what happened: three
+consecutive rounds each closed the route they were shown and left the next one
+open, and the runtime check that was added turned out to be unreachable in both
+fakes. A precondition in the signature is checked once, by the compiler, for every
+caller that will ever exist.
+
+**Absence is `None`, not an error.** Asked what a remote points at, a directory
+that is not a repository points at nothing; that is an answer, not a failure. An
+error means a repository that exists and cannot be read. Collapsing the two makes
+the ordinary bootstrap, a directory with a registry and a remote to clone from,
+fail outright.
 
 ## Mapped and staffed
 

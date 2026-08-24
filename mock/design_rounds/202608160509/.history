@@ -1,0 +1,50 @@
+fc77192 chore: lock the src changelist
+6adda43 fix: drop the clause that could never decide, and the stray blank line
+31a676c chore: lock doc changelist and open the src window
+d9115f9 docs: open a round for the imports the test module never had
+7d364e1 fix: check the kind name where the path is built, in read and rewrite
+14dce75 fix: route the definition writes through the proving door
+1507a78 fix: restore the imports the test module needs to compile
+5968ffb chore: close the round
+8186ef7 chore: lock the src changelist
+9f1a9b0 chore: drop imports the signature change orphaned
+a872eaf chore: lock doc and open src for the imports
+1315b65 chore: open a round for the orphaned imports
+2b55e84 chore: close the round
+d4fd7f7 chore: lock the src changelist
+c5b54d6 fix: prove the paths the aggregation pass writes to
+a214ac4 chore: open the src changelist
+04fcd80 chore: lock the doc changelist
+4016024 docs: stop advertising what homma does not do
+8dd529e chore: open the doc changelist
+d9a044d chore: open the round on routing the writes
+32f8725 chore: close the round
+c233417 chore: lock the src changelist
+c7e163b fix: refuse aggregating into a home's claude
+5a95c45 chore: open the src changelist
+5805c82 chore: lock the doc changelist
+bbaeccf docs: split the gen pass disclosure in two
+5e7c362 chore: open the doc changelist
+10c7fb2 chore: open the round on the bundled fix
+c1a6a7c chore: close the round
+b431dcb chore: lock the src changelist
+66bfe03 fix: answer the deny list for a place that does not exist yet
+bc25e3a chore: open the src changelist
+47b715e chore: lock the doc changelist
+7d8eda0 docs: name the writers with no deny check, and what the comparison misses
+c473291 chore: open the round on the absent denied place
+521b65b chore: close the round
+dc1004f chore: lock the src changelist
+98623cc fix: compare directories rather than the paths that name them
+6b0aecd chore: open the src changelist
+3a528ea chore: lock the doc changelist
+de5f34a docs: state what the deny list compares, and what it does not reach
+9321c5b chore: open the round on the deny list's comparison
+078f489 chore: close the deny-list round
+57885c1 chore: lock the src changelist
+3121e96 feat: enforce the deny list, which containment never answered
+b32e495 chore: reopen the src changelist
+8d4b2c1 chore: lock the doc changelist
+6587828 docs: describe the resolution that ships, and the deny list
+bd29977 chore: open the doc changelist
+2c16d66 chore: open a round on the absolute deny locations

@@ -6,10 +6,12 @@
 
 pub mod generate;
 pub mod provision;
+pub mod remote;
 pub mod workspace;
 
 pub use generate::{definition, write_definitions, Form, Generated};
 pub use provision::{provision, ProvisionError, Provisioned};
+pub use remote::{repo_name, same_repo};
 pub use workspace::{prepare, Layout, Prepared};
 
 use homma_api::{Identity, Role, Staffing, Workspace};
@@ -78,7 +80,7 @@ mod tests {
     use super::*;
 
     const ORG: &str = r#"
-content_repo = "clause-dev"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 
 [org.op]
 role = "king"

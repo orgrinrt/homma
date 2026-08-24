@@ -12,6 +12,7 @@
 
 use crate::workspace::Layout;
 use homma_api::Identity;
+use homma_api::{ContainedPath, Escapes};
 use std::fs;
 use std::io;
 
@@ -137,24 +138,28 @@ pub fn write_definitions(
     layout: &Layout<'_>,
     id: &Identity,
     discipline: &str,
-) -> io::Result<(std::path::PathBuf, std::path::PathBuf)> {
+) -> io::Result<(ContainedPath, ContainedPath)> {
+    let root = layout.contained_root();
+    let escaped = |e: Escapes| io::Error::other(e.to_string());
+
     // Only absence is absence. Swallowing every error shipped a Hand without
     // its voice and reported nothing.
-    let character = match fs::read_to_string(layout.character(id)) {
+    let character = match fs::read_to_string(layout.character(id).map_err(escaped)?) {
         Ok(t) => t,
         Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
-    let prime = layout.definition(id);
-    let twin = layout.twin_definition(id);
-    if let Some(parent) = prime.parent() {
-        fs::create_dir_all(parent)?;
+    let prime = layout.definition(id).map_err(escaped)?;
+    let twin = layout.twin_definition(id).map_err(escaped)?;
+    if let Some(parent) = prime.as_abs().parent() {
+        let parent = root.contain(&parent).map_err(escaped)?;
+        root.create_dir_all(&parent)?;
     }
-    fs::write(
+    root.write(
         &prime,
         definition(id, Form::Prime, discipline, &character).render(),
     )?;
-    fs::write(
+    root.write(
         &twin,
         definition(id, Form::Twin, discipline, &character).render(),
     )?;
@@ -164,6 +169,11 @@ pub fn write_definitions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tempdir path as the type the layout takes.
+    fn abs(p: impl Into<std::path::PathBuf>) -> homma_api::AbsPath {
+        homma_api::AbsPath::new(p).expect("a tempdir path is absolute")
+    }
     use crate::workspace::Layout;
     use homma_api::{Paths, Role};
 
@@ -264,10 +274,15 @@ mod tests {
     fn both_definitions_land_on_disk() {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::default();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         crate::workspace::prepare(&l, &id).unwrap();
-        std::fs::write(l.character(&id), "Terse.").unwrap();
+        std::fs::write(l.character(&id).unwrap(), "Terse.").unwrap();
 
         let (prime, twin) = write_definitions(&l, &id, DISCIPLINE).unwrap();
         let prime_text = std::fs::read_to_string(&prime).unwrap();
@@ -301,15 +316,71 @@ mod tests {
         assert!(!body.contains("You commit as"));
     }
 
+    // The third live-but-unpinned guard found on this branch, and the second
+    // found in a round named for finding them. Replacing this one's containment
+    // check with a bare `create_dir_all` left all 344 tests green while its twin
+    // twenty lines away in `workspace.rs` failed one.
+    //
+    // Same shape as that twin, and it needs its own test for the same reason:
+    // containment on a file follows its final component, so files pointing back
+    // inside pass while the directory they are written in has left.
+    #[test]
+    fn a_definition_directory_that_leaves_is_refused_by_write_definitions() {
+        let d = tempfile::tempdir().unwrap();
+        let root_dir = d.path().join("root");
+        let outside = d.path().join("outside");
+        std::fs::create_dir_all(root_dir.join(".shared/hands/paja")).unwrap();
+        std::fs::create_dir_all(outside.join("agents")).unwrap();
+
+        // Only the agents chain leaves, so `prepare` succeeds and this function
+        // is the one under test. `.claude` is left alone deliberately: put the
+        // link there and the memory-link guard refuses first, and the test then
+        // passes with the guard it names deleted.
+        std::os::unix::fs::symlink("../outside", root_dir.join("elsewhere")).unwrap();
+        for leaf in ["paja.md", "paja-twin.md"] {
+            std::os::unix::fs::symlink(
+                root_dir.join(".shared/hands/paja").join(leaf),
+                outside.join("agents").join(leaf),
+            )
+            .unwrap();
+        }
+
+        let p = Paths {
+            agents: homma_api::path::RelPath::new("elsewhere/agents")
+                .expect("a relative contained path"),
+            ..Paths::default()
+        };
+        let l = Layout::new(
+            &abs(&root_dir),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
+        let id = hand();
+        // `prepare` is not called: it would refuse first, and then this test
+        // would be measuring that instead.
+        let err = write_definitions(&l, &id, DISCIPLINE)
+            .expect_err("the directory the definitions are written in has left the root");
+        assert!(
+            err.to_string().contains("outside the workspace root"),
+            "must refuse for the right reason: {err}"
+        );
+    }
+
     #[test]
     fn a_character_that_cannot_be_read_is_reported_rather_than_swallowed() {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::default();
-        let l = Layout::new(d.path(), &p);
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
         let id = hand();
         crate::workspace::prepare(&l, &id).unwrap();
         // A directory where the file belongs is not absence.
-        std::fs::create_dir_all(l.character(&id)).unwrap();
+        std::fs::create_dir_all(l.character(&id).unwrap()).unwrap();
         assert!(
             write_definitions(&l, &id, DISCIPLINE).is_err(),
             "shipping a voiceless Hand silently is the failure this prevents"

@@ -34,8 +34,7 @@ pub fn emit<T: Serialize + HumanRender>(value: &T, format: OutputFormat) -> std:
             writeln!(out)?;
         }
         OutputFormat::Json => {
-            let s = serde_json::to_string_pretty(value)
-                .map_err(std::io::Error::other)?;
+            let s = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
             writeln!(out, "{s}")?;
         }
     }

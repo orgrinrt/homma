@@ -1,0 +1,50 @@
+40b27bd chore: lock the src changelist
+790853d fix: create the workspace's parent, never a chain of them
+414ea16 test: a workspace building its own path of directories, red
+3ed618d chore: open the src changelist
+f6b2cdc chore: lock the doc changelist
+9c1a25a docs: what the workspace rule reaches, and what it does not
+6dc0440 chore: open the doc changelist
+b10139f chore: open a round on the workspace's ancestors
+9417e7d chore: close the ancestors round
+c910320 chore: lock the src changelist
+f7433ee fix: refuse a root whose parent is missing, before anything creates it
+736a19a test: the root's ancestors, and two guards nothing pinned
+d60552a chore: open the src changelist
+ec485ea chore: lock the doc changelist
+6d0bd7c docs: homma creates the root, never the path to it
+6ca7f66 chore: open the doc changelist
+eeaeff8 chore: open a round on ancestors of the root
+ccf4789 chore: close the tautological-guard round
+4eaab2a chore: lock the src changelist
+346e0dd fix: delete a guard that could not fail, pin the one that could
+108a2d2 src: open the changelist for the tautological guard
+c204510 chore: lock the doc changelist
+e24ef92 docs: say what the types enforce, and name standing a participant up
+b8a2fdd doc: open the changelist for the overstated bullet
+c1d88f5 topic: a guard that cannot fail above a guard nothing pins
+89b63f8 chore: close the link-body round
+487d329 chore: lock the src changelist
+37b9c67 fix: prove the symlink body, which the kernel follows like any other path
+19e8581 test: the link body escapes a root carrying a symlink, red
+86b6097 src: open the changelist for the link body
+34344ec chore: lock the doc changelist
+d6a294c docs: state which surfaces are proven instead of claiming all are
+0c5c74e doc: open the changelist for the totality claim
+c6f5fac topic: a link body is a path and nothing proved it
+321e56b chore: close the dangling-link round
+4a84753 chore: lock the src changelist
+c7c4baa test: reformat the compile-fail case and re-record its diagnostic
+eccd6ca fix: follow a dangling symlink instead of taking it as an absent path
+6067aee test: the dangling-symlink case, red
+501bd6f src: open the changelist for link resolution
+099d815 chore: lock the doc changelist
+8e65c91 doc: open and close an empty doc phase
+ab4e4bd topic: a dangling symlink is not an absent path
+7737677 chore: close the containment round
+52ea8c9 chore: lock the src changelist
+2a25f1c fix: prove containment on the write rather than on a path passed in
+7c0c24d src: open the changelist for the containment type
+7914332 chore: lock the doc changelist
+46c6dc6 doc: open and close an empty doc phase
+b883c06 topic: the guard belongs on the write

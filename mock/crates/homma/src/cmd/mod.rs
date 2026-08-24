@@ -15,11 +15,15 @@ pub mod agent;
 pub mod aggregate;
 pub mod archive;
 pub mod docs;
+#[cfg(test)]
+pub mod fake_git;
 pub mod forge;
 pub mod gates;
 pub mod migrate;
 pub mod org;
+pub mod registry;
 pub mod repo;
+pub mod stand;
 pub mod status;
 pub(crate) mod util;
 pub mod verify;
@@ -94,16 +98,66 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // in the registry survives being added to. Written through a
                     // temporary and renamed, so a short write cannot leave a
                     // registry nothing can parse.
-                    org::append_entry(&path, &id)?;
+                    // The registry is written at a path the operator named,
+                    // so it is checked like every other operator-named path.
+                    //
+                    // **Against the full list, which it was not.** This passed
+                    // `Denied::from_env()` alone, which is two of the record's
+                    // three locations, so a registry could be rewritten inside a
+                    // participant's workspace while the README said it was
+                    // checked against the same list as everything else.
+                    //
+                    // `for_standing_up` still cannot serve: it needs a standee
+                    // and nobody is being stood up. What it needs is every
+                    // participant's workspace with no exclusion, since the
+                    // registry belongs to the workspace it configures rather
+                    // than to any of them.
+                    let mut denied = homma_api::Denied::from_env()?;
+                    for entry in ws.org.values() {
+                        if let Some(w) = entry.workspace.as_ref() {
+                            denied = denied.and(
+                                homma_api::AbsPath::resolve(
+                                    &homma_api::AbsPath::new(
+                                        std::path::absolute(&path)
+                                            .unwrap_or_else(|_| path.clone())
+                                            .parent()
+                                            .unwrap_or(std::path::Path::new("/"))
+                                            .to_path_buf(),
+                                    )
+                                    .map_err(|e| anyhow::anyhow!("{e}"))?,
+                                    w,
+                                ),
+                                "it is another participant's workspace",
+                            );
+                        }
+                    }
+                    registry::append_entry(&path, &id, &denied)?;
 
                     println!("{} {}", id.handle, org::describe(&staffing));
                 }
                 OrgOp::Up { handle, root } => {
-                    let root = root
-                        .clone()
-                        .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let out = org::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
-                    println!("{} {}", out.handle, out.home.display());
+                    // The configuration file's own directory, never the current
+                    // one. The current directory says where somebody happened to
+                    // be standing; treating that as the workspace cloned an
+                    // arbitrary repository and wrote a participant's directories
+                    // into whatever tree the operator was in.
+                    let root = root.clone().unwrap_or_else(|| {
+                        path.parent()
+                            .filter(|p| !p.as_os_str().is_empty())
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    });
+                    // The one place a relative path becomes absolute, and the
+                    // only place that resolution is a judgement rather than a
+                    // type: everything downstream takes `AbsPath`.
+                    let root = match homma_api::AbsPath::new(&root) {
+                        Ok(p) => p,
+                        Err(_) => homma_api::AbsPath::resolve(&homma_api::AbsPath::cwd()?, &root),
+                    }
+                    .canonical()
+                    .with_context(|| format!("resolving the workspace root {}", root.display()))?;
+                    let out = stand::stand_up(&ws, &root, handle, &homma_core::repo::GixGit)?;
+                    println!("{} {}", out.handle, out.home);
                     println!(
                         "  workspace  {} ({})",
                         out.workspace.display(),
@@ -113,8 +167,8 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             "already there"
                         }
                     );
-                    println!("  definition {}", out.definition.display());
-                    println!("  twin       {}", out.twin_definition.display());
+                    println!("  definition {}", out.definition);
+                    println!("  twin       {}", out.twin_definition);
                 }
             }
             Ok(Outcome::Ok)

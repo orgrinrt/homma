@@ -26,9 +26,6 @@
 //! the case where the per-repo hook would not fire because the bootstrap
 //! was never run or `core.hooksPath` got reset.
 
-use std::fs;
-use std::path::Path;
-
 use anyhow::{Context, Result};
 
 use crate::cmd::aggregate::HookEntry;
@@ -47,24 +44,28 @@ const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 /// `repos` is the list of `(repo_name, absolute_path)` pairs that the
 /// gate should consider as "member repos" worth validating.
 pub(crate) fn install_workspace_gate(
-    workspace: &Path,
+    root: &homma_api::Root,
     repos: &[(String, String)],
 ) -> Result<HookEntry> {
-    let hooks_dir = workspace.join(".claude/hooks");
-    fs::create_dir_all(&hooks_dir).ok();
-    let target = hooks_dir.join(GATE_SCRIPT_NAME);
+    // Proven, like every other write this pass performs. This one installs an
+    // executable the agent harness then runs on every tool call, which is the
+    // write with the largest consequence in the program.
+    let hooks_dir = root
+        .contain(&root.as_abs().join(".claude/hooks"))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    root.create_dir_all(&hooks_dir).ok();
+    let target = root
+        .contain_under(&hooks_dir, GATE_SCRIPT_NAME)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     let body = gate_script(repos);
-    fs::write(&target, body).with_context(|| format!("writing {}", target.display()))?;
+    root.write(&target, body)
+        .with_context(|| format!("writing {}", target.as_path().display()))?;
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&target)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&target, perms)?;
-    }
+    root.set_executable(&target)?;
     let abs_command = target
+        .as_path()
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("non-utf8 path: {}", target.display()))?
+        .ok_or_else(|| anyhow::anyhow!("non-utf8 path: {}", target.as_path().display()))?
         .to_string();
     Ok(HookEntry {
         matcher: "Bash".to_string(),
@@ -249,6 +250,21 @@ exit 0
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    /// A `Root` over a test workspace, denying nothing that a test uses.
+    ///
+    /// The real code path, not a variant of it: these go through
+    /// `Root::contain` exactly as production does, which is what makes the
+    /// containment they assert mean anything.
+    fn test_root(workspace: &Path) -> homma_api::Root {
+        homma_api::Root::new(
+            &homma_api::AbsPath::new(workspace).expect("a tempdir path is absolute"),
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .expect("a tempdir is a legitimate root")
+    }
     use super::*;
 
     #[test]
@@ -265,7 +281,7 @@ mod tests {
                 "/Users/x/Dev/clause-dev/notko".to_string(),
             ),
         ];
-        let entry = install_workspace_gate(workspace, &repos).unwrap();
+        let entry = install_workspace_gate(&test_root(workspace), &repos).unwrap();
         assert_eq!(entry.matcher, "Bash");
         assert!(
             entry

@@ -14,7 +14,7 @@
 
 `homma` is a Rust workspace management tool for developers who work across many independently-versioned repositories that live side-by-side on disk and share refactors, dependency bumps, and migrations. It replaces ad-hoc shell scripts and provider-specific CLIs with one workspace-aware binary that speaks git and the forge HTTP APIs directly.
 
-The intended workflow shape is a flat workspace directory of cloned repos plus a `homma.toml` at the workspace root that names them, their forge origins, and any workspace-level conventions. `homma` reads the manifest, walks the repos, and runs operations across the set: reporting each member's state, driving each member's own tooling, and migrating repositories from one forge to another.
+The intended workflow shape is a flat workspace directory of cloned repos plus a `homma.toml` at the workspace root that names them, their forge origins, and who works in them. `homma` reads the manifest, walks the repos, and runs operations across the set: reporting their state, standing participants up with their own clones and generated definitions, aggregating agent rules and hooks into the workspace, reading forge metadata, and migrating repositories between forges.
 
 ## Status
 
@@ -26,6 +26,27 @@ either staffed, somebody who works, or mapped, a domain recorded as owned before
 anybody is put on it. Standing a staffed entry up is one command: its directories
 are created, its definitions generated, its workspace cloned from the content
 repository, and its git identity set in that clone.
+
+The participant's directories, definitions and memory link go through a path
+proven against the filesystem to resolve inside the workspace root, rather than
+checked lexically, because a symlink defeats anything lexical. The participant's
+own clone is deliberately outside that root and is guarded differently: it is
+refused when it would land inside a repository that is not its own, and homma
+creates its immediate parent but never a chain of directories leading to it.
+
+`org add` rewrites the registry at whatever path `--config` names, and that path
+goes through the same check.
+
+**The aggregation pass behind `agent regen` writes into `<workspace>/.claude/`**:
+hook scripts, marked executable, plus a `settings.json` registering them, and it
+removes the ones it wrote last time. Every one of those targets is proven against
+the filesystem before it is written, through the same mechanism as everything
+else, because a check on the directory says nothing about a path built below it
+with an ordinary join.
+
+What it may not aggregate into is a home directory's own `.claude`, which is
+never a workspace, and any workspace belonging to somebody else. It may aggregate
+into its own, which is the ordinary case and the only one.
 
 The Cargo workspace lives under `mock/`, not at the repository root, which is the
 shape every repository in this ecosystem uses. Build from there:

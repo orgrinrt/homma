@@ -4,6 +4,7 @@
 //! outlives whatever was running it, so starting one again restores a
 //! participant rather than creating a new one.
 
+use crate::path::RelPath;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -40,9 +41,13 @@ impl Role {
 
 /// Whether an identity that could own a workspace has somebody on it.
 ///
-/// Named staffing rather than standing because *standing* already means what a
-/// reference derives, one module over, and a vocabulary crate using one word for
-/// two concepts has failed at its only job.
+/// Named staffing rather than **standing**, because *standing* already means
+/// what a reference derives, one module over, and a vocabulary crate using one
+/// word for two concepts has failed at its only job.
+///
+/// The blind global replace that performed that rename corrupted this very
+/// comment into "named staffing rather than staffing because staffing already
+/// means", three words after the sentence above.
 ///
 /// The distinction between [`Staffing::Mapped`] and [`Staffing::Incomplete`] is
 /// the whole reason this is an enum rather than a list of absent fields: a mapped
@@ -171,31 +176,53 @@ impl Identity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Paths {
-    pub hands: String,
-    pub experts: String,
-    pub channels: String,
-    pub agents: String,
-    pub index: String,
+    pub hands: RelPath,
+    pub experts: RelPath,
+    pub channels: RelPath,
+    pub agents: RelPath,
+    pub index: RelPath,
 }
 
 impl Default for Paths {
     fn default() -> Self {
+        // Every one of these is a literal in this file, so `expect` here says
+        // "this source is wrong" rather than "the configuration is wrong",
+        // which is the only way it can fail.
+        let rel = |s: &str| RelPath::new(s).expect("a default path is relative and contained");
         Self {
-            hands: ".shared/hands".into(),
-            experts: ".shared/experts".into(),
-            channels: ".shared/channels".into(),
-            agents: ".claude/agents".into(),
-            index: ".shared/.index".into(),
+            hands: rel(".shared/hands"),
+            experts: rel(".shared/experts"),
+            channels: rel(".shared/channels"),
+            agents: rel(".claude/agents"),
+            index: rel(".shared/.index"),
         }
     }
 }
 
-/// The one thing homma requires of a workspace.
+/// The literal meaning "this directory is the content repository".
+pub const LOCAL: &str = "local";
+
+fn local() -> String {
+    LOCAL.to_string()
+}
+
+/// What homma needs of a workspace, all of which has a default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
-    /// The repository holding workspace metadata and content. The only required
-    /// key: homma cares about neither its identity nor its contents, only that
-    /// it is named.
+    /// Where the repository holding workspace metadata and content lives.
+    ///
+    /// A git URI, or the literal `local`, which is the default.
+    ///
+    /// A URI rather than a name, because it is what a workspace is cloned from.
+    /// A name would have to be resolved into one, and the round that tried
+    /// resolved it from whatever repository the operator happened to be standing
+    /// in, which cloned that repository instead.
+    ///
+    /// `local` means the configuration's own directory **is** the content
+    /// repository, initialised if it is not one yet. That is the shape a
+    /// workspace starts in before it has a remote, so it is the default and
+    /// needs no key at all.
+    #[serde(default = "local")]
     pub content_repo: String,
     #[serde(default)]
     pub paths: Paths,
@@ -256,11 +283,11 @@ mod tests {
     use super::*;
 
     const MINIMAL: &str = r#"
-content_repo = "clause-dev"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 "#;
 
     const WITH_ORG: &str = r#"
-content_repo = "clause-dev"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
 
 [paths]
 hands = "custom/hands"
@@ -292,23 +319,64 @@ handle = "proof"
     #[test]
     fn one_key_is_enough() {
         let w = Workspace::parse(MINIMAL).expect("should parse");
-        assert_eq!(w.content_repo, "clause-dev");
+        assert_eq!(
+            w.content_repo,
+            "git@example.invalid:orgrinrt/clause-dev.git"
+        );
         assert!(w.org.is_empty());
     }
 
     #[test]
     fn every_path_defaults_and_creating_none_of_them_is_valid() {
         let w = Workspace::parse(MINIMAL).unwrap();
-        assert_eq!(w.paths.hands, ".shared/hands");
-        assert_eq!(w.paths.channels, ".shared/channels");
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new(".shared/hands")
+        );
+        assert_eq!(
+            w.paths.channels.as_path(),
+            std::path::Path::new(".shared/channels")
+        );
     }
 
     #[test]
     fn an_override_replaces_only_what_it_names() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.paths.hands, "custom/hands");
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new("custom/hands")
+        );
         // The others keep their defaults rather than vanishing.
-        assert_eq!(w.paths.experts, ".shared/experts");
+        assert_eq!(
+            w.paths.experts.as_path(),
+            std::path::Path::new(".shared/experts")
+        );
+    }
+
+    #[test]
+    fn a_configured_path_that_leaves_the_workspace_is_refused_when_parsed() {
+        // The seventh instance of one class: `hands` and `agents` are joined
+        // onto the workspace root and were unvalidated strings, so both an
+        // escaping and an absolute value wrote a Hand's directories and
+        // definitions into an unrelated repository's tree, exit 0.
+        for bad in ["../victim/stolen", "/etc/passwd-ish", "a/../../out"] {
+            let toml = format!("content_repo = \"local\"\n\n[paths]\nhands = \"{bad}\"\n");
+            assert!(
+                Workspace::parse(&toml).is_err(),
+                "`{bad}` must be refused where somebody can act on it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_configured_path_that_stays_inside_is_accepted() {
+        // Including one that climbs and comes back, which is contained.
+        let toml = "content_repo = \"local\"\n\n[paths]\nhands = \"a/../b/hands\"\n";
+        let w = Workspace::parse(toml).expect("contained paths are fine");
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new("a/../b/hands")
+        );
     }
 
     #[test]
@@ -319,7 +387,7 @@ handle = "proof"
         assert!(proof.workspace.is_none());
         assert!(proof.git_name.is_none());
         // Complete as an entry, and still nothing to stand up, which is a
-        // different statement and is what standing reports.
+        // different statement and is what staffing reports.
         assert_eq!(proof.staffing(), Staffing::NoWorkspace);
     }
 
@@ -342,7 +410,7 @@ handle = "proof"
 
     #[test]
     fn a_mapped_hand_is_not_reported_as_incomplete() {
-        // The whole reason standing is an enum. A mapped entry lacks exactly
+        // The whole reason staffing is an enum. A mapped entry lacks exactly
         // the fields an unfinished one lacks, so a list of gaps reports a
         // decision as a mistake, and a registry of a dozen mapped entries
         // reports a dozen broken ones.
@@ -354,13 +422,21 @@ handle = "proof"
 
     #[test]
     fn an_entry_that_says_nothing_about_staffing_is_mapped_rather_than_broken() {
-        // The default has to fall this way: a roster is mapped first and
-        // staffed later, so silence means the boundary is drawn and nobody has
-        // been put on it.
-        // Via TOML, because the property claimed is serde's default and a
-        // constructor literal asserted against itself would say nothing.
-        let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.org["rendering"].staffing(), Staffing::Mapped);
+        // Through TOML, over an entry no other test touches, because the
+        // property claimed is serde's default and both a constructor literal
+        // and a fixture another test already asserts on would say nothing.
+        let w = Workspace::parse(
+            r#"
+content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+
+[org.silent]
+role = "hand"
+handle = "silent"
+"#,
+        )
+        .unwrap();
+        assert!(!w.org["silent"].staffed, "the default must be unstaffed");
+        assert_eq!(w.org["silent"].staffing(), Staffing::Mapped);
     }
 
     #[test]
@@ -380,7 +456,7 @@ handle = "proof"
 
     #[test]
     fn staffing_a_role_that_owns_no_workspace_changes_nothing() {
-        // Setting the flag on a King must not manufacture a path to standing
+        // Setting the flag on a King must not manufacture a path to staffing
         // one up, since the role is what decides whether a workspace exists at
         // all and the flag only says whether one is intended.
         let mut king = Identity::new(Role::King, "op");
@@ -398,6 +474,38 @@ handle = "proof"
         let bad = w.unsafe_strings();
         assert_eq!(bad.len(), 1);
         assert_eq!(bad[0], ("paja".to_string(), "nickname"));
+    }
+
+    #[test]
+    fn every_field_that_reaches_generated_output_is_checked() {
+        // Dropping `workspace`, `session` and the `repos` loop from the check
+        // left the whole suite green, so the fix for that finding was an
+        // assertion with no measurement behind it. One case per field.
+        let base = Workspace::parse(MINIMAL).unwrap();
+        /// A field's name, and the way to put a control character in it.
+        type Case = (&'static str, fn(&mut Identity));
+        let cases: Vec<Case> = vec![
+            ("handle", |i| i.handle = "a\nb".into()),
+            ("nickname", |i| i.nickname = Some("a\nb".into())),
+            ("full_name", |i| i.full_name = Some("a\nb".into())),
+            ("domain", |i| i.domain = Some("a\nb".into())),
+            ("git_name", |i| i.git_name = Some("a\nb".into())),
+            ("git_email", |i| i.git_email = Some("a\nb".into())),
+            ("workspace", |i| i.workspace = Some("a\nb".into())),
+            ("session", |i| i.session = Some("a\nb".into())),
+            ("repos", |i| i.repos = vec!["a\nb".into()]),
+        ];
+        for (field, break_it) in cases {
+            let mut w = base.clone();
+            let mut id = Identity::new(Role::Hand, "victim");
+            break_it(&mut id);
+            w.org.insert("victim".into(), id);
+            let bad = w.unsafe_strings();
+            assert!(
+                bad.iter().any(|(_, f)| *f == field),
+                "`{field}` reaches generated output and is not checked"
+            );
+        }
     }
 
     #[test]

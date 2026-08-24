@@ -8,8 +8,7 @@
 
 use super::gix_impl::GixRepo;
 use crate::repo::error::RepoError;
-use homma_api::Git;
-use std::path::Path;
+use homma_api::{AbsPath, Git};
 
 /// Git as gix performs it.
 #[derive(Debug, Default, Clone, Copy)]
@@ -18,17 +17,17 @@ pub struct GixGit;
 impl Git for GixGit {
     type Error = RepoError;
 
-    fn is_repo(&self, path: &Path) -> bool {
+    fn is_repo(&self, path: &AbsPath) -> bool {
         // Opening is the honest check. A `.git` directory can exist and be
         // unusable, and this is called to decide whether to clone over it.
         path.join(".git").exists() && GixRepo::open(path).is_ok()
     }
 
-    fn clone_repo(&self, url: &str, dest: &Path) -> Result<(), Self::Error> {
+    fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Self::Error> {
         GixRepo::clone_into(url, dest).map(|_| ())
     }
 
-    fn set_identity(&self, path: &Path, name: &str, email: &str) -> Result<(), Self::Error> {
+    fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Self::Error> {
         // The repository's own config file, edited in place. `gix`'s snapshot
         // API looked like the obvious route and is not: its `commit` updates
         // the in-memory `Repository` and never touches disk, so the identity
@@ -42,12 +41,59 @@ impl Git for GixGit {
         file.set_raw_value(&"user.email", email)
             .map_err(|e| RepoError::Config(e.to_string()))?;
         std::fs::write(config_path(path), file.to_bstring()).map_err(|e| RepoError::Io {
-            path: config_path(path),
+            path: config_path(path).into_path_buf(),
             source: e,
         })
     }
 
-    fn origin_url(&self, path: &Path) -> Result<Option<String>, Self::Error> {
+    fn init(&self, path: &AbsPath) -> Result<(), Self::Error> {
+        std::fs::create_dir_all(path).map_err(|e| RepoError::Io {
+            path: path.clone().into_path_buf(),
+            source: e,
+        })?;
+        gix::init(path)
+            .map(|_| ())
+            .map_err(|e| RepoError::Config(e.to_string()))
+    }
+
+    fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Self::Error> {
+        // **Resolved before it is walked.** Containment is a property of the
+        // filesystem and the path together, and five rounds computed it from
+        // the path alone. A symlink anywhere in the chain then hides the
+        // repository above it, and the walk answers about a place nobody asked
+        // about. The path being created does not exist yet, so resolution walks
+        // the components and follows each link it meets, dangling or not, and
+        // takes what is left as written. An earlier comment here described
+        // resolving the longest existing prefix, which is what `resolved` did
+        // until a review found that `Path::exists()` follows a link and a
+        // dangling one therefore read as absent.
+        let subject = path.resolved().map_err(|e| RepoError::Io {
+            path: path.clone().into_path_buf(),
+            source: e,
+        })?;
+        let mut at = subject.clone();
+        loop {
+            // A path that is itself a repository is not inside one. Compared
+            // here, where both sides are resolved; a caller comparing a
+            // resolved ancestor against its own unresolved path never matches.
+            if is_repo_dir(&at) && at != subject {
+                return Ok(Some(at));
+            }
+            match at.parent() {
+                Some(p) => at = p,
+                None => return Ok(None),
+            }
+        }
+    }
+
+    fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Self::Error> {
+        // A directory that is not a repository points at nothing, which is an
+        // answer rather than a failure. Erroring here made the ordinary
+        // bootstrap fail outright: a directory, a registry, and a remote to
+        // clone from is exactly a root that is not yet a repository.
+        if !config_path(path).exists() {
+            return Ok(None);
+        }
         let file = local_config(path)?;
         Ok(file
             .raw_value("remote.origin.url")
@@ -56,7 +102,7 @@ impl Git for GixGit {
             .filter(|s| !s.is_empty()))
     }
 
-    fn identity(&self, path: &Path) -> Result<Option<(String, String)>, Self::Error> {
+    fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Self::Error> {
         // Deliberately the local file rather than the merged view. A merged
         // read would report the machine's global identity as though it were
         // this repository's, which is precisely the confusion being prevented.
@@ -74,13 +120,26 @@ impl Git for GixGit {
     }
 }
 
+/// Whether a directory is a repository.
+///
+/// **A bare repository has no `.git`**, so testing for one alone answers no for
+/// every bare repository there is, and a workspace created inside one is
+/// exactly the write this guard exists to refuse. A bare repository is a `HEAD`
+/// beside `objects` and `refs`, which is what `git` itself looks for.
+fn is_repo_dir(path: &AbsPath) -> bool {
+    if path.join(".git").exists() {
+        return true;
+    }
+    path.join("HEAD").exists() && path.join("objects").is_dir() && path.join("refs").is_dir()
+}
+
 /// Where a repository keeps its own configuration.
-fn config_path(repo: &Path) -> std::path::PathBuf {
+fn config_path(repo: &AbsPath) -> AbsPath {
     repo.join(".git").join("config")
 }
 
 /// The repository's own configuration, with no global or system file merged in.
-fn local_config(repo: &Path) -> Result<gix::config::File<'static>, RepoError> {
+fn local_config(repo: &AbsPath) -> Result<gix::config::File<'static>, RepoError> {
     let path = config_path(repo);
     if !path.exists() {
         return Err(RepoError::Config(format!(
@@ -88,14 +147,20 @@ fn local_config(repo: &Path) -> Result<gix::config::File<'static>, RepoError> {
             repo.display()
         )));
     }
-    gix::config::File::from_path_no_includes(path, gix::config::Source::Local)
+    gix::config::File::from_path_no_includes(path.into_path_buf(), gix::config::Source::Local)
         .map_err(|e| RepoError::Config(e.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::process::Command;
+
+    /// A tempdir path as the type the contract takes.
+    fn abs(p: impl Into<std::path::PathBuf>) -> AbsPath {
+        AbsPath::new(p).expect("a tempdir is absolute")
+    }
 
     /// A repository with one commit, to clone from. Built with the git binary
     /// because this is test scaffolding rather than the thing under test.
@@ -128,15 +193,17 @@ mod tests {
         source_repo(src.path());
         let dest = tempfile::tempdir().unwrap();
         let into = dest.path().join("clone");
+        let abs_into = abs(into.clone());
 
         let git = GixGit;
-        git.clone_repo(src.path().to_str().unwrap(), &into).unwrap();
-        assert!(git.is_repo(&into));
+        git.clone_repo(src.path().to_str().unwrap(), &abs_into)
+            .unwrap();
+        assert!(git.is_repo(&abs_into));
 
-        git.set_identity(&into, "paja", "paja@example.invalid")
+        git.set_identity(&abs_into, "paja", "paja@example.invalid")
             .unwrap();
         assert_eq!(
-            git.identity(&into).unwrap(),
+            git.identity(&abs_into).unwrap(),
             Some(("paja".to_string(), "paja@example.invalid".to_string()))
         );
     }
@@ -149,17 +216,29 @@ mod tests {
         // point the global config elsewhere is racy across test threads and
         // needs an unsafe call; the requirement is that the real global file
         // does not change, so that is what is asserted, directly.
-        let globals = global_config_paths();
+        let globals = crate::testing::global_config_paths();
+        // An empty list compares equal to an empty list, so the assertion below
+        // would pass having checked nothing. Reported ok under
+        // `env -u HOME -u XDG_CONFIG_HOME` before this line existed.
+        // Non-empty is not enough: `/etc/gitconfig` is pushed unconditionally
+        // and does not exist here, so the comparison ran over `[None]` and
+        // passed having checked nothing. At least one has to be a real file.
+        assert!(
+            globals.iter().any(|p| p.exists()),
+            "no global configuration exists to compare against: {globals:?}"
+        );
         let before: Vec<_> = globals.iter().map(|p| std::fs::read(p).ok()).collect();
 
         let src = tempfile::tempdir().unwrap();
         source_repo(src.path());
         let dest = tempfile::tempdir().unwrap();
         let into = dest.path().join("clone");
+        let abs_into = abs(into.clone());
 
         let git = GixGit;
-        git.clone_repo(src.path().to_str().unwrap(), &into).unwrap();
-        git.set_identity(&into, "paja", "paja@example.invalid")
+        git.clone_repo(src.path().to_str().unwrap(), &abs_into)
+            .unwrap();
+        git.set_identity(&abs_into, "paja", "paja@example.invalid")
             .unwrap();
 
         let local = std::fs::read_to_string(into.join(".git/config")).unwrap();
@@ -178,19 +257,6 @@ mod tests {
         );
     }
 
-    /// Every place git would look for a global configuration.
-    fn global_config_paths() -> Vec<std::path::PathBuf> {
-        let mut out = Vec::new();
-        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-            out.push(Path::new(&xdg).join("git").join("config"));
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            out.push(Path::new(&home).join(".gitconfig"));
-            out.push(Path::new(&home).join(".config").join("git").join("config"));
-        }
-        out
-    }
-
     #[test]
     fn the_origin_url_is_read_from_the_clone() {
         // This is where a content repository's clone URL comes from, so a wrong
@@ -199,11 +265,13 @@ mod tests {
         source_repo(src.path());
         let dest = tempfile::tempdir().unwrap();
         let into = dest.path().join("clone");
+        let abs_into = abs(into.clone());
 
         let git = GixGit;
-        git.clone_repo(src.path().to_str().unwrap(), &into).unwrap();
+        git.clone_repo(src.path().to_str().unwrap(), &abs_into)
+            .unwrap();
         let url = git
-            .origin_url(&into)
+            .origin_url(&abs_into)
             .unwrap()
             .expect("a clone has an origin");
         // Canonicalised on both sides: the temp directory resolves through a
@@ -219,12 +287,104 @@ mod tests {
     fn a_repository_with_no_origin_reports_none_rather_than_guessing() {
         let d = tempfile::tempdir().unwrap();
         source_repo(d.path());
-        assert_eq!(GixGit.origin_url(d.path()).unwrap(), None);
+        assert_eq!(GixGit.origin_url(&abs(d.path())).unwrap(), None);
+    }
+
+    #[test]
+    fn a_directory_inside_a_repository_reports_the_repository_above_it() {
+        let d = tempfile::tempdir().unwrap();
+        source_repo(d.path());
+        let nested = d.path().join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        // Resolved on both sides: on macOS the tempdir is reached through a
+        // symlink, so comparing the spellings would test the platform.
+        let found = GixGit
+            .enclosing_repo(&abs(nested.clone()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            std::fs::canonicalize(found).unwrap(),
+            std::fs::canonicalize(d.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn the_walk_terminates_at_the_filesystem_root() {
+        // A relative path can no longer reach here at all: `AbsPath` is the
+        // parameter type, so the runtime refusal that used to live here is
+        // gone and the case is pinned by `tests/compile_fail/` instead. What
+        // remains worth checking is the other end of the walk.
+        let root = AbsPath::new("/").unwrap();
+        assert!(GixGit.enclosing_repo(&root).is_ok());
+    }
+
+    #[test]
+    fn a_directory_that_is_not_a_repository_has_no_origin_rather_than_erroring() {
+        // Erroring here made a URI content repository against a fresh root fail
+        // outright, which is the ordinary bootstrap.
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(GixGit.origin_url(&abs(d.path())).unwrap(), None);
+    }
+
+    #[test]
+    fn a_directory_outside_any_repository_reports_none() {
+        let d = tempfile::tempdir().unwrap();
+        let free = d.path().join("free");
+        std::fs::create_dir_all(&free).unwrap();
+        assert_eq!(GixGit.enclosing_repo(&abs(free.clone())).unwrap(), None);
+    }
+
+    #[test]
+    fn a_repository_is_not_inside_itself() {
+        // Standing up twice depends on this. Reporting itself made a workspace
+        // refuse to be re-provisioned, since it appeared nested in a repository
+        // that was it.
+        let d = tempfile::tempdir().unwrap();
+        source_repo(d.path());
+        assert_eq!(GixGit.enclosing_repo(&abs(d.path())).unwrap(), None);
+    }
+
+    #[test]
+    fn a_bare_repository_is_seen_as_an_ancestor() {
+        // It has no `.git`, so testing for one answered no for every bare
+        // repository there is.
+        let d = tempfile::tempdir().unwrap();
+        let bare = d.path().join("bare.git");
+        std::process::Command::new("git")
+            .args(["init", "-q", "--bare", bare.to_str().unwrap()])
+            .status()
+            .unwrap();
+        let inside = bare.join("ws").join("hand");
+        let found = GixGit.enclosing_repo(&abs(inside)).unwrap().unwrap();
+        assert_eq!(
+            std::fs::canonicalize(found).unwrap(),
+            std::fs::canonicalize(&bare).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_symlink_in_the_chain_does_not_hide_the_repository_above_it() {
+        // Walking lexically, the link's own parents were inspected and the
+        // repository the link points into was never seen.
+        let d = tempfile::tempdir().unwrap();
+        let victim = d.path().join("victim");
+        std::fs::create_dir_all(victim.join("inside")).unwrap();
+        source_repo(&victim);
+        let elsewhere = d.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(victim.join("inside"), elsewhere.join("link")).unwrap();
+
+        let target = elsewhere.join("link").join("hand");
+        let found = GixGit.enclosing_repo(&abs(target)).unwrap().unwrap();
+        assert_eq!(
+            std::fs::canonicalize(found).unwrap(),
+            std::fs::canonicalize(&victim).unwrap()
+        );
     }
 
     #[test]
     fn a_directory_that_is_not_a_repository_is_not_one() {
         let d = tempfile::tempdir().unwrap();
-        assert!(!GixGit.is_repo(d.path()));
+        assert!(!GixGit.is_repo(&abs(d.path())));
     }
 }
