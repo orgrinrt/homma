@@ -420,7 +420,7 @@ pub(crate) fn merge_settings(
             hooks.retain(|h| {
                 let cmd = h.get("command").and_then(|c| c.as_str()).unwrap_or("");
                 !is_aggregated_command(cmd, visited)
-                    && !is_legacy_aggregated_command(cmd, known_repos)
+                    && !is_retired_aggregated_command(cmd, known_repos)
                     && !crate::cmd::gates::is_workspace_gate_command(cmd)
             });
         }
@@ -477,16 +477,30 @@ pub(crate) fn is_aggregated_command(cmd: &str, repos: &[&str]) -> bool {
         .any(|repo| basename.starts_with(&format!("{repo}--")))
 }
 
-/// True if a hook command carries the retired bash aggregator's shape,
-/// `imports/<repo>/...`. Swept on the full manifest rather than on the repos
-/// this run visited: nothing writes this form any more, so an entry carrying
-/// it is residue in every workspace and there is no clone where keeping it
-/// would make it work again.
-pub(crate) fn is_legacy_aggregated_command(cmd: &str, known_repos: &[&str]) -> bool {
-    known_repos.iter().any(|repo| {
+/// True if a managed hook command carries a shape nothing writes any more.
+/// Swept on the full manifest rather than on the repos this run visited,
+/// because there is no clone in which keeping one would make it work again.
+///
+/// Two shapes qualify. The retired bash aggregator's `imports/<repo>/...`,
+/// which the current aggregator replaced with a flat `<repo>--<name>.sh`. And a
+/// managed command naming an **absolute** path, which is what this aggregator
+/// itself wrote before it learned to name `${CLAUDE_PROJECT_DIR}`.
+///
+/// That absolute path belongs to whichever workspace generated it, and cloning
+/// the repo does not make it resolve here. That is exactly what separates it
+/// from a placeholder command for an unvisited repo, which does come back to
+/// life and is preserved. Left in place it is worse than inert: on the machine
+/// that generated it the path exists, so the host runs another workspace's
+/// hooks against this one's edits.
+///
+/// A command that is not managed is untouched by either arm. A hand-authored
+/// user-level hook is absolute too, and its basename matches no repo.
+pub(crate) fn is_retired_aggregated_command(cmd: &str, known_repos: &[&str]) -> bool {
+    let legacy = known_repos.iter().any(|repo| {
         let seg = format!("imports/{repo}/");
         cmd.contains(&format!("/{seg}")) || cmd.starts_with(&seg)
-    })
+    });
+    legacy || (cmd.starts_with('/') && is_aggregated_command(cmd, known_repos))
 }
 
 #[cfg(test)]
@@ -699,7 +713,10 @@ mod tests {
         // `<repo>--<name>.sh` convention. Entries left over from that
         // era must still get swept out on regen.
         let cmd = ".claude/hooks/imports/arvo/no-alloc-guard.sh";
-        assert!(is_legacy_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
+        assert!(is_retired_aggregated_command(cmd, &[
+            "arvo",
+            "hilavitkutin"
+        ]));
         // and the current-shape check does not claim it, so the two are not
         // silently the same predicate under two names
         assert!(!is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
@@ -710,7 +727,30 @@ mod tests {
         // Relative path starting with `imports/<repo>/` (no leading
         // separator). Must still match the legacy pattern.
         let cmd = "imports/arvo/no-alloc-guard.sh";
-        assert!(is_legacy_aggregated_command(cmd, &["arvo"]));
+        assert!(is_retired_aggregated_command(cmd, &["arvo"]));
+    }
+
+    #[test]
+    fn an_absolute_managed_command_is_retired_whatever_repo_it_names() {
+        let cmd = "/Users/someone/Dev/their-workspace/.claude/hooks/arvo--no-alloc-guard.sh";
+        assert!(is_retired_aggregated_command(cmd, &["arvo"]));
+    }
+
+    #[test]
+    fn a_placeholder_command_for_an_unvisited_repo_is_not_retired() {
+        // The control that keeps the preservation rule alive. A predicate that
+        // swept both shapes would satisfy the test above and quietly undo it.
+        let cmd = "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--no-alloc-guard.sh";
+        assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
+    }
+
+    #[test]
+    fn an_unmanaged_absolute_command_is_left_alone() {
+        // The second control, and the worst thing this could get wrong: a
+        // hand-authored user-level hook is absolute too.
+        let cmd = "/Users/someone/.claude/hooks/self-compact-trigger.sh";
+        assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
+        assert!(!is_aggregated_command(cmd, &["arvo"]));
     }
 
     #[test]
@@ -720,7 +760,7 @@ mod tests {
         // Path-component anchoring prevents false positives on
         // e.g. user-authored paths like `myimports/arvo/foo.sh`.
         let cmd = ".claude/hooks/myimports/arvo/foo.sh";
-        assert!(!is_legacy_aggregated_command(cmd, &["arvo"]));
+        assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
     }
 
     #[test]
@@ -956,6 +996,7 @@ mod tests {
             workspace.join(".claude/settings.json"),
             r#"{"hooks":{"PreToolUse":[
                 {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kolli--guard.sh"}]},
+                {"matcher":"Edit","hooks":[{"type":"command","command":"/elsewhere/.claude/hooks/kolli--stale.sh"}]},
                 {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--old.sh"}]}
             ]}}"#,
         )
@@ -997,6 +1038,12 @@ mod tests {
             "a visited repo's stale registration survived: {cmds:?}"
         );
         assert!(cmds.iter().any(|c| c.ends_with("arvo--new.sh")));
+        // And the unvisited repo's *absolute* entry goes, because no clone can
+        // resolve it. Preservation is about the placeholder form only.
+        assert!(
+            !cmds.iter().any(|c| c.ends_with("kolli--stale.sh")),
+            "a retired absolute entry survived on an unvisited repo: {cmds:?}"
+        );
     }
 
     #[test]
