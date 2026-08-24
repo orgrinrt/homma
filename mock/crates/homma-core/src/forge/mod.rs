@@ -21,6 +21,7 @@
 pub mod error;
 pub mod forgejo;
 pub mod github;
+pub mod token;
 pub mod trait_def;
 pub mod url;
 

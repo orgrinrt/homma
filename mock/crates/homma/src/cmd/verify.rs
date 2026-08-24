@@ -112,9 +112,10 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
                 level:   Level::Warn,
                 kind:    "forge_answers_are_not_evidence".into(),
                 message: format!(
-                    "forge `{forge}` has no token in the environment, so a private repo there \
-                     is indistinguishable from one that does not exist; not asking about its \
-                     repos"
+                    "no credential for forge `{forge}`: {}. A private repo there is \
+                     indistinguishable from one that does not exist, so its repos were not \
+                     asked about",
+                    where_it_looked(forge_cfg)
                 ),
             });
             continue;
@@ -263,16 +264,32 @@ impl HumanRender for VerifyReport {
     }
 }
 
-/// Whether the forge's configured token is present and non-empty.
+/// Whether a credential can be obtained for this forge at all.
 ///
-/// A forge that declares no `token_env` at all is treated the same as one whose
-/// variable is unset: there is no credential either way.
-fn has_a_token(forge: &homma_core::config::ForgeConfig) -> bool {
-    forge
-        .token_env
-        .as_deref()
-        .and_then(|var| std::env::var(var).ok())
-        .is_some_and(|v| !v.is_empty())
+/// Both sources, because a forge configured only with a `token_cmd` has a
+/// perfectly good credential and reporting it as tokenless would send the
+/// operator to set a variable the manifest never asked for.
+///
+/// A forge that declares neither is treated the same as one whose variable is
+/// unset: no credential either way.
+/// The sources this forge declares, named in the order they are tried, so a
+/// reader is told where to go rather than being told a credential is missing.
+fn where_it_looked(forge: &ForgeConfig) -> String {
+    let mut tried = Vec::new();
+    if let Some(var) = &forge.token_env {
+        tried.push(format!("`{var}` is unset or empty"));
+    }
+    if let Some(argv) = &forge.token_cmd {
+        tried.push(format!("`{}` produced none", argv.join(" ")));
+    }
+    if tried.is_empty() {
+        return "it declares neither `token_env` nor `token_cmd`".to_string();
+    }
+    tried.join(", and ")
+}
+
+fn has_a_token(forge: &ForgeConfig) -> bool {
+    homma_core::forge::token::resolve(forge).is_some()
 }
 
 #[cfg(test)]

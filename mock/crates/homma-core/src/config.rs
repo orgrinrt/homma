@@ -41,6 +41,11 @@ pub struct Config {
     /// The registry. Same reason.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org: Option<toml::Value>,
+
+    /// Where forge credentials come from when no environment variable holds
+    /// one. See [`AuthConfig`].
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 impl Config {
@@ -68,26 +73,67 @@ impl Config {
             }
         })?;
         let mut cfg = Self::parse(&s)?;
+        // The config path is made absolute first, and that is the whole of
+        // this. `Path::new("homma.toml").parent()` is `Some("")` rather than
+        // `None`, so a fallback to `.` never fires for the spelling an operator
+        // actually types, `-c homma.toml`, and every join below then leaves a
+        // relative path behind. Everything anchored on it inherits that:
+        // `resolve_local_path` gives up and returns `./<repo>`, the aggregated
+        // hooks compare a relative root against the absolute path the host
+        // supplies and never match, and a relative token-command program
+        // anchors to nothing.
+        //
+        // The working directory is the right base rather than an invented one:
+        // a relative path handed to a command means relative to where the
+        // caller is.
+        //
+        // Computed once, before either use, because both want the same anchor
+        // and the two arriving at different ones is the shape of a defect
+        // nobody would look for.
+        let here = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let absolute = if path.is_absolute() { path.to_path_buf() } else { here.join(path) };
+        let beside = absolute.parent().unwrap_or(Path::new("."));
         if cfg.workspace.path.is_relative() {
-            // The config path is made absolute first, and that is the whole of
-            // this. `Path::new("homma.toml").parent()` is `Some("")` rather
-            // than `None`, so the fallback below never fires for the spelling
-            // an operator actually types, `-c homma.toml`, and the join then
-            // leaves the workspace path relative. Everything anchored on it
-            // afterwards inherits that: `resolve_local_path` gives up and
-            // returns `./<repo>`, and the aggregated hooks then compare a
-            // relative root against the absolute path the host supplies, which
-            // never matches.
-            //
-            // The working directory is the right base rather than an invented
-            // one: a relative path handed to a command means relative to where
-            // the caller is.
-            let here = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let absolute = if path.is_absolute() { path.to_path_buf() } else { here.join(path) };
-            let beside = absolute.parent().unwrap_or(Path::new("."));
             cfg.workspace.path = normalise(&beside.join(&cfg.workspace.path));
         }
+        cfg.settle_token_commands(beside);
         Ok(cfg)
+    }
+
+    /// Inherit, substitute and anchor every forge's token command, once.
+    ///
+    /// Here rather than at the point of use so that nothing is spawned by a
+    /// command that never asks a forge anything. `status` and `verify` without
+    /// `--forge` are offline and stay offline, and the substitution is pure and
+    /// therefore checkable without running any of it.
+    ///
+    /// Public so a caller that built a [`Config`] by parsing a string rather
+    /// than reading a file can settle it against a directory of its choosing.
+    /// Idempotent: substituting an argument list that holds no placeholder
+    /// leaves it as it was.
+    pub fn settle_token_commands(&mut self, config_dir: &Path) {
+        let inherited = self.auth.token_cmd.clone();
+        for (name, forge) in &mut self.forges {
+            let Some(argv) = forge.token_cmd.take().or_else(|| inherited.clone()) else {
+                continue;
+            };
+            let host = crate::forge::url::host_of(&forge.api_url).to_string();
+            let mut argv: Vec<String> = argv
+                .into_iter()
+                .map(|a| a.replace("{forge}", name).replace("{host}", &host))
+                .collect();
+            if let Some(first) = argv.first_mut() {
+                let p = Path::new(first.as_str());
+                // A bare program name is left alone so `PATH` finds it, the way
+                // it would if typed. Anything carrying a separator is a path,
+                // and a relative one is relative to the workspace root rather
+                // than to whatever directory homma was invoked from.
+                if p.is_relative() && p.components().count() > 1 {
+                    *first = normalise(&config_dir.join(p)).display().to_string();
+                }
+            }
+            forge.token_cmd = Some(argv);
+        }
     }
 
     /// Look up a repo by name.
@@ -192,6 +238,44 @@ pub struct ForgeConfig {
     pub api_url:   String,
     #[serde(default)]
     pub token_env: Option<String>,
+    /// A command that prints this forge's token on stdout, asked when
+    /// [`Self::token_env`] names no variable or that variable is empty.
+    ///
+    /// Inherited from [`AuthConfig::token_cmd`] when unset here, with the
+    /// placeholders already substituted: by the time anything reads this it is
+    /// a concrete argument list. Set it per forge for a credential a particular
+    /// tool owns, which is the case for anything the operator logs into
+    /// separately.
+    #[serde(default)]
+    pub token_cmd: Option<Vec<String>>,
+}
+
+/// `[auth]`: where a forge credential comes from when the environment holds
+/// none.
+///
+/// A command rather than a file, because a credential lives wherever whatever
+/// minted it put it: a keychain, a password manager, or a tool's own store. The
+/// only thing they have in common is that something can be run to print one.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthConfig {
+    /// The default token command for every forge that names none of its own.
+    ///
+    /// An argument list, never a shell string. A shell would make a
+    /// substituted placeholder into something that can be quoted out of, and
+    /// nothing here needs a pipeline.
+    ///
+    /// Two placeholders are substituted in every element:
+    ///
+    /// - `{forge}`, the profile's own key in `[forges.*]`.
+    /// - `{host}`, the host part of that profile's `api_url`.
+    ///
+    /// A first element that is a relative path containing a separator is
+    /// resolved against the directory holding `homma.toml`, which is the
+    /// workspace root. A bare program name is left alone, so it is found on
+    /// `PATH` the way it would be if typed.
+    #[serde(default)]
+    pub token_cmd: Option<Vec<String>>,
 }
 
 /// Hosting service type. Drives client selection in [crate::forge].
@@ -267,6 +351,150 @@ impl std::error::Error for ConfigError {
                 ..
             } => Some(source),
         }
+    }
+}
+
+#[cfg(test)]
+mod token_command_tests {
+    use super::*;
+
+    fn cfg(body: &str) -> Config {
+        let mut c = Config::parse(body).unwrap();
+        c.settle_token_commands(Path::new("/ws"));
+        c
+    }
+
+    const TWO_FORGES: &str = r#"
+[workspace]
+name = "w"
+[auth]
+token_cmd = [".shared/scripts/release/auth", "token", "{forge}"]
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+[forges.codeberg]
+kind = "forgejo"
+base_url = "https://codeberg.org"
+api_url = "https://codeberg.org/api/v1"
+"#;
+
+    #[test]
+    fn one_line_serves_every_forge_because_the_placeholder_carries_the_name() {
+        // The whole point of the default: the operator writes it once and each
+        // profile asks about itself. A fixture with one forge cannot tell a
+        // working substitution from a constant, so there are two.
+        let c = cfg(TWO_FORGES);
+        assert_eq!(c.forges["github"].token_cmd.as_ref().unwrap()[2], "github");
+        assert_eq!(
+            c.forges["codeberg"].token_cmd.as_ref().unwrap()[2],
+            "codeberg"
+        );
+    }
+
+    #[test]
+    fn a_relative_program_path_is_anchored_to_the_workspace_root() {
+        // Not to the working directory. `homma` is meant to run from inside a
+        // member clone, where a path relative to cwd names nothing.
+        let c = cfg(TWO_FORGES);
+        assert_eq!(
+            c.forges["github"].token_cmd.as_ref().unwrap()[0],
+            "/ws/.shared/scripts/release/auth"
+        );
+    }
+
+    #[test]
+    fn a_bare_program_name_is_left_for_path_to_find() {
+        // The control on the anchoring above: `gh` must stay `gh`, or the one
+        // case that needs no configuration at all stops working.
+        let c = cfg(r#"
+[workspace]
+name = "w"
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+token_cmd = ["gh", "auth", "token"]
+"#);
+        assert_eq!(c.forges["github"].token_cmd.as_ref().unwrap(), &[
+            "gh", "auth", "token"
+        ]);
+    }
+
+    #[test]
+    fn a_forges_own_command_is_not_replaced_by_the_default() {
+        let c = cfg(r#"
+[workspace]
+name = "w"
+[auth]
+token_cmd = ["shared", "{forge}"]
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+token_cmd = ["gh", "auth", "token"]
+[forges.codeberg]
+kind = "forgejo"
+base_url = "https://codeberg.org"
+api_url = "https://codeberg.org/api/v1"
+"#);
+        assert_eq!(c.forges["github"].token_cmd.as_ref().unwrap(), &[
+            "gh", "auth", "token"
+        ]);
+        // and the other one still inherits, which is what makes this a test
+        // about precedence rather than about the default never applying
+        assert_eq!(c.forges["codeberg"].token_cmd.as_ref().unwrap(), &[
+            "shared", "codeberg"
+        ]);
+    }
+
+    #[test]
+    fn the_host_placeholder_is_the_api_host_and_not_the_public_one() {
+        // They differ on GitHub, which is the case worth pinning: `github.com`
+        // against `api.github.com`.
+        let c = cfg(r#"
+[workspace]
+name = "w"
+[auth]
+token_cmd = ["t", "{host}"]
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+"#);
+        assert_eq!(
+            c.forges["github"].token_cmd.as_ref().unwrap()[1],
+            "api.github.com"
+        );
+    }
+
+    #[test]
+    fn a_manifest_naming_no_command_anywhere_gets_none() {
+        // The control on all of the above: nothing is invented for a manifest
+        // that asked for nothing, so an operator who never opts in never has a
+        // subprocess run on their behalf.
+        let c = cfg(r#"
+[workspace]
+name = "w"
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+token_env = "SOMETHING"
+"#);
+        assert!(c.forges["github"].token_cmd.is_none());
+    }
+
+    #[test]
+    fn settling_twice_changes_nothing() {
+        // `from_path` settles once, and a caller that parsed a string may
+        // settle again. A second pass must not re-anchor an already absolute
+        // path or substitute into a name that legitimately contains braces.
+        let mut c = Config::parse(TWO_FORGES).unwrap();
+        c.settle_token_commands(Path::new("/ws"));
+        let once = c.forges["github"].token_cmd.clone();
+        c.settle_token_commands(Path::new("/elsewhere"));
+        assert_eq!(c.forges["github"].token_cmd, once);
     }
 }
 

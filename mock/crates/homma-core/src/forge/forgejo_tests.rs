@@ -16,6 +16,7 @@ fn cfg() -> ForgeConfig {
         base_url:  "https://codeberg.org".into(),
         api_url:   "https://codeberg.org/api/v1".into(),
         token_env: None,
+        token_cmd: None,
     }
 }
 

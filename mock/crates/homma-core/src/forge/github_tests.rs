@@ -16,6 +16,7 @@ fn cfg() -> ForgeConfig {
         base_url:  "https://github.com".into(),
         api_url:   "https://api.github.com".into(),
         token_env: None,
+        token_cmd: None,
     }
 }
 

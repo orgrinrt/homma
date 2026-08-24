@@ -361,3 +361,82 @@ fn a_table_key_disagreeing_with_its_handle_is_refused() {
         .failure()
         .stderr(predicate::str::contains("must agree"));
 }
+
+#[test]
+fn a_forge_whose_credential_comes_from_a_command_is_not_reported_as_tokenless() {
+    // The end-to-end shape the `[auth] token_cmd` line exists for: no variable
+    // is set anywhere and the credential comes from whatever tool holds it.
+    // Without this, a manifest that opts in entirely through commands is told
+    // to go and set an environment variable it never named.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg_path = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg_path,
+        r#"
+[workspace]
+name = "ws"
+
+[auth]
+token_cmd = ["printf", "a-token-for-{forge}\n"]
+
+[forges.nowhere]
+kind = "github"
+base_url = "https://127.0.0.1:9"
+api_url = "https://127.0.0.1:9"
+
+[repos.somerepo]
+forge = "nowhere"
+owner = "x"
+local_path = "somerepo"
+"#,
+    )
+    .unwrap();
+
+    // A credential was found, so the run gets as far as trying to use it and
+    // fails on the closed port rather than on the absence of a token.
+    bin()
+        .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("forge_unreachable"))
+        .stdout(predicate::str::contains("no credential").not());
+}
+
+#[test]
+fn a_forge_whose_command_produces_nothing_is_reported_with_the_command_named() {
+    // The control on the test above, and the diagnostic that makes the feature
+    // usable: told a credential is missing, the operator is told where it was
+    // looked for rather than being sent to guess.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg_path = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg_path,
+        r#"
+[workspace]
+name = "ws"
+
+[auth]
+token_cmd = ["false"]
+
+[forges.nowhere]
+kind = "github"
+base_url = "https://127.0.0.1:9"
+api_url = "https://127.0.0.1:9"
+
+[repos.somerepo]
+forge = "nowhere"
+owner = "x"
+local_path = "somerepo"
+"#,
+    )
+    .unwrap();
+
+    bin()
+        .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no credential for forge `nowhere`"))
+        .stdout(predicate::str::contains("`false` produced none"))
+        // and nothing is claimed about the repo itself
+        .stdout(predicate::str::contains("repo_not_on_forge").not());
+}

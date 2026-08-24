@@ -112,6 +112,7 @@ mod tests {
             base_url:  base.into(),
             api_url:   api.into(),
             token_env: None,
+            token_cmd: None,
         }
     }
 
