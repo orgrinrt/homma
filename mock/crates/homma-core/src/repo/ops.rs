@@ -42,28 +42,28 @@ pub trait RepoOps {
 /// Working-tree + tracking snapshot.
 #[derive(Debug, Clone)]
 pub struct Status {
-    pub current_branch: Option<String>,
-    pub is_clean: bool,
+    pub current_branch:   Option<String>,
+    pub is_clean:         bool,
     /// Count of worktree-vs-index changes (untracked files excluded). Does
     /// not include staged-but-uncommitted (index-vs-HEAD) changes; the
     /// `is_clean` flag covers both sides, this counter covers one. Naming
     /// reflects what is counted, not what callers may casually expect.
     pub worktree_changes: usize,
-    pub tracking: Option<TrackingStatus>,
+    pub tracking:         Option<TrackingStatus>,
 }
 
 /// Local-vs-upstream divergence.
 #[derive(Debug, Clone)]
 pub struct TrackingStatus {
     pub remote_branch: String,
-    pub ahead: usize,
-    pub behind: usize,
+    pub ahead:         usize,
+    pub behind:        usize,
 }
 
 /// A local branch entry.
 #[derive(Debug, Clone)]
 pub struct Branch {
-    pub name: String,
+    pub name:        String,
     pub head_commit: String,
 }
 
@@ -71,7 +71,7 @@ pub struct Branch {
 #[derive(Debug, Clone)]
 pub struct Remote {
     pub name: String,
-    pub url: String,
+    pub url:  String,
 }
 
 /// Options for [`super::GixRepo::mirror_into`].

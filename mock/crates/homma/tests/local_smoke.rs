@@ -63,12 +63,7 @@ fn a_registry_with_no_content_repo_treats_its_own_directory_as_one() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();

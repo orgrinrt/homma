@@ -8,9 +8,10 @@
 //! disagree, and a record claiming a standing its author does not have is the
 //! failure the whole provenance discipline exists to prevent.
 
-use crate::config::Role;
 use std::fmt;
 use std::str::FromStr;
+
+use crate::config::Role;
 
 /// Which namespace a reference addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -58,7 +59,7 @@ pub struct Reference {
     pub namespace: Namespace,
     /// Everything after the sigil, unparsed. What it means is the namespace's
     /// business, not this type's.
-    pub path: String,
+    pub path:      String,
 }
 
 impl Reference {
@@ -83,10 +84,14 @@ impl Reference {
     pub fn rung(&self, roles: &dyn Fn(&str) -> Option<Role>) -> Rung {
         match self.namespace {
             Namespace::Forge => Rung::Mapped,
-            Namespace::Org => match roles(&self.path) {
-                Some(Role::King) => Rung::Ratified,
-                Some(Role::Hand) | Some(Role::Expert) | Some(Role::General) => Rung::AgentOutput,
-                None => Rung::Unknown,
+            Namespace::Org => {
+                match roles(&self.path) {
+                    Some(Role::King) => Rung::Ratified,
+                    Some(Role::Hand) | Some(Role::Expert) | Some(Role::General) => {
+                        Rung::AgentOutput
+                    },
+                    None => Rung::Unknown,
+                }
             },
             // A record derived from another record inherits nothing: what wrote
             // it is what it was written by, and that is the record it points at.
@@ -175,13 +180,7 @@ mod tests {
 
     #[test]
     fn a_reference_round_trips_through_its_rendering() {
-        for text in [
-            "@paja",
-            "#hila/reorder_scheduler",
-            "&hila/rework",
-            "!gh/pr/13",
-            "~blocked",
-        ] {
+        for text in ["@paja", "#hila/reorder_scheduler", "&hila/rework", "!gh/pr/13", "~blocked"] {
             let parsed: Reference = text.parse().expect("should parse");
             assert_eq!(parsed.to_string(), text);
         }

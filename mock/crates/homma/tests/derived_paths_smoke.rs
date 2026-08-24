@@ -175,7 +175,7 @@ fn standing_up_twice_into_a_tree_with_a_symlink_is_the_same_answer() {
     std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
     add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
 
-    for pass in 1..=2 {
+    for pass in 1 ..= 2 {
         bin()
             .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
             .assert()
@@ -387,7 +387,7 @@ fn a_workspace_under_an_existing_claude_directory_is_refused() {
 }
 
 #[test]
-fn a_root_in_the_central_clone_is_refused() {
+fn a_root_in_ops_own_workspace_is_refused() {
     // Deny item one, which has the same shape and had the same absence of a
     // mechanism.
     let dir = tempfile::tempdir().unwrap();
@@ -404,7 +404,7 @@ fn a_root_in_the_central_clone_is_refused() {
         .args(["--root", central.to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("read, never written"));
+        .stderr(predicate::str::contains("not yours to write in"));
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn a_workspace_in_a_folded_spelling_of_a_claude_that_does_not_exist_yet_is_refus
 }
 
 #[test]
-fn a_workspace_in_a_folded_spelling_of_a_central_clone_that_does_not_exist_yet_is_refused() {
+fn a_workspace_in_a_folded_spelling_of_a_denied_place_that_does_not_exist_yet_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     if !folds_case(dir.path()) {
         eprintln!("skipped: case-sensitive filesystem");
@@ -651,7 +651,7 @@ fn a_workspace_in_a_folded_spelling_of_a_central_clone_that_does_not_exist_yet_i
         .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("read, never written"));
+        .stderr(predicate::str::contains("not yours to write in"));
 
     assert!(!home.join("Dev").join("clause-dev").exists());
     assert!(!home.join("Dev").join("CLAUSE-DEV").exists());
@@ -702,7 +702,7 @@ fn a_workspace_inside_another_participants_workspace_that_is_not_stood_up_yet_is
 }
 
 #[test]
-fn a_root_in_a_folded_spelling_of_an_absent_central_clone_builds_nothing_before_refusing() {
+fn a_root_in_a_folded_spelling_of_an_absent_denied_place_builds_nothing_before_refusing() {
     // **The refusal fired after the write it forbids.** `Root::new` passed
     // because the denied place had no inode, `git.init` created it through
     // `create_dir_all`, `provision` cloned the workspace, and only then did
@@ -731,13 +731,10 @@ fn a_root_in_a_folded_spelling_of_an_absent_central_clone_builds_nothing_before_
         .args(["--root", folded_root.to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("read, never written"));
+        .stderr(predicate::str::contains("not yours to write in"));
 
     let central = home.join("Dev").join("clause-dev");
-    assert!(
-        !central.exists(),
-        "the central clone's place must not exist"
-    );
+    assert!(!central.exists(), "the denied place must not exist");
     assert!(!folded_root.exists());
     assert!(
         !dir.path().join("ws").exists(),

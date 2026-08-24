@@ -420,12 +420,12 @@ mod tests {
         }
 
         match alias_shape {
-            AliasShape::None => {}
+            AliasShape::None => {},
             AliasShape::UnderAlias => {
                 let cfg = repo.join(".cargo/config.toml");
                 fs::create_dir_all(cfg.parent().unwrap()).unwrap();
                 fs::write(&cfg, "[alias]\nmock = \"run -p mock-cli --\"\n").unwrap();
-            }
+            },
             AliasShape::UnderOtherSection => {
                 let cfg = repo.join(".cargo/config.toml");
                 fs::create_dir_all(cfg.parent().unwrap()).unwrap();
@@ -433,7 +433,7 @@ mod tests {
                 // `mock = ...` under an unrelated section. Neither
                 // satisfies the section-aware alias check.
                 fs::write(&cfg, "[envs]\nmock = \"some-other-value\"\n").unwrap();
-            }
+            },
         }
 
         if with_hooks_path {

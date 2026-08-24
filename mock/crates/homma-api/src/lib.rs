@@ -12,7 +12,7 @@ pub mod path;
 pub mod record;
 pub mod reference;
 
-pub use config::{Identity, Paths, Role, Staffing, Unreadable, Workspace, UNREADABLE};
+pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};
 pub use git::{CommitIdentity, EmptyPart, Git, Part};

@@ -11,16 +11,27 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ForgeError {
     /// The named repository does not exist on the forge.
-    RepoNotFound { owner: String, name: String },
+    RepoNotFound {
+        owner: String,
+        name:  String,
+    },
     /// The forge returned an authentication failure. The token configured via
     /// `ForgeConfig::token_env` is missing, expired, or lacks scope.
-    Unauthorized { reason: String },
+    Unauthorized {
+        reason: String,
+    },
     /// The forge rejected the operation because a repo with the same name
     /// already exists in the target namespace.
-    RepoAlreadyExists { owner: String, name: String },
+    RepoAlreadyExists {
+        owner: String,
+        name:  String,
+    },
     /// The forge returned an unexpected HTTP status. Carries the status code
     /// and a short body excerpt.
-    UnexpectedStatus { status: u16, body: String },
+    UnexpectedStatus {
+        status: u16,
+        body:   String,
+    },
     /// Backend-specific transport or parse failure. Concrete clients box their
     /// internal errors into this variant.
     ///
@@ -35,18 +46,29 @@ pub enum ForgeError {
 impl fmt::Display for ForgeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RepoNotFound { owner, name } => {
+            Self::RepoNotFound {
+                owner,
+                name,
+            } => {
                 write!(f, "repo not found: {owner}/{name}")
-            }
-            Self::Unauthorized { reason } => {
+            },
+            Self::Unauthorized {
+                reason,
+            } => {
                 write!(f, "forge rejected credentials: {reason}")
-            }
-            Self::RepoAlreadyExists { owner, name } => {
+            },
+            Self::RepoAlreadyExists {
+                owner,
+                name,
+            } => {
                 write!(f, "repo already exists: {owner}/{name}")
-            }
-            Self::UnexpectedStatus { status, body } => {
+            },
+            Self::UnexpectedStatus {
+                status,
+                body,
+            } => {
                 write!(f, "forge returned HTTP {status}: {body}")
-            }
+            },
             Self::Backend(e) => write!(f, "forge backend error: {e}"),
         }
     }

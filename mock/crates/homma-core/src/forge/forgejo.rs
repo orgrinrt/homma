@@ -27,8 +27,8 @@ use crate::config::ForgeConfig;
 /// A [`Forge`] backed by the Forgejo / Gitea REST API.
 pub struct ForgejoClient {
     api_url: String,
-    token: Option<String>,
-    agent: ureq::Agent,
+    token:   Option<String>,
+    agent:   ureq::Agent,
 }
 
 impl ForgejoClient {
@@ -125,7 +125,7 @@ impl Forge for ForgejoClient {
             Ok(resp) => {
                 let wire: ForgejoRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
-            }
+            },
             Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }
@@ -154,11 +154,13 @@ impl Forge for ForgejoClient {
             Ok(resp) => {
                 let wire: ForgejoRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
-            }
-            Err(ureq::Error::Status(409, _)) => Err(ForgeError::RepoAlreadyExists {
-                owner: owner.into(),
-                name: spec.name.clone(),
-            }),
+            },
+            Err(ureq::Error::Status(409, _)) => {
+                Err(ForgeError::RepoAlreadyExists {
+                    owner: owner.into(),
+                    name:  spec.name.clone(),
+                })
+            },
             Err(e) => Err(map_ureq_error(e, owner, &spec.name)),
         }
     }
@@ -187,18 +189,18 @@ impl Forge for ForgejoClient {
 /// and patch). Captures the migrate-relevant fields; ignores the rest.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ForgejoRepo {
-    pub name: String,
-    pub owner: ForgejoOwner,
-    pub description: Option<String>,
+    pub name:           String,
+    pub owner:          ForgejoOwner,
+    pub description:    Option<String>,
     pub default_branch: String,
-    pub private: bool,
+    pub private:        bool,
     #[serde(default)]
-    pub internal: bool,
+    pub internal:       bool,
     #[serde(default)]
-    pub archived: bool,
-    pub clone_url: String,
+    pub archived:       bool,
+    pub clone_url:      String,
     #[serde(default)]
-    pub topics: Vec<String>,
+    pub topics:         Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -232,23 +234,23 @@ impl ForgejoRepo {
 /// Body for the create-repo endpoint.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ForgejoCreateBody {
-    pub name: String,
+    pub name:           String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub private: bool,
+    pub description:    Option<String>,
+    pub private:        bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_branch: Option<String>,
-    pub auto_init: bool,
+    pub auto_init:      bool,
 }
 
 impl ForgejoCreateBody {
     pub(crate) fn from_spec(spec: &CreateRepoSpec) -> Self {
         Self {
-            name: spec.name.clone(),
-            description: spec.description.clone(),
-            private: matches!(spec.visibility, Visibility::Private | Visibility::Internal),
+            name:           spec.name.clone(),
+            description:    spec.description.clone(),
+            private:        matches!(spec.visibility, Visibility::Private | Visibility::Internal),
             default_branch: spec.default_branch.clone(),
-            auto_init: spec.auto_init,
+            auto_init:      spec.auto_init,
         }
     }
 }
@@ -271,7 +273,7 @@ pub(crate) fn map_ureq_error(e: ureq::Error, owner: &str, name: &str) -> ForgeEr
         ureq::Error::Status(code, resp) => {
             let body = resp.into_string().unwrap_or_default();
             map_status(code, owner, name, body)
-        }
+        },
         ureq::Error::Transport(t) => ForgeError::Backend(Box::new(t)),
     }
 }
@@ -280,18 +282,28 @@ pub(crate) fn map_ureq_error(e: ureq::Error, owner: &str, name: &str) -> ForgeEr
 /// can exercise the error matrix without spinning up a real client.
 pub(crate) fn map_status(status: u16, owner: &str, name: &str, body: String) -> ForgeError {
     match status {
-        404 => ForgeError::RepoNotFound {
-            owner: owner.into(),
-            name: name.into(),
+        404 => {
+            ForgeError::RepoNotFound {
+                owner: owner.into(),
+                name:  name.into(),
+            }
         },
-        401 | 403 => ForgeError::Unauthorized { reason: body },
-        409 => ForgeError::RepoAlreadyExists {
-            owner: owner.into(),
-            name: name.into(),
+        401 | 403 => {
+            ForgeError::Unauthorized {
+                reason: body,
+            }
         },
-        _ => ForgeError::UnexpectedStatus {
-            status,
-            body: truncate(body, 512),
+        409 => {
+            ForgeError::RepoAlreadyExists {
+                owner: owner.into(),
+                name:  name.into(),
+            }
+        },
+        _ => {
+            ForgeError::UnexpectedStatus {
+                status,
+                body: truncate(body, 512),
+            }
         },
     }
 }
@@ -326,9 +338,9 @@ mod tests {
 
     fn cfg() -> ForgeConfig {
         ForgeConfig {
-            kind: ForgeKind::Forgejo,
-            base_url: "https://codeberg.org".into(),
-            api_url: "https://codeberg.org/api/v1".into(),
+            kind:      ForgeKind::Forgejo,
+            base_url:  "https://codeberg.org".into(),
+            api_url:   "https://codeberg.org/api/v1".into(),
             token_env: None,
         }
     }
@@ -421,10 +433,13 @@ mod tests {
     fn map_status_other_carries_status_and_body() {
         let e = map_status(502, "o", "n", "bad gateway".into());
         match e {
-            ForgeError::UnexpectedStatus { status, body } => {
+            ForgeError::UnexpectedStatus {
+                status,
+                body,
+            } => {
                 assert_eq!(status, 502);
                 assert!(body.contains("bad gateway"));
-            }
+            },
             _ => panic!("wrong variant"),
         }
     }
@@ -434,10 +449,13 @@ mod tests {
         let big = "x".repeat(2048);
         let e = map_status(500, "o", "n", big);
         match e {
-            ForgeError::UnexpectedStatus { body, .. } => {
+            ForgeError::UnexpectedStatus {
+                body,
+                ..
+            } => {
                 assert!(body.len() <= 512 + "... [truncated]".len());
                 assert!(body.ends_with("... [truncated]"));
-            }
+            },
             _ => panic!("wrong variant"),
         }
     }
@@ -451,11 +469,14 @@ mod tests {
         let big = "ä".repeat(300);
         let e = map_status(500, "o", "n", big);
         match e {
-            ForgeError::UnexpectedStatus { body, .. } => {
+            ForgeError::UnexpectedStatus {
+                body,
+                ..
+            } => {
                 assert!(body.ends_with("... [truncated]"));
                 // Truncated body is still valid UTF-8: re-parsing succeeds.
                 assert!(std::str::from_utf8(body.as_bytes()).is_ok());
-            }
+            },
             _ => panic!("wrong variant"),
         }
     }
@@ -463,17 +484,17 @@ mod tests {
     #[test]
     fn forgejo_repo_into_metadata_public() {
         let wire = ForgejoRepo {
-            name: "homma".into(),
-            owner: ForgejoOwner {
+            name:           "homma".into(),
+            owner:          ForgejoOwner {
                 login: "orgrinrt".into(),
             },
-            description: Some("workspace tooling".into()),
+            description:    Some("workspace tooling".into()),
             default_branch: "dev".into(),
-            private: false,
-            internal: false,
-            archived: false,
-            clone_url: "https://codeberg.org/orgrinrt/homma.git".into(),
-            topics: vec!["rust".into()],
+            private:        false,
+            internal:       false,
+            archived:       false,
+            clone_url:      "https://codeberg.org/orgrinrt/homma.git".into(),
+            topics:         vec!["rust".into()],
         };
         let m = wire.into_metadata();
         assert_eq!(m.owner, "orgrinrt");
@@ -487,15 +508,17 @@ mod tests {
     #[test]
     fn forgejo_repo_into_metadata_private_wins_over_internal() {
         let wire = ForgejoRepo {
-            name: "x".into(),
-            owner: ForgejoOwner { login: "o".into() },
-            description: None,
+            name:           "x".into(),
+            owner:          ForgejoOwner {
+                login: "o".into(),
+            },
+            description:    None,
             default_branch: "main".into(),
-            private: true,
-            internal: true,
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        true,
+            internal:       true,
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert_eq!(wire.into_metadata().visibility, Visibility::Private);
     }
@@ -503,15 +526,17 @@ mod tests {
     #[test]
     fn forgejo_repo_into_metadata_internal_only() {
         let wire = ForgejoRepo {
-            name: "x".into(),
-            owner: ForgejoOwner { login: "o".into() },
-            description: None,
+            name:           "x".into(),
+            owner:          ForgejoOwner {
+                login: "o".into(),
+            },
+            description:    None,
             default_branch: "main".into(),
-            private: false,
-            internal: true,
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        false,
+            internal:       true,
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert_eq!(wire.into_metadata().visibility, Visibility::Internal);
     }
@@ -519,15 +544,17 @@ mod tests {
     #[test]
     fn forgejo_repo_into_metadata_drops_empty_description() {
         let wire = ForgejoRepo {
-            name: "x".into(),
-            owner: ForgejoOwner { login: "o".into() },
-            description: Some(String::new()),
+            name:           "x".into(),
+            owner:          ForgejoOwner {
+                login: "o".into(),
+            },
+            description:    Some(String::new()),
             default_branch: "main".into(),
-            private: false,
-            internal: false,
-            archived: false,
-            clone_url: String::new(),
-            topics: Vec::new(),
+            private:        false,
+            internal:       false,
+            archived:       false,
+            clone_url:      String::new(),
+            topics:         Vec::new(),
         };
         assert!(wire.into_metadata().description.is_none());
     }
@@ -535,12 +562,12 @@ mod tests {
     #[test]
     fn forgejo_create_body_maps_visibility_to_private() {
         let spec = CreateRepoSpec {
-            name: "homma".into(),
-            description: Some("hi".into()),
-            visibility: Visibility::Private,
-            owner_kind: OwnerKind::User,
+            name:           "homma".into(),
+            description:    Some("hi".into()),
+            visibility:     Visibility::Private,
+            owner_kind:     OwnerKind::User,
             default_branch: Some("dev".into()),
-            auto_init: false,
+            auto_init:      false,
         };
         let body = ForgejoCreateBody::from_spec(&spec);
         assert!(body.private);

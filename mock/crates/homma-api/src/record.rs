@@ -7,8 +7,9 @@
 //! as opposed to knowing what a role is, has hardcoded one workspace's answer,
 //! and homma has to run against a workspace it has never seen.
 
-use crate::reference::Reference;
 use std::collections::BTreeMap;
+
+use crate::reference::Reference;
 
 /// What an attribute holds.
 ///
@@ -65,14 +66,14 @@ pub enum Mutability {
 /// What a record of some kind carries.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Kind {
-    pub name: String,
+    pub name:       String,
     pub mutability: Mutability,
     /// Attribute name to type. Anything not named here is not part of the kind.
     #[serde(default)]
-    pub attrs: BTreeMap<String, AttrType>,
+    pub attrs:      BTreeMap<String, AttrType>,
     /// Which of `attrs` a record must carry to be valid.
     #[serde(default)]
-    pub required: Vec<String>,
+    pub required:   Vec<String>,
 }
 
 impl Kind {
@@ -103,23 +104,23 @@ impl Kind {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Record {
     /// Addresses it.
-    pub id: String,
+    pub id:         String,
     /// Names the declaration that governs it.
-    pub kind: String,
+    pub kind:       String,
     /// Who created it. The standing is derived from this and never stored
     /// beside it, so the two cannot disagree.
     pub provenance: String,
     #[serde(default)]
-    pub attrs: BTreeMap<String, Attr>,
+    pub attrs:      BTreeMap<String, Attr>,
 }
 
 impl Record {
     pub fn new(id: impl Into<String>, kind: impl Into<String>, provenance: &Reference) -> Self {
         Self {
-            id: id.into(),
-            kind: kind.into(),
+            id:         id.into(),
+            kind:       kind.into(),
             provenance: provenance.to_string(),
-            attrs: BTreeMap::new(),
+            attrs:      BTreeMap::new(),
         }
     }
 
@@ -134,7 +135,7 @@ impl Record {
     pub fn check(&self, kind: &Kind) -> Result<(), Invalid> {
         if self.kind != kind.name {
             return Err(Invalid::WrongKind {
-                record: self.kind.clone(),
+                record:          self.kind.clone(),
                 checked_against: kind.name.clone(),
             });
         }
@@ -152,8 +153,8 @@ impl Record {
                         declared,
                         found: value.attr_type(),
                     });
-                }
-                Some(_) => {}
+                },
+                Some(_) => {},
             }
         }
         Ok(())
@@ -164,15 +165,15 @@ impl Record {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Invalid {
     WrongKind {
-        record: String,
+        record:          String,
         checked_against: String,
     },
     Missing(String),
     Undeclared(String),
     WrongType {
-        attr: String,
+        attr:     String,
         declared: AttrType,
-        found: AttrType,
+        found:    AttrType,
     },
 }
 
@@ -182,22 +183,26 @@ impl std::fmt::Display for Invalid {
             Invalid::WrongKind {
                 record,
                 checked_against,
-            } => write!(
-                f,
-                "record is kind `{record}` but was checked against `{checked_against}`"
-            ),
+            } => {
+                write!(
+                    f,
+                    "record is kind `{record}` but was checked against `{checked_against}`"
+                )
+            },
             Invalid::Missing(a) => write!(f, "required attribute `{a}` is missing"),
             Invalid::Undeclared(a) => {
                 write!(f, "attribute `{a}` is not declared by this kind")
-            }
+            },
             Invalid::WrongType {
                 attr,
                 declared,
                 found,
-            } => write!(
-                f,
-                "attribute `{attr}` is declared {declared:?} but holds {found:?}"
-            ),
+            } => {
+                write!(
+                    f,
+                    "attribute `{attr}` is declared {declared:?} but holds {found:?}"
+                )
+            },
         }
     }
 }
@@ -252,9 +257,9 @@ mod tests {
         assert_eq!(
             r.check(&message_kind()),
             Err(Invalid::WrongType {
-                attr: "at".into(),
+                attr:     "at".into(),
                 declared: AttrType::Instant,
-                found: AttrType::Text,
+                found:    AttrType::Text,
             })
         );
     }

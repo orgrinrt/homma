@@ -9,13 +9,13 @@
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use homma_core::Config;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
 use crate::cmd::util;
-use crate::output::{emit, HumanRender};
+use crate::output::{HumanRender, emit};
 
 pub mod status {
     use super::*;
@@ -29,21 +29,21 @@ pub mod status {
     /// Discovery result for one repo.
     #[derive(Debug, Serialize)]
     pub struct RepoDocsState {
-        pub repo: String,
-        pub local_path: String,
+        pub repo:              String,
+        pub local_path:        String,
         pub local_path_exists: bool,
-        pub surfaces: DocSurfaces,
+        pub surfaces:          DocSurfaces,
     }
 
     /// Individual surface probes.
     #[derive(Debug, Serialize)]
     pub struct DocSurfaces {
-        pub readme: bool,
-        pub docs_dir: bool,
-        pub mock_design_tmpl: bool,
+        pub readme:               bool,
+        pub docs_dir:             bool,
+        pub mock_design_tmpl:     bool,
         pub mock_principles_tmpl: bool,
-        pub mock_workflow_tmpl: bool,
-        pub changelog: bool,
+        pub mock_workflow_tmpl:   bool,
+        pub changelog:            bool,
     }
 
     pub fn run(cfg: &Config, repo: Option<&str>, format: OutputFormat) -> Result<()> {
@@ -76,12 +76,12 @@ pub mod status {
 
     fn probe(name: &str, local: &Path) -> RepoDocsState {
         let surfaces = DocSurfaces {
-            readme: local.join("README.md").is_file(),
-            docs_dir: local.join("docs").is_dir(),
-            mock_design_tmpl: local.join("mock/DESIGN.md.tmpl").is_file(),
+            readme:               local.join("README.md").is_file(),
+            docs_dir:             local.join("docs").is_dir(),
+            mock_design_tmpl:     local.join("mock/DESIGN.md.tmpl").is_file(),
             mock_principles_tmpl: local.join("mock/PRINCIPLES.md.tmpl").is_file(),
-            mock_workflow_tmpl: local.join("mock/WORKFLOW.md.tmpl").is_file(),
-            changelog: local.join("CHANGELOG.md").is_file(),
+            mock_workflow_tmpl:   local.join("mock/WORKFLOW.md.tmpl").is_file(),
+            changelog:            local.join("CHANGELOG.md").is_file(),
         };
         RepoDocsState {
             repo: name.into(),
@@ -120,17 +120,14 @@ pub mod status {
     }
 
     fn yn(b: bool) -> &'static str {
-        if b {
-            "yes"
-        } else {
-            "no"
-        }
+        if b { "yes" } else { "no" }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::*;
         use std::fs;
+
+        use super::*;
 
         #[test]
         fn probe_reports_all_surfaces_present() {

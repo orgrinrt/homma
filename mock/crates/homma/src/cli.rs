@@ -115,10 +115,10 @@ pub enum Command {
     /// `[repos.<repo>].owner` and `<repo>` respectively unless overridden.
     Migrate {
         /// Repo name from `homma.toml` (the key under `[repos.<name>]`).
-        repo: String,
+        repo:     String,
         /// Target forge profile name from `homma.toml`.
         #[arg(long)]
-        to: String,
+        to:       String,
         /// Destination owner. Defaults to the source owner from `[repos.<repo>].owner`.
         #[arg(long)]
         to_owner: Option<String>,
@@ -126,14 +126,14 @@ pub enum Command {
         /// the create-repo endpoint dispatch on Forgejo / Gitea; GitHub
         /// ignores this (the token's user is implied for `POST /user/repos`).
         #[arg(long)]
-        to_org: bool,
+        to_org:   bool,
         /// Source forge override. Defaults to `[repos.<repo>].forge`.
         #[arg(long)]
-        source: Option<String>,
+        source:   Option<String>,
         /// Plan only; do not create the destination or push. Emits the
         /// migration plan and exits 0.
         #[arg(long)]
-        dry_run: bool,
+        dry_run:  bool,
     },
 
     /// Archive a repo on its source forge after a successful migration.
@@ -143,10 +143,10 @@ pub enum Command {
     /// destination is verified.
     Archive {
         /// Repo name from `homma.toml`.
-        repo: String,
+        repo:  String,
         /// Forge profile name. Defaults to `[repos.<repo>].forge`.
         #[arg(long)]
-        from: Option<String>,
+        from:  Option<String>,
         /// Owner override. Defaults to `[repos.<repo>].owner`.
         #[arg(long)]
         owner: Option<String>,
@@ -194,18 +194,21 @@ pub enum AgentOp {
     Regen {
         /// Single repo from `homma.toml`. Default: all repos with a `mock/`.
         #[arg(long)]
-        repo: Option<String>,
+        repo:              Option<String>,
         /// Keep going after a per-repo regen failure.
         #[arg(long)]
         continue_on_error: bool,
         /// Skip the per-repo `cargo mock` step; only run workspace
         /// aggregation against the already-rendered per-repo `.claude/`.
         #[arg(long)]
-        skip_cargo_mock: bool,
+        skip_cargo_mock:   bool,
+        /// Skip comparing each repo against the shared tool configs.
+        #[arg(long)]
+        skip_configs:      bool,
         /// Skip the workspace aggregation step; only run per-repo
         /// `cargo mock`.
         #[arg(long)]
-        skip_aggregate: bool,
+        skip_aggregate:    bool,
     },
 }
 
@@ -232,7 +235,7 @@ pub enum ForgeOp {
         /// Forge profile name from `homma.toml`.
         forge: String,
         /// `<owner>/<name>`.
-        slug: String,
+        slug:  String,
     },
     /// Check whether a repo exists on the configured forge. Exits 0 with
     /// `exists: true` when present, 0 with `exists: false` when absent.
@@ -241,7 +244,7 @@ pub enum ForgeOp {
         /// Forge profile name from `homma.toml`.
         forge: String,
         /// `<owner>/<name>`.
-        slug: String,
+        slug:  String,
     },
 }
 
@@ -281,10 +284,10 @@ impl std::fmt::Display for SlugError {
             Self::Empty => write!(f, "slug is empty; expected `<owner>/<name>`"),
             Self::Missing => {
                 write!(f, "slug missing `/`; expected `<owner>/<name>`")
-            }
+            },
             Self::TooManyParts => {
                 write!(f, "slug has too many `/`; expected `<owner>/<name>`")
-            }
+            },
         }
     }
 }
@@ -343,10 +346,9 @@ mod tests {
 
     #[test]
     fn cli_parses_global_options() {
-        let cli = Cli::try_parse_from([
-            "homma", "-vv", "--output", "json", "-c", "alt.toml", "verify",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["homma", "-vv", "--output", "json", "-c", "alt.toml", "verify"])
+                .unwrap();
         assert_eq!(cli.verbosity, 2);
         assert_eq!(cli.output, OutputFormat::Json);
         assert_eq!(
@@ -362,11 +364,15 @@ mod tests {
             Cli::try_parse_from(["homma", "forge", "show", "github", "orgrinrt/homma"]).unwrap();
         match cli.command {
             Command::Forge {
-                op: ForgeOp::Show { forge, slug },
+                op:
+                    ForgeOp::Show {
+                        forge,
+                        slug,
+                    },
             } => {
                 assert_eq!(forge, "github");
                 assert_eq!(slug, "orgrinrt/homma");
-            }
+            },
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -389,7 +395,7 @@ mod tests {
                 assert!(!to_org);
                 assert_eq!(source, None);
                 assert!(!dry_run);
-            }
+            },
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -425,7 +431,7 @@ mod tests {
                 assert!(to_org);
                 assert_eq!(source.as_deref(), Some("github"));
                 assert!(dry_run);
-            }
+            },
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -437,11 +443,15 @@ mod tests {
         ])
         .unwrap();
         match cli.command {
-            Command::Archive { repo, from, owner } => {
+            Command::Archive {
+                repo,
+                from,
+                owner,
+            } => {
                 assert_eq!(repo, "notko");
                 assert_eq!(from.as_deref(), Some("github"));
                 assert_eq!(owner.as_deref(), Some("orgrinrt"));
-            }
+            },
             other => panic!("unexpected command: {other:?}"),
         }
     }

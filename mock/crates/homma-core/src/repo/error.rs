@@ -30,7 +30,7 @@ pub enum RepoError {
     BranchNotFound(String),
     /// Generic IO error tied to a path.
     Io {
-        path: PathBuf,
+        path:   PathBuf,
         source: std::io::Error,
     },
     /// Reading or writing the repository's own configuration failed.
@@ -51,7 +51,10 @@ impl std::fmt::Display for RepoError {
             Self::Status(msg) => write!(f, "status error: {msg}"),
             Self::Refspec(msg) => write!(f, "refspec error: {msg}"),
             Self::BranchNotFound(name) => write!(f, "branch not found: {name}"),
-            Self::Io { path, source } => write!(f, "io error at {}: {source}", path.display()),
+            Self::Io {
+                path,
+                source,
+            } => write!(f, "io error at {}: {source}", path.display()),
             Self::Config(msg) => write!(f, "config error: {msg}"),
             Self::Backend(e) => write!(f, "backend error: {e}"),
         }
@@ -65,7 +68,10 @@ impl std::error::Error for RepoError {
             Self::Clone(e) => Some(e.as_ref()),
             Self::Fetch(e) => Some(e.as_ref()),
             Self::Checkout(e) => Some(e.as_ref()),
-            Self::Io { source, .. } => Some(source),
+            Self::Io {
+                source,
+                ..
+            } => Some(source),
             Self::Backend(e) => Some(e.as_ref()),
             _ => None,
         }

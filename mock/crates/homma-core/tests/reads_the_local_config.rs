@@ -85,7 +85,8 @@ fn the_clones_own_configuration_is_what_is_read() {
         .expect("a local identity is read");
     assert_eq!(got.author_email(), "local@example.invalid");
     assert_ne!(
-        got.author_email(), "global@example.invalid",
+        got.author_email(),
+        "global@example.invalid",
         "the global one must never be what is reported"
     );
 }

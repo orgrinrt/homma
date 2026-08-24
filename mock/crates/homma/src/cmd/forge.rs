@@ -6,9 +6,16 @@
 
 use std::io::Write;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use homma_core::{
-    Config, Forge, ForgeConfig, ForgeKind, ForgejoClient, GitHubClient, RepoMetadata, Visibility,
+    Config,
+    Forge,
+    ForgeConfig,
+    ForgeKind,
+    ForgejoClient,
+    GitHubClient,
+    RepoMetadata,
+    Visibility,
 };
 use serde::Serialize;
 
@@ -39,14 +46,14 @@ pub mod show {
 
     #[derive(Debug, Serialize)]
     pub struct ShowReport {
-        pub forge: String,
-        pub owner: String,
-        pub name: String,
-        pub description: Option<String>,
-        pub default_branch: String,
-        pub visibility: String,
-        pub topics: Vec<String>,
-        pub archived: bool,
+        pub forge:           String,
+        pub owner:           String,
+        pub name:            String,
+        pub description:     Option<String>,
+        pub default_branch:  String,
+        pub visibility:      String,
+        pub topics:          Vec<String>,
+        pub archived:        bool,
         pub clone_url_https: String,
     }
 
@@ -83,14 +90,14 @@ pub mod show {
 
     fn to_report(forge_name: &str, meta: RepoMetadata) -> ShowReport {
         ShowReport {
-            forge: forge_name.into(),
-            owner: meta.owner,
-            name: meta.name,
-            description: meta.description,
-            default_branch: meta.default_branch,
-            visibility: visibility_str(meta.visibility).into(),
-            topics: meta.topics,
-            archived: meta.archived,
+            forge:           forge_name.into(),
+            owner:           meta.owner,
+            name:            meta.name,
+            description:     meta.description,
+            default_branch:  meta.default_branch,
+            visibility:      visibility_str(meta.visibility).into(),
+            topics:          meta.topics,
+            archived:        meta.archived,
             clone_url_https: meta.clone_url_https,
         }
     }
@@ -109,9 +116,9 @@ pub mod exists {
 
     #[derive(Debug, Serialize)]
     pub struct ExistsReport {
-        pub forge: String,
-        pub owner: String,
-        pub name: String,
+        pub forge:  String,
+        pub owner:  String,
+        pub name:   String,
         pub exists: bool,
     }
 

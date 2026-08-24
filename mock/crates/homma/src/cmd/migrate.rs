@@ -36,17 +36,24 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
+use homma_core::forge::url as forge_url;
 use homma_core::{
-    forge::url as forge_url, Config, CreateRepoSpec, ForgeConfig, ForgeKind, GixRepo, MirrorOpts,
-    RepoMetadata, Visibility,
+    Config,
+    CreateRepoSpec,
+    ForgeConfig,
+    ForgeKind,
+    GixRepo,
+    MirrorOpts,
+    RepoMetadata,
+    Visibility,
 };
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
-use crate::cmd::forge::{client_from_config, resolve_forge};
 use crate::cmd::Outcome;
-use crate::output::{emit, HumanRender};
+use crate::cmd::forge::{client_from_config, resolve_forge};
+use crate::output::{HumanRender, emit};
 
 /// Optional overrides from the CLI to the migrate body.
 #[derive(Debug, Clone, Copy, Default)]
@@ -55,17 +62,17 @@ pub struct Opts<'a> {
     pub to_owner: Option<&'a str>,
     /// Destination owner is an org namespace, not a user. Drives
     /// `CreateRepoSpec::in_org()`.
-    pub to_org: bool,
+    pub to_org:   bool,
     /// Source forge profile override. `None` reads `[repos.<repo>].forge`.
-    pub source: Option<&'a str>,
+    pub source:   Option<&'a str>,
     /// Plan-only: emit the plan and exit without contacting the destination.
-    pub dry_run: bool,
+    pub dry_run:  bool,
 }
 
 /// Top-level command result.
 #[derive(Debug, Serialize)]
 pub struct MigrateReport {
-    pub plan: MigratePlan,
+    pub plan:   MigratePlan,
     pub result: MigrateResult,
 }
 
@@ -73,17 +80,17 @@ pub struct MigrateReport {
 /// destination contact or push.
 #[derive(Debug, Serialize)]
 pub struct MigratePlan {
-    pub source_forge: String,
-    pub source_owner: String,
-    pub source_name: String,
+    pub source_forge:     String,
+    pub source_owner:     String,
+    pub source_name:      String,
     pub source_clone_url: String,
-    pub dest_forge: String,
-    pub dest_owner: String,
-    pub dest_name: String,
-    pub default_branch: String,
-    pub visibility: String,
-    pub description: Option<String>,
-    pub topic_count: usize,
+    pub dest_forge:       String,
+    pub dest_owner:       String,
+    pub dest_name:        String,
+    pub default_branch:   String,
+    pub visibility:       String,
+    pub description:      Option<String>,
+    pub topic_count:      usize,
 }
 
 /// What the command actually did.
@@ -192,27 +199,23 @@ fn build_plan(
     meta: &RepoMetadata,
 ) -> MigratePlan {
     MigratePlan {
-        source_forge: source_forge.into(),
-        source_owner: src_owner.into(),
-        source_name: src_name.into(),
+        source_forge:     source_forge.into(),
+        source_owner:     src_owner.into(),
+        source_name:      src_name.into(),
         source_clone_url: meta.clone_url_https.clone(),
-        dest_forge: dest_forge.into(),
-        dest_owner: dst_owner.into(),
-        dest_name: dst_name.into(),
-        default_branch: meta.default_branch.clone(),
-        visibility: visibility_str(meta.visibility).into(),
-        description: meta.description.clone(),
-        topic_count: meta.topics.len(),
+        dest_forge:       dest_forge.into(),
+        dest_owner:       dst_owner.into(),
+        dest_name:        dst_name.into(),
+        default_branch:   meta.default_branch.clone(),
+        visibility:       visibility_str(meta.visibility).into(),
+        description:      meta.description.clone(),
+        topic_count:      meta.topics.len(),
     }
 }
 
 fn build_create_spec(dst_name: &str, meta: &RepoMetadata, to_org: bool) -> CreateRepoSpec {
     let spec = CreateRepoSpec::new(dst_name).replicate_from(meta);
-    if to_org {
-        spec.in_org()
-    } else {
-        spec
-    }
+    if to_org { spec.in_org() } else { spec }
 }
 
 /// Read the token for a forge via its `token_env` name, if set.
@@ -305,27 +308,30 @@ impl HumanRender for MigrateReport {
         writeln!(out, "  source clone: {}", p.source_clone_url)?;
         match &self.result {
             MigrateResult::DryRun => writeln!(out, "  dry run: no destination contact"),
-            MigrateResult::Migrated { dest_clone_url } => {
+            MigrateResult::Migrated {
+                dest_clone_url,
+            } => {
                 writeln!(out, "  pushed to: {dest_clone_url}")
-            }
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use homma_core::forge::OwnerKind;
+
+    use super::*;
 
     fn sample_meta() -> RepoMetadata {
         RepoMetadata {
-            owner: "orgrinrt".into(),
-            name: "notko".into(),
-            description: Some("foundation primitives".into()),
-            default_branch: "dev".into(),
-            visibility: Visibility::Public,
-            topics: vec!["rust".into(), "no-std".into()],
-            archived: false,
+            owner:           "orgrinrt".into(),
+            name:            "notko".into(),
+            description:     Some("foundation primitives".into()),
+            default_branch:  "dev".into(),
+            visibility:      Visibility::Public,
+            topics:          vec!["rust".into(), "no-std".into()],
+            archived:        false,
             clone_url_https: "https://github.com/orgrinrt/notko.git".into(),
         }
     }

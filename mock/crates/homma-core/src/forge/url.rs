@@ -91,7 +91,7 @@ pub fn api_root(forge: &ForgeConfig) -> String {
 /// ```
 pub fn host_of(url: &str) -> &str {
     let after_scheme = match url.find("://") {
-        Some(i) => &url[i + 3..],
+        Some(i) => &url[i + 3 ..],
         None => url,
     };
     after_scheme.split('/').next().unwrap_or(after_scheme)
@@ -108,9 +108,9 @@ mod tests {
 
     fn cfg(base: &str, api: &str) -> ForgeConfig {
         ForgeConfig {
-            kind: ForgeKind::Forgejo,
-            base_url: base.into(),
-            api_url: api.into(),
+            kind:      ForgeKind::Forgejo,
+            base_url:  base.into(),
+            api_url:   api.into(),
             token_env: None,
         }
     }

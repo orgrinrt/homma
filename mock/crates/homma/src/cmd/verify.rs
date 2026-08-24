@@ -20,19 +20,19 @@ use homma_core::Config;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
-use crate::cmd::{util, Outcome};
-use crate::output::{emit, HumanRender};
+use crate::cmd::{Outcome, util};
+use crate::output::{HumanRender, emit};
 
 #[derive(Debug, Serialize)]
 pub struct VerifyReport {
-    pub ok: bool,
+    pub ok:       bool,
     pub findings: Vec<Finding>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct Finding {
-    pub level: Level,
-    pub kind: String,
+    pub level:   Level,
+    pub kind:    String,
     pub message: String,
 }
 
@@ -47,11 +47,7 @@ pub fn run(cfg: &Config, format: OutputFormat) -> Result<Outcome> {
     let report = check(cfg);
     let ok = report.ok;
     emit(&report, format)?;
-    Ok(if ok {
-        Outcome::Ok
-    } else {
-        Outcome::ReportedFailure
-    })
+    Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
 }
 
 pub(crate) fn check(cfg: &Config) -> VerifyReport {
@@ -60,8 +56,8 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
     let workspace_root = &cfg.workspace.path;
     if workspace_root != Path::new(".") && !workspace_root.exists() {
         findings.push(Finding {
-            level: Level::Error,
-            kind: "workspace_path_missing".into(),
+            level:   Level::Error,
+            kind:    "workspace_path_missing".into(),
             message: format!(
                 "workspace.path = {} does not exist",
                 workspace_root.display()
@@ -72,8 +68,8 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
     for (name, repo) in &cfg.repos {
         if !cfg.forges.contains_key(&repo.forge) {
             findings.push(Finding {
-                level: Level::Error,
-                kind: "repo_forge_undeclared".into(),
+                level:   Level::Error,
+                kind:    "repo_forge_undeclared".into(),
                 message: format!(
                     "repo `{name}` references forge `{}` which is not declared in [forges.*]",
                     repo.forge
@@ -83,8 +79,8 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
         let local = util::resolve_local_path(workspace_root, &repo.local_path);
         if !local.exists() {
             findings.push(Finding {
-                level: Level::Warn,
-                kind: "repo_path_missing".into(),
+                level:   Level::Warn,
+                kind:    "repo_path_missing".into(),
                 message: format!(
                     "repo `{name}` local_path = {} does not exist; `homma sync` will create it",
                     local.display()
@@ -116,7 +112,10 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
     }
 
     let ok = !findings.iter().any(|f| matches!(f.level, Level::Error));
-    VerifyReport { ok, findings }
+    VerifyReport {
+        ok,
+        findings,
+    }
 }
 
 impl HumanRender for VerifyReport {

@@ -18,7 +18,7 @@ use super::ops::{Branch, MirrorOpts, Remote, RepoOps, Status, TrackingStatus};
 /// gix-backed [`RepoOps`] implementation.
 pub struct GixRepo {
     handle: gix::Repository,
-    root: PathBuf,
+    root:   PathBuf,
 }
 
 impl GixRepo {
@@ -29,7 +29,10 @@ impl GixRepo {
             .work_dir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| handle.git_dir().to_path_buf());
-        Ok(Self { handle, root })
+        Ok(Self {
+            handle,
+            root,
+        })
     }
 
     /// Standard clone: fetch the default branch and check it out at `dest`.
@@ -47,7 +50,10 @@ impl GixRepo {
             .work_dir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| handle.git_dir().to_path_buf());
-        Ok(Self { handle, root })
+        Ok(Self {
+            handle,
+            root,
+        })
     }
 
     /// Curated mirror clone: fetch the refspecs in `opts` directly under
@@ -70,7 +76,10 @@ impl GixRepo {
             .fetch_only(Discard, &interrupt)
             .map_err(|e| RepoError::Fetch(Box::new(e)))?;
         let root = handle.git_dir().to_path_buf();
-        Ok(Self { handle, root })
+        Ok(Self {
+            handle,
+            root,
+        })
     }
 
     /// Access the underlying `gix::Repository`. Escape hatch for callers
@@ -103,11 +112,8 @@ impl RepoOps for GixRepo {
         // worktree_changes count: drive the status iterator and count
         // entries. Best-effort; if iterator setup fails we fall back to 0
         // (the is_clean flag still carries the correct binary signal).
-        let worktree_changes = if is_clean {
-            0
-        } else {
-            self.count_index_worktree_changes().unwrap_or(0)
-        };
+        let worktree_changes =
+            if is_clean { 0 } else { self.count_index_worktree_changes().unwrap_or(0) };
 
         let tracking = self.compute_tracking_status()?;
 
@@ -143,7 +149,10 @@ impl RepoOps for GixRepo {
                 .peel_to_id_in_place()
                 .map_err(|e| RepoError::References(e.to_string()))?
                 .to_string();
-            out.push(Branch { name, head_commit });
+            out.push(Branch {
+                name,
+                head_commit,
+            });
         }
         Ok(out)
     }
@@ -222,9 +231,11 @@ impl RepoOps for GixRepo {
 
         // Update HEAD to point symbolically at the branch.
         let head_path = self.handle.git_dir().join("HEAD");
-        std::fs::write(&head_path, format!("ref: {full}\n")).map_err(|source| RepoError::Io {
-            path: head_path,
-            source,
+        std::fs::write(&head_path, format!("ref: {full}\n")).map_err(|source| {
+            RepoError::Io {
+                path: head_path,
+                source,
+            }
         })?;
         self.reload()?;
         // Note: worktree files are not updated here. Callers that need the
@@ -293,19 +304,20 @@ impl GixRepo {
             .map_err(|e| RepoError::References(e.to_string()))?
             .detach();
         let upstream_id = match self.handle.find_reference(tracking_ref.as_ref()) {
-            Ok(mut r) => r
-                .peel_to_id_in_place()
-                .map_err(|e| RepoError::References(e.to_string()))?
-                .detach(),
+            Ok(mut r) => {
+                r.peel_to_id_in_place()
+                    .map_err(|e| RepoError::References(e.to_string()))?
+                    .detach()
+            },
             Err(_) => {
                 // Upstream tracking ref configured but not yet fetched; report
                 // tracking-known state with zeroed counts.
                 return Ok(Some(TrackingStatus {
                     remote_branch: tracking_ref.as_bstr().to_str_lossy().into_owned(),
-                    ahead: 0,
-                    behind: 0,
+                    ahead:         0,
+                    behind:        0,
                 }));
-            }
+            },
         };
 
         let (ahead, behind) = if local_id == upstream_id {
@@ -362,5 +374,10 @@ fn write_config_to_disk(
 ) -> Result<(), RepoError> {
     let path = repo.git_dir().join("config");
     let rendered = file.to_bstring();
-    std::fs::write(&path, rendered.as_slice()).map_err(|source| RepoError::Io { path, source })
+    std::fs::write(&path, rendered.as_slice()).map_err(|source| {
+        RepoError::Io {
+            path,
+            source,
+        }
+    })
 }

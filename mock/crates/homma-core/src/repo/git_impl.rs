@@ -6,9 +6,10 @@
 //! identity landed where it has to land, which is the only interesting thing
 //! about them.
 
+use homma_api::{AbsPath, CommitIdentity, Git};
+
 use super::gix_impl::GixRepo;
 use crate::repo::error::RepoError;
-use homma_api::{AbsPath, CommitIdentity, Git};
 
 /// Git as gix performs it.
 #[derive(Debug, Default, Clone, Copy)]
@@ -62,16 +63,20 @@ impl Git for GixGit {
             file.set_raw_value(key, value)
                 .map_err(|e| RepoError::Config(e.to_string()))?;
         }
-        std::fs::write(config_path(path), file.to_bstring()).map_err(|e| RepoError::Io {
-            path: config_path(path).into_path_buf(),
-            source: e,
+        std::fs::write(config_path(path), file.to_bstring()).map_err(|e| {
+            RepoError::Io {
+                path:   config_path(path).into_path_buf(),
+                source: e,
+            }
         })
     }
 
     fn init(&self, path: &AbsPath) -> Result<(), Self::Error> {
-        std::fs::create_dir_all(path).map_err(|e| RepoError::Io {
-            path: path.clone().into_path_buf(),
-            source: e,
+        std::fs::create_dir_all(path).map_err(|e| {
+            RepoError::Io {
+                path:   path.clone().into_path_buf(),
+                source: e,
+            }
         })?;
         gix::init(path)
             .map(|_| ())
@@ -89,9 +94,11 @@ impl Git for GixGit {
         // resolving the longest existing prefix, which is what `resolved` did
         // until a review found that `Path::exists()` follows a link and a
         // dangling one therefore read as absent.
-        let subject = path.resolved().map_err(|e| RepoError::Io {
-            path: path.clone().into_path_buf(),
-            source: e,
+        let subject = path.resolved().map_err(|e| {
+            RepoError::Io {
+                path:   path.clone().into_path_buf(),
+                source: e,
+            }
         })?;
         let mut at = subject.clone();
         loop {
@@ -191,9 +198,10 @@ fn local_config(repo: &AbsPath) -> Result<gix::config::File<'static>, RepoError>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::Path;
     use std::process::Command;
+
+    use super::*;
 
     /// A tempdir path as the type the contract takes.
     fn abs(p: impl Into<std::path::PathBuf>) -> AbsPath {
@@ -267,7 +275,8 @@ mod tests {
             .unwrap()
             .expect("an identity is configured");
         assert_eq!(
-            got.author_name(), "Specific",
+            got.author_name(),
+            "Specific",
             "author.name wins over user.name, which is what git does"
         );
         assert_eq!(got.author_email(), "specific@example.invalid");
@@ -284,7 +293,13 @@ mod tests {
 
         git.set_identity(
             &at,
-            &CommitIdentity::split("Onni Armas", "ort@hiisi.digital", "Vouti", "orgrinrt+vouti@ikiuni.dev").unwrap(),
+            &CommitIdentity::split(
+                "Onni Armas",
+                "ort@hiisi.digital",
+                "Vouti",
+                "orgrinrt+vouti@ikiuni.dev",
+            )
+            .unwrap(),
         )
         .unwrap();
 
@@ -295,7 +310,8 @@ mod tests {
         assert_eq!(got.author_name(), "Onni Armas");
         assert_eq!(got.author_email(), "ort@hiisi.digital");
         assert_eq!(
-            got.committer_name(), "Vouti",
+            got.committer_name(),
+            "Vouti",
             "read from committer.name, not fabricated from the author"
         );
         assert_eq!(got.committer_email(), "orgrinrt+vouti@ikiuni.dev");
@@ -327,7 +343,8 @@ mod tests {
         assert_eq!(got.author_name(), "By Hand");
         assert_eq!(got.author_email(), "hand@example.invalid");
         assert_eq!(
-            got.committer_name(), "By Hand",
+            got.committer_name(),
+            "By Hand",
             "with no committer keys, the committer is the author"
         );
         assert_eq!(got.committer_email(), "hand@example.invalid");
@@ -367,7 +384,13 @@ mod tests {
         git.init(&at).unwrap();
         git.set_identity(
             &at,
-            &CommitIdentity::split("Onni Armas", "ort@hiisi.digital", "Onni Armas", "orgrinrt+vouti@ikiuni.dev").unwrap(),
+            &CommitIdentity::split(
+                "Onni Armas",
+                "ort@hiisi.digital",
+                "Onni Armas",
+                "orgrinrt+vouti@ikiuni.dev",
+            )
+            .unwrap(),
         )
         .unwrap();
 

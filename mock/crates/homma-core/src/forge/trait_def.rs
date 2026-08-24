@@ -54,13 +54,13 @@ pub trait Forge {
 /// Forgejo. Concrete clients map their per-forge JSON shape into this type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoMetadata {
-    pub owner: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub default_branch: String,
-    pub visibility: Visibility,
-    pub topics: Vec<String>,
-    pub archived: bool,
+    pub owner:           String,
+    pub name:            String,
+    pub description:     Option<String>,
+    pub default_branch:  String,
+    pub visibility:      Visibility,
+    pub topics:          Vec<String>,
+    pub archived:        bool,
     /// HTTPS clone URL as the forge reports it. The migrate command prefers
     /// this over [`super::url::clone_https`] when copying source metadata,
     /// because the forge may return a redirected canonical URL.
@@ -88,9 +88,9 @@ pub enum Visibility {
 /// Optional fields default to "forge picks" when `None`.
 #[derive(Debug, Clone)]
 pub struct CreateRepoSpec {
-    pub name: String,
-    pub description: Option<String>,
-    pub visibility: Visibility,
+    pub name:           String,
+    pub description:    Option<String>,
+    pub visibility:     Visibility,
     /// Whether the `owner` namespace is a user account or an organisation.
     ///
     /// GitHub's create endpoint (`POST /user/repos`) ignores this because the
@@ -99,13 +99,13 @@ pub struct CreateRepoSpec {
     /// `Org`) and `POST /user/repos` (when `User`). `homma.toml` carries the
     /// answer per repo, so the caller passes it through without needing an
     /// extra probe.
-    pub owner_kind: OwnerKind,
+    pub owner_kind:     OwnerKind,
     /// Initial default branch. When `None`, the forge picks (usually `main`).
     pub default_branch: Option<String>,
     /// Skip the forge's auto-init (README / LICENSE / .gitignore generation).
     /// `true` for migrate destinations: the push lands the actual content,
     /// and an empty repo is required for an unrelated-history-free push.
-    pub auto_init: bool,
+    pub auto_init:      bool,
 }
 
 /// Whether an `owner` namespace is a user account or an organisation.
@@ -124,12 +124,12 @@ impl CreateRepoSpec {
     /// no description, public visibility, user-owned, forge-default branch.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
-            description: None,
-            visibility: Visibility::Public,
-            owner_kind: OwnerKind::User,
+            name:           name.into(),
+            description:    None,
+            visibility:     Visibility::Public,
+            owner_kind:     OwnerKind::User,
             default_branch: None,
-            auto_init: false,
+            auto_init:      false,
         }
     }
 

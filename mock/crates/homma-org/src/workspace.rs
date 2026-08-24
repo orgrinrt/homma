@@ -12,10 +12,10 @@
 //! through it land in the layout's directory, and version control carries it as
 //! a link rather than a copy, so it survives cloning to any machine.
 
-use homma_api::{AbsPath, ContainedPath, Denied, Escapes, Identity, Paths, Root};
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
+
+use homma_api::{AbsPath, ContainedPath, Denied, Escapes, Identity, Paths, Root};
 
 /// Where things sit inside one workspace.
 ///
@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 /// `.shared -> ../victim` took every path under it into another repository, and
 /// homma commits symlinks itself, so a clone is expected to carry them.
 pub struct Layout<'a> {
-    root: Root,
+    root:  Root,
     paths: &'a Paths,
 }
 
@@ -53,11 +53,7 @@ impl<'a> Layout<'a> {
 
     /// Everything belonging to one identity lives under one directory.
     pub fn home(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
-        let base = if id.role.has_workspace() {
-            &self.paths.hands
-        } else {
-            &self.paths.experts
-        };
+        let base = if id.role.has_workspace() { &self.paths.hands } else { &self.paths.experts };
         self.contain(self.root.as_abs().join(base).join(&id.handle))
     }
 
@@ -131,11 +127,11 @@ impl<'a> Layout<'a> {
 /// guess.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prepared {
-    pub home: ContainedPath,
-    pub memory: ContainedPath,
-    pub notes: ContainedPath,
-    pub harness_link: ContainedPath,
-    pub definition: ContainedPath,
+    pub home:            ContainedPath,
+    pub memory:          ContainedPath,
+    pub notes:           ContainedPath,
+    pub harness_link:    ContainedPath,
+    pub definition:      ContainedPath,
     pub twin_definition: ContainedPath,
 }
 
@@ -246,7 +242,7 @@ fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
                 return Ok(());
             }
             fs::remove_file(link)?;
-        }
+        },
         Ok(_) => {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -255,8 +251,8 @@ fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
                     link.display()
                 ),
             ));
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        },
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {},
         Err(e) => return Err(e),
     }
     std::os::unix::fs::symlink(&relative, link)
@@ -272,10 +268,10 @@ fn relative_from(from: &Path, to: &Path) -> PathBuf {
         .take_while(|(a, b)| a == b)
         .count();
     let mut out = PathBuf::new();
-    for _ in shared..from.len() {
+    for _ in shared .. from.len() {
         out.push("..");
     }
-    for c in &to[shared..] {
+    for c in &to[shared ..] {
         out.push(c.as_os_str());
     }
     out
@@ -316,11 +312,12 @@ mod tests {
         )
         .unwrap();
         assert!(l.home(&hand()).unwrap().as_path().ends_with("hands/paja"));
-        assert!(l
-            .home(&expert())
-            .unwrap()
-            .as_path()
-            .ends_with("experts/proof"));
+        assert!(
+            l.home(&expert())
+                .unwrap()
+                .as_path()
+                .ends_with("experts/proof")
+        );
     }
 
     #[test]
@@ -332,11 +329,12 @@ mod tests {
             Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
         )
         .unwrap();
-        assert!(l
-            .harness_memory(&hand())
-            .unwrap()
-            .as_path()
-            .ends_with(".claude/agent-memory/paja"));
+        assert!(
+            l.harness_memory(&hand())
+                .unwrap()
+                .as_path()
+                .ends_with(".claude/agent-memory/paja")
+        );
     }
 
     // The shape below was established by hand before it was built. It is a test

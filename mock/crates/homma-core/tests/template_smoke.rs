@@ -1,6 +1,7 @@
 //! Smoke test that mockspace-template renders against a homma `Config`.
 
-use homma_core::{template::TemplateEnv, Config};
+use homma_core::Config;
+use homma_core::template::TemplateEnv;
 
 #[test]
 fn renders_workspace_name_into_template() {

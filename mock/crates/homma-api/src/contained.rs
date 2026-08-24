@@ -23,9 +23,10 @@
 //! which makes the check a thing somebody chose to skip rather than a thing
 //! nobody noticed.
 
-use crate::AbsPath;
 use std::fmt;
 use std::path::Path;
+
+use crate::AbsPath;
 
 /// A workspace root, with its resolved form remembered.
 ///
@@ -36,7 +37,7 @@ pub struct Root {
     /// As the caller wrote it, for error messages a human can act on.
     as_written: AbsPath,
     /// Symlinks and `..` resolved, which is what containment compares against.
-    resolved: AbsPath,
+    resolved:   AbsPath,
     /// The absolute places nothing may be written, whatever the root is.
     ///
     /// **Held here rather than checked by the caller**, because a caller that
@@ -44,7 +45,7 @@ pub struct Root {
     /// root and the workspace was not enough: with the root set to a home
     /// directory, every derived path passed containment and landed in
     /// `~/.claude` anyway, since a home contains itself.
-    denied: crate::Denied,
+    denied:     crate::Denied,
 }
 
 impl Root {
@@ -104,26 +105,30 @@ impl Root {
     /// a claim about what `exists()` means, and the cases are pinned by tests
     /// below rather than by this paragraph.
     pub fn contain(&self, path: &AbsPath) -> Result<ContainedPath, Escapes> {
-        let resolved = path.resolved().map_err(|e| Escapes {
-            path: path.clone(),
-            root: self.as_written.clone(),
-            why: Why::Unresolvable(e.to_string()),
+        let resolved = path.resolved().map_err(|e| {
+            Escapes {
+                path: path.clone(),
+                root: self.as_written.clone(),
+                why:  Why::Unresolvable(e.to_string()),
+            }
         })?;
         if resolved.as_path().starts_with(self.resolved.as_path()) {
             // Inside the root is necessary and not sufficient. A root that is a
             // home contains `~/.claude` perfectly, and the record denies it
             // absolutely rather than relative to anything.
-            self.denied.check(path, "path").map_err(|e| Escapes {
-                path: path.clone(),
-                root: self.as_written.clone(),
-                why: Why::Unresolvable(e.to_string()),
+            self.denied.check(path, "path").map_err(|e| {
+                Escapes {
+                    path: path.clone(),
+                    root: self.as_written.clone(),
+                    why:  Why::Unresolvable(e.to_string()),
+                }
             })?;
             Ok(ContainedPath(path.clone()))
         } else {
             Err(Escapes {
                 path: path.clone(),
                 root: self.as_written.clone(),
-                why: Why::Outside {
+                why:  Why::Outside {
                     resolved_to: resolved,
                 },
             })
@@ -277,28 +282,36 @@ impl fmt::Display for ContainedPath {
 pub struct Escapes {
     pub path: AbsPath,
     pub root: AbsPath,
-    why: Why,
+    why:      Why,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Why {
-    Outside { resolved_to: AbsPath },
+    Outside {
+        resolved_to: AbsPath,
+    },
     Unresolvable(String),
 }
 
 impl fmt::Display for Escapes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.why {
-            Why::Outside { resolved_to } => write!(
-                f,
-                "{} resolves to {}, which is outside the workspace root {}",
-                self.path, resolved_to, self.root
-            ),
-            Why::Unresolvable(e) => write!(
-                f,
-                "{} could not be resolved against the workspace root {}: {}",
-                self.path, self.root, e
-            ),
+            Why::Outside {
+                resolved_to,
+            } => {
+                write!(
+                    f,
+                    "{} resolves to {}, which is outside the workspace root {}",
+                    self.path, resolved_to, self.root
+                )
+            },
+            Why::Unresolvable(e) => {
+                write!(
+                    f,
+                    "{} could not be resolved against the workspace root {}: {}",
+                    self.path, self.root, e
+                )
+            },
         }
     }
 }
@@ -341,11 +354,13 @@ mod tests {
         // Creating the root itself is intended: `content_repo = "local"` relies
         // on it. Only the path to it is refused.
         let d = tempfile::tempdir().unwrap();
-        assert!(Root::new(
-            &abs(d.path().join("newroot")),
-            crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap())
-        )
-        .is_ok());
+        assert!(
+            Root::new(
+                &abs(d.path().join("newroot")),
+                crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap())
+            )
+            .is_ok()
+        );
     }
 
     // The guard here was live and pinned by nothing: replacing the tail of

@@ -13,14 +13,13 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use homma_core::Config;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
-use crate::cmd::util;
-use crate::cmd::Outcome;
-use crate::output::{emit, HumanRender};
+use crate::cmd::{Outcome, util};
+use crate::output::{HumanRender, emit};
 
 pub mod status {
     use super::*;
@@ -34,10 +33,10 @@ pub mod status {
     /// Discovery result for one repo.
     #[derive(Debug, Serialize)]
     pub struct RepoAgentState {
-        pub repo: String,
+        pub repo:       String,
         pub local_path: String,
-        pub state: AgentState,
-        pub surfaces: Surfaces,
+        pub state:      AgentState,
+        pub surfaces:   Surfaces,
     }
 
     /// Roll-up state.
@@ -58,11 +57,11 @@ pub mod status {
     /// Individual surface probes.
     #[derive(Debug, Serialize)]
     pub struct Surfaces {
-        pub mock_dir: bool,
-        pub mock_agent_dir: bool,
-        pub claude_dir: bool,
+        pub mock_dir:            bool,
+        pub mock_agent_dir:      bool,
+        pub claude_dir:          bool,
         pub github_instructions: bool,
-        pub cargo_mock_alias: bool,
+        pub cargo_mock_alias:    bool,
     }
 
     pub fn run(cfg: &Config, repo: Option<&str>, format: OutputFormat) -> Result<()> {
@@ -95,11 +94,11 @@ pub mod status {
 
     fn probe(name: &str, local: &Path) -> RepoAgentState {
         let surfaces = Surfaces {
-            mock_dir: local.join("mock").is_dir(),
-            mock_agent_dir: local.join("mock/agent").is_dir(),
-            claude_dir: local.join(".claude").is_dir(),
+            mock_dir:            local.join("mock").is_dir(),
+            mock_agent_dir:      local.join("mock/agent").is_dir(),
+            claude_dir:          local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
-            cargo_mock_alias: has_cargo_mock_alias(local),
+            cargo_mock_alias:    has_cargo_mock_alias(local),
         };
         let state = roll_up(local, &surfaces);
         RepoAgentState {
@@ -118,11 +117,7 @@ pub mod status {
             return AgentState::NotConfigured;
         }
         let core = s.mock_agent_dir && s.claude_dir && s.github_instructions && s.cargo_mock_alias;
-        if core {
-            AgentState::Configured
-        } else {
-            AgentState::Partial
-        }
+        if core { AgentState::Configured } else { AgentState::Partial }
     }
 
     /// Lightweight check: does `.cargo/config.toml` contain a `mock` alias?
@@ -166,17 +161,14 @@ pub mod status {
     }
 
     fn yn(b: bool) -> &'static str {
-        if b {
-            "yes"
-        } else {
-            "no"
-        }
+        if b { "yes" } else { "no" }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::*;
         use std::fs;
+
+        use super::*;
 
         #[test]
         fn configured_when_all_surfaces_present() {
@@ -251,16 +243,25 @@ pub mod regen {
     /// Roll-up regen report across all repos.
     #[derive(Debug, Serialize)]
     pub struct RegenReport {
-        pub results: Vec<RegenResult>,
-        pub ok: bool,
+        pub results:       Vec<RegenResult>,
+        pub ok:            bool,
+        /// Configs that differ from the shared copy, across the whole run.
+        /// **A warning, never a failure**: a difference may be deliberate.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub diverged:      Vec<String>,
+        /// Configs nothing could place, and why the stage could not run at all.
+        /// These want somebody to act.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub needs_a_human: Vec<String>,
     }
 
     /// Per-repo regen outcome covering both pipeline stages.
     #[derive(Debug, Serialize)]
     pub struct RegenResult {
-        pub repo: String,
-        pub cargo_mock: StageStatus,
-        pub aggregate: StageStatus,
+        pub repo:             String,
+        pub cargo_mock:       StageStatus,
+        pub configs:          Vec<String>,
+        pub aggregate:        StageStatus,
         pub aggregated_hooks: usize,
     }
 
@@ -284,8 +285,9 @@ pub mod regen {
     #[derive(Debug, Clone, Copy, Default)]
     pub struct Opts {
         pub continue_on_error: bool,
-        pub skip_cargo_mock: bool,
-        pub skip_aggregate: bool,
+        pub skip_cargo_mock:   bool,
+        pub skip_configs:      bool,
+        pub skip_aggregate:    bool,
     }
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
@@ -298,14 +300,30 @@ pub mod regen {
         opts: Opts,
         format: OutputFormat,
     ) -> Result<Outcome> {
+        let report = regen(cfg, repo, opts)?;
+        let ok = report.ok;
+        emit(&report, format)?;
+        Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
+    }
+
+    /// The pipeline itself, returning what it found rather than printing it.
+    ///
+    /// Split out from [`run_with`] so a test can assert on the per-repo results
+    /// instead of parsing them back out of stdout.
+    pub fn regen(cfg: &Config, repo: Option<&str>, opts: Opts) -> Result<RegenReport> {
         if let Some(name) = repo {
             if cfg.repo(name).is_none() {
                 return Err(anyhow!("repo `{name}` not declared in [repos.*]"));
             }
         }
-        if opts.skip_cargo_mock && opts.skip_aggregate {
+        // **Every stage, not two of them.** This guard was written when there
+        // were two, and adding a third made it refuse a run that does real
+        // work: comparing the shared configs is useful on its own, and is the
+        // fast way to sweep a workspace without rebuilding anything.
+        if opts.skip_cargo_mock && opts.skip_configs && opts.skip_aggregate {
             return Err(anyhow!(
-                "`--skip-cargo-mock` and `--skip-aggregate` together would do nothing"
+                "`--skip-cargo-mock`, `--skip-configs` and `--skip-aggregate` together \
+                 would do nothing"
             ));
         }
 
@@ -319,15 +337,15 @@ pub mod regen {
         // deleting files there and installing executables, at exit 0.
         //
         // **The deny list is derived from the registry**, and deny item one is
-        // not an absolute in it. The record forbids writes under the central
-        // clone; the central clone is the lead designer's own workspace, so it
-        // is denied to a Hand for the same reason no participant may write into
-        // another's, and permitted to its owner, because nobody is denied their
-        // own workspace. Every Hand's workspace is a clone of the same shape, so
-        // regenerating one's own is the ordinary path.
+        // not an absolute in it. What the record forbids is writing into
+        // somebody else's workspace, and op's own is one of those: denied to a
+        // Hand for the same reason no participant may write into another's, and
+        // permitted to its owner, because nobody is denied their own. Every
+        // workspace is a clone of the same shape, so regenerating one's own is
+        // the ordinary path.
         //
         // Per op, put to him as a blocking question after the previous round
-        // refused the central clone by accident through `Denied::from_env` and
+        // refused op's own workspace by accident through `Denied::from_env` and
         // broke `agent regen` on the configuration that ships. The derivation
         // from his answer is recorded in the round's topic file.
         let ws_abs = homma_api::AbsPath::new(
@@ -352,9 +370,29 @@ pub mod regen {
         let root = homma_api::Root::new(&ws_abs, denied)
             .with_context(|| format!("aggregating into {}", ws_abs))?;
 
+        // **Read once, before the loop.** The canonical configs are one
+        // directory and every repo is compared against the same bytes; reading
+        // them per repo would let a mid-run edit give two repos different
+        // answers in one pass.
+        //
+        // Their absence is not a failure of the run. A workspace may not have
+        // the directory yet, and `agent regen`'s other two stages are useful
+        // without it, so the stage reports that it could not run and the rest
+        // proceeds.
+        let (templates, templates_err) = if opts.skip_configs {
+            (Vec::new(), None)
+        } else {
+            match homma_org::configs::templates(&ws_abs) {
+                Ok(t) => (t, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            }
+        };
+
         let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
         let mut results = Vec::new();
         let mut had_failure = false;
+        let mut needs_a_human: Vec<String> = Vec::new();
+        let mut diverged: Vec<String> = Vec::new();
 
         for (name, repo_cfg) in &cfg.repos {
             if let Some(filter) = repo {
@@ -364,11 +402,25 @@ pub mod regen {
             }
             let local = util::resolve_local_path(workspace, &repo_cfg.local_path);
 
+            // A repo the manifest lists and this workspace has not cloned is
+            // the ordinary case, not a fault: a workspace clones the repos its
+            // work touches and leaves the rest alone. Reporting it as a failure
+            // would make a full manifest unusable in every workspace, which is
+            // how the manifest came to list a third of the repos there are.
+            if !local.exists() {
+                results.push(RegenResult {
+                    repo:             name.clone(),
+                    cargo_mock:       StageStatus::Skipped("not cloned here".into()),
+                    configs:          Vec::new(),
+                    aggregate:        StageStatus::Skipped("not cloned here".into()),
+                    aggregated_hooks: 0,
+                });
+                continue;
+            }
+
             // Stage 1: cargo mock.
             let cargo_mock = if opts.skip_cargo_mock {
                 StageStatus::Skipped("--skip-cargo-mock".into())
-            } else if !local.exists() {
-                StageStatus::Failed(format!("local_path {} does not exist", local.display()))
             } else if !local.join("mock").is_dir() {
                 StageStatus::Skipped("no mock/ directory".into())
             } else {
@@ -383,6 +435,7 @@ pub mod regen {
                 results.push(RegenResult {
                     repo: name.clone(),
                     cargo_mock,
+                    configs: Vec::new(),
                     aggregate: StageStatus::Skipped("cargo mock failed".into()),
                     aggregated_hooks: 0,
                 });
@@ -392,7 +445,35 @@ pub mod regen {
                 continue;
             }
 
-            // Stage 2: aggregate. Only attempt if the repo has a
+            // Stage 2: the shared tool configs. A missing one whose home is
+            // known is placed; one that differs is reported and left, because a
+            // difference may be deliberate and nothing on disk says.
+            let mut config_findings: Vec<String> = Vec::new();
+            if !opts.skip_configs && !templates.is_empty() {
+                match homma_api::AbsPath::new(
+                    std::path::absolute(&local).unwrap_or_else(|_| local.clone()),
+                )
+                .map_err(|e| e.to_string())
+                .and_then(|abs| root.contain(&abs).map_err(|e| e.to_string()))
+                {
+                    Ok(contained) => {
+                        for f in homma_org::configs::ensure(&root, &contained, &templates) {
+                            if f.needs_a_human() {
+                                needs_a_human.push(format!("{name}: {f}"));
+                            } else if matches!(f, homma_org::configs::Finding::Differs(_)) {
+                                diverged.push(format!("{name}: {f}"));
+                            }
+                            config_findings.push(f.to_string());
+                        }
+                    },
+                    // A repo the workspace root cannot contain is not one this
+                    // stage may write into, and that is the containment
+                    // mechanism working rather than a fault to report loudly.
+                    Err(e) => config_findings.push(format!("not compared: {e}")),
+                }
+            }
+
+            // Stage 3: aggregate. Only attempt if the repo has a
             // rendered .claude/ to read from.
             let claude_present = local.join(".claude").is_dir();
             let (aggregated_hooks, aggregate_stage) = if opts.skip_aggregate {
@@ -405,7 +486,7 @@ pub mod regen {
                     Err(e) => {
                         had_failure = true;
                         (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
-                    }
+                    },
                 }
             };
 
@@ -413,6 +494,7 @@ pub mod regen {
             results.push(RegenResult {
                 repo: name.clone(),
                 cargo_mock,
+                configs: config_findings,
                 aggregate: aggregate_stage,
                 aggregated_hooks,
             });
@@ -439,13 +521,14 @@ pub mod regen {
                 Err(e) => {
                     had_failure = true;
                     results.push(RegenResult {
-                        repo: "(workspace gate)".into(),
-                        cargo_mock: StageStatus::Skipped("not a repo".into()),
-                        aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                        repo:             "(workspace gate)".into(),
+                        cargo_mock:       StageStatus::Skipped("not a repo".into()),
+                        configs:          Vec::new(),
+                        aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
                         aggregated_hooks: 0,
                     });
                     None
-                }
+                },
             };
 
             if let Err(e) = aggregate::merge_settings(
@@ -456,20 +539,30 @@ pub mod regen {
             ) {
                 had_failure = true;
                 results.push(RegenResult {
-                    repo: "(settings.json)".into(),
-                    cargo_mock: StageStatus::Skipped("not a repo".into()),
-                    aggregate: StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                    repo:             "(settings.json)".into(),
+                    cargo_mock:       StageStatus::Skipped("not a repo".into()),
+                    configs:          Vec::new(),
+                    aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
                     aggregated_hooks: 0,
                 });
             }
         }
 
+        if let Some(e) = templates_err {
+            needs_a_human.push(format!("(configs): {e}"));
+        }
+
+        // **A divergence does not fail the run and a missing config does not
+        // either.** Both are reported, and the exit status stays about whether
+        // a stage failed to do its work. A tool that refuses to finish over a
+        // workspace whose configs are merely unusual is a tool somebody starts
+        // passing `--skip-configs` to, which loses the check entirely.
         let ok = !had_failure;
-        emit(&RegenReport { results, ok }, format)?;
-        Ok(if ok {
-            Outcome::Ok
-        } else {
-            Outcome::ReportedFailure
+        Ok(RegenReport {
+            results,
+            ok,
+            diverged,
+            needs_a_human,
         })
     }
 
@@ -529,6 +622,27 @@ pub mod regen {
                 if let StageStatus::Failed(m) = &r.aggregate {
                     writeln!(out, "    aggregate: {m}")?;
                 }
+                for c in &r.configs {
+                    writeln!(out, "    configs: {c}")?;
+                }
+            }
+            // Repeated below the table, because a per-repo line scrolls past
+            // and the whole point of the stage is the handful of lines an
+            // operator has to do something about.
+            if !self.diverged.is_empty() {
+                writeln!(
+                    out,
+                    "\nconfigs that differ from the shared copy (left as they are):"
+                )?;
+                for d in &self.diverged {
+                    writeln!(out, "  {d}")?;
+                }
+            }
+            if !self.needs_a_human.is_empty() {
+                writeln!(out, "\nconfigs somebody has to place:")?;
+                for d in &self.needs_a_human {
+                    writeln!(out, "  {d}")?;
+                }
             }
             Ok(())
         }
@@ -571,6 +685,53 @@ pub mod regen {
         }
 
         #[test]
+        fn a_repo_the_manifest_lists_and_this_workspace_has_not_cloned_is_skipped() {
+            // A workspace clones the repos its work touches. The manifest lists
+            // every repo there is, so most of them are absent from any given
+            // one, and reporting that as a failure is what kept the manifest
+            // short enough to be useless.
+            let dir = tempfile::tempdir().unwrap();
+            let here = dir.path().join("cloned");
+            std::fs::create_dir_all(here.join("mock")).unwrap();
+            let cfg = Config::parse(&format!(
+                "[workspace]\nname = \"w\"\npath = {p}\n\n\
+                 [repos.cloned]\nforge = \"github\"\nowner = \"o\"\nlocal_path = \"cloned\"\n\n\
+                 [repos.elsewhere]\nforge = \"github\"\nowner = \"o\"\nlocal_path = \"elsewhere\"\n",
+                p = toml::Value::String(dir.path().display().to_string())
+            ))
+            .unwrap();
+
+            let out = regen(&cfg, None, Opts {
+                skip_cargo_mock: true,
+                skip_configs: true,
+                skip_aggregate: false,
+                ..Default::default()
+            })
+            .unwrap();
+
+            let absent = out
+                .results
+                .iter()
+                .find(|r| r.repo == "elsewhere")
+                .expect("the uncloned repo was dropped rather than reported");
+            assert!(
+                matches!(&absent.cargo_mock, StageStatus::Skipped(w) if w == "not cloned here"),
+                "{:?}",
+                absent.cargo_mock
+            );
+            assert!(matches!(absent.aggregate, StageStatus::Skipped(_)));
+
+            // The control: the repo that IS here was not skipped for the same
+            // reason, so the check is about presence rather than about
+            // skipping everything.
+            let present = out.results.iter().find(|r| r.repo == "cloned").unwrap();
+            assert!(
+                !matches!(&present.cargo_mock, StageStatus::Skipped(w) if w == "not cloned here"),
+                "a cloned repo was reported as absent"
+            );
+        }
+
+        #[test]
         fn truncate_walks_back_to_char_boundary() {
             // Two-byte chars; cutting at 3 lands mid-char.
             let s = "ééé".to_string(); // 6 bytes
@@ -589,8 +750,8 @@ pub mod regen {
 /// A home's own `.claude`, which is never a workspace, plus **every
 /// participant's workspace except the one being written into**, which is the
 /// actor's by definition. That last exclusion is what makes deny item one
-/// correct rather than paralysing: the central clone is one participant's
-/// workspace, denied to every other and permitted to its owner.
+/// correct rather than paralysing: op's own workspace is one participant's,
+/// denied to every other and permitted to its owner.
 ///
 /// The registry is optional in this configuration, and its absence means the
 /// list is the home-derived pair alone. That is a real state rather than a gap:

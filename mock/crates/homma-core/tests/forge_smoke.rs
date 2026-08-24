@@ -36,9 +36,11 @@ impl Forge for MockForge {
             .borrow()
             .get(&(owner.to_string(), name.to_string()))
             .cloned()
-            .ok_or_else(|| ForgeError::RepoNotFound {
-                owner: owner.into(),
-                name: name.into(),
+            .ok_or_else(|| {
+                ForgeError::RepoNotFound {
+                    owner: owner.into(),
+                    name:  name.into(),
+                }
             })
     }
 
@@ -55,17 +57,17 @@ impl Forge for MockForge {
         if repos.contains_key(&key) {
             return Err(ForgeError::RepoAlreadyExists {
                 owner: owner.into(),
-                name: spec.name.clone(),
+                name:  spec.name.clone(),
             });
         }
         let meta = RepoMetadata {
-            owner: owner.into(),
-            name: spec.name.clone(),
-            description: spec.description.clone(),
-            default_branch: spec.default_branch.clone().unwrap_or_else(|| "main".into()),
-            visibility: spec.visibility,
-            topics: Vec::new(),
-            archived: false,
+            owner:           owner.into(),
+            name:            spec.name.clone(),
+            description:     spec.description.clone(),
+            default_branch:  spec.default_branch.clone().unwrap_or_else(|| "main".into()),
+            visibility:      spec.visibility,
+            topics:          Vec::new(),
+            archived:        false,
             clone_url_https: format!("https://mock.invalid/{owner}/{}.git", spec.name),
         };
         repos.insert(key, meta.clone());
@@ -78,11 +80,13 @@ impl Forge for MockForge {
             Some(m) => {
                 m.archived = true;
                 Ok(())
-            }
-            None => Err(ForgeError::RepoNotFound {
-                owner: owner.into(),
-                name: name.into(),
-            }),
+            },
+            None => {
+                Err(ForgeError::RepoNotFound {
+                    owner: owner.into(),
+                    name:  name.into(),
+                })
+            },
         }
     }
 
@@ -93,23 +97,25 @@ impl Forge for MockForge {
             .remove(&(owner.to_string(), name.to_string()))
         {
             Some(_) => Ok(()),
-            None => Err(ForgeError::RepoNotFound {
-                owner: owner.into(),
-                name: name.into(),
-            }),
+            None => {
+                Err(ForgeError::RepoNotFound {
+                    owner: owner.into(),
+                    name:  name.into(),
+                })
+            },
         }
     }
 }
 
 fn sample_source() -> RepoMetadata {
     RepoMetadata {
-        owner: "orgrinrt".into(),
-        name: "homma".into(),
-        description: Some("workspace tooling".into()),
-        default_branch: "dev".into(),
-        visibility: Visibility::Public,
-        topics: vec!["rust".into(), "workspace".into()],
-        archived: false,
+        owner:           "orgrinrt".into(),
+        name:            "homma".into(),
+        description:     Some("workspace tooling".into()),
+        default_branch:  "dev".into(),
+        visibility:      Visibility::Public,
+        topics:          vec!["rust".into(), "workspace".into()],
+        archived:        false,
         clone_url_https: "https://github.com/orgrinrt/homma.git".into(),
     }
 }
@@ -193,7 +199,7 @@ fn create_repo_spec_in_org_flips_owner_kind() {
 fn forge_error_display_carries_context() {
     let e = ForgeError::RepoNotFound {
         owner: "orgrinrt".into(),
-        name: "homma".into(),
+        name:  "homma".into(),
     };
     let s = format!("{e}");
     assert!(s.contains("orgrinrt/homma"), "got: {s}");

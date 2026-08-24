@@ -147,14 +147,7 @@ fn migrate_undeclared_destination_forge_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args([
-            "-c",
-            cfg.to_str().unwrap(),
-            "migrate",
-            "notko",
-            "--to",
-            "codeberg",
-        ])
+        .args(["-c", cfg.to_str().unwrap(), "migrate", "notko", "--to", "codeberg"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("forge `codeberg` not declared"));
@@ -165,14 +158,7 @@ fn migrate_undeclared_repo_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args([
-            "-c",
-            cfg.to_str().unwrap(),
-            "migrate",
-            "missing",
-            "--to",
-            "github",
-        ])
+        .args(["-c", cfg.to_str().unwrap(), "migrate", "missing", "--to", "github"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("repo `missing` not declared"));
@@ -194,14 +180,7 @@ fn archive_undeclared_forge_override_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args([
-            "-c",
-            cfg.to_str().unwrap(),
-            "archive",
-            "notko",
-            "--from",
-            "doesnotexist",
-        ])
+        .args(["-c", cfg.to_str().unwrap(), "archive", "notko", "--from", "doesnotexist"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(

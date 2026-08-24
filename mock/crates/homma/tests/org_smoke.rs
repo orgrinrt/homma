@@ -40,13 +40,7 @@ fn adding_an_entry_appends_and_leaves_the_rest_of_the_file_alone() {
     let path = registry_with_a_comment(&dir);
 
     bin()
-        .args([
-            "--config",
-            path.to_str().unwrap(),
-            "org",
-            "add",
-            "rendering",
-        ])
+        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
         .args(["--role", "hand", "--domain", "rendering"])
         .assert()
         .success()
@@ -68,13 +62,7 @@ fn an_added_entry_parses_back_and_reports_as_mapped() {
     let dir = tempfile::tempdir().unwrap();
     let path = registry_with_a_comment(&dir);
     bin()
-        .args([
-            "--config",
-            path.to_str().unwrap(),
-            "org",
-            "add",
-            "rendering",
-        ])
+        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
         .args(["--role", "hand", "--domain", "rendering"])
         .assert()
         .success();
@@ -94,13 +82,7 @@ fn standing_up_a_mapped_entry_is_refused_and_says_it_is_mapped() {
     let dir = tempfile::tempdir().unwrap();
     let path = registry_with_a_comment(&dir);
     bin()
-        .args([
-            "--config",
-            path.to_str().unwrap(),
-            "org",
-            "add",
-            "rendering",
-        ])
+        .args(["--config", path.to_str().unwrap(), "org", "add", "rendering"])
         .args(["--role", "hand"])
         .assert()
         .success();
@@ -182,12 +164,7 @@ fn standing_up_clones_the_workspace_and_sets_the_identity_in_that_clone() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();
@@ -222,17 +199,12 @@ fn standing_up_twice_reports_the_workspace_was_already_there() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();
 
-    for _ in 0..2 {
+    for _ in 0 .. 2 {
         bin()
             .args(["--config", cfg.to_str().unwrap(), "org", "up", "fresh"])
             .current_dir(&root)
@@ -266,12 +238,7 @@ fn standing_up_from_a_root_that_is_not_a_clone_is_refused() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();
@@ -300,12 +267,7 @@ fn standing_up_changes_no_global_git_configuration() {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", "fresh"])
         .args(["--role", "hand", "--staffed"])
-        .args([
-            "--git-name",
-            "fresh",
-            "--git-email",
-            "fresh@example.invalid",
-        ])
+        .args(["--git-name", "fresh", "--git-email", "fresh@example.invalid"])
         .args(["--workspace", ws.to_str().unwrap()])
         .assert()
         .success();

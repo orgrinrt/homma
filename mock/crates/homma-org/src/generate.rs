@@ -10,16 +10,16 @@
 //! omits the memory key. That restriction has to be structural: a definition
 //! carrying the key grants the write path whatever its prose says.
 
+use std::{fs, io};
+
+use homma_api::{ContainedPath, Escapes, Identity};
+
 use crate::workspace::Layout;
-use homma_api::Identity;
-use homma_api::{ContainedPath, Escapes};
-use std::fs;
-use std::io;
 
 /// What a generated definition is made of.
 pub struct Generated {
     pub frontmatter: String,
-    pub body: String,
+    pub body:        String,
 }
 
 impl Generated {
@@ -89,7 +89,7 @@ pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) 
                  memory. It does not write to channels either: it answers whoever \
                  dispatched it, and they speak in their own name.\n\n",
             );
-        }
+        },
         Form::Twin => {
             body.push_str(
                 "You are a dispatched copy. **You may not write memory.** What you \
@@ -97,7 +97,7 @@ pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) 
                  do not write to channels either: answer whoever dispatched you, and \
                  they speak in their own name.\n\n",
             );
-        }
+        },
     }
     body.push_str(discipline.trim_end());
     body.push('\n');
@@ -127,7 +127,7 @@ fn describe(id: &Identity, form: Form) -> String {
         (Form::Prime, None) => format!("{who}."),
         (Form::Twin, Some(d)) => {
             format!("{who} dispatched as a subagent, without session history. Works on {d}.")
-        }
+        },
         (Form::Twin, None) => format!("{who} dispatched as a subagent, without session history."),
     }
 }
@@ -174,8 +174,9 @@ mod tests {
     fn abs(p: impl Into<std::path::PathBuf>) -> homma_api::AbsPath {
         homma_api::AbsPath::new(p).expect("a tempdir path is absolute")
     }
-    use crate::workspace::Layout;
     use homma_api::{Paths, Role};
+
+    use crate::workspace::Layout;
 
     fn hand() -> Identity {
         let mut i = Identity::new(Role::Hand, "paja");
@@ -205,12 +206,16 @@ mod tests {
     #[test]
     fn the_twin_is_a_different_agent_name() {
         let id = hand();
-        assert!(definition(&id, Form::Prime, DISCIPLINE, "")
-            .frontmatter
-            .contains("name: paja\n"));
-        assert!(definition(&id, Form::Twin, DISCIPLINE, "")
-            .frontmatter
-            .contains("name: paja-twin\n"));
+        assert!(
+            definition(&id, Form::Prime, DISCIPLINE, "")
+                .frontmatter
+                .contains("name: paja\n")
+        );
+        assert!(
+            definition(&id, Form::Twin, DISCIPLINE, "")
+                .frontmatter
+                .contains("name: paja-twin\n")
+        );
     }
 
     #[test]

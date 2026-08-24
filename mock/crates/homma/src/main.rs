@@ -6,7 +6,7 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::cli::Cli;
 
@@ -23,7 +23,7 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("error: {e:#}");
             ExitCode::FAILURE
-        }
+        },
     }
 }
 
