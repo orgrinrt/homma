@@ -132,6 +132,128 @@ local_path = "broken"
 }
 
 #[test]
+fn verify_says_nothing_about_a_repo_this_workspace_has_not_cloned() {
+    // A workspace clones the repos its work touches. The manifest names every
+    // repo there is, so most are absent from any given one, and reporting each
+    // as a warning buried the findings that mean something under nineteen
+    // lines of noise.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg_path = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg_path,
+        r#"
+[workspace]
+name = "ws"
+
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+
+[repos.absent]
+forge = "github"
+owner = "x"
+local_path = "absent"
+"#,
+    )
+    .unwrap();
+    bin()
+        .args(["-c", cfg_path.to_str().unwrap(), "verify"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("absent").not());
+}
+
+#[test]
+fn verify_does_not_reach_a_forge_unless_asked_to() {
+    // The control on the flag. The api_url is unroutable, so a lookup fails
+    // loudly; the default run must not make one, and `--forge` with a token
+    // must. Without both halves a `--forge` that quietly did nothing would look
+    // identical to one that worked.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg_path = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg_path,
+        r#"
+[workspace]
+name = "ws"
+
+[forges.nowhere]
+kind = "github"
+base_url = "https://127.0.0.1:9"
+api_url = "https://127.0.0.1:9"
+token_env = "HOMMA_TEST_NOWHERE_TOKEN"
+
+[repos.somerepo]
+forge = "nowhere"
+owner = "x"
+local_path = "somerepo"
+"#,
+    )
+    .unwrap();
+
+    bin()
+        .env("HOMMA_TEST_NOWHERE_TOKEN", "t")
+        .args(["-c", cfg_path.to_str().unwrap(), "verify"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("somerepo").not());
+
+    bin()
+        .env("HOMMA_TEST_NOWHERE_TOKEN", "t")
+        .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
+        .assert()
+        .stdout(predicate::str::contains("somerepo"));
+}
+
+#[test]
+fn verify_will_not_claim_a_repo_is_absent_from_a_forge_it_cannot_authenticate_to() {
+    // Every repo in this workspace is private, and GitHub answers 404 for a
+    // private repo exactly as it does for one that is not there. So an
+    // unauthenticated negative is not evidence, and saying otherwise made the
+    // check fire on all twenty-four the first time it ran.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg_path = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg_path,
+        r#"
+[workspace]
+name = "ws"
+
+[forges.nowhere]
+kind = "github"
+base_url = "https://127.0.0.1:9"
+api_url = "https://127.0.0.1:9"
+token_env = "HOMMA_TEST_NOWHERE_TOKEN"
+
+[repos.somerepo]
+forge = "nowhere"
+owner = "x"
+local_path = "somerepo"
+"#,
+    )
+    .unwrap();
+
+    bin()
+        .env_remove("HOMMA_TEST_NOWHERE_TOKEN")
+        .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
+        .assert()
+        // a warning, not a failure, and nothing said about the repo itself
+        .success()
+        .stdout(predicate::str::contains("forge_answers_are_not_evidence"))
+        .stdout(predicate::str::contains("repo_not_on_forge").not());
+
+    // An empty token counts as no token, which is the case a bare
+    // `is_some()` check would have got wrong.
+    bin()
+        .env("HOMMA_TEST_NOWHERE_TOKEN", "")
+        .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("forge_answers_are_not_evidence"));
+}
+
+#[test]
 fn missing_config_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("missing.toml");

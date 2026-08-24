@@ -65,10 +65,20 @@ pub enum Command {
         op: OrgOp,
     },
 
-    /// Sanity-check `homma.toml`: parses, repo `local_path`s exist (when
-    /// the workspace root is present), forge `token_env` vars resolve.
-    /// Exits non-zero with a per-finding diagnostic list when checks fail.
-    Verify,
+    /// Sanity-check `homma.toml`: parses, declares the forges its repos name,
+    /// and resolves each forge's `token_env`. Exits non-zero with a per-finding
+    /// diagnostic list when checks fail.
+    Verify {
+        /// Also ask each forge whether the repo exists under the owner and name
+        /// the manifest gives it.
+        ///
+        /// Off by default because it is one network round-trip per repo and
+        /// the rest of the command is offline. It is the only check that
+        /// catches a wrong `owner`, which is otherwise invisible until a forge
+        /// operation 404s.
+        #[arg(long)]
+        forge: bool,
+    },
 
     /// Per-repo operations over the local working tree.
     Repo {
@@ -355,7 +365,12 @@ mod tests {
             cli.config.as_deref().map(|p| p.to_str().unwrap()),
             Some("alt.toml")
         );
-        assert!(matches!(cli.command, Command::Verify));
+        assert!(matches!(
+            cli.command,
+            Command::Verify {
+                forge: false
+            }
+        ));
     }
 
     #[test]
