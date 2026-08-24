@@ -102,16 +102,16 @@ pub(crate) fn aggregate_repo(
     let repo_rel = repo_abs_path
         .strip_prefix(root.as_abs())
         .unwrap_or(repo_abs_path);
-    let repo_rel = repo_rel
-        .to_str()
-        .ok_or_else(|| anyhow!("non-utf8 path: {}", repo_rel.display()))?;
+    // Through `relative_str`, so a manifest writing `./arvo` does not put a
+    // `.` in the middle of the path the wrapper compares against.
+    let repo_rel = crate::cmd::util::relative_str(repo_rel);
 
     let hooks_count = aggregate_hooks(
         root,
         &claude_dir,
         &ws_hooks,
         repo_name,
-        repo_rel,
+        &repo_rel,
         settings_entries,
     )?;
 
@@ -612,6 +612,66 @@ mod tests {
         fs::remove_file(&marker).unwrap();
         let outside = ws.path().join("kolli/src/lib.rs");
         run_wrapper(&wrapper, &outside);
+        assert!(
+            !marker.exists(),
+            "the wrapper handed off for a path outside the repo"
+        );
+    }
+
+    #[test]
+    fn a_manifest_path_carrying_a_curdir_component_still_scopes_the_wrapper() {
+        // Through `aggregate_repo` rather than through `wrapper_script`, because
+        // the `.` only exists on the manifest side and every unit test above
+        // hands in a path that already has none. The manifests in use write
+        // `./<name>`, so this is the shape that actually ships.
+        //
+        // What it caught: `/ws/./arvo` is not a textual prefix of
+        // `/ws/arvo/src/lib.rs`, so the scope check never fired and the wrapper
+        // exited 0 for every path, which is indistinguishable from a guard that
+        // ran and approved.
+        let ws = tempfile::tempdir().unwrap();
+        let repo = ws.path().join("arvo");
+        fs::create_dir_all(repo.join(".claude/hooks")).unwrap();
+
+        let marker = ws.path().join("fired");
+        let real = repo.join(".claude/hooks/foo.sh");
+        fs::write(
+            &real,
+            format!(
+                "#!/usr/bin/env bash\ncat > /dev/null\ntouch '{}'\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        make_executable(&real);
+        fs::write(
+            repo.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/foo.sh"}]}]}}"#,
+        )
+        .unwrap();
+
+        // The `./` is the whole point of the fixture.
+        let declared = ws.path().join("./arvo");
+        let mut entries = Vec::new();
+        aggregate_repo(&test_root(ws.path()), "arvo", &declared, &mut entries).unwrap();
+
+        let wrapper = ws.path().join(".claude/hooks/arvo--foo.sh");
+        make_executable(&wrapper);
+        assert!(
+            !fs::read_to_string(&wrapper).unwrap().contains("/./"),
+            "the emitted wrapper carries a no-op path component"
+        );
+
+        run_wrapper(&wrapper, &repo.join("src/lib.rs"));
+        assert!(
+            marker.exists(),
+            "the wrapper did not hand off for a path inside a repo declared with `./`"
+        );
+
+        // The control, so the assertion above is not satisfied by a wrapper
+        // that hands off unconditionally.
+        fs::remove_file(&marker).unwrap();
+        run_wrapper(&wrapper, &ws.path().join("kolli/src/lib.rs"));
         assert!(
             !marker.exists(),
             "the wrapper handed off for a path outside the repo"
