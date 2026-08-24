@@ -57,9 +57,11 @@ directory pretending to be a decision.
 ## What exists
 
 `homma-api` carries the vocabulary. `homma-store` persists records.
-`homma-org` holds the registry, the workspace lifecycle and generation. `homma` is
-the command surface. `homma-core` still holds forge clients and git operations in
-a pre-adoption split that a later round dissolves.
+`homma-org` holds the registry, the workspace lifecycle and generation.
+`homma-engine` is the command surface, and `homma` is the launcher that finds
+the workspace, reads the version of the engine it pins, and runs that one.
+`homma-core` still holds forge clients and git operations in a pre-adoption
+split that a later round dissolves.
 
 ## The command surface
 
