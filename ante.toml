@@ -21,7 +21,7 @@ include = [
     "launcher/src/**/*.rs",
     "launcher/tests/**/*.rs",
     "mock/crates/*/src/**/*.rs",
-    "mock/crates/*/tests/*.rs",
+    "mock/crates/*/tests/**/*.rs",
 ]
 
 # The trybuild fixtures are paired with `.stderr` files pinning the line each
