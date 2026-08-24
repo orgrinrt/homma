@@ -43,6 +43,13 @@ pub enum ProvisionError<E> {
     IdentityNotSet {
         found: Option<homma_api::CommitIdentity>,
     },
+    /// A part of the entry's git identity is empty.
+    ///
+    /// Distinct from [`ProvisionError::NoIdentity`], which is an entry carrying
+    /// none at all. This is an entry carrying one with a hole in it, and the
+    /// two want different remedies: one is a missing pair of keys, the other is
+    /// a key present and blank.
+    EmptyIdentityPart(homma_api::EmptyPart),
     /// The workspace would sit inside a repository that is not it.
     InsideAnotherRepo {
         workspace: homma_api::AbsPath,
@@ -79,13 +86,20 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
                  a workspace there would write into a tree that is not ours, \
                  Name a workspace outside it."
             ),
+            ProvisionError::EmptyIdentityPart(e) => write!(
+                f,
+                "the entry's git identity is incomplete: {e}"
+            ),
             ProvisionError::IdentityNotSet { found } => write!(
                 f,
                 "the identity did not survive being written; the clone reports {}",
                 match found {
                     Some(i) => format!(
                         "author {} <{}>, committer {} <{}>",
-                        i.author_name, i.author_email, i.committer_name, i.committer_email
+                        i.author_name(),
+                        i.author_email(),
+                        i.committer_name(),
+                        i.committer_email()
                     ),
                     None => "none".to_string(),
                 }
@@ -198,12 +212,13 @@ pub fn provision<G: Git>(
     // The committer defaults to the author, which is every entry but one. The
     // fallback lives here rather than in the type so that "the same" and
     // "deliberately the same" stay distinguishable in the registry file.
-    let want = homma_api::CommitIdentity {
-        author_name: name.to_string(),
-        author_email: email.to_string(),
-        committer_name: id.committer_name.as_deref().unwrap_or(name).to_string(),
-        committer_email: id.committer_email.as_deref().unwrap_or(email).to_string(),
-    };
+    let want = homma_api::CommitIdentity::split(
+        name,
+        email,
+        id.committer_name.as_deref().unwrap_or(name),
+        id.committer_email.as_deref().unwrap_or(email),
+    )
+    .map_err(ProvisionError::EmptyIdentityPart)?;
     git.set_identity(&root, &want)
         .map_err(ProvisionError::Git)?;
 
@@ -302,11 +317,8 @@ mod tests {
                 // Reports success, records the author, loses the committer.
                 self.identities.borrow_mut().push((
                     path.clone(),
-                    homma_api::CommitIdentity {
-                        committer_name: id.author_name.clone(),
-                        committer_email: id.author_email.clone(),
-                        ..id.clone()
-                    },
+                    homma_api::CommitIdentity::same(id.author_name(), id.author_email())
+                        .expect("the author of a written identity is non-empty"),
                 ));
                 return Ok(());
             }
@@ -375,12 +387,7 @@ mod tests {
         assert_eq!(git.clones.borrow().len(), 1);
         assert_eq!(
             git.identity(&ws).unwrap(),
-            Some(homma_api::CommitIdentity {
-                author_name: "paja".into(),
-                author_email: "paja@example.invalid".into(),
-                committer_name: "paja".into(),
-                committer_email: "paja@example.invalid".into(),
-            })
+            Some(homma_api::CommitIdentity::same("paja", "paja@example.invalid").unwrap())
         );
     }
 
@@ -478,14 +485,14 @@ mod tests {
 
         let written = git.identities.borrow();
         let (_, got) = written.last().expect("an identity was set");
-        assert_eq!(got.author_name, "Onni Armas");
-        assert_eq!(got.author_email, "ort@hiisi.digital", "the author stays op");
+        assert_eq!(got.author_name(), "Onni Armas");
+        assert_eq!(got.author_email(), "ort@hiisi.digital", "the author stays op");
         assert_eq!(
-            got.committer_email, "orgrinrt+vouti@ikiuni.dev",
+            got.committer_email(), "orgrinrt+vouti@ikiuni.dev",
             "and the committer is what distinguishes the crew's writes"
         );
         assert_eq!(
-            got.committer_name, "Onni Armas",
+            got.committer_name(), "Onni Armas",
             "the committer name defaults to the author's when the entry names none"
         );
     }
@@ -509,11 +516,11 @@ mod tests {
         let written = git.identities.borrow();
         let (_, got) = written.last().expect("an identity was set");
         assert_eq!(
-            got.author_name, "Onni Armas",
+            got.author_name(), "Onni Armas",
             "the author's name is unchanged"
         );
         assert_eq!(
-            got.committer_name, "Vouti",
+            got.committer_name(), "Vouti",
             "and the committer's name is the one the registry gave"
         );
     }
@@ -536,10 +543,10 @@ mod tests {
         // two halves of one recorded value catches nothing: it holds for any
         // implementation that writes the same thing twice, including one that
         // writes the wrong thing twice.
-        assert_eq!(got.author_name, "paja");
-        assert_eq!(got.author_email, "paja@example.invalid");
-        assert_eq!(got.committer_name, "paja");
-        assert_eq!(got.committer_email, "paja@example.invalid");
+        assert_eq!(got.author_name(), "paja");
+        assert_eq!(got.author_email(), "paja@example.invalid");
+        assert_eq!(got.committer_name(), "paja");
+        assert_eq!(got.committer_email(), "paja@example.invalid");
     }
 
     // Pins the widened read-back. Narrowing the comparison back to the author

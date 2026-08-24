@@ -375,12 +375,7 @@ domain = "rendering"
         // fallback that produced that equality is asserted separately below.
         assert_eq!(
             git.identity(&out.workspace).unwrap(),
-            Some(homma_api::CommitIdentity {
-                author_name: "paja".into(),
-                author_email: "paja@example.invalid".into(),
-                committer_name: "Vouti".into(),
-                committer_email: "orgrinrt+vouti@example.invalid".into(),
-            }),
+            Some(homma_api::CommitIdentity::split("paja", "paja@example.invalid", "Vouti", "orgrinrt+vouti@example.invalid").unwrap()),
             "the identity must be set in the clone, or the Hand commits as the machine's owner"
         );
     }
@@ -397,12 +392,7 @@ domain = "rendering"
 
         assert_eq!(
             git.identity(&out.workspace).unwrap(),
-            Some(homma_api::CommitIdentity {
-                author_name: "fallback".into(),
-                author_email: "fallback@example.invalid".into(),
-                committer_name: "fallback".into(),
-                committer_email: "fallback@example.invalid".into(),
-            })
+            Some(homma_api::CommitIdentity::same("fallback", "fallback@example.invalid").unwrap())
         );
     }
 

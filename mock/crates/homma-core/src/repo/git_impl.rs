@@ -52,14 +52,14 @@ impl Git for GixGit {
         let file = local_config(path)?;
         let mut file = file;
         for (key, value) in [
-            (&"user.name", &id.author_name),
-            (&"user.email", &id.author_email),
-            (&"author.name", &id.author_name),
-            (&"author.email", &id.author_email),
-            (&"committer.name", &id.committer_name),
-            (&"committer.email", &id.committer_email),
+            (&"user.name", id.author_name()),
+            (&"user.email", id.author_email()),
+            (&"author.name", id.author_name()),
+            (&"author.email", id.author_email()),
+            (&"committer.name", id.committer_name()),
+            (&"committer.email", id.committer_email()),
         ] {
-            file.set_raw_value(key, value.as_str())
+            file.set_raw_value(key, value)
                 .map_err(|e| RepoError::Config(e.to_string()))?;
         }
         std::fs::write(config_path(path), file.to_bstring()).map_err(|e| RepoError::Io {
@@ -142,12 +142,17 @@ impl Git for GixGit {
         let author_name = get("author", "name").or_else(|| get("user", "name"));
         let author_email = get("author", "email").or_else(|| get("user", "email"));
         match (author_name, author_email) {
-            (Some(an), Some(ae)) => Ok(Some(CommitIdentity {
-                committer_name: get("committer", "name").unwrap_or_else(|| an.clone()),
-                committer_email: get("committer", "email").unwrap_or_else(|| ae.clone()),
-                author_name: an,
-                author_email: ae,
-            })),
+            (Some(an), Some(ae)) => {
+                let cn = get("committer", "name").unwrap_or_else(|| an.clone());
+                let ce = get("committer", "email").unwrap_or_else(|| ae.clone());
+                // Every part came through `get`, which drops an empty value, so
+                // the constructor cannot refuse what got this far. Reported
+                // rather than unwrapped anyway: a later widening of `get` that
+                // stopped filtering would otherwise panic here instead of
+                // saying so, and that widening is exactly what happened to this
+                // function once already.
+                Ok(CommitIdentity::split(an, ae, cn, ce).ok())
+            },
             _ => Ok(None),
         }
     }
@@ -262,10 +267,10 @@ mod tests {
             .unwrap()
             .expect("an identity is configured");
         assert_eq!(
-            got.author_name, "Specific",
+            got.author_name(), "Specific",
             "author.name wins over user.name, which is what git does"
         );
-        assert_eq!(got.author_email, "specific@example.invalid");
+        assert_eq!(got.author_email(), "specific@example.invalid");
     }
 
     #[test]
@@ -279,12 +284,7 @@ mod tests {
 
         git.set_identity(
             &at,
-            &CommitIdentity {
-                author_name: "Onni Armas".into(),
-                author_email: "ort@hiisi.digital".into(),
-                committer_name: "Vouti".into(),
-                committer_email: "orgrinrt+vouti@ikiuni.dev".into(),
-            },
+            &CommitIdentity::split("Onni Armas", "ort@hiisi.digital", "Vouti", "orgrinrt+vouti@ikiuni.dev").unwrap(),
         )
         .unwrap();
 
@@ -292,13 +292,13 @@ mod tests {
             .identity(&at)
             .unwrap()
             .expect("an identity is configured");
-        assert_eq!(got.author_name, "Onni Armas");
-        assert_eq!(got.author_email, "ort@hiisi.digital");
+        assert_eq!(got.author_name(), "Onni Armas");
+        assert_eq!(got.author_email(), "ort@hiisi.digital");
         assert_eq!(
-            got.committer_name, "Vouti",
+            got.committer_name(), "Vouti",
             "read from committer.name, not fabricated from the author"
         );
-        assert_eq!(got.committer_email, "orgrinrt+vouti@ikiuni.dev");
+        assert_eq!(got.committer_email(), "orgrinrt+vouti@ikiuni.dev");
     }
 
     // The `user.*` fallback, also live and also unswept. A clone configured by
@@ -324,13 +324,13 @@ mod tests {
             .identity(&at)
             .unwrap()
             .expect("the user pair is an identity");
-        assert_eq!(got.author_name, "By Hand");
-        assert_eq!(got.author_email, "hand@example.invalid");
+        assert_eq!(got.author_name(), "By Hand");
+        assert_eq!(got.author_email(), "hand@example.invalid");
         assert_eq!(
-            got.committer_name, "By Hand",
+            got.committer_name(), "By Hand",
             "with no committer keys, the committer is the author"
         );
-        assert_eq!(got.committer_email, "hand@example.invalid");
+        assert_eq!(got.committer_email(), "hand@example.invalid");
     }
 
     // The merged-view guarantee lives in `tests/reads_the_local_config.rs`.
@@ -367,12 +367,7 @@ mod tests {
         git.init(&at).unwrap();
         git.set_identity(
             &at,
-            &CommitIdentity {
-                author_name: "Onni Armas".into(),
-                author_email: "ort@hiisi.digital".into(),
-                committer_name: "Onni Armas".into(),
-                committer_email: "orgrinrt+vouti@ikiuni.dev".into(),
-            },
+            &CommitIdentity::split("Onni Armas", "ort@hiisi.digital", "Onni Armas", "orgrinrt+vouti@ikiuni.dev").unwrap(),
         )
         .unwrap();
 
@@ -431,22 +426,12 @@ mod tests {
 
         git.set_identity(
             &abs_into,
-            &CommitIdentity {
-                author_name: "paja".into(),
-                author_email: "paja@example.invalid".into(),
-                committer_name: "paja".into(),
-                committer_email: "paja@example.invalid".into(),
-            },
+            &CommitIdentity::same("paja", "paja@example.invalid").unwrap(),
         )
         .unwrap();
         assert_eq!(
             git.identity(&abs_into).unwrap(),
-            Some(CommitIdentity {
-                author_name: "paja".to_string(),
-                author_email: "paja@example.invalid".to_string(),
-                committer_name: "paja".to_string(),
-                committer_email: "paja@example.invalid".to_string(),
-            })
+            Some(CommitIdentity::same("paja", "paja@example.invalid").unwrap())
         );
     }
 
@@ -482,12 +467,7 @@ mod tests {
             .unwrap();
         git.set_identity(
             &abs_into,
-            &CommitIdentity {
-                author_name: "paja".into(),
-                author_email: "paja@example.invalid".into(),
-                committer_name: "paja".into(),
-                committer_email: "paja@example.invalid".into(),
-            },
+            &CommitIdentity::same("paja", "paja@example.invalid").unwrap(),
         )
         .unwrap();
 

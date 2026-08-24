@@ -12,10 +12,10 @@ pub mod path;
 pub mod record;
 pub mod reference;
 
-pub use config::{Identity, Paths, Role, Staffing, Workspace};
+pub use config::{Identity, Paths, Role, Staffing, Unreadable, Workspace, UNREADABLE};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};
-pub use git::{CommitIdentity, Git};
+pub use git::{CommitIdentity, EmptyPart, Git, Part};
 pub use path::{AbsPath, NotAbsolute};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
 pub use reference::{Namespace, NotAReference, Reference, Rung};
