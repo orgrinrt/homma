@@ -12,21 +12,20 @@
 
 ## What it is
 
-`homma` is a Rust workspace management tool for developers who work across many independently-versioned repositories that live side-by-side on disk and share design rounds, refactors, and migrations. It replaces ad-hoc shell scripts and provider-specific CLIs with one workspace-aware binary that speaks git and the forge HTTP APIs directly.
+`homma` is a Rust workspace management tool for developers who work across many independently-versioned repositories that live side-by-side on disk and share refactors, dependency bumps, and migrations. It replaces ad-hoc shell scripts and provider-specific CLIs with one workspace-aware binary that speaks git and the forge HTTP APIs directly.
 
 The intended workflow shape is a flat workspace directory of cloned repos plus a `homma.toml` at the workspace root that names them, their forge origins, and who works in them. `homma` reads the manifest, walks the repos, and runs operations across the set: reporting their state, standing participants up with their own clones and generated definitions, aggregating agent rules and hooks into the workspace, reading forge metadata, and migrating repositories between forges.
-
-Opening pull requests and applying branch protections are not among them. `gh` does the first and a script in the workspace does the second.
 
 ## Status
 
 Working, and narrow. homma reads a workspace manifest, reports the state of every
-member repository and its forge mapping, drives each member's own tooling, and
-carries a registry of the participants who work in the workspace.
-
-It also stands one of them up: cloning a workspace for a participant, setting the
-git identity inside that clone, linking its memory where the agent harness looks
-for it, and generating its definitions.
+member repository and its forge mapping, drives each member's own tooling,
+migrates a repository between forges and archives the source, and carries a
+registry of the participants who work in the workspace. A registry entry is
+either staffed, somebody who works, or mapped, a domain recorded as owned before
+anybody is put on it. Standing a staffed entry up is one command: its directories
+are created, its definitions generated, its workspace cloned from the content
+repository, and its git identity set in that clone.
 
 The participant's directories, definitions and memory link go through a path
 proven against the filesystem to resolve inside the workspace root, rather than
@@ -54,10 +53,10 @@ shape every repository in this ecosystem uses. Build from there:
 
 ```
 cd mock && cargo build
+cargo install --path crates/homma   # puts the homma binary on PATH
 ```
 
-Design documents live as `*.md.tmpl` templates under `mock/`, and `cargo mock`
-renders them.
+The design documents live under `mock/` beside the code they describe.
 
 ## Support
 
@@ -71,4 +70,4 @@ Whether you use this project, have learned something from it, or just like it, p
 
 `SPDX-License-Identifier: MPL-2.0`
 
-> You can check out the full license [here](https://github.com/orgrinrt/homma/blob/dev/LICENSE)
+> You can check out the full license [here](https://github.com/orgrinrt/homma/blob/main/LICENSE)
