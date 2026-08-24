@@ -69,7 +69,22 @@ impl Config {
         })?;
         let mut cfg = Self::parse(&s)?;
         if cfg.workspace.path.is_relative() {
-            let beside = path.parent().unwrap_or(Path::new("."));
+            // The config path is made absolute first, and that is the whole of
+            // this. `Path::new("homma.toml").parent()` is `Some("")` rather
+            // than `None`, so the fallback below never fires for the spelling
+            // an operator actually types, `-c homma.toml`, and the join then
+            // leaves the workspace path relative. Everything anchored on it
+            // afterwards inherits that: `resolve_local_path` gives up and
+            // returns `./<repo>`, and the aggregated hooks then compare a
+            // relative root against the absolute path the host supplies, which
+            // never matches.
+            //
+            // The working directory is the right base rather than an invented
+            // one: a relative path handed to a command means relative to where
+            // the caller is.
+            let here = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let absolute = if path.is_absolute() { path.to_path_buf() } else { here.join(path) };
+            let beside = absolute.parent().unwrap_or(Path::new("."));
             cfg.workspace.path = normalise(&beside.join(&cfg.workspace.path));
         }
         Ok(cfg)
@@ -277,6 +292,74 @@ mod tests {
             "the default did not anchor on the config"
         );
         assert!(cfg.workspace.path.is_absolute());
+    }
+
+    #[test]
+    fn a_relative_config_path_still_yields_an_absolute_workspace_path() {
+        // The half of the matrix the sibling test above does not reach: it
+        // passes an absolute config path, so it never exercises the anchoring
+        // it asserts. Every path in the program hangs off this one, and a
+        // relative result is what made the aggregated hooks inert.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("kamu-canon");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
+
+        let relative = pathdiff_from(&std::env::current_dir().unwrap(), &ws.join("homma.toml"));
+        let cfg = Config::from_path(&relative).unwrap();
+        assert!(
+            cfg.workspace.path.is_absolute(),
+            "a relative config path left the workspace relative: {}",
+            cfg.workspace.path.display()
+        );
+        assert_eq!(cfg.workspace.path, normalise(&ws));
+    }
+
+    #[test]
+    fn a_bare_filename_config_path_is_the_case_the_fallback_never_covered() {
+        // Named so a later reader does not restore the `unwrap_or(".")` as
+        // sufficient. `Path::new("homma.toml").parent()` is `Some("")`, not
+        // `None`, so that fallback is unreachable for the one spelling that
+        // needs it.
+        assert_eq!(Path::new("homma.toml").parent(), Some(Path::new("")));
+        // And the control: the fallback does fire for a path with no filename
+        // at all, which is the case it was written for.
+        assert_eq!(Path::new("").parent(), None);
+    }
+
+    #[test]
+    fn an_absolute_config_path_is_unaffected_by_the_working_directory() {
+        // The control on the change: absolutising the config path must not
+        // move a config that already named itself absolutely.
+        let dir = tempfile::tempdir().unwrap();
+        let at = dir.path().join("homma.toml");
+        std::fs::write(&at, "[workspace]\nname = \"w\"\npath = \"repos\"\n").unwrap();
+        assert_eq!(
+            Config::from_path(&at).unwrap().workspace.path,
+            normalise(&dir.path().join("repos"))
+        );
+    }
+
+    /// A path to `target` expressed relative to `base`, for the one test that
+    /// needs a relative config path and cannot change the working directory
+    /// without racing every other test in the binary.
+    fn pathdiff_from(base: &Path, target: &Path) -> PathBuf {
+        let base = normalise(base);
+        let target = normalise(target);
+        let mut up = PathBuf::new();
+        let mut probe = base.as_path();
+        loop {
+            if let Ok(rest) = target.strip_prefix(probe) {
+                return up.join(rest);
+            }
+            match probe.parent() {
+                Some(p) => {
+                    up.push("..");
+                    probe = p;
+                },
+                None => return target,
+            }
+        }
     }
 
     #[test]

@@ -619,16 +619,19 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_path_carrying_a_curdir_component_still_scopes_the_wrapper() {
-        // Through `aggregate_repo` rather than through `wrapper_script`, because
-        // the `.` only exists on the manifest side and every unit test above
-        // hands in a path that already has none. The manifests in use write
-        // `./<name>`, so this is the shape that actually ships.
+    fn a_repo_path_that_arrived_unanchored_still_scopes_the_wrapper() {
+        // The shape a workspace whose path resolved to `"."` produces: the repo
+        // reaches `aggregate_repo` as `./arvo` rather than as an absolute path,
+        // because `resolve_local_path` gives up on a relative root and joins.
+        // The old code carried that straight into the wrapper, where `/ws/./arvo`
+        // is not a textual prefix of `/ws/arvo/src/lib.rs`, so the scope check
+        // never fired and every path exited 0.
         //
-        // What it caught: `/ws/./arvo` is not a textual prefix of
-        // `/ws/arvo/src/lib.rs`, so the scope check never fired and the wrapper
-        // exited 0 for every path, which is indistinguishable from a guard that
-        // ran and approved.
+        // The path is built with `PathBuf::from` rather than `Path::join`,
+        // deliberately. An earlier draft joined `"./arvo"` onto the workspace
+        // and was insensitive to the whole defect, because `Path::components`
+        // drops a `.` unprompted and the fixture never carried one. Its
+        // negative control is what said so.
         let ws = tempfile::tempdir().unwrap();
         let repo = ws.path().join("arvo");
         fs::create_dir_all(repo.join(".claude/hooks")).unwrap();
@@ -650,22 +653,30 @@ mod tests {
         )
         .unwrap();
 
-        // The `./` is the whole point of the fixture.
-        let declared = ws.path().join("./arvo");
+        // The unanchored form, verbatim. `strip_prefix` cannot remove an
+        // absolute workspace root from it, so it falls through unchanged and is
+        // exactly what the emitted wrapper would carry.
+        let declared = std::path::PathBuf::from(format!("{}/./arvo", ws.path().display()));
+        assert!(
+            declared.as_os_str().to_string_lossy().contains("/./"),
+            "the fixture lost the component it exists to carry"
+        );
+
         let mut entries = Vec::new();
         aggregate_repo(&test_root(ws.path()), "arvo", &declared, &mut entries).unwrap();
 
         let wrapper = ws.path().join(".claude/hooks/arvo--foo.sh");
         make_executable(&wrapper);
+        let body = fs::read_to_string(&wrapper).unwrap();
         assert!(
-            !fs::read_to_string(&wrapper).unwrap().contains("/./"),
-            "the emitted wrapper carries a no-op path component"
+            !body.contains("/./"),
+            "the emitted wrapper carries a no-op path component:\n{body}"
         );
 
         run_wrapper(&wrapper, &repo.join("src/lib.rs"));
         assert!(
             marker.exists(),
-            "the wrapper did not hand off for a path inside a repo declared with `./`"
+            "the wrapper did not hand off for a path inside a repo that arrived unanchored"
         );
 
         // The control, so the assertion above is not satisfied by a wrapper
