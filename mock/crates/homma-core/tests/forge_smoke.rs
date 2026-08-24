@@ -105,6 +105,12 @@ impl Forge for MockForge {
             },
         }
     }
+
+    /// The mock stands in for a forge that accepts whatever it is given, since
+    /// no test here is about credentials.
+    fn credential_works(&self) -> Result<bool, ForgeError> {
+        Ok(true)
+    }
 }
 
 fn sample_source() -> RepoMetadata {

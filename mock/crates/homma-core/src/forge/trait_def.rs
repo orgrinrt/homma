@@ -46,6 +46,20 @@ pub trait Forge {
     /// the source is to be removed; the caller is expected to have already
     /// confirmed the destination push succeeded.
     fn delete_repo(&self, owner: &str, name: &str) -> Result<(), ForgeError>;
+
+    /// Whether the credential this client carries is accepted by the forge.
+    ///
+    /// A negative answer from [`Self::repo_exists`] is evidence only when the
+    /// asker could have seen a positive one. Both forges answer `404` for a
+    /// private repo the credential cannot see, identically to one that is not
+    /// there, so a missing, expired, revoked or under-scoped token turns every
+    /// private repo into a false absence. Checking that a token is *set* does
+    /// not cover any of the last three.
+    ///
+    /// `Ok(false)` is the forge rejecting the credential. Anything that leaves
+    /// the question unanswered, a network failure or an unexpected status, is
+    /// an error, because it is not evidence either way.
+    fn credential_works(&self) -> Result<bool, ForgeError>;
 }
 
 /// Snapshot of a repo as the forge sees it.

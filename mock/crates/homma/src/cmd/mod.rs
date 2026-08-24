@@ -174,9 +174,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             }
             Ok(Outcome::Ok)
         },
-        Command::Verify => {
+        Command::Verify {
+            forge,
+        } => {
             let cfg = load_config(&cli)?;
-            verify::run(&cfg, cli.output)
+            verify::run(&cfg, *forge, cli.output)
         },
         Command::Repo {
             op,
