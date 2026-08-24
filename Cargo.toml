@@ -1,0 +1,17 @@
+# The repo root workspace, holding the launcher only.
+#
+# The engine lives in its own workspace under `mock/`, which is what keeps the
+# launcher outside the gate the engine plants. Same shape as mockspace.
+# `mock` is excluded because it is its own workspace and its crates inherit
+# their edition and lints from its manifest. Without this, a path dependency
+# reaching into it drags those crates in here as implicit members, and they then
+# try to inherit from a root that declares no `workspace.package` at all.
+[workspace]
+members = ["launcher"]
+exclude = ["mock"]
+resolver = "3"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

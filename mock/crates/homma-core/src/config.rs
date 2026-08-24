@@ -46,6 +46,26 @@ pub struct Config {
     /// one. See [`AuthConfig`].
     #[serde(default)]
     pub auth: AuthConfig,
+
+    /// The engine pin, which belongs to the launcher and not to this program.
+    ///
+    /// The launcher reads this same file to decide which engine to build and
+    /// run, and it looks for exactly these five keys. They are declared here so
+    /// `deny_unknown_fields` does not reject the file the launcher just used to
+    /// find this binary, which is the same reason `paths` and `org` are above.
+    ///
+    /// Nothing here reads them. They are the launcher's answer to a question
+    /// that was already settled by the time a command body runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homma_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homma_rev:     Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homma_branch:  Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homma_tag:     Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homma_git:     Option<String>,
 }
 
 impl Config {

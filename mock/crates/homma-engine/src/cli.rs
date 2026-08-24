@@ -13,13 +13,21 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Debug, Parser)]
 #[command(name = "homma", version, about, long_about = None)]
 pub struct Cli {
-    /// Path to `homma.toml` (default: `./homma.toml`).
+    /// Path to `homma.toml`. Wins over `--dir` when both are given.
     ///
     /// When the file does not exist or fails to parse, commands that read
     /// config (everything except `--help` / `--version`) exit non-zero with
     /// an explanatory diagnostic on stderr.
     #[arg(long, short = 'c', global = true)]
     pub config: Option<PathBuf>,
+
+    /// The workspace root, which is the directory `homma.toml` sits in.
+    ///
+    /// The launcher always passes this, resolved absolutely, so which
+    /// directory the command was typed in never changes what it operates on.
+    /// Typed by hand it does the same thing for the same reason.
+    #[arg(long, global = true)]
+    pub dir: Option<PathBuf>,
 
     /// Output format. Human is the default; JSON emits one document per
     /// command to stdout for machine consumption.

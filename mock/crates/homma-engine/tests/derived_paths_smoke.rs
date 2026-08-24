@@ -17,7 +17,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn bin() -> Command {
-    Command::cargo_bin("homma").expect("binary built")
+    Command::cargo_bin("homma-engine").expect("binary built")
 }
 
 fn add_hand(cfg: &std::path::Path, handle: &str, workspace: &str) {

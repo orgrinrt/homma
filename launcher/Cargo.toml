@@ -1,0 +1,36 @@
+[package]
+name = "homma"
+version = "0.0.0"
+edition = "2024"
+# The crate that will publish, once it can. The engine (`homma-engine`) stays
+# private either way; this launcher git-installs the workspace's pinned engine
+# itself, so it needs no version relationship to it.
+#
+# `false` today because `renki` is not on crates.io, and crates.io rejects a git
+# dependency outright, so `true` here would be a claim the manifest cannot
+# honour. `cargo deny check bans` reports it as a wildcard dependency for
+# exactly that reason. This flips the day renki publishes.
+publish = false
+description = "Launcher for the homma workspace harness: resolves the engine a workspace pins, builds it once per version into a shared cache, and runs it from any working directory."
+license = "MPL-2.0"
+repository = "https://github.com/orgrinrt/homma"
+categories = ["development-tools", "command-line-utilities"]
+keywords = ["homma", "workspace", "multi-repo", "git"]
+
+# The launcher machinery is `renki` and is shared with every other tool built
+# the same way. What is left here is this tool's own, which is a descriptor and
+# nothing else.
+[dependencies]
+# Pinned by revision rather than by branch, for the reason cargo-mock gives:
+# renki is unpublished and still at `0.0.0`, so a branch pin is not a version
+# constraint at all. The lockfile latches whatever `dev` pointed at the day it
+# resolved and the next `cargo update` moves it, and this is the launcher every
+# operator installs.
+renki = { git = "ssh://git@github.com/orgrinrt/renki.git", rev = "22272ce84950" }
+
+# The engine's config type, so a test can hold both ends of the one file this
+# tool and its engine share. Dev-only: the launcher itself never reads the
+# config as anything but text, which is what keeps it engine-agnostic.
+[dev-dependencies]
+homma-core = { path = "../mock/crates/homma-core" }
+tempfile = "3"

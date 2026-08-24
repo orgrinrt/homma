@@ -48,15 +48,36 @@ What it may not aggregate into is a home directory's own `.claude`, which is
 never a workspace, and any workspace belonging to somebody else. It may aggregate
 into its own, which is the ordinary case and the only one.
 
-The Cargo workspace lives under `mock/`, not at the repository root, which is the
-shape every repository in this ecosystem uses. Build from there:
+## Installation
+
+What goes on `PATH` is a small launcher. It finds the workspace, reads the
+version of the engine the workspace pins, builds that once into a shared cache,
+and hands over. So the workspace decides which homma runs in it, and a checkout
+you installed from months ago does not.
+
+Not on crates.io, so it comes off the repository:
 
 ```
-cd mock && cargo build
-cargo install --path crates/homma   # puts the homma binary on PATH
+cargo install --git https://github.com/orgrinrt/homma.git --branch dev homma
 ```
 
-The design documents live under `mock/` beside the code they describe.
+Installed off a branch, the launcher keeps itself current, which is the half
+that otherwise gets forgotten: nothing tells you a hand-installed binary has
+gone stale. `HOMMA_NO_SELF_UPDATE` turns that off where it is not wanted, on a
+build machine say.
+
+```
+cargo install --path launcher
+```
+
+works from a checkout and is what to use while changing the launcher itself. Do
+note that one installs from a path rather than a remote, so there is nothing for
+the update check to compare against and it stays exactly as current as the
+checkout it came from.
+
+The engine is a separate package and is not installed by hand. The launcher
+builds the pinned one on first use, and `--engine <path>` points it at a
+checkout while you are working on the engine instead.
 
 ## Support
 

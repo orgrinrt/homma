@@ -17,7 +17,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn bin() -> Command {
-    Command::cargo_bin("homma").expect("binary built")
+    Command::cargo_bin("homma-engine").expect("binary built")
 }
 
 fn config_at(workspace: &std::path::Path) -> String {
