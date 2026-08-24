@@ -302,8 +302,8 @@ fn workspace_with_a_repo_and_a_config(dir: &std::path::Path) -> (std::path::Path
     let ws = dir.join("workspace");
     std::fs::create_dir_all(ws.join(".shared").join("configs")).unwrap();
     std::fs::write(
-        ws.join(".shared").join("configs").join("rustfmt.toml"),
-        "max_width = 100\n",
+        ws.join(".shared").join("configs").join("deny.toml"),
+        "[bans]\nmultiple-versions = \"deny\"\n",
     )
     .unwrap();
 
@@ -329,7 +329,7 @@ fn regen_places_a_missing_shared_config_and_leaves_it_there() {
     let cfg = dir.path().join("homma.toml");
     std::fs::write(&cfg, cfg_body).unwrap();
 
-    let placed = ws.join("arvo").join("rustfmt.toml");
+    let placed = ws.join("arvo").join("deny.toml");
     assert!(!placed.exists(), "the fixture starts without the config");
 
     bin()
@@ -347,8 +347,73 @@ fn regen_places_a_missing_shared_config_and_leaves_it_there() {
 
     assert_eq!(
         std::fs::read_to_string(&placed).unwrap(),
-        "max_width = 100\n",
+        "[bans]\nmultiple-versions = \"deny\"\n",
         "regen did not place the shared config"
+    );
+}
+
+#[test]
+fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_one() {
+    // End to end, because the unit tests exercise the predicate and say nothing
+    // about whether `agent regen` honours it. Both arms in one fixture so the
+    // difference is the pin and nothing else.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+
+    let ws = dir.path().join("workspace");
+    std::fs::create_dir_all(ws.join(".shared").join("configs")).unwrap();
+    std::fs::write(
+        ws.join(".shared").join("configs").join("rustfmt.toml"),
+        "wrap_comments = true\n",
+    )
+    .unwrap();
+
+    let mut body = config_at(&ws);
+    for (name, pinned) in [("arvo", true), ("renki", false)] {
+        let repo = ws.join(name);
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("Cargo.toml"), format!("[package]\nname = \"{name}\"\n"))
+            .unwrap();
+        if pinned {
+            std::fs::write(
+                repo.join("rust-toolchain.toml"),
+                "[toolchain]\nchannel = \"nightly-2026-05-28\"\n",
+            )
+            .unwrap();
+        }
+        body.push_str(&format!(
+            "\n[repos.{name}]\nforge = \"github\"\nowner = \"orgrinrt\"\nlocal_path = \"{name}\"\n"
+        ));
+    }
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, body).unwrap();
+
+    let out = bin()
+        .env("HOME", &home)
+        .args([
+            "--config",
+            cfg.to_str().unwrap(),
+            "agent",
+            "regen",
+            "--skip-cargo-mock",
+            "--continue-on-error",
+        ])
+        .output()
+        .expect("the binary runs");
+
+    assert!(
+        ws.join("arvo").join("rustfmt.toml").exists(),
+        "the pinned repo did not get the config"
+    );
+    assert!(
+        !ws.join("renki").join("rustfmt.toml").exists(),
+        "the nightly-only config was written into a stable repo"
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("does not fit"),
+        "the stable repo was skipped silently: {said}"
     );
 }
 
@@ -377,15 +442,15 @@ fn a_second_regen_reports_the_config_as_matching_rather_than_placing_it_again() 
     };
 
     let first = String::from_utf8_lossy(&run().stdout).to_string();
-    assert!(first.contains("placed rustfmt.toml"), "first run: {first}");
+    assert!(first.contains("placed deny.toml"), "first run: {first}");
 
     let second = String::from_utf8_lossy(&run().stdout).to_string();
     assert!(
-        second.contains("rustfmt.toml matches"),
+        second.contains("deny.toml matches"),
         "second run should be a no-op: {second}"
     );
     assert!(
-        !second.contains("placed rustfmt.toml"),
+        !second.contains("placed deny.toml"),
         "the second run placed it again: {second}"
     );
     let _ = ws;
@@ -402,8 +467,8 @@ fn a_repo_whose_config_differs_is_warned_about_and_the_run_still_succeeds() {
     let cfg = dir.path().join("homma.toml");
     std::fs::write(&cfg, cfg_body).unwrap();
 
-    let theirs = ws.join("arvo").join("rustfmt.toml");
-    std::fs::write(&theirs, "max_width = 80\n").unwrap();
+    let theirs = ws.join("arvo").join("deny.toml");
+    std::fs::write(&theirs, "[bans]\nmultiple-versions = \"warn\"\n").unwrap();
 
     let out = bin()
         .env("HOME", &home)
@@ -426,7 +491,7 @@ fn a_repo_whose_config_differs_is_warned_about_and_the_run_still_succeeds() {
     );
     assert_eq!(
         std::fs::read_to_string(&theirs).unwrap(),
-        "max_width = 80\n",
+        "[bans]\nmultiple-versions = \"warn\"\n",
         "the repo's own config was overwritten"
     );
 }
@@ -466,7 +531,7 @@ fn skipping_every_stage_is_refused_but_skipping_two_is_not() {
         "skipping two of three still runs the configs stage: {stderr}"
     );
     assert!(
-        String::from_utf8_lossy(&two.stdout).contains("rustfmt.toml"),
+        String::from_utf8_lossy(&two.stdout).contains("deny.toml"),
         "the configs stage did not run"
     );
 }

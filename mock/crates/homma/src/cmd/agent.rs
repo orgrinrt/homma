@@ -300,6 +300,17 @@ pub mod regen {
         opts: Opts,
         format: OutputFormat,
     ) -> Result<Outcome> {
+        let report = regen(cfg, repo, opts)?;
+        let ok = report.ok;
+        emit(&report, format)?;
+        Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
+    }
+
+    /// The pipeline itself, returning what it found rather than printing it.
+    ///
+    /// Split out from [`run_with`] so a test can assert on the per-repo results
+    /// instead of parsing them back out of stdout.
+    pub fn regen(cfg: &Config, repo: Option<&str>, opts: Opts) -> Result<RegenReport> {
         if let Some(name) = repo {
             if cfg.repo(name).is_none() {
                 return Err(anyhow!("repo `{name}` not declared in [repos.*]"));
@@ -391,11 +402,25 @@ pub mod regen {
             }
             let local = util::resolve_local_path(workspace, &repo_cfg.local_path);
 
+            // A repo the manifest lists and this workspace has not cloned is
+            // the ordinary case, not a fault: a workspace clones the repos its
+            // work touches and leaves the rest alone. Reporting it as a failure
+            // would make a full manifest unusable in every workspace, which is
+            // how the manifest came to list a third of the repos there are.
+            if !local.exists() {
+                results.push(RegenResult {
+                    repo:             name.clone(),
+                    cargo_mock:       StageStatus::Skipped("not cloned here".into()),
+                    configs:          Vec::new(),
+                    aggregate:        StageStatus::Skipped("not cloned here".into()),
+                    aggregated_hooks: 0,
+                });
+                continue;
+            }
+
             // Stage 1: cargo mock.
             let cargo_mock = if opts.skip_cargo_mock {
                 StageStatus::Skipped("--skip-cargo-mock".into())
-            } else if !local.exists() {
-                StageStatus::Failed(format!("local_path {} does not exist", local.display()))
             } else if !local.join("mock").is_dir() {
                 StageStatus::Skipped("no mock/ directory".into())
             } else {
@@ -533,16 +558,12 @@ pub mod regen {
         // workspace whose configs are merely unusual is a tool somebody starts
         // passing `--skip-configs` to, which loses the check entirely.
         let ok = !had_failure;
-        emit(
-            &RegenReport {
-                results,
-                ok,
-                diverged,
-                needs_a_human,
-            },
-            format,
-        )?;
-        Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
+        Ok(RegenReport {
+            results,
+            ok,
+            diverged,
+            needs_a_human,
+        })
     }
 
     /// Run `cargo mock` from the repo root. Errors carry the exit status +
@@ -661,6 +682,57 @@ pub mod regen {
             let s = "abcdefghij".to_string();
             let out = truncate(s, 5);
             assert_eq!(out, "abcde...");
+        }
+
+        #[test]
+        fn a_repo_the_manifest_lists_and_this_workspace_has_not_cloned_is_skipped() {
+            // A workspace clones the repos its work touches. The manifest lists
+            // every repo there is, so most of them are absent from any given
+            // one, and reporting that as a failure is what kept the manifest
+            // short enough to be useless.
+            let dir = tempfile::tempdir().unwrap();
+            let here = dir.path().join("cloned");
+            std::fs::create_dir_all(here.join("mock")).unwrap();
+            let cfg = Config::parse(&format!(
+                "[workspace]\nname = \"w\"\npath = {p}\n\n\
+                 [repos.cloned]\nforge = \"github\"\nowner = \"o\"\nlocal_path = \"cloned\"\n\n\
+                 [repos.elsewhere]\nforge = \"github\"\nowner = \"o\"\nlocal_path = \"elsewhere\"\n",
+                p = toml::Value::String(dir.path().display().to_string())
+            ))
+            .unwrap();
+
+            let out = regen(
+                &cfg,
+                None,
+                Opts {
+                    skip_cargo_mock: true,
+                    skip_configs: true,
+                    skip_aggregate: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let absent = out
+                .results
+                .iter()
+                .find(|r| r.repo == "elsewhere")
+                .expect("the uncloned repo was dropped rather than reported");
+            assert!(
+                matches!(&absent.cargo_mock, StageStatus::Skipped(w) if w == "not cloned here"),
+                "{:?}",
+                absent.cargo_mock
+            );
+            assert!(matches!(absent.aggregate, StageStatus::Skipped(_)));
+
+            // The control: the repo that IS here was not skipped for the same
+            // reason, so the check is about presence rather than about
+            // skipping everything.
+            let present = out.results.iter().find(|r| r.repo == "cloned").unwrap();
+            assert!(
+                !matches!(&present.cargo_mock, StageStatus::Skipped(w) if w == "not cloned here"),
+                "a cloned repo was reported as absent"
+            );
         }
 
         #[test]
