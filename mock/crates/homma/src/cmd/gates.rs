@@ -61,7 +61,21 @@ pub(crate) fn install_workspace_gate(
     let target = root
         .contain_under(&hooks_dir, GATE_SCRIPT_NAME)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let body = gate_script(repos);
+    // Normalised here rather than by the caller, because a caller that
+    // forgets is a caller nothing can catch: the resulting table entry is a
+    // plausible-looking string that simply never matches, and the gate then
+    // finds no repo covering any path. The function that owns the contract is
+    // the one place a test can hold it.
+    let repos: Vec<(String, String)> = repos
+        .iter()
+        .map(|(n, p)| {
+            (
+                n.clone(),
+                crate::cmd::util::relative_str(std::path::Path::new(p)),
+            )
+        })
+        .collect();
+    let body = gate_script(&repos);
     root.write(&target, body)
         .with_context(|| format!("writing {}", target.as_path().display()))?;
     #[cfg(unix)]
@@ -365,6 +379,26 @@ mod tests {
         // manifest. So `local_path = "./arvo"` is the reachable shape, and
         // `/ws/./arvo` is not a textual prefix of `/ws/arvo/src/lib.rs`, which
         // is how the longest-prefix match silently finds nothing.
+        //
+        // Through `install_workspace_gate` rather than through the helper, so
+        // this holds the wiring. An earlier draft called `relative_str`
+        // directly and passed with the wiring removed, which is what moved the
+        // normalisation inside the function.
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        install_workspace_gate(&test_root(ws), &[(
+            "arvo".to_string(),
+            "./arvo".to_string(),
+        )])
+        .unwrap();
+        let installed =
+            fs::read_to_string(ws.join(".claude/hooks/_workspace--mockspace-gate.sh")).unwrap();
+        assert!(
+            installed.contains("'arvo|arvo'"),
+            "the gate kept a no-op path component from the manifest: {installed}"
+        );
+        assert!(!installed.contains("/./"));
+
         // And the resolution the script performs on it, run, so this is not a
         // claim about a string. The control is the un-normalised form, which is
         // what the same table held before and which does not match.

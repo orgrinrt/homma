@@ -523,7 +523,7 @@ pub mod regen {
             let repo_paths: Vec<(String, String)> = cfg
                 .repos
                 .iter()
-                .map(|(name, rc)| (name.clone(), util::relative_str(&rc.local_path)))
+                .map(|(name, rc)| (name.clone(), rc.local_path.to_string_lossy().to_string()))
                 .collect();
             let gate_entry = match crate::cmd::gates::install_workspace_gate(&root, &repo_paths) {
                 Ok(e) => Some(e),
