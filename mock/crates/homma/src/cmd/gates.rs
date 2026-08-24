@@ -358,6 +358,45 @@ mod tests {
     }
 
     #[test]
+    fn a_manifest_path_carrying_a_curdir_component_resolves_to_the_repo() {
+        // The gate's repo table is the one place a manifest path reaches an
+        // emitted script without passing through a `strip_prefix` that would
+        // have normalised it: `agent.rs` reads `local_path` straight off the
+        // manifest. So `local_path = "./arvo"` is the reachable shape, and
+        // `/ws/./arvo` is not a textual prefix of `/ws/arvo/src/lib.rs`, which
+        // is how the longest-prefix match silently finds nothing.
+        let entry = crate::cmd::util::relative_str(Path::new("./arvo"));
+        assert_eq!(entry, "arvo");
+
+        let body = gate_script(&[("arvo".to_string(), entry)]);
+        assert!(
+            body.contains("'arvo|arvo'"),
+            "table entry not normalised: {body}"
+        );
+        assert!(
+            !body.contains("/./"),
+            "the gate carries a no-op path component"
+        );
+
+        // And the resolution the script performs on it, run, so this is not a
+        // claim about a string. The control is the un-normalised form, which is
+        // what the same table held before and which does not match.
+        let matched = |table_entry: &str| -> bool {
+            let out = std::process::Command::new("bash")
+                .arg("-c")
+                .arg(format!(
+                    r#"WS=/ws; raw='{table_entry}'; case "$raw" in /*) p="$raw";; *) p="$WS/$raw";; esac
+                       case "/ws/arvo/src/lib.rs" in "$p"|"$p"/*) exit 0;; *) exit 1;; esac"#
+                ))
+                .output()
+                .unwrap();
+            out.status.success()
+        };
+        assert!(matched("arvo"));
+        assert!(!matched("./arvo"));
+    }
+
+    #[test]
     fn script_body_includes_workspace_repo_paths() {
         let repos = vec![
             ("arvo".to_string(), "/abs/arvo".to_string()),
