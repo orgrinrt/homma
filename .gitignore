@@ -36,11 +36,16 @@ target/
 # The source is `mock/agent/`, which is tracked. Committing the render as well
 # would be a second copy of the same content, drifting whenever somebody
 # regenerates and forgets.
-/.claude/rules/
-/.claude/skills/
-/.claude/hooks/
+# No trailing slashes. A `dir/` pattern matches only a path that exists as a
+# directory, so on a fresh clone, before anything has generated into these,
+# git reports every one of them unignored. The property wanted is that these
+# paths are ignored whether or not they are there yet, and that is what the
+# slashless form says.
+/.claude/rules
+/.claude/skills
+/.claude/hooks
 /.claude/settings.json
-/.github/instructions/
-/.github/skills/
-/.github/hooks/
+/.github/instructions
+/.github/skills
+/.github/hooks
 /.github/copilot-instructions.md
