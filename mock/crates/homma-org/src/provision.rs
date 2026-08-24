@@ -40,7 +40,16 @@ pub enum ProvisionError<E> {
         found: Option<String>,
     },
     /// The identity did not survive being written.
-    IdentityNotSet { found: Option<(String, String)> },
+    IdentityNotSet {
+        found: Option<homma_api::CommitIdentity>,
+    },
+    /// A part of the entry's git identity is empty.
+    ///
+    /// Distinct from [`ProvisionError::NoIdentity`], which is an entry carrying
+    /// none at all. This is an entry carrying one with a hole in it, and the
+    /// two want different remedies: one is a missing pair of keys, the other is
+    /// a key present and blank.
+    EmptyIdentityPart(homma_api::EmptyPart),
     /// The workspace would sit inside a repository that is not it.
     InsideAnotherRepo {
         workspace: homma_api::AbsPath,
@@ -77,11 +86,21 @@ impl<E: std::fmt::Display> std::fmt::Display for ProvisionError<E> {
                  a workspace there would write into a tree that is not ours, \
                  Name a workspace outside it."
             ),
+            ProvisionError::EmptyIdentityPart(e) => write!(
+                f,
+                "the entry's git identity is incomplete: {e}"
+            ),
             ProvisionError::IdentityNotSet { found } => write!(
                 f,
                 "the identity did not survive being written; the clone reports {}",
                 match found {
-                    Some((n, e)) => format!("{n} <{e}>"),
+                    Some(i) => format!(
+                        "author {} <{}>, committer {} <{}>",
+                        i.author_name(),
+                        i.author_email(),
+                        i.committer_name(),
+                        i.committer_email()
+                    ),
                     None => "none".to_string(),
                 }
             ),
@@ -100,13 +119,13 @@ impl<E: std::error::Error + 'static> std::error::Error for ProvisionError<E> {
     }
 }
 
-/// Clone the content repository into an identity's workspace and set its git
-/// identity in that clone's own configuration.
+/// Clone the content repository into an identity's workspace and set its author
+/// and committer identities in that clone's own configuration.
 ///
 /// **Cloning is skipped when the workspace already holds a repository**, which
-/// is what keeps standing up twice the same answer. The identity is set either
-/// way, because an entry whose email changed should take effect without anyone
-/// deleting a workspace to make it.
+/// is what keeps standing up twice the same answer. Both identities are set
+/// either way, because an entry whose email changed should take effect without
+/// anyone deleting a workspace to make it.
 pub fn provision<G: Git>(
     id: &Identity,
     workspace: &AbsPath,
@@ -190,15 +209,30 @@ pub fn provision<G: Git>(
             .map_err(ProvisionError::Git)?;
         true
     };
-    git.set_identity(&root, name, email)
+    // The committer defaults to the author, which is every entry but one. The
+    // fallback lives here rather than in the type so that "the same" and
+    // "deliberately the same" stay distinguishable in the registry file.
+    let want = homma_api::CommitIdentity::split(
+        name,
+        email,
+        id.committer_name.as_deref().unwrap_or(name),
+        id.committer_email.as_deref().unwrap_or(email),
+    )
+    .map_err(ProvisionError::EmptyIdentityPart)?;
+    git.set_identity(&root, &want)
         .map_err(ProvisionError::Git)?;
 
     // Read back, because the design says a stood-up clone reports its own email
     // and nothing was checking. `Git::identity` existed for exactly this and had
     // no caller outside its own tests, which is how a write that never reached
     // disk survived a round.
+    //
+    // **All four, not the author's two.** The comparison checked the author and
+    // ignored the committer, so a `set_identity` that wrote the committer
+    // nowhere passed the guard whose entire purpose is that a write which never
+    // landed does not.
     match git.identity(&root).map_err(ProvisionError::Git)? {
-        Some((ref n, ref e)) if n == name && e == email => {}
+        Some(ref got) if *got == want => {}
         found => return Err(ProvisionError::IdentityNotSet { found }),
     }
 
@@ -236,7 +270,13 @@ mod tests {
         enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
         existing: std::cell::RefCell<Vec<AbsPath>>,
         clones: std::cell::RefCell<Vec<(String, AbsPath)>>,
-        identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
+        identities: std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
+        /// When set, `set_identity` records the author and drops the committer.
+        ///
+        /// The shape the widened read-back exists for. Without it, narrowing the
+        /// comparison back to the author failed no test, which is the same
+        /// unpinned-guard class the widening was fixing.
+        committer_writes_vanish: std::cell::Cell<bool>,
         /// When set, `set_identity` reports success and records nothing.
         ///
         /// The read-back exists precisely because a write that never reached
@@ -268,7 +308,20 @@ mod tests {
             self.existing.borrow_mut().push(dest.clone());
             Ok(())
         }
-        fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
+        fn set_identity(
+            &self,
+            path: &AbsPath,
+            id: &homma_api::CommitIdentity,
+        ) -> Result<(), Never> {
+            if self.committer_writes_vanish.get() {
+                // Reports success, records the author, loses the committer.
+                self.identities.borrow_mut().push((
+                    path.clone(),
+                    homma_api::CommitIdentity::same(id.author_name(), id.author_email())
+                        .expect("the author of a written identity is non-empty"),
+                ));
+                return Ok(());
+            }
             if self.identity_writes_vanish.get() {
                 // Reports success, records nothing. Exactly the shape the
                 // read-back was written for.
@@ -276,7 +329,7 @@ mod tests {
             }
             self.identities
                 .borrow_mut()
-                .push((path.clone(), name.to_string(), email.to_string()));
+                .push((path.clone(), id.clone()));
             Ok(())
         }
         fn init(&self, _path: &AbsPath) -> Result<(), Never> {
@@ -304,14 +357,14 @@ mod tests {
                 .find(|(_, p)| p == path)
                 .map(|(u, _)| u.clone()))
         }
-        fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Never> {
+        fn identity(&self, path: &AbsPath) -> Result<Option<homma_api::CommitIdentity>, Never> {
             Ok(self
                 .identities
                 .borrow()
                 .iter()
                 .rev()
-                .find(|(p, _, _)| p == path)
-                .map(|(_, n, e)| (n.clone(), e.clone())))
+                .find(|(p, _)| p == path)
+                .map(|(_, id)| id.clone()))
         }
     }
 
@@ -334,7 +387,7 @@ mod tests {
         assert_eq!(git.clones.borrow().len(), 1);
         assert_eq!(
             git.identity(&ws).unwrap(),
-            Some(("paja".into(), "paja@example.invalid".into()))
+            Some(homma_api::CommitIdentity::same("paja", "paja@example.invalid").unwrap())
         );
     }
 
@@ -415,6 +468,109 @@ mod tests {
     // survived a round. No fake could express that until now, which is the
     // reason rather than an excuse: a double that cannot fail the way production
     // fails certifies nothing.
+    // U-3.2: the registry field reaching the clone. The record settles it for
+    // Vouti, whose author is op and whose committer is a tagged address on op's
+    // own.
+    #[test]
+    fn a_distinct_committer_reaches_the_clone() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("vouti"));
+        let mut id = staffed_hand(&ws);
+        id.git_name = Some("Onni Armas".into());
+        id.git_email = Some("ort@hiisi.digital".into());
+        id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+        let git = FakeGit::default();
+
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
+
+        let written = git.identities.borrow();
+        let (_, got) = written.last().expect("an identity was set");
+        assert_eq!(got.author_name(), "Onni Armas");
+        assert_eq!(got.author_email(), "ort@hiisi.digital", "the author stays op");
+        assert_eq!(
+            got.committer_email(), "orgrinrt+vouti@ikiuni.dev",
+            "and the committer is what distinguishes the crew's writes"
+        );
+        assert_eq!(
+            got.committer_name(), "Onni Armas",
+            "the committer name defaults to the author's when the entry names none"
+        );
+    }
+
+    // `committer_name` reached nothing when it was added: ignoring the registry
+    // field entirely left the whole suite green. It shipped as unread plumbing,
+    // which is the exact shape U-3.1 exists to prevent, in the round that added
+    // it because the unit named it.
+    #[test]
+    fn a_distinct_committer_name_reaches_the_clone() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("vouti"));
+        let mut id = staffed_hand(&ws);
+        id.git_name = Some("Onni Armas".into());
+        id.git_email = Some("ort@hiisi.digital".into());
+        id.committer_name = Some("Vouti".into());
+        let git = FakeGit::default();
+
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
+
+        let written = git.identities.borrow();
+        let (_, got) = written.last().expect("an identity was set");
+        assert_eq!(
+            got.author_name(), "Onni Armas",
+            "the author's name is unchanged"
+        );
+        assert_eq!(
+            got.committer_name(), "Vouti",
+            "and the committer's name is the one the registry gave"
+        );
+    }
+
+    #[test]
+    fn an_entry_with_no_committer_commits_as_its_author() {
+        // Every ordinary entry. The fallback lives in `provision` rather than in
+        // the type, so the registry file can still distinguish "the same" from
+        // "deliberately the same".
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("paja"));
+        let id = staffed_hand(&ws);
+        let git = FakeGit::default();
+
+        provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
+
+        let written = git.identities.borrow();
+        let (_, got) = written.last().expect("an identity was set");
+        // Against what the registry said, not against each other. Comparing the
+        // two halves of one recorded value catches nothing: it holds for any
+        // implementation that writes the same thing twice, including one that
+        // writes the wrong thing twice.
+        assert_eq!(got.author_name(), "paja");
+        assert_eq!(got.author_email(), "paja@example.invalid");
+        assert_eq!(got.committer_name(), "paja");
+        assert_eq!(got.committer_email(), "paja@example.invalid");
+    }
+
+    // Pins the widened read-back. Narrowing the comparison back to the author
+    // failed nothing before this existed, which is the same class the widening
+    // was written to close: a guard improved and left unpinned.
+    #[test]
+    fn a_committer_that_never_reached_the_clone_is_caught() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = abs(d.path().join("vouti"));
+        let mut id = staffed_hand(&ws);
+        id.git_name = Some("Onni Armas".into());
+        id.git_email = Some("ort@hiisi.digital".into());
+        id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+        let git = FakeGit::default();
+        git.committer_writes_vanish.set(true);
+
+        let err = provision(&id, &ws, "git@example.invalid:x/y.git", &git)
+            .expect_err("a committer the clone never received is a write that did not land");
+        assert!(
+            matches!(err, ProvisionError::IdentityNotSet { .. }),
+            "must refuse for the right reason: {err}"
+        );
+    }
+
     #[test]
     fn an_identity_write_that_reports_success_and_lands_nowhere_is_caught() {
         let d = tempfile::tempdir().unwrap();

@@ -50,8 +50,9 @@ pub struct StoodUp {
     pub twin_definition: ContainedPath,
 }
 
-/// Clone the content repository, set the identity in that clone, create the
-/// directories, link the memory, and write both definitions.
+/// Clone the content repository, set the author and committer identities in
+/// that clone, create the directories, link the memory, and write both
+/// definitions.
 ///
 /// Refuses an identity whose entry cannot support a workspace, naming what is
 /// missing, rather than creating half of one and failing later.
@@ -281,7 +282,21 @@ nickname = "Paja"
 domain = "tooling"
 git_name = "paja"
 git_email = "paja@example.invalid"
+committer_name = "Vouti"
+committer_email = "orgrinrt+vouti@example.invalid"
 workspace = "/tmp/paja"
+
+# Staffed, with an author and no committer, so the fallback stays covered at
+# this layer after `paja` gained a distinct one. Without an entry like this the
+# two halves are equal in every fixture here, and a double that substitutes one
+# for the other passes.
+[org.fallback]
+role = "hand"
+staffed = true
+handle = "fallback"
+git_name = "fallback"
+git_email = "fallback@example.invalid"
+workspace = "/tmp/fallback"
 
 [org.nameless]
 role = "hand"
@@ -354,10 +369,30 @@ domain = "rendering"
 
         assert!(out.cloned, "a fresh workspace must be cloned");
         assert_eq!(git.cloned.borrow().len(), 1);
+        // **All four values differ**, which is what makes this discriminate.
+        // While the fixture gave `paja` no committer, both halves resolved to
+        // the author and a double substituting one for the other passed. The
+        // fallback that produced that equality is asserted separately below.
         assert_eq!(
             git.identity(&out.workspace).unwrap(),
-            Some(("paja".into(), "paja@example.invalid".into())),
+            Some(homma_api::CommitIdentity::split("paja", "paja@example.invalid", "Vouti", "orgrinrt+vouti@example.invalid").unwrap()),
             "the identity must be set in the clone, or the Hand commits as the machine's owner"
+        );
+    }
+
+    #[test]
+    fn an_entry_with_no_committer_commits_under_its_author() {
+        // The other half of the pair above. An entry naming only an author must
+        // still produce four values, or git falls back to whatever the machine's
+        // owner configured globally, which is the defect this whole surface
+        // exists to prevent.
+        let d = tempfile::tempdir().unwrap();
+        let git = FakeGit::at_the_content_repo();
+        let out = stand_up(&ws(), &abs(d.path()), "fallback", &git).unwrap();
+
+        assert_eq!(
+            git.identity(&out.workspace).unwrap(),
+            Some(homma_api::CommitIdentity::same("fallback", "fallback@example.invalid").unwrap())
         );
     }
 

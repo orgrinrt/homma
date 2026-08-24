@@ -1,8 +1,9 @@
 //! Turning a registry entry into a directory on disk.
 //!
-//! Creating a workspace is: clone the content repository, set the git identity
-//! in that clone's own configuration, link the memory directory into the place
-//! the agent harness expects, and generate the definition.
+//! Creating a workspace is: clone the content repository, set the author and
+//! committer identities in that clone's own configuration, link the memory
+//! directory into the place the agent harness expects, and generate the
+//! definition.
 //!
 //! The memory link is the non-obvious part. The harness writes agent memory to a
 //! path it chooses, `.claude/agent-memory/<handle>/`, and the layout wants that

@@ -25,7 +25,7 @@ registry of the participants who work in the workspace. A registry entry is
 either staffed, somebody who works, or mapped, a domain recorded as owned before
 anybody is put on it. Standing a staffed entry up is one command: its directories
 are created, its definitions generated, its workspace cloned from the content
-repository, and its git identity set in that clone.
+repository, and its author and committer identities set in that clone.
 
 The participant's directories, definitions and memory link go through a path
 proven against the filesystem to resolve inside the workspace root, rather than

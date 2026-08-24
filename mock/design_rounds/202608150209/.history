@@ -1,0 +1,50 @@
+3808e2b chore: lock the src changelist
+e529f37 fix: write the identity names, read back all four, derive the string check
+13d9d5a test: run the identity check against a hostile global config, red
+dfb923b chore: open the src changelist
+bb612f4 chore: lock the doc changelist
+4ce5e06 chore: open and close an empty doc phase
+24cb7a1 chore: open a round on the test the machine answered
+9162e17 chore: close the identity-split round
+0ea6214 chore: lock the src changelist
+dbeeb2a feat: an author and a committer, so one clone carries two identities
+9ed0d5b chore: open the src changelist
+2585f24 chore: lock the doc changelist
+0efc8a3 chore: open and close an empty doc phase
+c96c015 chore: open a round on the author and committer split
+078f489 chore: close the deny-list round
+57885c1 chore: lock the src changelist
+3121e96 feat: enforce the deny list, which containment never answered
+b32e495 chore: reopen the src changelist
+8d4b2c1 chore: lock the doc changelist
+6587828 docs: describe the resolution that ships, and the deny list
+bd29977 chore: open the doc changelist
+2c16d66 chore: open a round on the absolute deny locations
+035a466 chore: close the workspace-ancestors round
+40b27bd chore: lock the src changelist
+790853d fix: create the workspace's parent, never a chain of them
+414ea16 test: a workspace building its own path of directories, red
+3ed618d chore: open the src changelist
+f6b2cdc chore: lock the doc changelist
+9c1a25a docs: what the workspace rule reaches, and what it does not
+6dc0440 chore: open the doc changelist
+b10139f chore: open a round on the workspace's ancestors
+9417e7d chore: close the ancestors round
+c910320 chore: lock the src changelist
+f7433ee fix: refuse a root whose parent is missing, before anything creates it
+736a19a test: the root's ancestors, and two guards nothing pinned
+d60552a chore: open the src changelist
+ec485ea chore: lock the doc changelist
+6d0bd7c docs: homma creates the root, never the path to it
+6ca7f66 chore: open the doc changelist
+eeaeff8 chore: open a round on ancestors of the root
+ccf4789 chore: close the tautological-guard round
+4eaab2a chore: lock the src changelist
+346e0dd fix: delete a guard that could not fail, pin the one that could
+108a2d2 src: open the changelist for the tautological guard
+c204510 chore: lock the doc changelist
+e24ef92 docs: say what the types enforce, and name standing a participant up
+b8a2fdd doc: open the changelist for the overstated bullet
+c1d88f5 topic: a guard that cannot fail above a guard nothing pins
+89b63f8 chore: close the link-body round
+487d329 chore: lock the src changelist

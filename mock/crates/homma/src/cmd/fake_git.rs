@@ -22,7 +22,7 @@ pub struct FakeGit {
     /// What `origin_url` answers for the workspace root.
     pub root_origin: Option<String>,
     pub cloned: std::cell::RefCell<Vec<(String, AbsPath)>>,
-    pub identities: std::cell::RefCell<Vec<(AbsPath, String, String)>>,
+    pub identities: std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
     /// A path, and the repository it sits inside. Empty means nothing is
     /// nested, which is what most tests want.
     pub enclosures: std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
@@ -89,10 +89,22 @@ impl Git for FakeGit {
         Ok(())
     }
 
-    fn set_identity(&self, path: &AbsPath, name: &str, email: &str) -> Result<(), Never> {
+    fn set_identity(&self, path: &AbsPath, id: &homma_api::CommitIdentity) -> Result<(), Never> {
+        // The whole identity is recorded rather than half of it. A double that
+        // discards part of its argument cannot fail the way production fails,
+        // which is how a guard on this branch went four rounds pinned by
+        // nothing.
+        //
+        // **This line is pinned in `stand.rs`, both halves.** A previous version
+        // of this comment said the committer was asserted in `homma-org`, which
+        // has its own separate `FakeGit`, so nothing anywhere exercised this
+        // one's committer path: substituting `id.author_name` here for the
+        // committer left the suite green. `stand.rs` now stands up one entry
+        // whose four values all differ and one that carries no committer, so
+        // both a substitution and a dropped fallback fail.
         self.identities
             .borrow_mut()
-            .push((path.clone(), name.to_string(), email.to_string()));
+            .push((path.clone(), id.clone()));
         Ok(())
     }
 
@@ -117,14 +129,14 @@ impl Git for FakeGit {
             .or_else(|| self.root_origin.clone()))
     }
 
-    fn identity(&self, path: &AbsPath) -> Result<Option<(String, String)>, Never> {
+    fn identity(&self, path: &AbsPath) -> Result<Option<homma_api::CommitIdentity>, Never> {
         Ok(self
             .identities
             .borrow()
             .iter()
             .rev()
-            .find(|(p, _, _)| p == path)
-            .map(|(_, n, e)| (n.clone(), e.clone())))
+            .find(|(p, _)| p == path)
+            .map(|(_, id)| id.clone()))
     }
 }
 
