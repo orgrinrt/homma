@@ -145,7 +145,10 @@ mod tests {
         // in `ps` for every process on the machine. A url carrying credentials
         // must not reach it.
         assert_eq!(host_of("https://user:pw@codeberg.org"), "codeberg.org");
-        assert_eq!(host_of("https://user:pw@codeberg.org/api/v1"), "codeberg.org");
+        assert_eq!(
+            host_of("https://user:pw@codeberg.org/api/v1"),
+            "codeberg.org"
+        );
         assert_eq!(host_of("https://user@codeberg.org"), "codeberg.org");
         assert_eq!(host_of("https://user:pw@localhost:3000"), "localhost:3000");
         // The last `@` is the separator, since one inside userinfo is

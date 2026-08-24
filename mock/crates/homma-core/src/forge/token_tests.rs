@@ -67,13 +67,19 @@ fn a_first_line_carrying_a_space_is_not_a_token() {
     // helper printing a prompt, or writing its error to stdout instead of
     // stderr, and sending either as a bearer token puts it in the process list
     // for a request the forge was always going to reject.
-    assert_eq!(resolve(&forge(None, Some(&["printf", "Password: hunter2\n"]))), None);
+    assert_eq!(
+        resolve(&forge(None, Some(&["printf", "Password: hunter2\n"]))),
+        None
+    );
     assert_eq!(
         resolve(&forge(None, Some(&["printf", "error: not logged in\n"]))),
         None
     );
     // A tab is whitespace too, and is what a helper printing columns emits.
-    assert_eq!(resolve(&forge(None, Some(&["printf", "tok\tstale\n"]))), None);
+    assert_eq!(
+        resolve(&forge(None, Some(&["printf", "tok\tstale\n"]))),
+        None
+    );
 }
 
 #[test]
