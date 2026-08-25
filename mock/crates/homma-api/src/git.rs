@@ -159,9 +159,9 @@ pub trait Git {
     /// Set the clone's own author and committer, name and address for each.
     ///
     /// **Two identities, because one clone legitimately carries two.** The
-    /// record settles it for Vouti: the author stays op, and the committer is a
-    /// tagged address on op's own so it "just works" while distinguishing what
-    /// the crew wrote.
+    /// author is whoever the work is attributed to; the committer may be a
+    /// separate address on the same account, so signing and delivery work while
+    /// the two stay distinguishable in the history.
     ///
     /// **Six keys, and the names are not optional extras.** Git resolves an
     /// identity from `author.name`, `author.email`, `committer.name` and

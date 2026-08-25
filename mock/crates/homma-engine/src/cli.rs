@@ -118,9 +118,9 @@ pub enum Command {
 
     /// Workspace-level documentation discovery.
     ///
-    /// Reports which doc surfaces (`README.md`, `docs/`, mockspace
-    /// templates, `CHANGELOG.md`) each member repo currently has. The
-    /// aggregation / render half of #454 lands later.
+    /// Reports which documentation surfaces (`README.md`, `docs/`, design
+    /// templates, `CHANGELOG.md`) each member repo currently has. Aggregating
+    /// and rendering them is not built.
     Docs {
         #[command(subcommand)]
         op: DocsOp,

@@ -99,7 +99,80 @@ fn a_registry_inside_another_participants_workspace_is_refused() {
         .args(["--workspace", dir.path().join("ws").to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("another participant's workspace"));
+        // "a participant's" rather than "another participant's": the registry
+        // belongs to the workspace rather than to anybody in it, so nobody is
+        // excluded from this list and there is no "other" to be relative to.
+        .stderr(predicate::str::contains("a participant's workspace"));
 
     assert!(!std::fs::read_to_string(&cfg).unwrap().contains("intruder"));
+}
+
+#[test]
+fn a_registry_in_a_place_the_manifest_denies_is_refused() {
+    // The manifest's own list, through `org add` rather than through
+    // `org up`. Both fold the list in and only one of them was asserted, so
+    // deleting the fold from the constructor this command uses left the whole
+    // suite green.
+    //
+    // The registry sits somewhere ordinary and the `deny` entry names where
+    // the write would land, which is what separates this from the `~/.claude`
+    // case above: nothing about the destination is special except that the
+    // operator wrote it down.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let theirs = home.join("work").join("someone-elses");
+    std::fs::create_dir_all(&theirs).unwrap();
+    let cfg = theirs.join("homma.toml");
+    std::fs::write(
+        &cfg,
+        "content_repo = \"local\"\ndeny = [{ path = \"~/work/someone-elses\", \
+         why = \"it belongs to somebody else\" }]\n",
+    )
+    .unwrap();
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "intruder"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "i", "--git-email", "i@example.invalid"])
+        .args(["--workspace", dir.path().join("ws").to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("it belongs to somebody else"));
+
+    let after = std::fs::read_to_string(&cfg).unwrap();
+    assert!(
+        !after.contains("intruder"),
+        "the registry must be exactly as it was: {after}"
+    );
+}
+
+#[test]
+fn a_registry_the_manifest_does_not_deny_is_written() {
+    // The control, and the reason the test above is worth having: a build that
+    // refused every registry write would satisfy it just as well. Same tree,
+    // same command, the `deny` key removed.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let theirs = home.join("work").join("someone-elses");
+    std::fs::create_dir_all(&theirs).unwrap();
+    let cfg = theirs.join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+
+    bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "add", "resident"])
+        .args(["--role", "hand", "--staffed"])
+        .args(["--git-name", "r", "--git-email", "r@example.invalid"])
+        .args(["--workspace", dir.path().join("ws").to_str().unwrap()])
+        .assert()
+        .success();
+
+    let after = std::fs::read_to_string(&cfg).unwrap();
+    assert!(
+        after.contains("resident"),
+        "the entry should have landed: {after}"
+    );
 }

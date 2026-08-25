@@ -341,18 +341,16 @@ pub mod regen {
         // component down carried the writes into the operator's own `.claude`,
         // deleting files there and installing executables, at exit 0.
         //
-        // **The deny list is derived from the registry**, and deny item one is
-        // not an absolute in it. What the record forbids is writing into
-        // somebody else's workspace, and op's own is one of those: denied to a
-        // Hand for the same reason no participant may write into another's, and
-        // permitted to its owner, because nobody is denied their own. Every
-        // workspace is a clone of the same shape, so regenerating one's own is
-        // the ordinary path.
+        // **The deny list is derived from the registry**, and no entry in it is
+        // an absolute. What is forbidden is writing into somebody else's
+        // workspace, so each one is denied to every participant for the same
+        // reason and permitted to its owner, because nobody is denied their own.
+        // Every workspace is a clone of the same shape, so regenerating one's
+        // own is the ordinary path.
         //
-        // Per op, put to him as a blocking question after the previous round
-        // refused op's own workspace by accident through `Denied::from_env` and
-        // broke `agent regen` on the configuration that ships. The derivation
-        // from his answer is recorded in the round's topic file.
+        // The previous round refused the operator's own workspace by accident
+        // through `Denied::from_env` and broke `agent regen` on the ordinary
+        // configuration.
         let ws_abs = homma_api::AbsPath::new(
             std::path::absolute(workspace).unwrap_or_else(|_| workspace.clone()),
         )
@@ -764,9 +762,9 @@ pub mod regen {
 ///
 /// A home's own `.claude`, which is never a workspace, plus **every
 /// participant's workspace except the one being written into**, which is the
-/// actor's by definition. That last exclusion is what makes deny item one
-/// correct rather than paralysing: op's own workspace is one participant's,
-/// denied to every other and permitted to its owner.
+/// actor's by definition. That last exclusion is what keeps the list correct
+/// rather than paralysing: a workspace is one participant's, denied to every
+/// other and permitted to its owner.
 ///
 /// The registry is optional in this configuration, and its absence means the
 /// list is the home-derived pair alone. That is a real state rather than a gap:
@@ -775,11 +773,25 @@ fn denied_for_aggregating(
     cfg: &Config,
     workspace: &homma_api::AbsPath,
 ) -> Result<homma_api::Denied> {
-    // The home-derived list names one particular workspace without knowing
-    // whose it is, so the exclusion the registry loop performs below has to
-    // cover it too, or aggregating into that workspace is refused by an entry
-    // describing it as somebody else's.
-    let mut denied = homma_api::Denied::from_env()?.permitting(workspace);
+    // The manifest's own `deny` may name the workspace being aggregated into,
+    // which is a thing an operator can reasonably write and which would then
+    // refuse the aggregation it was asked for. So the permission the registry
+    // loop below performs has to cover that list too, and it does because
+    // `permitting` runs after everything is folded in rather than before.
+    //
+    // The workspace root is passed as the base and decides nothing. A config
+    // read from a file has had its relative entries anchored to the manifest's
+    // own directory already, which is the anchor `denying` documents, so nothing
+    // relative is left for a base to disagree about. The two coincide in the
+    // ordinary layout and part the moment `workspace.path` points elsewhere,
+    // which is a manifest the parser accepts.
+    let mut denied = homma_api::Denied::from_env()?
+        .denying(
+            &cfg.deny,
+            workspace,
+            homma_api::Denied::home().ok().as_ref(),
+        )
+        .permitting(workspace);
     let Some(org) = cfg.org.as_ref() else {
         return Ok(denied);
     };

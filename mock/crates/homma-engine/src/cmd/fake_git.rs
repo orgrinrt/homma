@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use homma_api::{AbsPath, Git};
 
-pub const CONTENT: &str = "git@example.invalid:orgrinrt/clause-dev.git";
+pub const CONTENT: &str = "git@example.invalid:someone/content.git";
 
 pub struct FakeGit {
     /// What `origin_url` answers for the workspace root.
@@ -48,7 +48,7 @@ impl FakeGit {
     /// A root that is a clone of something else entirely.
     pub fn somewhere_else() -> Self {
         Self {
-            root_origin: Some("git@example.invalid:orgrinrt/member.git".into()),
+            root_origin: Some("git@example.invalid:someone/member.git".into()),
             cloned:      Default::default(),
             identities:  Default::default(),
             enclosures:  Default::default(),

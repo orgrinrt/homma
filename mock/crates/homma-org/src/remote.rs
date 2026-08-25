@@ -184,9 +184,9 @@ mod tests {
 
     #[test]
     fn the_same_repository_in_three_spellings_is_one_repository() {
-        let scp = "git@github.com:orgrinrt/clause-dev.git";
-        let https = "https://github.com/orgrinrt/clause-dev.git";
-        let no_suffix = "https://github.com/orgrinrt/clause-dev";
+        let scp = "git@github.com:someone/content.git";
+        let https = "https://github.com/someone/content.git";
+        let no_suffix = "https://github.com/someone/content";
         assert!(same_repo(scp, https));
         assert!(same_repo(https, no_suffix));
         assert!(same_repo(scp, no_suffix));
@@ -195,16 +195,16 @@ mod tests {
     #[test]
     fn the_same_name_on_two_hosts_is_two_repositories() {
         assert!(!same_repo(
-            "git@github.com:orgrinrt/clause-dev.git",
-            "git@codeberg.org:orgrinrt/clause-dev.git"
+            "git@github.com:someone/content.git",
+            "git@codeberg.org:someone/content.git"
         ));
     }
 
     #[test]
     fn credentials_and_case_in_the_authority_are_not_the_identity() {
         assert!(same_repo(
-            "https://token@GitHub.com/orgrinrt/clause-dev.git",
-            "https://github.com/orgrinrt/clause-dev"
+            "https://token@GitHub.com/someone/content.git",
+            "https://github.com/someone/content"
         ));
     }
 
@@ -234,12 +234,12 @@ mod tests {
     #[test]
     fn a_port_is_not_part_of_the_identity() {
         assert!(same_repo(
-            "ssh://git@github.com:22/orgrinrt/clause-dev.git",
-            "git@github.com:orgrinrt/clause-dev.git"
+            "ssh://git@github.com:22/someone/content.git",
+            "git@github.com:someone/content.git"
         ));
         assert!(same_repo(
-            "https://github.com:443/orgrinrt/clause-dev",
-            "https://github.com/orgrinrt/clause-dev"
+            "https://github.com:443/someone/content",
+            "https://github.com/someone/content"
         ));
     }
 
@@ -249,8 +249,8 @@ mod tests {
         // it could never compare equal to the same repository written any
         // other way, so the guard refused a correct workspace permanently.
         assert!(same_repo(
-            "github.com:orgrinrt/clause-dev.git",
-            "https://github.com/orgrinrt/clause-dev"
+            "github.com:someone/content.git",
+            "https://github.com/someone/content"
         ));
     }
 
@@ -268,8 +268,8 @@ mod tests {
     #[test]
     fn an_owner_differing_only_in_case_is_the_same_owner() {
         assert!(same_repo(
-            "git@github.com:OrgrinRT/clause-dev.git",
-            "git@github.com:orgrinrt/clause-dev.git"
+            "git@github.com:SomeOne/content.git",
+            "git@github.com:someone/content.git"
         ));
     }
 
@@ -278,8 +278,8 @@ mod tests {
         // Stripping repeatedly made these one repository, and that one fails
         // open: the guard would accept a workspace cloned from somewhere else.
         assert!(!same_repo(
-            "git@github.com:orgrinrt/clause-dev.git.git",
-            "git@github.com:orgrinrt/clause-dev.git"
+            "git@github.com:someone/content.git.git",
+            "git@github.com:someone/content.git"
         ));
     }
 
@@ -317,12 +317,12 @@ mod tests {
         // Splitting on the first colon yielded "[" for every address, so every
         // IPv6 host compared equal to every other. Fails open.
         assert!(!same_repo(
-            "https://[::1]/orgrinrt/clause-dev",
-            "https://[::ffff:1]/orgrinrt/clause-dev"
+            "https://[::1]/someone/content",
+            "https://[::ffff:1]/someone/content"
         ));
         assert!(same_repo(
-            "https://[::1]:443/orgrinrt/clause-dev",
-            "https://[::1]/orgrinrt/clause-dev"
+            "https://[::1]:443/someone/content",
+            "https://[::1]/someone/content"
         ));
     }
 
@@ -331,8 +331,8 @@ mod tests {
         // The owner was folded and the name beside it was not, so one correct
         // workspace was refused permanently.
         assert!(same_repo(
-            "git@github.com:orgrinrt/Clause-Dev.git",
-            "git@github.com:orgrinrt/clause-dev.git"
+            "git@github.com:someone/Content.git",
+            "git@github.com:someone/content.git"
         ));
     }
 
@@ -340,7 +340,7 @@ mod tests {
     fn a_local_path_is_never_the_same_as_a_hosted_one() {
         assert!(!same_repo(
             "/srv/content",
-            "git@github.com:orgrinrt/content.git"
+            "git@github.com:someone/content.git"
         ));
     }
 

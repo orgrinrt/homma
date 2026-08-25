@@ -47,6 +47,14 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org: Option<toml::Value>,
 
+    /// Places homma may not write, beyond the ones it derives.
+    ///
+    /// Read here as well as by `homma_api::Workspace`, which parses the same
+    /// file: this parser denies unknown fields, so a key one of them accepts and
+    /// the other does not is a manifest neither can be sure of.
+    #[serde(default)]
+    pub deny: Vec<homma_api::DenyEntry>,
+
     /// Where forge credentials come from when no environment variable holds
     /// one. See [`AuthConfig`].
     #[serde(default)]
@@ -122,7 +130,35 @@ impl Config {
             cfg.workspace.path = normalise(&beside.join(&cfg.workspace.path));
         }
         cfg.settle_token_commands(beside);
+        cfg.settle_deny(beside);
         Ok(cfg)
+    }
+
+    /// Anchor every relative `deny` entry against the directory the manifest
+    /// sits in, once, at the load.
+    ///
+    /// That directory is the anchor the entries are documented to have, and it
+    /// is the one `workspace.path` and the token commands already take. Doing it
+    /// here means nothing relative survives the load, so a later caller's own
+    /// idea of the base cannot disagree with any of them. It could disagree:
+    /// `workspace.path` may point away from the manifest, and the aggregation
+    /// hands the workspace root down where the registry hands the manifest's own
+    /// directory.
+    ///
+    /// A `~/` entry is left alone. Its anchor is the home rather than the
+    /// manifest, resolving it is what `DenyEntry::resolve` does when a home is
+    /// known, and doing that in two places is how the two come to disagree.
+    ///
+    /// Public for the same reason [`Config::settle_token_commands`] is: a caller
+    /// that parsed a string rather than read a file is the only thing that knows
+    /// which directory the text belongs to. Idempotent, since an entry made
+    /// absolute here is absolute the second time through.
+    pub fn settle_deny(&mut self, config_dir: &Path) {
+        for entry in &mut self.deny {
+            if entry.path.is_relative() && !entry.path.starts_with("~") {
+                entry.path = normalise(&config_dir.join(&entry.path));
+            }
+        }
     }
 
     /// Inherit, substitute and anchor every forge's token command, once.
@@ -380,288 +416,4 @@ impl std::error::Error for ConfigError {
 }
 
 #[cfg(test)]
-mod token_command_tests {
-    use super::*;
-
-    fn cfg(body: &str) -> Config {
-        let mut c = Config::parse(body).unwrap();
-        c.settle_token_commands(Path::new("/ws"));
-        c
-    }
-
-    const TWO_FORGES: &str = r#"
-[workspace]
-name = "w"
-[auth]
-token_cmd = [".shared/scripts/release/auth", "token", "{forge}"]
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-[forges.codeberg]
-kind = "forgejo"
-base_url = "https://codeberg.org"
-api_url = "https://codeberg.org/api/v1"
-"#;
-
-    #[test]
-    fn one_line_serves_every_forge_because_the_placeholder_carries_the_name() {
-        // The whole point of the default: the operator writes it once and each
-        // profile asks about itself. A fixture with one forge cannot tell a
-        // working substitution from a constant, so there are two.
-        let c = cfg(TWO_FORGES);
-        assert_eq!(c.forges["github"].token_cmd.as_ref().unwrap()[2], "github");
-        assert_eq!(
-            c.forges["codeberg"].token_cmd.as_ref().unwrap()[2],
-            "codeberg"
-        );
-    }
-
-    #[test]
-    fn a_relative_program_path_is_anchored_to_the_workspace_root() {
-        // Not to the working directory. `homma` is meant to run from inside a
-        // member clone, where a path relative to cwd names nothing.
-        let c = cfg(TWO_FORGES);
-        assert_eq!(
-            c.forges["github"].token_cmd.as_ref().unwrap()[0],
-            "/ws/.shared/scripts/release/auth"
-        );
-    }
-
-    #[test]
-    fn a_bare_program_name_is_left_for_path_to_find() {
-        // The control on the anchoring above: `gh` must stay `gh`, or the one
-        // case that needs no configuration at all stops working.
-        let c = cfg(r#"
-[workspace]
-name = "w"
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-token_cmd = ["gh", "auth", "token"]
-"#);
-        assert_eq!(c.forges["github"].token_cmd.as_ref().unwrap(), &[
-            "gh", "auth", "token"
-        ]);
-    }
-
-    #[test]
-    fn a_forges_own_command_is_not_replaced_by_the_default() {
-        let c = cfg(r#"
-[workspace]
-name = "w"
-[auth]
-token_cmd = ["shared", "{forge}"]
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-token_cmd = ["gh", "auth", "token"]
-[forges.codeberg]
-kind = "forgejo"
-base_url = "https://codeberg.org"
-api_url = "https://codeberg.org/api/v1"
-"#);
-        assert_eq!(c.forges["github"].token_cmd.as_ref().unwrap(), &[
-            "gh", "auth", "token"
-        ]);
-        // and the other one still inherits, which is what makes this a test
-        // about precedence rather than about the default never applying
-        assert_eq!(c.forges["codeberg"].token_cmd.as_ref().unwrap(), &[
-            "shared", "codeberg"
-        ]);
-    }
-
-    #[test]
-    fn the_host_placeholder_is_the_api_host_and_not_the_public_one() {
-        // They differ on GitHub, which is the case worth pinning: `github.com`
-        // against `api.github.com`.
-        let c = cfg(r#"
-[workspace]
-name = "w"
-[auth]
-token_cmd = ["t", "{host}"]
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-"#);
-        assert_eq!(
-            c.forges["github"].token_cmd.as_ref().unwrap()[1],
-            "api.github.com"
-        );
-    }
-
-    #[test]
-    fn a_manifest_naming_no_command_anywhere_gets_none() {
-        // The control on all of the above: nothing is invented for a manifest
-        // that asked for nothing, so an operator who never opts in never has a
-        // subprocess run on their behalf.
-        let c = cfg(r#"
-[workspace]
-name = "w"
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-token_env = "SOMETHING"
-"#);
-        assert!(c.forges["github"].token_cmd.is_none());
-    }
-
-    #[test]
-    fn settling_twice_changes_nothing() {
-        // `from_path` settles once, and a caller that parsed a string may
-        // settle again. A second pass must not re-anchor an already absolute
-        // path or substitute into a name that legitimately contains braces.
-        let mut c = Config::parse(TWO_FORGES).unwrap();
-        c.settle_token_commands(Path::new("/ws"));
-        let once = c.forges["github"].token_cmd.clone();
-        c.settle_token_commands(Path::new("/elsewhere"));
-        assert_eq!(c.forges["github"].token_cmd, once);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_relative_workspace_path_resolves_beside_the_config_not_beside_the_caller() {
-        // The failure this exists to stop: the tracked `homma.toml` used to
-        // carry an absolute path to one particular clone, so every repo lookup
-        // from any other workspace resolved into that one, and the configs
-        // stage would have written files into it.
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("kamu-canon");
-        std::fs::create_dir_all(&ws).unwrap();
-        let at = ws.join("homma.toml");
-        std::fs::write(&at, "[workspace]\nname = \"w\"\n").unwrap();
-
-        let cfg = Config::from_path(&at).unwrap();
-        assert_eq!(
-            cfg.workspace.path, ws,
-            "the default did not anchor on the config"
-        );
-        assert!(cfg.workspace.path.is_absolute());
-    }
-
-    #[test]
-    fn a_relative_config_path_still_yields_an_absolute_workspace_path() {
-        // The half of the matrix the sibling test above does not reach: it
-        // passes an absolute config path, so it never exercises the anchoring
-        // it asserts. Every path in the program hangs off this one, and a
-        // relative result is what made the aggregated hooks inert.
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("kamu-canon");
-        std::fs::create_dir_all(&ws).unwrap();
-        std::fs::write(ws.join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
-
-        let relative = pathdiff_from(&std::env::current_dir().unwrap(), &ws.join("homma.toml"));
-        let cfg = Config::from_path(&relative).unwrap();
-        assert!(
-            cfg.workspace.path.is_absolute(),
-            "a relative config path left the workspace relative: {}",
-            cfg.workspace.path.display()
-        );
-        assert_eq!(cfg.workspace.path, normalise(&ws));
-    }
-
-    #[test]
-    fn a_bare_filename_config_path_is_the_case_the_fallback_never_covered() {
-        // Named so a later reader does not restore the `unwrap_or(".")` as
-        // sufficient. `Path::new("homma.toml").parent()` is `Some("")`, not
-        // `None`, so that fallback is unreachable for the one spelling that
-        // needs it.
-        assert_eq!(Path::new("homma.toml").parent(), Some(Path::new("")));
-        // And the control: the fallback does fire for a path with no filename
-        // at all, which is the case it was written for.
-        assert_eq!(Path::new("").parent(), None);
-    }
-
-    #[test]
-    fn an_absolute_config_path_is_unaffected_by_the_working_directory() {
-        // The control on the change: absolutising the config path must not
-        // move a config that already named itself absolutely.
-        let dir = tempfile::tempdir().unwrap();
-        let at = dir.path().join("homma.toml");
-        std::fs::write(&at, "[workspace]\nname = \"w\"\npath = \"repos\"\n").unwrap();
-        assert_eq!(
-            Config::from_path(&at).unwrap().workspace.path,
-            normalise(&dir.path().join("repos"))
-        );
-    }
-
-    /// A path to `target` expressed relative to `base`, for the one test that
-    /// needs a relative config path and cannot change the working directory
-    /// without racing every other test in the binary.
-    fn pathdiff_from(base: &Path, target: &Path) -> PathBuf {
-        let base = normalise(base);
-        let target = normalise(target);
-        let mut up = PathBuf::new();
-        let mut probe = base.as_path();
-        loop {
-            if let Ok(rest) = target.strip_prefix(probe) {
-                return up.join(rest);
-            }
-            match probe.parent() {
-                Some(p) => {
-                    up.push("..");
-                    probe = p;
-                },
-                None => return target,
-            }
-        }
-    }
-
-    #[test]
-    fn an_absolute_workspace_path_is_left_exactly_as_written() {
-        // The control: naming a path explicitly still means that path. The
-        // resolution is for the relative case only.
-        let dir = tempfile::tempdir().unwrap();
-        let at = dir.path().join("homma.toml");
-        std::fs::write(
-            &at,
-            "[workspace]\nname = \"w\"\npath = \"/somewhere/else\"\n",
-        )
-        .unwrap();
-        assert_eq!(
-            Config::from_path(&at).unwrap().workspace.path,
-            PathBuf::from("/somewhere/else")
-        );
-    }
-
-    #[test]
-    fn a_relative_path_that_climbs_lands_where_it_reads() {
-        let dir = tempfile::tempdir().unwrap();
-        let inner = dir.path().join("a").join("b");
-        std::fs::create_dir_all(&inner).unwrap();
-        let at = inner.join("homma.toml");
-        std::fs::write(&at, "[workspace]\nname = \"w\"\npath = \"../..\"\n").unwrap();
-        assert_eq!(Config::from_path(&at).unwrap().workspace.path, dir.path());
-    }
-
-    #[test]
-    fn parsing_a_string_leaves_the_path_alone_because_there_is_nothing_to_anchor_on() {
-        // `parse` has no file, so it cannot resolve, and inventing the working
-        // directory as an anchor would be the guess this whole change removes.
-        let cfg = Config::parse("[workspace]\nname = \"w\"\npath = \"repos\"\n").unwrap();
-        assert_eq!(cfg.workspace.path, PathBuf::from("repos"));
-    }
-
-    #[test]
-    fn normalising_a_path_keeps_what_it_names() {
-        assert_eq!(normalise(Path::new("/a/./b")), PathBuf::from("/a/b"));
-        assert_eq!(normalise(Path::new("/a/b/..")), PathBuf::from("/a"));
-        assert_eq!(normalise(Path::new("/a/b/../..")), PathBuf::from("/"));
-        assert_eq!(normalise(Path::new("a/b/../c")), PathBuf::from("a/c"));
-        // a leading climb has nothing to cancel against and is kept, rather
-        // than silently becoming the relative root
-        assert_eq!(normalise(Path::new("../a")), PathBuf::from("../a"));
-        assert_eq!(normalise(Path::new("../../a")), PathBuf::from("../../a"));
-        // and a path that cancels to nothing is still a path
-        assert_eq!(normalise(Path::new("a/..")), PathBuf::from("."));
-        assert_eq!(normalise(Path::new(".")), PathBuf::from("."));
-    }
-}
+mod tests;

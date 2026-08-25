@@ -5,7 +5,7 @@
 
 //! Workspace-level git-ops validation gate.
 //!
-//! Phase 3 of #454. Generates a workspace `.claude/hooks/` shell script
+//! Generates a workspace `.claude/hooks/` shell script
 //! that intercepts Bash tool calls running `git commit` or `git push`
 //! from within a member repo's subtree and verifies that repo has a
 //! healthy mockspace bootstrap before allowing the operation through.
@@ -133,6 +133,23 @@ set -u
 WS=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd) || exit 0
 
 INPUT=$(cat)
+
+# `jq` reads the input below and encodes the reason at the bottom, so without it
+# this script cannot tell an out-of-scope call from one it should stop.
+#
+# **It said nothing and allowed everything.** Both reads carried `2>/dev/null`,
+# so a missing `jq` produced an empty command line, the out-of-scope branch
+# below took it, and every commit and every push went through at exit 0. That is
+# indistinguishable from the gate having looked and found nothing wrong, which
+# is the one thing a gate may never be.
+#
+# So it denies instead. A denial is visible and is one `brew install jq` from
+# gone; a silent allow is neither.
+if ! command -v jq >/dev/null 2>&1; then
+    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}}}\n' \
+        "the mockspace adoption gate needs jq and cannot find it on PATH, so it cannot read this call. Install jq, or remove this hook."
+    exit 0
+fi
 
 command_line=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
@@ -281,7 +298,7 @@ exit 0
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
     use std::path::Path;
 
@@ -452,8 +469,15 @@ mod tests {
     // Each test renders the script via gate_script(), writes it to a
     // temp file, builds a synthetic repo tree with whichever surfaces
     // the case wants present, then invokes `bash <script>` with
-    // synthesised INPUT JSON. Tests skip cleanly when bash or jq are
-    // not on PATH (CI machines and developer boxes that lack them).
+    // synthesised INPUT JSON.
+    //
+    // **They used to skip when bash or jq were missing, and a skip here is
+    // indistinguishable from a pass.** Six tests returned early and reported
+    // green having run nothing, on the same machine where the script they
+    // cover allowed every commit for the same reason. `bash` is required
+    // outright now, since a bash script cannot be covered without it. `jq` is
+    // a case rather than an excuse: `run_gate` takes the PATH to run under, so
+    // its absence is one more thing the suite asserts about.
     // -------------------------------------------------------------------
 
     /// Synthesise an INPUT JSON payload matching the Claude Code Bash
@@ -468,39 +492,50 @@ mod tests {
         .to_string()
     }
 
-    /// Run the gate script with the given INPUT and return stdout.
-    /// Returns `None` when bash or jq are not available; callers
-    /// should skip the assertion in that case.
-    fn run_gate(repos: &[(String, String)], input: &str) -> Option<String> {
+    /// Run the gate script with the given INPUT, under the inherited PATH,
+    /// and return stdout.
+    fn run_gate(repos: &[(String, String)], input: &str) -> String {
+        run_gate_on_path(repos, input, None)
+    }
+
+    /// The same, with `path` replacing `PATH` for the child.
+    ///
+    /// The parameter exists so the missing-`jq` case is a test rather than a
+    /// reason to skip five others. Passing a directory holding only `bash` and
+    /// its dependencies reproduces a machine without `jq` on one that has it.
+    fn run_gate_on_path(repos: &[(String, String)], input: &str, path: Option<&str>) -> String {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        if Command::new("bash").arg("--version").output().is_err() {
-            return None;
-        }
-        if Command::new("jq").arg("--version").output().is_err() {
-            return None;
-        }
+        // Required rather than skipped. This suite covers a bash script, so
+        // without bash it covers nothing, and saying so is the only honest
+        // report available.
+        assert!(
+            Command::new("bash").arg("--version").output().is_ok(),
+            "these tests cover a bash script and bash is not on PATH"
+        );
 
         let dir = tempfile::tempdir().unwrap();
         let script_path = dir.path().join("gate.sh");
         fs::write(&script_path, gate_script(repos)).unwrap();
 
-        let mut child = Command::new("bash")
-            .arg(&script_path)
+        let mut cmd = Command::new("bash");
+        cmd.arg(&script_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .ok()?;
+            .stderr(Stdio::piped());
+        if let Some(p) = path {
+            cmd.env("PATH", p);
+        }
+        let mut child = cmd.spawn().expect("bash would not start");
         child
             .stdin
             .as_mut()
             .unwrap()
             .write_all(input.as_bytes())
             .unwrap();
-        let out = child.wait_with_output().ok()?;
-        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+        let out = child.wait_with_output().expect("bash would not finish");
+        String::from_utf8_lossy(&out.stdout).into_owned()
     }
 
     /// Build a fake repo tree with a tunable set of mockspace surfaces.
@@ -558,15 +593,92 @@ mod tests {
         UnderOtherSection,
     }
 
+    /// A PATH holding what these scripts need and no `jq`.
+    ///
+    /// Built by symlinking each program rather than by trimming the real PATH,
+    /// because there is no way to un-find something on a PATH and `jq` sits in a
+    /// different directory on every machine.
+    ///
+    /// The list is what the generated scripts actually shell out to. It is short
+    /// because most of what they use is a bash builtin, and it is explicit
+    /// because a PATH missing one of these fails somewhere unrelated: the first
+    /// version of this held `bash` alone, and `dirname` came back empty, so the
+    /// script resolved its workspace to `/` and reached the check under test by
+    /// accident.
+    pub(crate) fn a_path_without_jq(dir: &Path) -> String {
+        use std::process::Command;
+        let bin = dir.join("bin-without-jq");
+        fs::create_dir_all(&bin).unwrap();
+        for program in ["bash", "dirname", "cat"] {
+            let found = Command::new("sh")
+                .args(["-c", &format!("command -v {program}")])
+                .output()
+                .expect("no shell");
+            let found = String::from_utf8_lossy(&found.stdout).trim().to_string();
+            assert!(!found.is_empty(), "{program} is not on PATH");
+            std::os::unix::fs::symlink(&found, bin.join(program)).unwrap();
+        }
+        let path = bin.to_string_lossy().into_owned();
+        // That it really has no jq, rather than being assumed to. A PATH that
+        // happened to reach one would leave every caller testing the ordinary
+        // path twice and reporting green.
+        assert!(
+            !Command::new(bin.join("bash"))
+                .args(["-c", "command -v jq"])
+                .env("PATH", &path)
+                .status()
+                .unwrap()
+                .success(),
+            "the restricted PATH still reaches jq"
+        );
+        path
+    }
+
+    /// **The gate denies rather than allowing silently when `jq` is missing.**
+    ///
+    /// It exited 0 with no output instead: both reads of the input carried
+    /// `2>/dev/null`, so the command line came back empty and the script took
+    /// its own out-of-scope branch, which is the same exit 0 it produces when
+    /// it has looked and found nothing wrong. Nothing outside could tell the
+    /// two apart, and every commit and every push in such a workspace went
+    /// through unchecked.
+    #[test]
+    fn gate_e2e_without_jq_denies_rather_than_allowing_silently() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = a_path_without_jq(dir.path());
+        // Full adoption: the case that is *supposed* to be allowed, so a deny
+        // here can only be the missing tool and not the drift check.
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::UnderAlias, true);
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+
+        // The control, on the inherited PATH: this exact call is allowed when
+        // `jq` is there. Without it the assertion below cannot tell a
+        // missing-tool deny from a gate that denies everything.
+        let with_jq = run_gate(&repos, &input);
+        assert!(
+            !with_jq.contains("\"permissionDecision\":\"deny\""),
+            "control: full adoption is allowed when jq is present; got: {with_jq}"
+        );
+
+        let out = run_gate_on_path(&repos, &input, Some(&path));
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "a workspace without jq allowed a commit the gate could not read; got: {out}"
+        );
+        assert!(
+            out.contains("jq"),
+            "the refusal has to name the missing tool, or nobody can fix it: {out}"
+        );
+    }
+
     #[test]
     fn gate_e2e_full_adoption_emits_no_deny() {
         let dir = tempfile::tempdir().unwrap();
         let repo = fake_repo(dir.path(), "arvo", true, AliasShape::UnderAlias, true);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
-        let Some(out) = run_gate(&repos, &input) else {
-            return; // bash or jq missing; skip
-        };
+        let out = run_gate(&repos, &input);
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "full adoption should not deny; got: {out}",
@@ -587,9 +699,7 @@ mod tests {
         .unwrap();
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
-        let Some(out) = run_gate(&repos, &input) else {
-            return;
-        };
+        let out = run_gate(&repos, &input);
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "launcher pin + mock/ + hooks is full adoption; should not deny; got: {out}",
@@ -602,9 +712,7 @@ mod tests {
         let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, false);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
-        let Some(out) = run_gate(&repos, &input) else {
-            return;
-        };
+        let out = run_gate(&repos, &input);
         assert!(
             out.contains("\"permissionDecision\":\"deny\""),
             "partial adoption (mock/ only) should deny; got: {out}",
@@ -623,9 +731,7 @@ mod tests {
         let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, false);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
-        let Some(out) = run_gate(&repos, &input) else {
-            return;
-        };
+        let out = run_gate(&repos, &input);
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "zero adoption should be a silent allow; got: {out}",
@@ -650,9 +756,7 @@ mod tests {
         );
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
-        let Some(out) = run_gate(&repos, &input) else {
-            return;
-        };
+        let out = run_gate(&repos, &input);
         assert!(
             out.contains("\"permissionDecision\":\"deny\""),
             "alias under non-[alias] section should not count; got: {out}",
@@ -670,9 +774,7 @@ mod tests {
         let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, false);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("ls -la", &repo.to_string_lossy());
-        let Some(out) = run_gate(&repos, &input) else {
-            return;
-        };
+        let out = run_gate(&repos, &input);
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "non-git command should be silent allow; got: {out}",

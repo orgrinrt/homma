@@ -150,8 +150,8 @@ impl Forge for ForgejoClient {
     /// `private = true` on the wire, because Forgejo's create endpoint has
     /// no separate `internal` field. Callers needing true org-internal
     /// visibility must follow up with a `PATCH /repos/{owner}/{name}` that
-    /// sets `internal = true` once the repo exists. The migrate command
-    /// (#452) handles this when source-side visibility is Internal.
+    /// sets `internal = true` once the repo exists. [`crate::Forge`]'s migrate
+    /// path handles this when source-side visibility is Internal.
     fn create_repo(&self, owner: &str, spec: &CreateRepoSpec) -> Result<RepoMetadata, ForgeError> {
         let url = self.create_path(owner, spec.owner_kind);
         let body = ForgejoCreateBody::from_spec(spec);

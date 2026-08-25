@@ -235,7 +235,8 @@ mod tests {
         run(&["commit", "-q", "-m", "initial", "--no-gpg-sign"]);
     }
 
-    // U-3.1's exit test, and it reads the **commit** rather than the config.
+    // The exit test for a configured identity, and it reads the **commit**
+    // rather than the config.
     //
     // **Run against a hostile global configuration**, which is the half the
     // first version missed. It asserted the author was `ort@hiisi.digital`,
@@ -302,7 +303,7 @@ mod tests {
                 "Onni Armas",
                 "ort@hiisi.digital",
                 "Vouti",
-                "orgrinrt+vouti@ikiuni.dev",
+                "someone+alt@example.invalid",
             )
             .unwrap(),
         )
@@ -319,7 +320,7 @@ mod tests {
             "Vouti",
             "read from committer.name, not fabricated from the author"
         );
-        assert_eq!(got.committer_email(), "orgrinrt+vouti@ikiuni.dev");
+        assert_eq!(got.committer_email(), "someone+alt@example.invalid");
     }
 
     // The `user.*` fallback, also live and also unswept. A clone configured by
@@ -393,7 +394,7 @@ mod tests {
                 "Onni Armas",
                 "ort@hiisi.digital",
                 "Onni Armas",
-                "orgrinrt+vouti@ikiuni.dev",
+                "someone+alt@example.invalid",
             )
             .unwrap(),
         )
@@ -421,11 +422,11 @@ mod tests {
         assert_eq!(
             run(&["log", "-1", "--format=%ae"]),
             "ort@hiisi.digital",
-            "the author is op, per the record, and must beat the global"
+            "the configured author must beat the global"
         );
         assert_eq!(
             run(&["log", "-1", "--format=%ce"]),
-            "orgrinrt+vouti@ikiuni.dev",
+            "someone+alt@example.invalid",
             "and the committer is the tagged address that distinguishes it"
         );
         assert_eq!(
