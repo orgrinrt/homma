@@ -91,8 +91,8 @@ fn build_report(cfg: &Config) -> StatusReport {
                 forge:          r.forge.clone(),
                 owner:          r.owner.clone(),
                 local_path:     r.local_path.display().to_string(),
-                public_branch:  r.resolved_public_branch(&cfg.defaults).to_string(),
-                working_branch: r.resolved_working_branch(&cfg.defaults).to_string(),
+                public_branch:  cfg.defaults.public_branch.clone(),
+                working_branch: cfg.defaults.working_branch.clone(),
             }
         })
         .collect();

@@ -149,7 +149,7 @@ impl Config {
         // hand every consumer a member whose path points at a directory that
         // was never looked in.
         let root = cfg.workspace.path.clone();
-        cfg.detect_members(&root);
+        cfg.detect_members(&root, &crate::repo::GixGit);
         Ok(cfg)
     }
 
@@ -170,7 +170,7 @@ impl Config {
     ///
     /// Replaces whatever is there, so calling it twice with different roots
     /// gives the second root's answer rather than the union.
-    pub fn detect_members(&mut self, root: &Path) {
+    pub fn detect_members<G: homma_api::Git>(&mut self, root: &Path, git: &G) {
         self.repos = BTreeMap::new();
         let Ok(entries) = std::fs::read_dir(root) else {
             return;
@@ -183,7 +183,7 @@ impl Config {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
-            let origin = self.read_origin_of(&path);
+            let origin = self.read_origin_of(git, &path);
             self.repos.insert(name.to_string(), RepoConfig {
                 forge:      origin.as_ref().and_then(|o| self.forge_at(&o.host)),
                 owner:      origin.map(|o| o.owner),
@@ -192,22 +192,30 @@ impl Config {
         }
     }
 
-    /// The `origin` remote of a clone, read through git's own config.
+    /// The `origin` remote of a clone, through the git the caller supplied.
+    ///
+    /// Through the trait rather than a subprocess. A fork per directory under
+    /// the root, on every config load, is the smaller half of it: the larger is
+    /// that a machine without `git` on its path answers nothing and every
+    /// member silently loses its forge, which reads as a workspace of clones
+    /// that live nowhere.
     ///
     /// Best effort by design: a repository whose remote cannot be read is
     /// still a member, so the failure is an absent forge rather than an absent
     /// member.
-    fn read_origin_of(&self, path: &Path) -> Option<crate::forge::url::RemoteOrigin> {
-        let out = std::process::Command::new("git")
-            .args(["-C"])
-            .arg(path)
-            .args(["config", "--get", "remote.origin.url"])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        crate::forge::url::read_origin(&String::from_utf8_lossy(&out.stdout))
+    fn read_origin_of<G: homma_api::Git>(
+        &self,
+        git: &G,
+        path: &Path,
+    ) -> Option<crate::forge::url::RemoteOrigin> {
+        // The trait takes an absolute path and says so in the type. A relative
+        // root reaches here from a caller that built one, and canonicalising is
+        // the answer rather than refusing: the directory exists, since it was
+        // just read out of the tree.
+        let absolute = path.canonicalize().ok()?;
+        let absolute = homma_api::AbsPath::new(absolute).ok()?;
+        let url = git.origin_url(&absolute).ok().flatten()?;
+        crate::forge::url::read_origin(&url)
     }
 
     /// Which configured forge serves `host`, if any.
@@ -458,22 +466,6 @@ pub struct RepoConfig {
     pub owner:      Option<String>,
     /// The directory name, relative to the workspace root.
     pub local_path: PathBuf,
-}
-
-impl RepoConfig {
-    /// The public branch, which is the workspace default.
-    ///
-    /// A per-repository override used to live on the row this type replaced.
-    /// Nothing set one, and detection has no row to write one in, so the
-    /// default is the whole answer.
-    pub fn resolved_public_branch<'a>(&'a self, defaults: &'a Defaults) -> &'a str {
-        &defaults.public_branch
-    }
-
-    /// The working branch, on the same terms.
-    pub fn resolved_working_branch<'a>(&'a self, defaults: &'a Defaults) -> &'a str {
-        &defaults.working_branch
-    }
 }
 
 /// Parse / IO error surfaced by [`Config::from_str`] and [`Config::from_path`].

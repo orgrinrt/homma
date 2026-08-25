@@ -173,11 +173,8 @@ pub fn read_origin(url: &str) -> Option<RemoteOrigin> {
     // yields the owner directly above the repository.
     let path = path.trim_matches('/');
     let mut segments = path.rsplit('/');
-    let name = segments.next()?.strip_suffix(".git").unwrap_or_else(|| {
-        // Borrowed twice rather than once because `strip_suffix` gives back a
-        // shorter borrow of the same string; the closure re-derives it.
-        path.rsplit('/').next().unwrap_or(path)
-    });
+    let last = segments.next()?;
+    let name = last.strip_suffix(".git").unwrap_or(last);
     let owner = segments.next()?;
     if owner.is_empty() || name.is_empty() {
         return None;

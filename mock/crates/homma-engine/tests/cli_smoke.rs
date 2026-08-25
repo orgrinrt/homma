@@ -130,6 +130,42 @@ fn status_json_renders_typed_payload() {
 }
 
 #[test]
+fn a_member_s_branches_are_the_workspace_defaults_because_there_is_nowhere_else() {
+    // A per-repository override used to live on the declared row. Detection
+    // has no row to write one in, so the workspace default is the whole
+    // answer, and a member line carrying anything else would mean an override
+    // came back without a place to be set.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("homma.toml");
+    std::fs::write(
+        &path,
+        format!(
+            "{}\n[defaults]\npublic_branch = \"trunk\"\nworking_branch = \"next\"\n",
+            minimal_config_toml()
+        ),
+    )
+    .unwrap();
+    clone_at(
+        dir.path(),
+        "notko",
+        Some("https://github.com/orgrinrt/notko.git"),
+    );
+    let out = bin()
+        .args(["-c", path.to_str().unwrap(), "--output", "json", "status"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out).unwrap()).expect("output is valid JSON");
+    assert_eq!(v["workspace"]["default_public_branch"], "trunk");
+    assert_eq!(v["workspace"]["default_working_branch"], "next");
+    assert_eq!(v["repos"][0]["public_branch"], "trunk");
+    assert_eq!(v["repos"][0]["working_branch"], "next");
+}
+
+#[test]
 fn verify_is_quiet_on_a_workspace_whose_clones_all_sit_on_a_declared_forge() {
     // The resting state, and the control on every finding below it: a member
     // whose origin names a forge this manifest has a profile for is nothing to

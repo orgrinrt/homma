@@ -79,12 +79,17 @@ api_url = "https://api.github.com"
 token_env = "MY_GITHUB_TOKEN"
 ```
 
-The repos are not in there, and there is nothing to add when one arrives. Any
-directory beside the manifest that is its own repository is a member, and where
-it lives and who owns it come from its `origin` remote, which is the thing that
-decides where a push lands anyway. Clone one and it is a member; rename it and
-the name follows; drop it and it is gone. Nothing is left behind saying
-otherwise, which is what a list is for and what a list keeps being wrong about.
+The repos are not in there, and there is nothing to add when one arrives. A
+directory one level under the workspace root that is its own repository is a
+member, and where it lives and who owns it come from its `origin` remote, which
+is the thing that decides where a push lands anyway. Clone one and it is a
+member; rename it and the name follows; drop it and it is gone. Nothing is left
+behind saying otherwise, which is what a list is for and what a list keeps being
+wrong about.
+
+The root is `workspace.path`, so a manifest that sits somewhere else still
+looks in the right place. A worktree is not a second member either: it carries a
+`.git` file rather than a directory, and only the directory counts.
 
 A clone whose remote is a local path, or is on a host you have no `[forges]`
 profile for, is still a member. It has no forge and no owner, homma says so,

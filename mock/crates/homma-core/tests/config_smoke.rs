@@ -123,31 +123,6 @@ path = "/tmp/demo"
 }
 
 #[test]
-fn the_branches_come_from_the_defaults_because_there_is_nowhere_else() {
-    // A per-repository override used to live on the declared row. Detection
-    // has no row, so the default is the whole answer, and this says so rather
-    // than leaving a reader to infer it from an absent field.
-    let config = Config::parse(
-        r#"
-[workspace]
-name = "demo"
-
-[defaults]
-public_branch = "trunk"
-working_branch = "next"
-"#,
-    )
-    .unwrap();
-    let member = homma_core::config::RepoConfig {
-        forge:      None,
-        owner:      None,
-        local_path: "anything".into(),
-    };
-    assert_eq!(member.resolved_public_branch(&config.defaults), "trunk");
-    assert_eq!(member.resolved_working_branch(&config.defaults), "next");
-}
-
-#[test]
 fn parse_via_fromstr() {
     use std::str::FromStr;
     let config = Config::from_str(

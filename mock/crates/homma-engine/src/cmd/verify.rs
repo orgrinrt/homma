@@ -238,23 +238,6 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
         }
     }
 
-    // And the other direction: a profile nothing detected uses. Harmless, and
-    // worth saying, because it is usually a repository nobody cloned yet or a
-    // profile left behind by one that went.
-    for name in cfg.forges.keys() {
-        let used = cfg.repos.values().any(|r| r.forge.as_ref() == Some(name));
-        if !used {
-            findings.push(Finding {
-                level:   Level::Warn,
-                kind:    "forge_unused".into(),
-                message: format!(
-                    "forge `{name}` is configured and no repository under the workspace root \
-                     has an origin remote on it"
-                ),
-            });
-        }
-    }
-
     for (name, forge) in &cfg.forges {
         // Only where the variable is the sole declared source. A profile
         // naming a `token_cmd` has said where its credential comes from, so an
