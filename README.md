@@ -89,6 +89,24 @@ nothing in here names a particular clone on a particular machine and the same
 file works in every copy of the workspace. A repo the workspace hasn't cloned
 yet is simply not on disk, which homma reports rather than trips over.
 
+There is also `deny`, which is the places homma may not write. Two are denied
+without being named, because they are the same wherever it runs: your own
+`~/.claude`, where an assistant keeps its settings and its credentials, and
+every other participant's workspace as the registry gives them. Anything else
+is your own arrangement rather than homma's guess, so it goes in the manifest:
+
+```toml
+deny = [
+    "~/work/not-mine",
+    { path = "scratch", why = "regenerated, and not worth a merge conflict" },
+]
+```
+
+A bare path is enough. The table form adds the reason you'll see in the
+refusal, which is worth the extra words on anything you might forget you wrote
+down. It goes above the first `[table]`, since it belongs to the manifest and
+not to any section of it.
+
 Tokens are read out of the environment by the name the forge names, so nothing
 secret is ever written into the manifest. `homma verify` tells you which of them
 did not resolve before any command goes and finds out the hard way.
