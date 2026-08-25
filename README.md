@@ -105,7 +105,14 @@ deny = [
 A bare path is enough. The table form adds the reason you'll see in the
 refusal, which is worth the extra words on anything you might forget you wrote
 down. It goes above the first `[table]`, since it belongs to the manifest and
-not to any section of it.
+not to any section of it. The `~/` works here and only here: `local_path` and
+`workspace.path` take it literally, and you get a directory named `~`.
+
+One thing the list does not cover, and it is deliberate. `homma agent regen`
+writes into the workspace root even when an entry names it, because the
+alternative is a command that quietly does nothing after you asked for it. Deny
+the root and you have denied homma the place it works in, so the aggregation
+permits it back. Everywhere else the entry holds.
 
 Tokens are read out of the environment by the name the forge names, so nothing
 secret is ever written into the manifest. `homma verify` tells you which of them
