@@ -1,3 +1,8 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+
 //! `GixRepo`: the [`super::RepoOps`] impl backed by the `gix` crate.
 //!
 //! Construction surface is impl-specific: [`GixRepo::open`] for an
@@ -368,10 +373,7 @@ fn walk_to_set(
     Ok(set)
 }
 
-fn write_config_to_disk(
-    repo: &gix::Repository,
-    file: &gix::config::File,
-) -> Result<(), RepoError> {
+fn write_config_to_disk(repo: &gix::Repository, file: &gix::config::File) -> Result<(), RepoError> {
     let path = repo.git_dir().join("config");
     let rendered = file.to_bstring();
     std::fs::write(&path, rendered.as_slice()).map_err(|source| {

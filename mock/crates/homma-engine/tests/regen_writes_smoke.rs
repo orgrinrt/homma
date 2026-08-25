@@ -1,3 +1,8 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+
 //! The aggregation pass aggregates into a directory, and it may not be a home's.
 //!
 //! **Reproduced at exit 0 before this.** With `workspace.path = $HOME`, `agent
