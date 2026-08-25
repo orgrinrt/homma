@@ -1,6 +1,6 @@
 [package]
 name = "homma"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2024"
 # The published crate, and the whole of what an operator installs. The engine
 # (`homma-engine`) stays private: this launcher git-installs whatever engine the
@@ -16,6 +16,7 @@ readme = "../README.md"
 rust-version = "1.88"
 license = "MPL-2.0"
 repository = "https://github.com/orgrinrt/homma"
+homepage = "https://github.com/orgrinrt/homma"
 categories = ["development-tools", "command-line-utilities"]
 keywords = ["homma", "workspace", "multi-repo", "git"]
 
