@@ -50,10 +50,30 @@ pub fn run(
 ) -> Result<()> {
     let repo_cfg = cfg
         .repo(repo_name)
-        .ok_or_else(|| anyhow!("repo `{repo_name}` not declared in [repos.*]"))?;
-    let forge_name = from.unwrap_or(&repo_cfg.forge);
+        .ok_or_else(|| anyhow!("no repository named `{repo_name}` under the workspace root"))?;
+    // The flag wins, then what the clone's own remote says. Neither is an
+    // error rather than a guess: a repository with a local remote has no forge
+    // and no owner, and archiving is an outward act that has to land where it
+    // was meant to.
+    let forge_name = match from.or(repo_cfg.forge.as_deref()) {
+        Some(f) => f,
+        None => {
+            return Err(anyhow!(
+                "`{repo_name}` has no forge: its origin remote names none this \
+                 workspace has a profile for. Pass --from."
+            ));
+        },
+    };
     let forge_cfg = resolve_forge(cfg, forge_name)?;
-    let owner = owner.unwrap_or(&repo_cfg.owner);
+    let owner = match owner.or(repo_cfg.owner.as_deref()) {
+        Some(o) => o,
+        None => {
+            return Err(anyhow!(
+                "`{repo_name}` has no owner: its origin remote names none. Pass \
+                 --owner."
+            ));
+        },
+    };
 
     let client = client_from_config(forge_cfg);
     client

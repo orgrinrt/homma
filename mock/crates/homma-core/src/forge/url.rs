@@ -116,6 +116,79 @@ pub fn host_of(url: &str) -> &str {
     }
 }
 
+/// What a clone's `origin` remote says about where it came from.
+///
+/// The other direction from the composers above, and detection needs it: a
+/// member repository's forge and owner are properties of its remote rather
+/// than of anything anybody wrote down, because the remote is what decides
+/// where a push actually lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteOrigin {
+    /// The bare host, comparable with [`host_of`] over a forge's `base_url`.
+    pub host:  String,
+    /// The namespace the repository sits in.
+    pub owner: String,
+    /// The repository's own name, with any `.git` suffix removed.
+    pub name:  String,
+}
+
+/// Read a clone URL back into its host, owner and name.
+///
+/// The two spellings git actually writes are both accepted:
+/// `https://host/owner/name.git` and `git@host:owner/name.git`. A scheme other
+/// than those still parses when it has the same shape, which covers `ssh://`
+/// and `git://`, because what is being read is the tail rather than the
+/// protocol.
+///
+/// `None` for anything that does not carry both an owner and a name. That is a
+/// real answer rather than a failure: a clone can have a remote that is a local
+/// path, and such a repository is still a member of the workspace, with no
+/// forge and no owner. Guessing either would send a push somewhere nobody asked
+/// for.
+pub fn read_origin(url: &str) -> Option<RemoteOrigin> {
+    let url = url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    // `git@host:owner/name`, which has no `://` and separates the host with a
+    // colon. Checked first, because the scheme test below would read the whole
+    // thing as a path.
+    let (host, path) = match url.find("://") {
+        None => {
+            let (authority, path) = url.split_once(':')?;
+            let host = authority.rsplit('@').next().unwrap_or(authority);
+            (host, path)
+        },
+        Some(i) => {
+            let after = &url[i + 3 ..];
+            let (authority, path) = after.split_once('/')?;
+            let host = authority.rsplit('@').next().unwrap_or(authority);
+            (host, path)
+        },
+    };
+    if host.is_empty() {
+        return None;
+    }
+    // The last two segments, so a namespace nested deeper than one level still
+    // yields the owner directly above the repository.
+    let path = path.trim_matches('/');
+    let mut segments = path.rsplit('/');
+    let name = segments.next()?.strip_suffix(".git").unwrap_or_else(|| {
+        // Borrowed twice rather than once because `strip_suffix` gives back a
+        // shorter borrow of the same string; the closure re-derives it.
+        path.rsplit('/').next().unwrap_or(path)
+    });
+    let owner = segments.next()?;
+    if owner.is_empty() || name.is_empty() {
+        return None;
+    }
+    Some(RemoteOrigin {
+        host:  host.to_string(),
+        owner: owner.to_string(),
+        name:  name.to_string(),
+    })
+}
+
 fn trim_trailing_slash(s: &str) -> &str {
     s.strip_suffix('/').unwrap_or(s)
 }
@@ -124,6 +197,74 @@ fn trim_trailing_slash(s: &str) -> &str {
 mod tests {
     use super::*;
     use crate::config::ForgeKind;
+
+    #[test]
+    fn a_remote_reads_back_into_a_host_an_owner_and_a_name() {
+        // Both spellings git writes, with and without the suffix, plus the two
+        // schemes that share the https shape.
+        for url in [
+            "https://github.com/orgrinrt/notko.git",
+            "https://github.com/orgrinrt/notko",
+            "git@github.com:orgrinrt/notko.git",
+            "git@github.com:orgrinrt/notko",
+            "ssh://git@github.com/orgrinrt/notko.git",
+            "  https://github.com/orgrinrt/notko.git  ",
+        ] {
+            let got = read_origin(url).unwrap_or_else(|| panic!("did not parse: {url}"));
+            assert_eq!(got.host, "github.com", "{url}");
+            assert_eq!(got.owner, "orgrinrt", "{url}");
+            assert_eq!(got.name, "notko", "{url}");
+        }
+    }
+
+    #[test]
+    fn a_deeper_namespace_gives_the_owner_directly_above_the_repository() {
+        let got = read_origin("https://codeberg.org/a/b/c.git").expect("parses");
+        assert_eq!((got.owner.as_str(), got.name.as_str()), ("b", "c"));
+    }
+
+    #[test]
+    fn a_remote_that_is_not_a_forge_url_reads_as_nothing_rather_than_as_a_guess() {
+        // Each of these is a real thing a clone's origin can be, and none of
+        // them names an owner. A workspace member with a local remote is still
+        // a member; inventing a forge for it would send a push somewhere
+        // nobody asked for.
+        for url in [
+            "",
+            "   ",
+            "/srv/git/notko.git",
+            "../sibling",
+            "https://github.com/notko.git",
+            "git@github.com:notko.git",
+            "https:///orgrinrt/notko.git",
+        ] {
+            assert_eq!(read_origin(url), None, "read a forge out of {url:?}");
+        }
+    }
+
+    #[test]
+    fn the_two_directions_agree_on_the_host() {
+        // `host_of` reads a forge's base_url and `read_origin` reads a clone's
+        // remote, and detection matches one against the other. Two spellings
+        // of the same rule is how they would drift.
+        let forge = ForgeConfig {
+            kind:      ForgeKind::Github,
+            base_url:  "https://github.com".into(),
+            api_url:   "https://api.github.com".into(),
+            token_env: None,
+            token_cmd: None,
+        };
+        let composed = clone_https(&forge, "orgrinrt", "notko");
+        let read = read_origin(&composed).expect("what we composed reads back");
+        assert_eq!(read.host, host_of(&forge.base_url));
+        assert_eq!(
+            (read.owner.as_str(), read.name.as_str()),
+            ("orgrinrt", "notko")
+        );
+
+        let over_ssh = read_origin(&clone_ssh(&forge, "orgrinrt", "notko")).expect("parses");
+        assert_eq!(over_ssh, read, "the two clone spellings disagree");
+    }
 
     fn cfg(base: &str, api: &str) -> ForgeConfig {
         ForgeConfig {

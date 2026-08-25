@@ -25,6 +25,22 @@ fn bin() -> Command {
     Command::cargo_bin("homma-engine").expect("binary built")
 }
 
+/// Make `path` a repository, which is what makes it a member.
+///
+/// Membership is read off the tree, so a fixture that wants a repo walked has
+/// to have one on disk. A real `git init` rather than a hand-made `.git`, so
+/// the fixture is the shape detection actually meets.
+fn make_a_repo(path: &std::path::Path) {
+    std::fs::create_dir_all(path).unwrap();
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(["init", "-q"])
+        .output()
+        .expect("git runs");
+    assert!(out.status.success(), "git init: {out:?}");
+}
+
 fn config_at(workspace: &std::path::Path) -> String {
     format!(
         r#"
@@ -127,8 +143,10 @@ fn a_symlink_below_the_checked_directory_cannot_carry_a_write_out() {
     )
     .unwrap();
 
-    // A repository with a hook to aggregate, so the pass has work to do.
-    let repo = dir.path().join("notko");
+    // A repository with a hook to aggregate, so the pass has work to do. It
+    // sits under the workspace root because that is what makes it a member.
+    let repo = ws.join("notko");
+    make_a_repo(&repo);
     std::fs::create_dir_all(repo.join(".claude").join("hooks")).unwrap();
     std::fs::write(
         repo.join(".claude").join("hooks").join("h.sh"),
@@ -149,14 +167,8 @@ path = "{}"
 kind = "github"
 base_url = "https://github.com"
 api_url = "https://api.github.com"
-
-[repos.notko]
-forge = "github"
-owner = "orgrinrt"
-local_path = "{}"
 "#,
-            ws.display(),
-            repo.display()
+            ws.display()
         ),
     )
     .unwrap();
@@ -313,13 +325,10 @@ fn workspace_with_a_repo_and_a_config(dir: &std::path::Path) -> (std::path::Path
     .unwrap();
 
     let repo = ws.join("arvo");
-    std::fs::create_dir_all(&repo).unwrap();
+    make_a_repo(&repo);
     std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"arvo\"\n").unwrap();
 
-    let cfg = format!(
-        "{}\n[repos.arvo]\nforge = \"github\"\nowner = \"orgrinrt\"\nlocal_path = \"arvo\"\n",
-        config_at(&ws)
-    );
+    let cfg = config_at(&ws);
     (ws, cfg)
 }
 
@@ -374,10 +383,10 @@ fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_o
     )
     .unwrap();
 
-    let mut body = config_at(&ws);
+    let body = config_at(&ws);
     for (name, pinned) in [("arvo", true), ("renki", false)] {
         let repo = ws.join(name);
-        std::fs::create_dir_all(&repo).unwrap();
+        make_a_repo(&repo);
         std::fs::write(
             repo.join("Cargo.toml"),
             format!("[package]\nname = \"{name}\"\n"),
@@ -390,9 +399,6 @@ fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_o
             )
             .unwrap();
         }
-        body.push_str(&format!(
-            "\n[repos.{name}]\nforge = \"github\"\nowner = \"orgrinrt\"\nlocal_path = \"{name}\"\n"
-        ));
     }
     let cfg = dir.path().join("homma.toml");
     std::fs::write(&cfg, body).unwrap();
@@ -574,8 +580,10 @@ fn a_write_leaving_the_workspace_is_refused_before_the_deny_list_is_consulted() 
     std::fs::create_dir_all(ws.join(".claude")).unwrap();
     std::os::unix::fs::symlink(&theirs, ws.join(".claude").join("hooks")).unwrap();
 
-    // A repository with a hook to aggregate, so the pass has work to do.
-    let repo = dir.path().join("notko");
+    // A repository with a hook to aggregate, so the pass has work to do. It
+    // sits under the workspace root because that is what makes it a member.
+    let repo = ws.join("notko");
+    make_a_repo(&repo);
     std::fs::create_dir_all(repo.join(".claude").join("hooks")).unwrap();
     std::fs::write(
         repo.join(".claude").join("hooks").join("h.sh"),
@@ -598,14 +606,8 @@ path = "{}"
 kind = "github"
 base_url = "https://github.com"
 api_url = "https://api.github.com"
-
-[repos.notko]
-forge = "github"
-owner = "orgrinrt"
-local_path = "{}"
 "#,
-            ws.display(),
-            repo.display()
+            ws.display()
         ),
     )
     .unwrap();

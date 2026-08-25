@@ -49,17 +49,6 @@ base_url = "https://codeberg.org"
 api_url = "https://codeberg.org/api/v1"
 token_env = "CODEBERG_TOKEN"
 
-[repos.notko]
-forge = "github"
-owner = "orgrinrt"
-local_path = "notko"
-
-[repos.arvo]
-forge = "github"
-owner = "orgrinrt"
-local_path = "arvo"
-public_branch = "main"
-working_branch = "dev"
 "#;
     let config = Config::parse(src).unwrap();
 
@@ -77,15 +66,31 @@ working_branch = "dev"
     let cb = config.forge("codeberg").expect("codeberg forge present");
     assert_eq!(cb.kind, ForgeKind::Forgejo);
 
-    let notko = config.repo("notko").expect("notko repo present");
-    assert_eq!(notko.forge, "github");
-    assert_eq!(notko.owner, "orgrinrt");
-    assert_eq!(notko.local_path, PathBuf::from("notko"));
-    assert!(notko.public_branch.is_none());
+    // Nothing here says which repositories the workspace has, and a parse has
+    // no filesystem to find out from.
+    assert!(config.repos.is_empty());
+}
 
-    let arvo = config.repo("arvo").expect("arvo repo present");
-    assert_eq!(arvo.public_branch.as_deref(), Some("main"));
-    assert_eq!(arvo.working_branch.as_deref(), Some("dev"));
+#[test]
+fn a_manifest_that_still_declares_repos_is_refused_rather_than_half_read() {
+    // The table is gone, not optional. A manifest carrying one has an idea of
+    // membership that homma no longer holds, and reading it as far as the
+    // first unknown key would leave the operator with a workspace that looks
+    // configured and is not.
+    let src = r#"
+[workspace]
+name = "demo"
+
+[repos.notko]
+forge = "github"
+owner = "orgrinrt"
+local_path = "notko"
+"#;
+    let err = Config::parse(src).expect_err("a [repos] table must be refused");
+    assert!(
+        format!("{err}").contains("repos"),
+        "the refusal does not name what is wrong: {err}"
+    );
 }
 
 #[test]
@@ -118,35 +123,28 @@ path = "/tmp/demo"
 }
 
 #[test]
-fn repo_branch_resolution() {
-    let src = r#"
+fn the_branches_come_from_the_defaults_because_there_is_nowhere_else() {
+    // A per-repository override used to live on the declared row. Detection
+    // has no row, so the default is the whole answer, and this says so rather
+    // than leaving a reader to infer it from an absent field.
+    let config = Config::parse(
+        r#"
 [workspace]
 name = "demo"
 
 [defaults]
 public_branch = "trunk"
 working_branch = "next"
-
-[repos.bare]
-forge = "github"
-owner = "x"
-local_path = "bare"
-
-[repos.overridden]
-forge = "github"
-owner = "x"
-local_path = "overridden"
-public_branch = "release"
-working_branch = "main"
-"#;
-    let config = Config::parse(src).unwrap();
-    let bare = config.repo("bare").unwrap();
-    assert_eq!(bare.resolved_public_branch(&config.defaults), "trunk");
-    assert_eq!(bare.resolved_working_branch(&config.defaults), "next");
-
-    let over = config.repo("overridden").unwrap();
-    assert_eq!(over.resolved_public_branch(&config.defaults), "release");
-    assert_eq!(over.resolved_working_branch(&config.defaults), "main");
+"#,
+    )
+    .unwrap();
+    let member = homma_core::config::RepoConfig {
+        forge:      None,
+        owner:      None,
+        local_path: "anything".into(),
+    };
+    assert_eq!(member.resolved_public_branch(&config.defaults), "trunk");
+    assert_eq!(member.resolved_working_branch(&config.defaults), "next");
 }
 
 #[test]
