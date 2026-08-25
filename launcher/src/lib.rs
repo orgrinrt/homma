@@ -18,7 +18,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use renki::{Anchor, Cli, Hooks, Locate, Tool};
+use renki::{Anchor, Hooks, Locate, Tool, pin_keys};
 
 /// The canonical repository: the engine source when a config sets no
 /// `homma_git`.
@@ -33,7 +33,7 @@ pub const TOOL: Tool = Tool {
     anchor:          Anchor::ConfigFile,
     short:           "homma",
     config_file:     "homma.toml",
-    pin_prefix:      "homma",
+    pin_keys:        pin_keys!("homma"),
     // The engine package, which is not the command. The command is this crate.
     engine_crate:    "homma-engine",
     cache_namespace: "homma",
@@ -43,14 +43,25 @@ pub const TOOL: Tool = Tool {
     // workspace root, which is where the config was found, so there is nothing
     // below it to name.
     workdir:         None,
-    dir_flag:        Cli::DIR_FLAG,
-    engine_flag:     Cli::ENGINE_FLAG,
-    locate:          Locate::DEFAULT,
+    locate:          Some(Locate::DEFAULT),
     hooks:           Hooks {
         verify_engine_dir: Some(engine_dir_holds_the_engine),
         ..Hooks::NONE
     },
+    // The flags, the retention, the skip list and the self-update policy are
+    // renki's conventions and this tool wants all of them. Spread rather than
+    // restated, so a field added to the descriptor arrives as a version bump
+    // instead of a build break.
+    ..Tool::CONVENTIONS
 };
+
+/// The descriptor is answerable at build time, so it is answered here.
+///
+/// `..Tool::CONVENTIONS` is a base of empty names, which is safe only because
+/// `Tool::defect` refuses every one of them and is const. Writing the literal
+/// out gave this for free: a missing field was a missing field. The spread
+/// trades that away, and this one line buys it back.
+const _: () = assert!(TOOL.defect().is_none());
 
 /// The engine package inside a checkout of this repo.
 pub const ENGINE_SUBDIR: &str = "mock/crates/homma-engine";
