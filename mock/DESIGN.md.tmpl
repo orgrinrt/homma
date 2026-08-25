@@ -17,6 +17,13 @@ whose convention differs. So a fresh directory with a registry in it is already 
 workspace. Nothing about the workspace homma was born in is compiled in, which is
 why layout, roles and record kinds are data rather than code.
 
+Membership follows from that. A directory under the workspace root that is its
+own repository is a member, and nothing lists it. Which forge it lives on and
+who owns it come from its `origin` remote, which is the thing that decides
+where a push lands and is therefore the only honest source for either. A
+workspace that renames a repository, clones a new one, or drops one is correct
+the moment the tree is, with nothing left saying otherwise.
+
 **Minimal, and delegating.** Where a member repository has its own tooling, homma
 drives it rather than reimplementing it.
 

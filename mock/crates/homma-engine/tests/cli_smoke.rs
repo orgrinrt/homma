@@ -11,8 +11,12 @@
 //! network paths (`forge show` / `forge exists` / `migrate` / `archive`
 //! end-to-end); the latter two would mutate real repos. Network-touching
 //! smoke tests land alongside the sanity playground (#456).
+//!
+//! Every fixture here plants real clones beside the manifest. Membership is
+//! read off the tree, so a test about a member needs one on disk; a table of
+//! names in the manifest is not a thing that parses any more.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -31,19 +35,44 @@ path = "."
 kind = "github"
 base_url = "https://github.com"
 api_url = "https://api.github.com"
-
-[repos.notko]
-forge = "github"
-owner = "orgrinrt"
-local_path = "notko"
 "#
     .to_string()
 }
 
+/// A manifest beside one clone, which is the smallest workspace that has a
+/// member at all.
 fn write_tmp_config(dir: &tempfile::TempDir) -> PathBuf {
     let path = dir.path().join("homma.toml");
     std::fs::write(&path, minimal_config_toml()).unwrap();
+    clone_at(
+        dir.path(),
+        "notko",
+        Some("https://github.com/orgrinrt/notko.git"),
+    );
     path
+}
+
+/// A real repository at `root/name`, with `origin` set to `url` when one is
+/// given.
+///
+/// A real `git init` rather than a hand-made `.git` directory, because the
+/// origin is read through git and a fake would answer nothing.
+fn clone_at(root: &Path, name: &str, url: Option<&str>) {
+    let path = root.join(name);
+    std::fs::create_dir_all(&path).unwrap();
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    run(&["init", "-q"]);
+    if let Some(url) = url {
+        run(&["remote", "add", "origin", url]);
+    }
 }
 
 #[test]
@@ -101,47 +130,66 @@ fn status_json_renders_typed_payload() {
 }
 
 #[test]
-fn verify_ok_on_workspace_with_no_local_paths() {
-    // local_path = "notko" does not exist, but that is a warn-level finding
-    // (the directory will be created by `homma sync`). verify still exits 0.
+fn a_member_s_branches_are_the_workspace_defaults_because_there_is_nowhere_else() {
+    // A per-repository override used to live on the declared row. Detection
+    // has no row to write one in, so the workspace default is the whole
+    // answer, and a member line carrying anything else would mean an override
+    // came back without a place to be set.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("homma.toml");
+    std::fs::write(
+        &path,
+        format!(
+            "{}\n[defaults]\npublic_branch = \"trunk\"\nworking_branch = \"next\"\n",
+            minimal_config_toml()
+        ),
+    )
+    .unwrap();
+    clone_at(
+        dir.path(),
+        "notko",
+        Some("https://github.com/orgrinrt/notko.git"),
+    );
+    let out = bin()
+        .args(["-c", path.to_str().unwrap(), "--output", "json", "status"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value =
+        serde_json::from_str(std::str::from_utf8(&out).unwrap()).expect("output is valid JSON");
+    assert_eq!(v["workspace"]["default_public_branch"], "trunk");
+    assert_eq!(v["workspace"]["default_working_branch"], "next");
+    assert_eq!(v["repos"][0]["public_branch"], "trunk");
+    assert_eq!(v["repos"][0]["working_branch"], "next");
+}
+
+#[test]
+fn verify_is_quiet_on_a_workspace_whose_clones_all_sit_on_a_declared_forge() {
+    // The resting state, and the control on every finding below it: a member
+    // whose origin names a forge this manifest has a profile for is nothing to
+    // report.
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
         .args(["-c", cfg.to_str().unwrap(), "verify"])
         .assert()
-        .success();
+        .success()
+        // The whole output, not a substring of it. A `.success()` alone passes
+        // for a run that reports a page of warnings, which is exactly the state
+        // this is the control for.
+        .stdout(predicate::function(|out: &[u8]| {
+            std::str::from_utf8(out).unwrap().trim() == "OK"
+        }));
 }
 
 #[test]
-fn verify_fails_on_undeclared_forge() {
-    let dir = tempfile::tempdir().unwrap();
-    let cfg_path = dir.path().join("homma.toml");
-    std::fs::write(
-        &cfg_path,
-        r#"
-[workspace]
-name = "ws"
-
-[repos.broken]
-forge = "doesnotexist"
-owner = "x"
-local_path = "broken"
-"#,
-    )
-    .unwrap();
-    bin()
-        .args(["-c", cfg_path.to_str().unwrap(), "verify"])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("repo_forge_undeclared"));
-}
-
-#[test]
-fn verify_says_nothing_about_a_repo_this_workspace_has_not_cloned() {
-    // A workspace clones the repos its work touches. The manifest names every
-    // repo there is, so most are absent from any given one, and reporting each
-    // as a warning buried the findings that mean something under nineteen
-    // lines of noise.
+fn verify_names_a_clone_whose_remote_sits_on_no_forge_this_workspace_knows() {
+    // A warning rather than a failure, because the clone is real and the work
+    // in it is fine. What it costs is that every forge operation against it
+    // needs the forge passed by hand, and the operator should hear that once
+    // rather than find out at the first push.
     let dir = tempfile::tempdir().unwrap();
     let cfg_path = dir.path().join("homma.toml");
     std::fs::write(
@@ -154,19 +202,53 @@ name = "ws"
 kind = "github"
 base_url = "https://github.com"
 api_url = "https://api.github.com"
-
-[repos.absent]
-forge = "github"
-owner = "x"
-local_path = "absent"
 "#,
     )
     .unwrap();
+    clone_at(
+        dir.path(),
+        "broken",
+        Some("https://git.example.invalid/x/broken.git"),
+    );
     bin()
         .args(["-c", cfg_path.to_str().unwrap(), "verify"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("absent").not());
+        .stdout(predicate::str::contains("repo_forge_unknown"))
+        .stdout(predicate::str::contains("broken"));
+}
+
+#[test]
+fn verify_says_nothing_about_a_directory_that_is_not_a_repository() {
+    // A workspace root holds scratch directories, build output and notes. None
+    // of them is a member, and the whole of the difference is a `.git`, so this
+    // is the end-to-end check that the tree is being read rather than listed.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg_path = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg_path,
+        r#"
+[workspace]
+name = "ws"
+
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir(dir.path().join("scratch")).unwrap();
+    clone_at(
+        dir.path(),
+        "real",
+        Some("https://github.com/orgrinrt/real.git"),
+    );
+    bin()
+        .args(["-c", cfg_path.to_str().unwrap(), "verify"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("scratch").not());
 }
 
 #[test]
@@ -188,14 +270,14 @@ kind = "github"
 base_url = "https://127.0.0.1:9"
 api_url = "https://127.0.0.1:9"
 token_env = "HOMMA_TEST_NOWHERE_TOKEN"
-
-[repos.somerepo]
-forge = "nowhere"
-owner = "x"
-local_path = "somerepo"
 "#,
     )
     .unwrap();
+    clone_at(
+        dir.path(),
+        "somerepo",
+        Some("https://127.0.0.1:9/x/somerepo.git"),
+    );
 
     // Without the flag, nothing about the forge at all.
     bin()
@@ -239,14 +321,14 @@ kind = "github"
 base_url = "https://127.0.0.1:9"
 api_url = "https://127.0.0.1:9"
 token_env = "HOMMA_TEST_NOWHERE_TOKEN"
-
-[repos.somerepo]
-forge = "nowhere"
-owner = "x"
-local_path = "somerepo"
 "#,
     )
     .unwrap();
+    clone_at(
+        dir.path(),
+        "somerepo",
+        Some("https://127.0.0.1:9/x/somerepo.git"),
+    );
 
     bin()
         .env_remove("HOMMA_TEST_NOWHERE_TOKEN")
@@ -294,25 +376,29 @@ fn migrate_undeclared_destination_forge_errors_cleanly() {
 }
 
 #[test]
-fn migrate_undeclared_repo_errors_cleanly() {
+fn migrate_a_repo_the_workspace_does_not_hold_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
         .args(["-c", cfg.to_str().unwrap(), "migrate", "missing", "--to", "github"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("repo `missing` not declared"));
+        .stderr(predicate::str::contains(
+            "no repository named `missing` under the workspace root",
+        ));
 }
 
 #[test]
-fn archive_undeclared_repo_errors_cleanly() {
+fn archive_a_repo_the_workspace_does_not_hold_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
         .args(["-c", cfg.to_str().unwrap(), "archive", "missing"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("repo `missing` not declared"));
+        .stderr(predicate::str::contains(
+            "no repository named `missing` under the workspace root",
+        ));
 }
 
 #[test]
@@ -388,14 +474,14 @@ token_cmd = ["printf", "a-token-for-{forge}\n"]
 kind = "github"
 base_url = "https://127.0.0.1:9"
 api_url = "https://127.0.0.1:9"
-
-[repos.somerepo]
-forge = "nowhere"
-owner = "x"
-local_path = "somerepo"
 "#,
     )
     .unwrap();
+    clone_at(
+        dir.path(),
+        "somerepo",
+        Some("https://127.0.0.1:9/x/somerepo.git"),
+    );
 
     // A credential was found, so the run gets as far as trying to use it and
     // fails on the closed port rather than on the absence of a token.
@@ -427,14 +513,14 @@ token_cmd = ["false"]
 kind = "github"
 base_url = "https://127.0.0.1:9"
 api_url = "https://127.0.0.1:9"
-
-[repos.somerepo]
-forge = "nowhere"
-owner = "x"
-local_path = "somerepo"
 "#,
     )
     .unwrap();
+    clone_at(
+        dir.path(),
+        "somerepo",
+        Some("https://127.0.0.1:9/x/somerepo.git"),
+    );
 
     bin()
         .args(["-c", cfg_path.to_str().unwrap(), "verify", "--forge"])

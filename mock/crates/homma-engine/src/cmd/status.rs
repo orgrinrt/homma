@@ -46,8 +46,11 @@ pub struct ForgeLine {
 #[derive(Debug, Serialize)]
 pub struct RepoLine {
     pub name:           String,
-    pub forge:          String,
-    pub owner:          String,
+    /// Absent where the clone's remote names no configured forge, which is a
+    /// real state rather than a gap: a member with a local remote has none.
+    pub forge:          Option<String>,
+    /// Absent on the same terms.
+    pub owner:          Option<String>,
     pub local_path:     String,
     pub public_branch:  String,
     pub working_branch: String,
@@ -88,8 +91,8 @@ fn build_report(cfg: &Config) -> StatusReport {
                 forge:          r.forge.clone(),
                 owner:          r.owner.clone(),
                 local_path:     r.local_path.display().to_string(),
-                public_branch:  r.resolved_public_branch(&cfg.defaults).to_string(),
-                working_branch: r.resolved_working_branch(&cfg.defaults).to_string(),
+                public_branch:  cfg.defaults.public_branch.clone(),
+                working_branch: cfg.defaults.working_branch.clone(),
             }
         })
         .collect();
@@ -135,16 +138,18 @@ impl HumanRender for StatusReport {
             writeln!(out)?;
             writeln!(out, "repos:")?;
             for r in &self.repos {
+                // A member with no forge prints as one rather than as a blank
+                // where a name should be, so the line says which state it is
+                // in instead of leaving the reader to guess at an empty field.
+                let on = match (&r.owner, &r.forge) {
+                    (Some(owner), Some(forge)) => format!("{owner}/{} on {forge}", r.name),
+                    (Some(owner), None) => format!("{owner}/{}, forge unknown", r.name),
+                    (None, _) => format!("{}, no forge remote", r.name),
+                };
                 writeln!(
                     out,
-                    "  {} -> {}/{} on {} (path={}, public={}, working={})",
-                    r.name,
-                    r.owner,
-                    r.name,
-                    r.forge,
-                    r.local_path,
-                    r.public_branch,
-                    r.working_branch
+                    "  {} -> {on} (path={}, public={}, working={})",
+                    r.name, r.local_path, r.public_branch, r.working_branch
                 )?;
             }
         }

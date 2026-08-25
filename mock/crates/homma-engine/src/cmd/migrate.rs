@@ -120,12 +120,31 @@ pub fn run(
 ) -> Result<Outcome> {
     let repo_cfg = cfg
         .repo(repo_name)
-        .ok_or_else(|| anyhow!("repo `{repo_name}` not declared in [repos.*]"))?;
-    let source_forge_name = opts.source.unwrap_or(&repo_cfg.forge);
+        .ok_or_else(|| anyhow!("no repository named `{repo_name}` under the workspace root"))?;
+    // The flag wins, then the clone's own remote. Neither is an error rather
+    // than a guess: a migration that starts from the wrong source reads the
+    // wrong repository and mirrors it somewhere real.
+    let source_forge_name = match opts.source.or(repo_cfg.forge.as_deref()) {
+        Some(f) => f,
+        None => {
+            return Err(anyhow!(
+                "`{repo_name}` has no source forge: its origin remote names none \
+                 this workspace has a profile for. Pass --source."
+            ));
+        },
+    };
     let source_cfg = resolve_forge(cfg, source_forge_name)?;
     let dest_cfg = resolve_forge(cfg, to_forge_name)?;
 
-    let src_owner = repo_cfg.owner.as_str();
+    let src_owner = match repo_cfg.owner.as_deref() {
+        Some(o) => o,
+        None => {
+            return Err(anyhow!(
+                "`{repo_name}` has no owner: its origin remote names none, so \
+                 there is nothing to migrate from."
+            ));
+        },
+    };
     let src_name = repo_name;
     let dst_owner = opts.to_owner.unwrap_or(src_owner);
     let dst_name = repo_name;

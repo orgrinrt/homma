@@ -99,7 +99,11 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
     // Only forges some repo actually names. A profile the manifest declares and
     // nothing references is not a gap: warning about its token would reproduce,
     // on another axis, the noise the `local_path` warning was removed for.
-    let mut in_use: Vec<&String> = cfg.repos.values().map(|r| &r.forge).collect();
+    let mut in_use: Vec<&String> = cfg
+        .repos
+        .values()
+        .filter_map(|r| r.forge.as_ref())
+        .collect();
     in_use.sort();
     in_use.dedup();
 
@@ -166,19 +170,24 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
     }
 
     for (name, repo) in &cfg.repos {
-        let Some((_, client)) = usable.iter().find(|(f, _)| *f == &repo.forge) else {
+        // A member with no forge or no owner is not asked about. Its state is
+        // reported by `check` below, where it is a fact about the clone rather
+        // than a question for a forge.
+        let (Some(forge), Some(owner)) = (repo.forge.as_ref(), repo.owner.as_ref()) else {
             continue;
         };
-        match client.repo_exists(&repo.owner, name) {
+        let Some((_, client)) = usable.iter().find(|(f, _)| *f == forge) else {
+            continue;
+        };
+        match client.repo_exists(owner, name) {
             Ok(true) => {},
             Ok(false) => {
                 findings.push(Finding {
                     level:   Level::Error,
                     kind:    "repo_not_on_forge".into(),
                     message: format!(
-                        "repo `{name}` is not at {}/{name} on forge `{}`; every forge \
-                         operation against it will fail",
-                        repo.owner, repo.forge
+                        "repo `{name}` is not at {owner}/{name} on forge `{forge}`; every \
+                         forge operation against it will fail"
                     ),
                 });
             },
@@ -188,10 +197,7 @@ fn resolve_with(cfg: &Config, make: &dyn Fn(&ForgeConfig) -> Box<dyn Forge>) -> 
                 findings.push(Finding {
                     level:   Level::Warn,
                     kind:    "repo_forge_unreachable".into(),
-                    message: format!(
-                        "could not ask forge `{}` about {}/{name}: {e}",
-                        repo.forge, repo.owner
-                    ),
+                    message: format!("could not ask forge `{forge}` about {owner}/{name}: {e}"),
                 });
             },
         }
@@ -214,14 +220,19 @@ pub(crate) fn check(cfg: &Config) -> VerifyReport {
         });
     }
 
+    // What is worth reporting changed with what there is to be wrong. A
+    // declaration could name a forge nothing declared, and there is no
+    // declaration left. What can be wrong now is a clone whose remote nothing
+    // here serves, which is a fact about the tree rather than about a file.
     for (name, repo) in &cfg.repos {
-        if !cfg.forges.contains_key(&repo.forge) {
+        if repo.forge.is_none() {
             findings.push(Finding {
-                level:   Level::Error,
-                kind:    "repo_forge_undeclared".into(),
+                level:   Level::Warn,
+                kind:    "repo_forge_unknown".into(),
                 message: format!(
-                    "repo `{name}` references forge `{}` which is not declared in [forges.*]",
-                    repo.forge
+                    "`{name}` is a repository under the workspace root whose origin remote \
+                     names no forge this workspace has a profile for. Every forge operation \
+                     against it needs the forge passed explicitly."
                 ),
             });
         }
@@ -367,7 +378,7 @@ mod tests {
     /// each test can own a distinct environment variable and the suite stays
     /// safe to run in parallel.
     fn cfg(token_var: &str) -> Config {
-        Config::parse(&format!(
+        let mut cfg = Config::parse(&format!(
             r#"
 content_repo = "c"
 [workspace]
@@ -382,20 +393,30 @@ kind = "forgejo"
 base_url = "https://other.invalid"
 api_url = "https://other.invalid/api"
 token_env = "HOMMA_TEST_NEVER_SET"
-[repos.somerepo]
-forge = "gh"
-owner = "someone"
-local_path = "somerepo"
 "#
         ))
-        .unwrap()
+        .unwrap();
+        cfg.repos
+            .insert("somerepo".into(), member("gh", "someone", "somerepo"));
+        cfg
+    }
+
+    /// One detected member, built directly rather than parsed, because
+    /// membership comes from a tree and these tests are about what `verify`
+    /// says rather than about what a tree looks like.
+    fn member(forge: &str, owner: &str, name: &str) -> homma_core::config::RepoConfig {
+        homma_core::config::RepoConfig {
+            forge:      Some(forge.into()),
+            owner:      Some(owner.into()),
+            local_path: name.into(),
+        }
     }
 
     /// The same manifest shape, with three repos on the one usable forge, so
     /// the count of constructions and the count of repos cannot be confused
     /// for each other.
     fn cfg_three_repos(token_var: &str) -> Config {
-        Config::parse(&format!(
+        let mut cfg = Config::parse(&format!(
             r#"
 content_repo = "c"
 [workspace]
@@ -405,21 +426,13 @@ kind = "github"
 base_url = "https://example.invalid"
 api_url = "https://example.invalid/api"
 token_env = "{token_var}"
-[repos.one]
-forge = "gh"
-owner = "someone"
-local_path = "one"
-[repos.two]
-forge = "gh"
-owner = "someone"
-local_path = "two"
-[repos.three]
-forge = "gh"
-owner = "someone"
-local_path = "three"
 "#
         ))
-        .unwrap()
+        .unwrap();
+        for name in ["one", "two", "three"] {
+            cfg.repos.insert(name.into(), member("gh", "someone", name));
+        }
+        cfg
     }
 
     #[test]

@@ -409,19 +409,14 @@ pub mod regen {
             }
             let local = util::resolve_local_path(workspace, &repo_cfg.local_path);
 
-            // A repo the manifest lists and this workspace has not cloned is
-            // the ordinary case, not a fault: a workspace clones the repos its
-            // work touches and leaves the rest alone. Reporting it as a failure
-            // would make a full manifest unusable in every workspace, which is
-            // how the manifest came to list a third of the repos there are.
+            // A member that is not on disk is not a case any more: membership
+            // is detected by walking the tree, so a directory that is not
+            // there is not a member and never reaches here. The branch that
+            // reported it as skipped went with the manifest that produced it.
+            // Kept as a guard rather than as a report, because a clone deleted
+            // between the detection and this loop is possible and a missing
+            // directory must not read as a failed regeneration.
             if !local.exists() {
-                results.push(RegenResult {
-                    repo:             name.clone(),
-                    cargo_mock:       StageStatus::Skipped("not cloned here".into()),
-                    configs:          Vec::new(),
-                    aggregate:        StageStatus::Skipped("not cloned here".into()),
-                    aggregated_hooks: 0,
-                });
                 continue;
             }
 
@@ -695,53 +690,6 @@ pub mod regen {
             let s = "abcdefghij".to_string();
             let out = truncate(s, 5);
             assert_eq!(out, "abcde...");
-        }
-
-        #[test]
-        fn a_repo_the_manifest_lists_and_this_workspace_has_not_cloned_is_skipped() {
-            // A workspace clones the repos its work touches. The manifest lists
-            // every repo there is, so most of them are absent from any given
-            // one, and reporting that as a failure is what kept the manifest
-            // short enough to be useless.
-            let dir = tempfile::tempdir().unwrap();
-            let here = dir.path().join("cloned");
-            std::fs::create_dir_all(here.join("mock")).unwrap();
-            let cfg = Config::parse(&format!(
-                "[workspace]\nname = \"w\"\npath = {p}\n\n\
-                 [repos.cloned]\nforge = \"github\"\nowner = \"o\"\nlocal_path = \"cloned\"\n\n\
-                 [repos.elsewhere]\nforge = \"github\"\nowner = \"o\"\nlocal_path = \"elsewhere\"\n",
-                p = toml::Value::String(dir.path().display().to_string())
-            ))
-            .unwrap();
-
-            let out = regen(&cfg, None, Opts {
-                skip_cargo_mock: true,
-                skip_configs: true,
-                skip_aggregate: false,
-                ..Default::default()
-            })
-            .unwrap();
-
-            let absent = out
-                .results
-                .iter()
-                .find(|r| r.repo == "elsewhere")
-                .expect("the uncloned repo was dropped rather than reported");
-            assert!(
-                matches!(&absent.cargo_mock, StageStatus::Skipped(w) if w == "not cloned here"),
-                "{:?}",
-                absent.cargo_mock
-            );
-            assert!(matches!(absent.aggregate, StageStatus::Skipped(_)));
-
-            // The control: the repo that IS here was not skipped for the same
-            // reason, so the check is about presence rather than about
-            // skipping everything.
-            let present = out.results.iter().find(|r| r.repo == "cloned").unwrap();
-            assert!(
-                !matches!(&present.cargo_mock, StageStatus::Skipped(w) if w == "not cloned here"),
-                "a cloned repo was reported as absent"
-            );
         }
 
         #[test]

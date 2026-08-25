@@ -28,7 +28,18 @@ pub struct Config {
     pub defaults:     Defaults,
     #[serde(default)]
     pub forges:       BTreeMap<String, ForgeConfig>,
-    #[serde(default)]
+    /// The member repositories, detected from the tree rather than parsed.
+    ///
+    /// Empty until [`Config::detect_members`] has run, which
+    /// [`Config::from_path`] does at the load.
+    ///
+    /// `skip_deserializing` rather than `default`, so a manifest still
+    /// carrying a `[repos]` table meets `deny_unknown_fields` and fails
+    /// instead of being quietly half-read. Not `skip`, which would take the
+    /// serialising half with it, and that half is what the template context
+    /// reads: a document looping over the workspace's repositories would find
+    /// none and render an empty list rather than an error.
+    #[serde(skip_deserializing)]
     pub repos:        BTreeMap<String, RepoConfig>,
     /// The repository holding workspace metadata and content.
     ///
@@ -131,7 +142,94 @@ impl Config {
         }
         cfg.settle_token_commands(beside);
         cfg.settle_deny(beside);
+        // The workspace root rather than the manifest's own directory. The two
+        // are the same thing whenever `workspace.path` is left at `.`, which is
+        // the ordinary case, and they are not when it is set. Detecting beside
+        // the manifest while `resolve_local_path` anchors on the root would
+        // hand every consumer a member whose path points at a directory that
+        // was never looked in.
+        let root = cfg.workspace.path.clone();
+        cfg.detect_members(&root, &crate::repo::GixGit);
         Ok(cfg)
+    }
+
+    /// Fill [`Config::repos`] by walking `root` for member repositories.
+    ///
+    /// A member is a directory one level under the root whose `.git` is a
+    /// directory. One level, because a repository nested inside a member is
+    /// that member's business and the convention is that clones are root-level
+    /// siblings. A `.git` that is a **file** points at another repository's
+    /// object store, which makes it a worktree or a submodule, and a worktree
+    /// of a member is not a second member.
+    ///
+    /// Separate from parsing on purpose. [`Config::parse`] takes a string and
+    /// has no filesystem, so it cannot detect anything and must not pretend
+    /// to: a `parse` whose result depended on the process's working directory
+    /// would be the worst of both. A caller holding a config built from a
+    /// string calls this with the root it means.
+    ///
+    /// Replaces whatever is there, so calling it twice with different roots
+    /// gives the second root's answer rather than the union.
+    pub fn detect_members<G: homma_api::Git>(&mut self, root: &Path, git: &G) {
+        self.repos = BTreeMap::new();
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.join(".git").is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let origin = self.read_origin_of(git, &path);
+            self.repos.insert(name.to_string(), RepoConfig {
+                forge:      origin.as_ref().and_then(|o| self.forge_at(&o.host)),
+                owner:      origin.map(|o| o.owner),
+                local_path: PathBuf::from(name),
+            });
+        }
+    }
+
+    /// The `origin` remote of a clone, through the git the caller supplied.
+    ///
+    /// Through the trait rather than a subprocess. A fork per directory under
+    /// the root, on every config load, is the smaller half of it: the larger is
+    /// that a machine without `git` on its path answers nothing and every
+    /// member silently loses its forge, which reads as a workspace of clones
+    /// that live nowhere.
+    ///
+    /// Best effort by design: a repository whose remote cannot be read is
+    /// still a member, so the failure is an absent forge rather than an absent
+    /// member.
+    fn read_origin_of<G: homma_api::Git>(
+        &self,
+        git: &G,
+        path: &Path,
+    ) -> Option<crate::forge::url::RemoteOrigin> {
+        // The trait takes an absolute path and says so in the type. A relative
+        // root reaches here from a caller that built one, and canonicalising is
+        // the answer rather than refusing: the directory exists, since it was
+        // just read out of the tree.
+        let absolute = path.canonicalize().ok()?;
+        let absolute = homma_api::AbsPath::new(absolute).ok()?;
+        let url = git.origin_url(&absolute).ok().flatten()?;
+        crate::forge::url::read_origin(&url)
+    }
+
+    /// Which configured forge serves `host`, if any.
+    ///
+    /// Matched through the same [`host_of`] the composers use, so the
+    /// direction that reads a remote and the direction that writes one agree
+    /// by construction rather than by two spellings of one rule.
+    ///
+    /// [`host_of`]: crate::forge::url::host_of
+    fn forge_at(&self, host: &str) -> Option<String> {
+        self.forges
+            .iter()
+            .find(|(_, f)| crate::forge::url::host_of(&f.base_url) == host)
+            .map(|(name, _)| name.clone())
     }
 
     /// Anchor every relative `deny` entry against the directory the manifest
@@ -347,36 +445,27 @@ pub enum ForgeKind {
     Forgejo,
 }
 
-/// `[repos.<name>]` entry. One row per workspace repo.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// One member repository, as detected rather than as declared.
+///
+/// Produced by [`Config::detect_members`] from the tree, never parsed. A
+/// workspace that renames a repository, clones a new one or drops one is
+/// correct the moment the tree is, and there is nothing left to disagree with
+/// it. The list this replaced spent a month naming a crate that had been
+/// renamed, and every reference in the workspace followed the list.
+#[derive(Debug, Clone, Serialize)]
 pub struct RepoConfig {
-    /// References a key in [`Config::forges`].
-    pub forge:          String,
-    pub owner:          String,
-    pub local_path:     PathBuf,
-    /// Overrides [`Defaults::public_branch`] when set.
-    #[serde(default)]
-    pub public_branch:  Option<String>,
-    /// Overrides [`Defaults::working_branch`] when set.
-    #[serde(default)]
-    pub working_branch: Option<String>,
-}
-
-impl RepoConfig {
-    /// Per-repo public branch override, falling back to `defaults.public_branch`.
-    pub fn resolved_public_branch<'a>(&'a self, defaults: &'a Defaults) -> &'a str {
-        self.public_branch
-            .as_deref()
-            .unwrap_or(&defaults.public_branch)
-    }
-
-    /// Per-repo working branch override, falling back to `defaults.working_branch`.
-    pub fn resolved_working_branch<'a>(&'a self, defaults: &'a Defaults) -> &'a str {
-        self.working_branch
-            .as_deref()
-            .unwrap_or(&defaults.working_branch)
-    }
+    /// Which key in [`Config::forges`] this member's remote host matched.
+    ///
+    /// `None` where the clone has no `origin`, where its remote is a local
+    /// path, or where its host matches no configured forge. All three are
+    /// ordinary and none of them stops the directory being a member: what a
+    /// repository is does not depend on anybody having a profile for its host.
+    /// Never guessed, because a guess here decides where a push lands.
+    pub forge:      Option<String>,
+    /// The namespace the remote puts it in, on the same terms as `forge`.
+    pub owner:      Option<String>,
+    /// The directory name, relative to the workspace root.
+    pub local_path: PathBuf,
 }
 
 /// Parse / IO error surfaced by [`Config::from_str`] and [`Config::from_path`].

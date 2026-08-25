@@ -27,23 +27,23 @@ name = "clause-dev"
 
 #[test]
 fn renders_loop_over_repos() {
-    let config = Config::parse(
+    // Detected rather than declared, so the fixture is a tree rather than a
+    // manifest. Two clones and one plain directory, so the loop has something
+    // to leave out as well as something to render.
+    let root = tempfile::tempdir().expect("tempdir");
+    for name in ["alpha", "beta"] {
+        std::fs::create_dir_all(root.path().join(name).join(".git")).unwrap();
+    }
+    std::fs::create_dir_all(root.path().join("notes")).unwrap();
+
+    let mut config = Config::parse(
         r#"
 [workspace]
 name = "demo"
-
-[repos.alpha]
-forge = "github"
-owner = "x"
-local_path = "alpha"
-
-[repos.beta]
-forge = "github"
-owner = "x"
-local_path = "beta"
 "#,
     )
     .unwrap();
+    config.detect_members(root.path(), &homma_core::repo::GixGit);
 
     let env = TemplateEnv::new();
     let out = env

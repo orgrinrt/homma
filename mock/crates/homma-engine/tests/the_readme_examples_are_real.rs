@@ -95,12 +95,16 @@ fn the_manifest_example_parses_as_a_manifest() {
         config.forges.contains_key("github"),
         "the example's forge did not survive the parse"
     );
-    let repo = config
-        .repos
-        .get("notko")
-        .expect("the example's repo did not survive the parse");
-    assert_eq!(repo.forge, "github");
-    assert_eq!(repo.local_path.as_os_str(), "notko");
+    // Membership is detected rather than parsed, so the example carries no
+    // repositories and a parse cannot produce one. Asserted rather than
+    // dropped: a `repos` that filled itself from somewhere during a parse
+    // would mean detection ran against whatever directory the test happened to
+    // be standing in, which is the shape the split exists to prevent.
+    assert!(
+        config.repos.is_empty(),
+        "a parse produced members, so it reached a filesystem: {:?}",
+        config.repos.keys().collect::<Vec<_>>()
+    );
 }
 
 /// One command the readme names, as it was written there.
