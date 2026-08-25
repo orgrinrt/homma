@@ -255,6 +255,14 @@ pub struct Workspace {
     /// Handle to entry.
     #[serde(default)]
     pub org:          BTreeMap<String, Identity>,
+    /// Places this operator's homma may not write, beyond the ones it derives.
+    ///
+    /// Two locations are denied wherever homma runs, because they are the same
+    /// everywhere: the operator's own `~/.claude`, and every other
+    /// participant's workspace as the registry gives them. Anything else is one
+    /// operator's arrangement and is named here rather than compiled in.
+    #[serde(default)]
+    pub deny:         Vec<crate::DenyEntry>,
 }
 
 impl Workspace {

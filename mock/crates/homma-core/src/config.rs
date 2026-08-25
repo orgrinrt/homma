@@ -47,6 +47,14 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org: Option<toml::Value>,
 
+    /// Places homma may not write, beyond the ones it derives.
+    ///
+    /// Read here as well as by `homma_api::Workspace`, which parses the same
+    /// file: this parser denies unknown fields, so a key one of them accepts and
+    /// the other does not is a manifest neither can be sure of.
+    #[serde(default)]
+    pub deny: Vec<homma_api::DenyEntry>,
+
     /// Where forge credentials come from when no environment variable holds
     /// one. See [`AuthConfig`].
     #[serde(default)]

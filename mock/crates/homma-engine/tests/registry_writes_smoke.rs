@@ -99,7 +99,10 @@ fn a_registry_inside_another_participants_workspace_is_refused() {
         .args(["--workspace", dir.path().join("ws").to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("another participant's workspace"));
+        // "a participant's" rather than "another participant's": the registry
+        // belongs to the workspace rather than to anybody in it, so nobody is
+        // excluded from this list and there is no "other" to be relative to.
+        .stderr(predicate::str::contains("a participant's workspace"));
 
     assert!(!std::fs::read_to_string(&cfg).unwrap().contains("intruder"));
 }

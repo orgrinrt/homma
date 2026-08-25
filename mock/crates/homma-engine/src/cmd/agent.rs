@@ -775,11 +775,14 @@ fn denied_for_aggregating(
     cfg: &Config,
     workspace: &homma_api::AbsPath,
 ) -> Result<homma_api::Denied> {
-    // The home-derived list names one particular workspace without knowing
-    // whose it is, so the exclusion the registry loop performs below has to
-    // cover it too, or aggregating into that workspace is refused by an entry
-    // describing it as somebody else's.
-    let mut denied = homma_api::Denied::from_env()?.permitting(workspace);
+    // The manifest's own `deny` may name the workspace being aggregated into,
+    // which is a thing an operator can reasonably write and which would then
+    // refuse the aggregation it was asked for. So the permission the registry
+    // loop below performs has to cover that list too, and it does because
+    // `permitting` runs after everything is folded in rather than before.
+    let mut denied = homma_api::Denied::from_env()?
+        .denying(&cfg.deny, workspace, homma_api::Denied::home().ok().as_ref())
+        .permitting(workspace);
     let Some(org) = cfg.org.as_ref() else {
         return Ok(denied);
     };

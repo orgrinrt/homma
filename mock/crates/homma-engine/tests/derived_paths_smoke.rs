@@ -392,24 +392,60 @@ fn a_workspace_under_an_existing_claude_directory_is_refused() {
 }
 
 #[test]
-fn a_root_in_ops_own_workspace_is_refused() {
-    // Deny item one, which has the same shape and had the same absence of a
-    // mechanism.
+fn a_root_in_a_place_the_manifest_denies_is_refused() {
+    // The manifest's own list, end to end: written into `homma.toml` and
+    // reaching a refusal with the operator's own reason in it. `~/.claude` is
+    // the only place denied without being named, so everything else an operator
+    // wants kept clear goes through this path or through none.
     let dir = tempfile::tempdir().unwrap();
     let home = a_home_with_a_real_claude(dir.path());
-    let central = home.join("Dev").join("clause-dev");
-    std::fs::create_dir_all(&central).unwrap();
+    let theirs = home.join("work").join("someone-elses");
+    std::fs::create_dir_all(&theirs).unwrap();
     let cfg = dir.path().join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    std::fs::write(
+        &cfg,
+        "content_repo = \"local\"\ndeny = [{ path = \"~/work/someone-elses\", \
+         why = \"it belongs to somebody else\" }]\n",
+    )
+    .unwrap();
     add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
 
     bin()
         .env("HOME", &home)
         .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
-        .args(["--root", central.to_str().unwrap()])
+        .args(["--root", theirs.to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not yours to write in"));
+        .stderr(predicate::str::contains("it belongs to somebody else"));
+}
+
+#[test]
+fn a_root_the_manifest_does_not_deny_is_not_refused_for_being_denied() {
+    // The control for the test above, and the reason it is worth having: an
+    // implementation that denied everything would satisfy that assertion just
+    // as well. Same tree, same command, the `deny` key removed.
+    let dir = tempfile::tempdir().unwrap();
+    let home = a_home_with_a_real_claude(dir.path());
+    let theirs = home.join("work").join("someone-elses");
+    std::fs::create_dir_all(&theirs).unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
+
+    // Whether the stand-up as a whole succeeds is not this test's business; it
+    // reaches a clone and a network. What is asserted is that it did not stop
+    // on the deny list, which is a distinct message.
+    let out = bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
+        .args(["--root", theirs.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("nothing may be written there"),
+        "a place the manifest never named was refused as denied: {stderr}"
+    );
 }
 
 #[test]
@@ -631,21 +667,26 @@ fn a_workspace_in_a_folded_spelling_of_a_denied_place_that_does_not_exist_yet_is
         return;
     }
     let home = a_home_with_no_claude_yet(dir.path());
-    // `Dev` exists and `clause-dev` does not, which is the condition under test.
+    // `work` exists and `someone-elses` does not, which is the condition under test.
     // Without this the parent-must-exist guard refuses first and the deny check
     // is never reached, so the test would pass while saying nothing.
-    std::fs::create_dir_all(home.join("Dev")).unwrap();
+    std::fs::create_dir_all(home.join("work")).unwrap();
     // The root is a sibling of the home, so the workspace under the home is not
     // also inside the root; that guard would otherwise refuse first.
     let root = dir.path().join("root");
     std::fs::create_dir_all(&root).unwrap();
     let cfg = root.join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    std::fs::write(
+        &cfg,
+        "content_repo = \"local\"\ndeny = [{ path = \"~/work/someone-elses\", \
+         why = \"it belongs to somebody else\" }]\n",
+    )
+    .unwrap();
     add_hand(
         &cfg,
         "r",
-        home.join("Dev")
-            .join("CLAUSE-DEV")
+        home.join("work")
+            .join("SOMEONE-ELSES")
             .join("ws")
             .to_str()
             .unwrap(),
@@ -656,10 +697,10 @@ fn a_workspace_in_a_folded_spelling_of_a_denied_place_that_does_not_exist_yet_is
         .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not yours to write in"));
+        .stderr(predicate::str::contains("it belongs to somebody else"));
 
-    assert!(!home.join("Dev").join("clause-dev").exists());
-    assert!(!home.join("Dev").join("CLAUSE-DEV").exists());
+    assert!(!home.join("work").join("someone-elses").exists());
+    assert!(!home.join("work").join("SOMEONE-ELSES").exists());
 }
 
 #[test]
@@ -721,24 +762,29 @@ fn a_root_in_a_folded_spelling_of_an_absent_denied_place_builds_nothing_before_r
         return;
     }
     let home = a_home_with_no_claude_yet(dir.path());
-    // `Dev` exists and `clause-dev` does not: the condition under test. Without
+    // `work` exists and `someone-elses` does not: the condition under test. Without
     // it the parent-must-exist guard refuses first, which is a correct refusal
     // for the wrong reason and would leave this asserting nothing.
-    std::fs::create_dir_all(home.join("Dev")).unwrap();
+    std::fs::create_dir_all(home.join("work")).unwrap();
     let cfg = dir.path().join("homma.toml");
-    std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
+    std::fs::write(
+        &cfg,
+        "content_repo = \"local\"\ndeny = [{ path = \"~/work/someone-elses\", \
+         why = \"it belongs to somebody else\" }]\n",
+    )
+    .unwrap();
     add_hand(&cfg, "r", dir.path().join("ws").to_str().unwrap());
 
-    let folded_root = home.join("Dev").join("CLAUSE-DEV");
+    let folded_root = home.join("work").join("SOMEONE-ELSES");
     bin()
         .env("HOME", &home)
         .args(["--config", cfg.to_str().unwrap(), "org", "up", "r"])
         .args(["--root", folded_root.to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not yours to write in"));
+        .stderr(predicate::str::contains("it belongs to somebody else"));
 
-    let central = home.join("Dev").join("clause-dev");
+    let central = home.join("work").join("someone-elses");
     assert!(!central.exists(), "the denied place must not exist");
     assert!(!folded_root.exists());
     assert!(

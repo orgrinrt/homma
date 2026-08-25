@@ -339,6 +339,15 @@ ORIG_HOOK="$REPO_ROOT"'/{hook_rel}'
 
 INPUT=$(cat)
 
+# Without `jq` this cannot read which path is being written, so it cannot narrow
+# to this repo. It forwards instead of guessing: forwarding is what happens with
+# no aggregation at all, so the guard runs more often than it needs to and never
+# silently fails to run. Guessing `$PWD` is what it used to do, and that skips
+# the guard for every write outside the directory the caller happens to be in.
+if ! command -v jq >/dev/null 2>&1; then
+    exec "$ORIG_HOOK" <<<"$INPUT"
+fi
+
 target=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.cwd // empty' 2>/dev/null)
 
 if [ -z "$target" ]; then
@@ -542,15 +551,29 @@ mod tests {
 
     /// As `run_wrapper`, keeping what the process said and how it exited.
     fn run_wrapper_output(wrapper: &Path, target: &Path) -> std::process::Output {
+        run_wrapper_on_path(wrapper, target, None)
+    }
+
+    /// The same, with `path` replacing `PATH` for the child.
+    ///
+    /// A machine without `jq` is reproduced on one that has it by handing over
+    /// a directory holding only `bash`.
+    fn run_wrapper_on_path(
+        wrapper: &Path,
+        target: &Path,
+        path: Option<&str>,
+    ) -> std::process::Output {
         use std::io::Write;
         let payload = format!(r#"{{"tool_input":{{"file_path":"{}"}}}}"#, target.display());
-        let mut child = std::process::Command::new("bash")
-            .arg(wrapper)
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(wrapper)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+            .stderr(std::process::Stdio::piped());
+        if let Some(p) = path {
+            cmd.env("PATH", p);
+        }
+        let mut child = cmd.spawn().unwrap();
         child
             .stdin
             .as_mut()
@@ -634,6 +657,68 @@ mod tests {
         assert!(
             !marker.exists(),
             "the wrapper handed off for a path outside the repo"
+        );
+    }
+
+    /// **Without `jq` the wrapper hands off rather than guessing.**
+    ///
+    /// It read the target path with `jq` and fell back to `$PWD` when that came
+    /// back empty, so on a machine without `jq` the scope check was against the
+    /// caller's directory rather than against the write. A write inside the repo
+    /// from anywhere else silently skipped the repo's own hook, which is a guard
+    /// that does not run reporting nothing.
+    ///
+    /// Handing off is the safe direction: it is what happens with no
+    /// aggregation at all, so the cost of being wrong is a hook running when it
+    /// need not rather than one that never runs.
+    #[test]
+    fn a_wrapper_without_jq_hands_off_rather_than_guessing_from_the_directory() {
+        let ws = tempfile::tempdir().unwrap();
+        let hooks = ws.path().join(".claude/hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        fs::create_dir_all(ws.path().join("arvo/.claude/hooks")).unwrap();
+
+        // Builtins only, because this runs under a PATH holding one program.
+        // `printf` and the redirection are bash's own; `cat` and `touch` are
+        // not, and the first version of this fixture used both and failed for
+        // that rather than for the property under test.
+        let marker = ws.path().join("fired");
+        let real = ws.path().join("arvo/.claude/hooks/foo.sh");
+        fs::write(
+            &real,
+            format!("#!/usr/bin/env bash\nprintf '' > '{}'\n", marker.display()),
+        )
+        .unwrap();
+        make_executable(&real);
+
+        let wrapper = hooks.join("arvo--foo.sh");
+        fs::write(
+            &wrapper,
+            wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh"),
+        )
+        .unwrap();
+        make_executable(&wrapper);
+
+        let bare = crate::cmd::gates::tests::a_path_without_jq(ws.path());
+
+        // The write is inside the repo, and the working directory is not, which
+        // is the exact shape the `$PWD` fallback got wrong.
+        let inside = ws.path().join("arvo/src/lib.rs");
+        run_wrapper_on_path(&wrapper, &inside, Some(&bare));
+        assert!(
+            marker.exists(),
+            "a write inside the repo skipped the repo's own hook when jq was absent"
+        );
+
+        // The control: with jq present the same call also hands off, so the
+        // assertion above is about the missing tool and not about the wrapper
+        // handing off unconditionally in every configuration.
+        fs::remove_file(&marker).unwrap();
+        let outside = ws.path().join("kolli/src/lib.rs");
+        run_wrapper(&wrapper, &outside);
+        assert!(
+            !marker.exists(),
+            "control: with jq present a path outside the repo is still declined"
         );
     }
 
