@@ -130,7 +130,35 @@ impl Config {
             cfg.workspace.path = normalise(&beside.join(&cfg.workspace.path));
         }
         cfg.settle_token_commands(beside);
+        cfg.settle_deny(beside);
         Ok(cfg)
+    }
+
+    /// Anchor every relative `deny` entry against the directory the manifest
+    /// sits in, once, at the load.
+    ///
+    /// That directory is the anchor the entries are documented to have, and it
+    /// is the one `workspace.path` and the token commands already take. Doing it
+    /// here means nothing relative survives the load, so a later caller's own
+    /// idea of the base cannot disagree with any of them. It could disagree:
+    /// `workspace.path` may point away from the manifest, and the aggregation
+    /// hands the workspace root down where the registry hands the manifest's own
+    /// directory.
+    ///
+    /// A `~/` entry is left alone. Its anchor is the home rather than the
+    /// manifest, resolving it is what `DenyEntry::resolve` does when a home is
+    /// known, and doing that in two places is how the two come to disagree.
+    ///
+    /// Public for the same reason [`Config::settle_token_commands`] is: a caller
+    /// that parsed a string rather than read a file is the only thing that knows
+    /// which directory the text belongs to. Idempotent, since an entry made
+    /// absolute here is absolute the second time through.
+    pub fn settle_deny(&mut self, config_dir: &Path) {
+        for entry in &mut self.deny {
+            if entry.path.is_relative() && !entry.path.starts_with("~") {
+                entry.path = normalise(&config_dir.join(&entry.path));
+            }
+        }
     }
 
     /// Inherit, substitute and anchor every forge's token command, once.
@@ -671,5 +699,89 @@ mod tests {
         // and a path that cancels to nothing is still a path
         assert_eq!(normalise(Path::new("a/..")), PathBuf::from("."));
         assert_eq!(normalise(Path::new(".")), PathBuf::from("."));
+    }
+}
+
+#[cfg(test)]
+mod deny_anchor_tests {
+    use super::*;
+
+    /// Write a manifest into a fresh directory and load it the way a run does.
+    ///
+    /// Through the file rather than through `parse`, because the anchoring is
+    /// what `from_path` adds and a string has no directory to be anchored to.
+    fn loaded(body: &str) -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let at = dir.path().join("homma.toml");
+        std::fs::write(&at, body).unwrap();
+        let cfg = Config::from_path(&at).unwrap();
+        (dir, cfg)
+    }
+
+    #[test]
+    fn a_relative_entry_is_anchored_to_the_manifest_rather_than_the_caller() {
+        let (dir, cfg) = loaded(
+            r#"
+deny = ["scratch"]
+[workspace]
+name = "w"
+"#,
+        );
+        assert_eq!(cfg.deny[0].path, dir.path().join("scratch"));
+        // The control: the working directory is a different place, and an entry
+        // anchored there would name it instead.
+        assert_ne!(cfg.deny[0].path, std::env::current_dir().unwrap().join("scratch"));
+    }
+
+    #[test]
+    fn the_anchor_holds_when_the_workspace_points_somewhere_else() {
+        // The case the two anchors diverged on. The registry resolved a relative
+        // entry against the manifest's directory and the aggregation resolved it
+        // against the workspace root, so one manifest denied two different
+        // places depending on which command read it.
+        let (dir, cfg) = loaded(
+            r#"
+deny = ["scratch"]
+[workspace]
+name = "w"
+path = "elsewhere"
+"#,
+        );
+        assert_eq!(cfg.deny[0].path, dir.path().join("scratch"));
+        assert_ne!(cfg.deny[0].path, cfg.workspace.path.join("scratch"));
+    }
+
+    #[test]
+    fn a_home_entry_and_an_absolute_one_come_through_untouched() {
+        // `~/` belongs to the home rather than the manifest, and resolving it
+        // here as well as in `DenyEntry::resolve` is how the two come to
+        // disagree. An absolute entry names its place already.
+        let (_dir, cfg) = loaded(
+            r#"
+deny = ["~/work/someone-elses", "/var/tmp/nope"]
+[workspace]
+name = "w"
+"#,
+        );
+        assert_eq!(cfg.deny[0].path, Path::new("~/work/someone-elses"));
+        assert_eq!(cfg.deny[1].path, Path::new("/var/tmp/nope"));
+    }
+
+    #[test]
+    fn settling_twice_lands_in_the_same_place() {
+        // `from_path` has already settled it, so a caller that settles again
+        // against a different directory must not push it further. Idempotence is
+        // what makes the public method safe to call without knowing.
+        let (dir, mut cfg) = loaded(
+            r#"
+deny = ["scratch"]
+[workspace]
+name = "w"
+"#,
+        );
+        let once = cfg.deny[0].path.clone();
+        cfg.settle_deny(Path::new("/somewhere/else"));
+        assert_eq!(cfg.deny[0].path, once);
+        assert_eq!(once, dir.path().join("scratch"));
     }
 }

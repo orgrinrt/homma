@@ -778,6 +778,13 @@ fn denied_for_aggregating(
     // refuse the aggregation it was asked for. So the permission the registry
     // loop below performs has to cover that list too, and it does because
     // `permitting` runs after everything is folded in rather than before.
+    //
+    // The workspace root is passed as the base and decides nothing. A config
+    // read from a file has had its relative entries anchored to the manifest's
+    // own directory already, which is the anchor `denying` documents, so nothing
+    // relative is left for a base to disagree about. The two coincide in the
+    // ordinary layout and part the moment `workspace.path` points elsewhere,
+    // which is a manifest the parser accepts.
     let mut denied = homma_api::Denied::from_env()?
         .denying(
             &cfg.deny,
