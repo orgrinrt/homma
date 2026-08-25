@@ -55,6 +55,14 @@ pub const TOOL: Tool = Tool {
     ..Tool::CONVENTIONS
 };
 
+/// The descriptor is answerable at build time, so it is answered here.
+///
+/// `..Tool::CONVENTIONS` is a base of empty names, which is safe only because
+/// `Tool::defect` refuses every one of them and is const. Writing the literal
+/// out gave this for free: a missing field was a missing field. The spread
+/// trades that away, and this one line buys it back.
+const _: () = assert!(TOOL.defect().is_none());
+
 /// The engine package inside a checkout of this repo.
 pub const ENGINE_SUBDIR: &str = "mock/crates/homma-engine";
 

@@ -7,10 +7,33 @@ edition = "2024"
 # workspace pins, so it needs no version relationship to it.
 publish = true
 description = "Launcher for the homma workspace harness: resolves the engine a workspace pins, builds it once per version into a shared cache, and runs it from any working directory."
+# The repository's own, since this crate is the whole of what an operator
+# installs. Cargo ships whatever `readme` names whether or not `include`
+# mentions it, which is the only way to reach a file above the package.
+readme = "../README.md"
+# `renki` is the floor and it declares 1.88. Stated here too, or an older
+# toolchain fails somewhere inside a dependency instead of at this manifest.
+rust-version = "1.88"
 license = "MPL-2.0"
 repository = "https://github.com/orgrinrt/homma"
 categories = ["development-tools", "command-line-utilities"]
 keywords = ["homma", "workspace", "multi-repo", "git"]
+
+# Named one file at a time rather than globbed, because a glob cannot tell a
+# test about this crate from a test about this repository, and the second kind
+# does not compile where the package lands.
+#
+# `the_pin_survives_the_engine.rs` is the second kind. It holds both ends of the
+# one config file this tool and its engine share, so it needs `homma-core`,
+# which it reaches through a path dev-dependency that cargo strips on publish.
+# In the tarball the import resolves to nothing and the package's own suite goes
+# red on a fresh machine, which `cargo publish` never notices because
+# verification builds the lib and the bins and no test at all.
+include = [
+    "src/**/*.rs",
+    "tests/descriptor_names_the_tree.rs",
+    "tests/the_engine_flag_says_where_the_engine_is.rs",
+]
 
 # The launcher machinery is `renki` and is shared with every other tool built
 # the same way. What is left here is this tool's own, which is a descriptor and
