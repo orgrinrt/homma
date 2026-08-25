@@ -42,8 +42,9 @@ into anything that has to keep running unattended just yet.
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
 | `homma migrate` | Mirror-clones a repo to another forge and pushes it, replicating description, visibility and default branch |
 | `homma archive` | Marks the source archived, deliberately as a second step rather than folded into the migration |
-| `homma org` | The registry of who works here, and standing an entry up with its directories and its own clone |
-| `homma docs` | Reports which documentation surfaces each member repo currently has |
+| `homma org <op>` | The registry of who works here, and standing an entry up with its directories and its own clone |
+| `homma agent <op>` | Reports which member repos carry their own template scaffolding, and drives each one's regeneration |
+| `homma docs status` | Reports which documentation surfaces each member repo currently has |
 
 `--output json` sits on the root and applies to all of them, one document per
 command, which is there mostly so you can pipe it into `jq` and stop parsing our
@@ -92,6 +93,12 @@ Tokens are read out of the environment by the name the forge names, so nothing
 secret is ever written into the manifest. `homma verify` tells you which of them
 did not resolve before any command goes and finds out the hard way.
 
+Where a credential lives in something other than an environment variable, a
+forge may instead name `token_cmd`, an argument list homma runs and reads the
+token off stdout. That is a program the manifest chooses, so a manifest you got
+from somewhere else runs whatever it names when a forge is asked for anything.
+Read that key before you trust a manifest you did not write.
+
 ## Installation
 
 What goes on `PATH` is a small launcher. It finds the workspace, reads the
@@ -119,7 +126,7 @@ checkout while you're working on the engine instead.
 
 ## Responsible tooling
 
-`homma agent` walks the workspace and drives each member repo's own template
+`homma agent regen` walks the workspace and drives each member repo's own template
 regeneration, which in practice means assistant configuration files end up
 written into the workspace. It's a convenience for a workflow that already has
 those files, not a reason to adopt the tool, and everything else here works with
