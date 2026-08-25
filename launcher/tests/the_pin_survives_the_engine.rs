@@ -20,10 +20,9 @@
 //! it cargo drags the engine's crates in as implicit members of a root that
 //! declares no `workspace.package`, and this file stops compiling.
 //!
-//! **What this covers**: the five spellings the launcher reads today. It does
-//! not cover a spelling `renki` might add later, because the set is derived
-//! inside `Header::parse` and is not enumerable from out here. Tracked as
-//! `renki-exposes-its-pin-suffixes` on the agenda.
+//! **What this covers**: every key the descriptor names, read off the
+//! descriptor rather than rebuilt from a prefix. A key `renki` adds arrives
+//! here as a missing field rather than as a case nobody wrote.
 
 use homma::TOOL;
 use renki::Header;
@@ -34,14 +33,23 @@ fn config_with(key: &str, value: &str) -> String {
 }
 
 /// Every pin key the launcher reads, with a value of the shape it expects.
-fn every_pin_key() -> Vec<(String, &'static str)> {
-    let p = TOOL.pin_prefix;
+///
+/// Destructured rather than read field by field, so a key added to `PinKeys`
+/// stops this compiling instead of quietly going untested.
+fn every_pin_key() -> Vec<(&'static str, &'static str)> {
+    let renki::PinKeys {
+        version,
+        rev,
+        tag,
+        branch,
+        git,
+    } = TOOL.pin_keys;
     vec![
-        (format!("{p}_rev"), "22272ce84950"),
-        (format!("{p}_tag"), "0.1.0"),
-        (format!("{p}_branch"), "dev"),
-        (format!("{p}_version"), "0.1.0"),
-        (format!("{p}_git"), "ssh://git@example.invalid/x.git"),
+        (rev, "22272ce84950"),
+        (tag, "0.1.0"),
+        (branch, "dev"),
+        (version, "0.1.0"),
+        (git, "ssh://git@example.invalid/x.git"),
     ]
 }
 
