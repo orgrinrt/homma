@@ -526,10 +526,7 @@ handle = "proof"
     #[test]
     fn one_key_is_enough() {
         let w = Workspace::parse(MINIMAL).expect("should parse");
-        assert_eq!(
-            w.content_repo,
-            "git@example.invalid:someone/content.git"
-        );
+        assert_eq!(w.content_repo, "git@example.invalid:someone/content.git");
         assert!(w.org.is_empty());
     }
 

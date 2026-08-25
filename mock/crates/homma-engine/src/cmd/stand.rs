@@ -436,10 +436,7 @@ domain = "rendering"
         let git = FakeGit::somewhere_else();
         let err = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap_err();
         let msg = format!("{err:#}");
-        assert!(
-            msg.contains("content"),
-            "must name what it expected: {msg}"
-        );
+        assert!(msg.contains("content"), "must name what it expected: {msg}");
         assert!(msg.contains("member"), "and what it found: {msg}");
         assert!(
             git.cloned.borrow().is_empty(),

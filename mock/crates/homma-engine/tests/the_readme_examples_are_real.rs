@@ -37,19 +37,53 @@ fn fenced_blocks(lang: &str) -> Vec<String> {
 #[test]
 fn the_manifest_example_parses_as_a_manifest() {
     let blocks = fenced_blocks("toml");
-    assert_eq!(
-        blocks.len(),
-        1,
-        "the readme has {} toml blocks; this test knows about one and would \
-         silently skip the rest",
-        blocks.len()
+    assert!(
+        !blocks.is_empty(),
+        "the readme has no toml block, so its manifest example is gone"
     );
 
-    let parsed: Result<Config, _> = toml::from_str(&blocks[0]);
+    // Every block, rather than the first. A second example added later is a
+    // second thing that can stop parsing, and a test reading one block reports
+    // on one block whatever the readme grew.
+    //
+    // The one naming a workspace is the manifest. The rest are fragments of a
+    // manifest and cannot stand alone, so each is folded into the manifest's
+    // own keys and the result parsed, which is what checks that a fragment
+    // names real keys carrying values of the right shape.
+    let mut tables: Vec<toml::Table> = Vec::new();
+    for block in &blocks {
+        let parsed: Result<toml::Table, _> = toml::from_str(block);
+        tables.push(parsed.unwrap_or_else(|e| {
+            panic!("a toml block in the readme is not valid toml: {e}\n\n{block}")
+        }));
+    }
+    let whole = tables
+        .iter()
+        .position(|t| t.contains_key("workspace"))
+        .expect("no toml block in the readme names a workspace");
+
+    for (i, fragment) in tables.iter().enumerate() {
+        if i == whole {
+            continue;
+        }
+        let mut merged = tables[whole].clone();
+        for (k, v) in fragment {
+            merged.insert(k.clone(), v.clone());
+        }
+        let parsed: Result<Config, _> = merged.clone().try_into();
+        parsed.unwrap_or_else(|e| {
+            panic!(
+                "a toml fragment in the readme is not a manifest key: {e}\n\n{}",
+                blocks[i]
+            )
+        });
+    }
+
+    let parsed: Result<Config, _> = tables[whole].clone().try_into();
     let config = parsed.unwrap_or_else(|e| {
         panic!(
             "the readme's manifest example does not parse: {e}\n\n{}",
-            blocks[0]
+            blocks[whole]
         )
     });
 
@@ -72,11 +106,11 @@ fn the_manifest_example_parses_as_a_manifest() {
 /// One command the readme names, as it was written there.
 struct Named {
     /// The words that form a command path: `["docs", "status"]`.
-    path:          Vec<String>,
+    path:         Vec<String>,
     /// Whether the readme wrote a `<placeholder>` after it.
-    has_argument:  bool,
+    has_argument: bool,
     /// The whole span, for a message that points at what to fix.
-    as_written:    String,
+    as_written:   String,
 }
 
 /// Every `` `homma ...` `` span in the readme, parsed.
@@ -85,10 +119,10 @@ fn commands_the_readme_names() -> Vec<Named> {
     for line in README.lines() {
         let mut rest = line;
         while let Some(at) = rest.find("`homma ") {
-            let after = &rest[at + "`homma ".len()..];
+            let after = &rest[at + "`homma ".len() ..];
             let end = after.find('`').unwrap_or(after.len());
-            let span = &after[..end];
-            rest = &after[end.min(after.len())..];
+            let span = &after[.. end];
+            rest = &after[end.min(after.len()) ..];
 
             let mut path = Vec::new();
             let mut has_argument = false;
@@ -102,7 +136,10 @@ fn commands_the_readme_names() -> Vec<Named> {
                 }
                 path.push(word.to_string());
             }
-            if path.is_empty() || out.iter().any(|n| n.path == path && n.has_argument == has_argument)
+            if path.is_empty()
+                || out
+                    .iter()
+                    .any(|n| n.path == path && n.has_argument == has_argument)
             {
                 continue;
             }

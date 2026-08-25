@@ -474,8 +474,8 @@ impl std::error::Error for Forbidden {}
 
 #[cfg(test)]
 mod tests {
-    use crate::DenyEntry;
     use super::*;
+    use crate::DenyEntry;
 
     fn abs(p: impl Into<std::path::PathBuf>) -> AbsPath {
         AbsPath::new(p).expect("a tempdir path is absolute")
