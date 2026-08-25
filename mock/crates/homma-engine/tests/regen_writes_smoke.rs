@@ -543,3 +543,97 @@ fn skipping_every_stage_is_refused_but_skipping_two_is_not() {
         "the configs stage did not run"
     );
 }
+
+#[test]
+fn a_write_leaving_the_workspace_is_refused_before_the_deny_list_is_consulted() {
+    // Written to reach the manifest `deny` fold in the aggregation's own list,
+    // and it establishes that nothing can. That is the more useful result and
+    // it is recorded here rather than in prose somewhere else.
+    //
+    // The pass permits its own workspace root back after folding the list in,
+    // so an entry naming the workspace does nothing. Everything it writes is
+    // under that root, so an entry naming anywhere else is never reached. The
+    // one shape that is both, a path under the root resolving out of it, is
+    // refused first by the containment check, which does not look at the list
+    // at all.
+    //
+    // So the fold is unreachable behind a sibling guard rather than merely
+    // unasserted. It stays because the containment check is what makes it so,
+    // and a guard that depends on another guard holding wants the second one
+    // there when the first is loosened. What it does not want is a test
+    // claiming it fires, which is why this asserts the refusal that happens
+    // and names the one that does not.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+
+    let theirs = home.join("work").join("someone-elses");
+    std::fs::create_dir_all(&theirs).unwrap();
+
+    let ws = dir.path().join("workspace");
+    std::fs::create_dir_all(ws.join(".claude")).unwrap();
+    std::os::unix::fs::symlink(&theirs, ws.join(".claude").join("hooks")).unwrap();
+
+    // A repository with a hook to aggregate, so the pass has work to do.
+    let repo = dir.path().join("notko");
+    std::fs::create_dir_all(repo.join(".claude").join("hooks")).unwrap();
+    std::fs::write(
+        repo.join(".claude").join("hooks").join("h.sh"),
+        "#!/bin/sh\n",
+    )
+    .unwrap();
+
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            r#"
+deny = [{{ path = "~/work/someone-elses", why = "it belongs to somebody else" }}]
+
+[workspace]
+name = "ws"
+path = "{}"
+
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+
+[repos.notko]
+forge = "github"
+owner = "orgrinrt"
+local_path = "{}"
+"#,
+            ws.display(),
+            repo.display()
+        ),
+    )
+    .unwrap();
+
+    let out = bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "agent", "regen"])
+        .args(["--skip-cargo-mock"])
+        .output()
+        .expect("the binary runs");
+
+    assert!(!out.status.success(), "the write must not go through");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        said.contains("outside the workspace root"),
+        "and the containment check is what refuses it, not the deny list: {said}"
+    );
+
+    let leaked: Vec<_> = std::fs::read_dir(&theirs)
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "nothing may land in the denied directory: {leaked:?}"
+    );
+}
