@@ -5,7 +5,7 @@
 
 //! Workspace-level git-ops validation gate.
 //!
-//! Phase 3 of #454. Generates a workspace `.claude/hooks/` shell script
+//! Generates a workspace `.claude/hooks/` shell script
 //! that intercepts Bash tool calls running `git commit` or `git push`
 //! from within a member repo's subtree and verifies that repo has a
 //! healthy mockspace bootstrap before allowing the operation through.
@@ -503,11 +503,7 @@ pub(crate) mod tests {
     /// The parameter exists so the missing-`jq` case is a test rather than a
     /// reason to skip five others. Passing a directory holding only `bash` and
     /// its dependencies reproduces a machine without `jq` on one that has it.
-    fn run_gate_on_path(
-        repos: &[(String, String)],
-        input: &str,
-        path: Option<&str>,
-    ) -> String {
+    fn run_gate_on_path(repos: &[(String, String)], input: &str, path: Option<&str>) -> String {
         use std::io::Write;
         use std::process::{Command, Stdio};
 

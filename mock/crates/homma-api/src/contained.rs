@@ -64,7 +64,7 @@ impl Root {
     /// with it, and those are above the root by definition: containment says
     /// nothing about them and cannot, since they are outside the thing doing the
     /// containing. With a root under a home directory this created directories
-    /// inside `~/.claude/`, which the record forbids outright.
+    /// inside `~/.claude/`, which is denied outright.
     ///
     /// So the rule is that homma creates the root and never the path to it.
     /// Creating the root is intended and `content_repo = "local"` relies on it;
@@ -119,7 +119,7 @@ impl Root {
         })?;
         if resolved.as_path().starts_with(self.resolved.as_path()) {
             // Inside the root is necessary and not sufficient. A root that is a
-            // home contains `~/.claude` perfectly, and the record denies it
+            // home contains `~/.claude` perfectly, and that is denied
             // absolutely rather than relative to anything.
             self.denied.check(path, "path").map_err(|e| {
                 Escapes {
@@ -334,7 +334,7 @@ mod tests {
     // The twelfth review's reproduction. `create_dir_all` creates every missing
     // ancestor, so a missing root takes its own ancestors with it, and those are
     // above the root by definition. With the root under a home directory this
-    // created directories inside `~/.claude/`, which the record forbids.
+    // created directories inside `~/.claude/`, which is denied.
     #[test]
     fn a_root_whose_parent_does_not_exist_is_refused() {
         let d = tempfile::tempdir().unwrap();

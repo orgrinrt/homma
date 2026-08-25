@@ -117,7 +117,7 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     // **Before everything, because this is a different question from
     // containment and no amount of containment answers it.** Containment asks
     // whether a write stays inside a root the operator named. This asks whether
-    // that root is somewhere the record forbids, and a home directory contains
+    // that root is somewhere nothing may be written, and a home directory contains
     // itself perfectly.
     //
     // Thirteen review rounds closed the first question and never asked the
@@ -280,7 +280,7 @@ mod tests {
     use crate::cmd::fake_git::{CONTENT, FakeGit, abs};
 
     const ORG: &str = r#"
-content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+content_repo = "git@example.invalid:someone/content.git"
 
 [org.op]
 role = "king"
@@ -295,7 +295,7 @@ domain = "tooling"
 git_name = "paja"
 git_email = "paja@example.invalid"
 committer_name = "Vouti"
-committer_email = "orgrinrt+vouti@example.invalid"
+committer_email = "someone+alt@example.invalid"
 workspace = "/tmp/paja"
 
 # Staffed, with an author and no committer, so the fallback stays covered at
@@ -392,7 +392,7 @@ domain = "rendering"
                     "paja",
                     "paja@example.invalid",
                     "Vouti",
-                    "orgrinrt+vouti@example.invalid"
+                    "someone+alt@example.invalid"
                 )
                 .unwrap()
             ),
@@ -437,7 +437,7 @@ domain = "rendering"
         let err = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap_err();
         let msg = format!("{err:#}");
         assert!(
-            msg.contains("clause-dev"),
+            msg.contains("content"),
             "must name what it expected: {msg}"
         );
         assert!(msg.contains("member"), "and what it found: {msg}");

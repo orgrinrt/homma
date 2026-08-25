@@ -69,36 +69,201 @@ fn the_manifest_example_parses_as_a_manifest() {
     assert_eq!(repo.local_path.as_os_str(), "notko");
 }
 
-#[test]
-fn every_command_the_readme_names_is_one_the_cli_takes() {
-    // The readme's table spells each one as `homma <cmd>`, so that is what is
-    // looked for.
-    let mut named: Vec<&str> = Vec::new();
+/// One command the readme names, as it was written there.
+struct Named {
+    /// The words that form a command path: `["docs", "status"]`.
+    path:          Vec<String>,
+    /// Whether the readme wrote a `<placeholder>` after it.
+    has_argument:  bool,
+    /// The whole span, for a message that points at what to fix.
+    as_written:    String,
+}
+
+/// Every `` `homma ...` `` span in the readme, parsed.
+fn commands_the_readme_names() -> Vec<Named> {
+    let mut out: Vec<Named> = Vec::new();
     for line in README.lines() {
         let mut rest = line;
         while let Some(at) = rest.find("`homma ") {
-            let after = &rest[at + "`homma ".len() ..];
+            let after = &rest[at + "`homma ".len()..];
             let end = after.find('`').unwrap_or(after.len());
-            let cmd = after[.. end].split_whitespace().next().unwrap_or("");
-            if !cmd.is_empty() && !cmd.starts_with('-') && !named.contains(&cmd) {
-                named.push(cmd);
+            let span = &after[..end];
+            rest = &after[end.min(after.len())..];
+
+            let mut path = Vec::new();
+            let mut has_argument = false;
+            for word in span.split_whitespace() {
+                if word.starts_with('<') || word.starts_with('[') {
+                    has_argument = true;
+                    break;
+                }
+                if word.starts_with('-') {
+                    break;
+                }
+                path.push(word.to_string());
             }
-            rest = &after[end.min(after.len()) ..];
+            if path.is_empty() || out.iter().any(|n| n.path == path && n.has_argument == has_argument)
+            {
+                continue;
+            }
+            out.push(Named {
+                path,
+                has_argument,
+                as_written: format!("homma {span}"),
+            });
         }
     }
+    out
+}
 
+/// `--help` for a command path, as the shipped binary prints it.
+fn help_for(path: &[String]) -> String {
+    let out = bin()
+        .args(path)
+        .arg("--help")
+        .output()
+        .expect("the binary would not run");
+    assert!(
+        out.status.success(),
+        "`homma {} --help` failed, so the readme names a command the cli does \
+         not take:\n{}",
+        path.join(" "),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Whether clap says this command needs a subcommand to run.
+///
+/// Its usage line carries `<COMMAND>` when it does. Read off the shipped
+/// binary rather than off the type, because the binary is what a reader who
+/// copies a line out of the readme is going to run, and `homma-engine` has no
+/// library target to reach the type through.
+fn wants_a_subcommand(help: &str) -> bool {
+    help.lines()
+        .find(|l| l.starts_with("Usage:"))
+        .is_some_and(|l| l.contains("<COMMAND>"))
+}
+
+/// **Every command the readme names runs as it is written there.**
+///
+/// The previous version ran each with `--help` and asked only whether that
+/// succeeded. `--help` succeeds on a parent command whether or not the command
+/// runs on its own, so the table offered `homma docs` for as long as it did,
+/// and `homma docs` is a usage error.
+#[test]
+fn every_command_the_readme_names_runs_as_written() {
+    let named = commands_the_readme_names();
     assert!(
         named.len() >= 8,
         "the readme names {} commands, too few to be the table this test is \
-         about: {named:?}",
+         about",
         named.len()
     );
 
-    for cmd in &named {
-        // `--help` parses the subcommand and then stops, so a zero exit means
-        // the name was recognised and nothing was run.
-        bin().args([cmd, "--help"]).assert().success();
+    let mut wrong = Vec::new();
+    for n in &named {
+        let help = help_for(&n.path);
+        match (wants_a_subcommand(&help), n.has_argument) {
+            (true, false) => {
+                wrong.push(format!(
+                    "`{}` needs a subcommand and the readme writes it without one",
+                    n.as_written
+                ));
+            },
+            (false, true) => {
+                wrong.push(format!(
+                    "`{}` takes no subcommand and the readme writes one after it",
+                    n.as_written
+                ));
+            },
+            _ => {},
+        }
     }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// The rows of the readme's command table.
+///
+/// The table specifically, rather than the whole readme. A command mentioned in
+/// a paragraph further down is not documented as a command, and `agent` was
+/// exactly that: a top-level command, discussed in the prose, and absent from
+/// the table nobody would read past.
+fn the_command_table() -> String {
+    let after = README
+        .split("| Command | What it's for |")
+        .nth(1)
+        .expect("the readme has no command table");
+    after
+        .split("\n\n")
+        .next()
+        .expect("the command table does not end")
+        .to_string()
+}
+
+/// **Every command the cli has is in the readme's table.**
+///
+/// The check ran one way only, so a command added later is documented or this
+/// says which one is not.
+#[test]
+fn every_command_the_cli_has_is_one_the_readme_names() {
+    let help = help_for(&[]);
+    let commands = help
+        .split("\nCommands:\n")
+        .nth(1)
+        .expect("the top-level help has no command list");
+    let commands = commands.split("\n\n").next().unwrap_or(commands);
+
+    let table = the_command_table();
+    // The parse of the table itself, so an empty one cannot report every
+    // command as documented by matching nothing against nothing.
+    assert!(
+        table.lines().filter(|l| l.starts_with("| `homma ")).count() >= 8,
+        "read too few rows out of the readme's command table:\n{table}"
+    );
+
+    let mut missing = Vec::new();
+    let mut found = 0;
+    for line in commands.lines() {
+        let Some(name) = line.split_whitespace().next() else {
+            continue;
+        };
+        // clap's own, and not homma's to document.
+        if name == "help" {
+            continue;
+        }
+        found += 1;
+        if !table.contains(&format!("`homma {name}")) {
+            missing.push(name.to_string());
+        }
+    }
+    // The parse, asserted rather than trusted: a help format this stopped
+    // recognising would leave the loop above finding nothing and reporting
+    // success.
+    assert!(
+        found >= 8,
+        "read {found} commands out of the top-level help, which is too few to \
+         be its command list"
+    );
+    assert!(
+        missing.is_empty(),
+        "the cli has commands the readme's table does not name: {missing:?}"
+    );
+}
+
+/// **The readme names `token_cmd`.**
+///
+/// A manifest may carry an argument list homma runs to obtain a credential, so
+/// a manifest taken from somewhere else runs a program of its choosing. The
+/// readme said tokens come out of the environment and stopped there, which is
+/// true and is the half that is safe.
+#[test]
+fn the_readme_names_the_credential_command_a_manifest_can_carry() {
+    assert!(
+        README.contains("token_cmd"),
+        "the manifest can name a program to run for a credential and the readme \
+         does not say so"
+    );
 }
 
 #[test]

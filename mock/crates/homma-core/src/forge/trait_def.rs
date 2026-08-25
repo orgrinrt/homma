@@ -173,8 +173,8 @@ impl CreateRepoSpec {
     /// visibility / default branch on the destination.
     ///
     /// Does not copy `topics`. Topics are typically set via a separate forge
-    /// endpoint (`PUT /repos/{owner}/{name}/topics`); see the migrate command
-    /// (#452) for the post-create topics-replication step.
+    /// endpoint (`PUT /repos/{owner}/{name}/topics`), which the migrate command
+    /// performs after the repo exists.
     pub fn replicate_from(mut self, source: &RepoMetadata) -> Self {
         self.description = source.description.clone();
         self.visibility = source.visibility;

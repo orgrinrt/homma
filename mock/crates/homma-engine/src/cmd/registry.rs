@@ -132,7 +132,7 @@ mod tests {
         let path = d.path().join("homma.toml");
         std::fs::write(
             &path,
-            "content_repo = \"git@example.invalid:orgrinrt/clause-dev.git\"\n",
+            "content_repo = \"git@example.invalid:someone/content.git\"\n",
         )
         .unwrap();
 

@@ -36,85 +36,8 @@
 //! process-global environment variable in a parallel test run.
 
 use std::fmt;
-use std::path::PathBuf;
-
-use serde::{Deserialize, Serialize};
 
 use crate::AbsPath;
-
-/// One entry of a manifest's `deny`: a place homma may not write, and why.
-///
-/// Written either as a bare path, or as a table carrying a reason:
-///
-/// ```toml
-/// deny = [
-///     "~/work/someone-elses",
-///     { path = "scratch", why = "regenerated, and not worth a merge conflict" },
-/// ]
-/// ```
-///
-/// The reason is worth having because every refusal in this module tells the
-/// operator which place stopped it and on what grounds, and "the workspace
-/// manifest denies writes there" is the least useful sentence that could be
-/// said. It is optional because a path alone is often self-explanatory to the
-/// person who wrote it down.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "DenyRepr", into = "DenyRepr")]
-pub struct DenyEntry {
-    /// Absolute, or relative to the manifest, or `~/`-prefixed.
-    pub path: PathBuf,
-    /// Shown in the refusal. Defaulted when absent.
-    pub why:  Option<String>,
-}
-
-impl DenyEntry {
-    /// The absolute place this names, or nothing when it cannot be resolved.
-    ///
-    /// `~/` needs a home and there may not be one, and an entry that cannot be
-    /// resolved denotes no place. Returning nothing is right rather than
-    /// falling back to another anchor: a denial resolved against the wrong base
-    /// refuses a directory the operator never named, which is worse than the
-    /// entry having no effect and is much harder to diagnose.
-    pub fn resolve(&self, base: &AbsPath, home: Option<&AbsPath>) -> Option<AbsPath> {
-        let raw = self.path.as_path();
-        let mut components = raw.components();
-        if raw.starts_with("~") {
-            let home = home?;
-            components.next();
-            let rest: PathBuf = components.collect();
-            return Some(if rest.as_os_str().is_empty() { home.clone() } else { home.join(&rest) });
-        }
-        Some(AbsPath::resolve(base, raw))
-    }
-}
-
-/// Both spellings a `deny` entry takes on the wire.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-enum DenyRepr {
-    Bare(PathBuf),
-    Table { path: PathBuf, #[serde(default)] why: Option<String> },
-}
-
-impl From<DenyRepr> for DenyEntry {
-    fn from(r: DenyRepr) -> Self {
-        match r {
-            DenyRepr::Bare(path) => Self { path, why: None },
-            DenyRepr::Table { path, why } => Self { path, why },
-        }
-    }
-}
-
-impl From<DenyEntry> for DenyRepr {
-    fn from(e: DenyEntry) -> Self {
-        // Round-trips to the shorter spelling when there is nothing to carry,
-        // so a manifest homma writes back reads the way one written by hand does.
-        match e.why {
-            None => DenyRepr::Bare(e.path),
-            Some(why) => DenyRepr::Table { path: e.path, why: Some(why) },
-        }
-    }
-}
 
 /// The absolute locations nothing may be written under.
 #[derive(Debug, Clone)]
@@ -131,9 +54,7 @@ pub struct Denied {
 fn home_from_env() -> Result<AbsPath, NoHome> {
     match std::env::var_os("HOME") {
         None => Err(NoHome::Unset),
-        Some(v) => {
-            AbsPath::new(&v).map_err(|_| NoHome::Relative(v.to_string_lossy().into_owned()))
-        },
+        Some(v) => AbsPath::new(&v).map_err(|_| NoHome::Relative(v.to_string_lossy().into_owned())),
     }
 }
 
@@ -191,10 +112,7 @@ impl Denied {
         let mut denied = Self::under_home(&home).denying(&ws.deny, root, Some(&home));
         for entry in ws.org.values() {
             if let Some(w) = entry.workspace.as_ref() {
-                denied = denied.and(
-                    AbsPath::resolve(root, w),
-                    "it is a participant's workspace",
-                );
+                denied = denied.and(AbsPath::resolve(root, w), "it is a participant's workspace");
             }
         }
         Ok(denied)
@@ -452,8 +370,8 @@ impl std::error::Error for NoHome {}
 /// asked of a directory that is not there. It is whether they **could** be, and
 /// the conservative answer is the right one for a deny list.
 ///
-/// That over-refuses on a case-sensitive filesystem, deliberately: `CLAUSE-DEV`
-/// beside `clause-dev` would be two directories there and this calls them one.
+/// That over-refuses on a case-sensitive filesystem, deliberately: `PROJECTS`
+/// beside `projects` would be two directories there and this calls them one.
 /// The operator is refused and told why, which is a cheap thing to lose.
 // FIXME: Unicode normalisation is not covered. APFS folds NFD against NFC as
 // well as case, so `.clauðe` in one form and the other are one directory and two
@@ -532,7 +450,7 @@ fn under_by_identity(path: &std::path::Path, denied: &std::path::Path) -> bool {
         .any(|a| identity_of(a).is_some_and(|id| id == target))
 }
 
-/// A path that lies under a location the record denies.
+/// A path that lies under a location nothing may be written to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Forbidden {
     pub path:   AbsPath,
@@ -556,6 +474,7 @@ impl std::error::Error for Forbidden {}
 
 #[cfg(test)]
 mod tests {
+    use crate::DenyEntry;
     use super::*;
 
     fn abs(p: impl Into<std::path::PathBuf>) -> AbsPath {
@@ -571,7 +490,7 @@ mod tests {
 
         let err = denied
             .check(&home.join(".claude").join("crewroot"), "workspace root")
-            .expect_err("the record denies writes under the operator's own .claude");
+            .expect_err("writes under the operator's own .claude are denied");
         assert!(
             err.to_string().contains("credentials"),
             "the message has to say why: {err}"
@@ -595,17 +514,16 @@ mod tests {
         // reachable. Without this the assertion below cannot tell a working
         // deny list from one that refuses everything.
         assert!(
-            Denied::under_home(&home).check(&theirs.join("x"), "workspace").is_ok(),
+            Denied::under_home(&home)
+                .check(&theirs.join("x"), "workspace")
+                .is_ok(),
             "control: the place is writable before the manifest names it"
         );
 
-        let denied = denying_one(
-            &home,
-            DenyEntry {
-                path: std::path::PathBuf::from("work/someone-elses"),
-                why:  Some("it belongs to somebody else".to_string()),
-            },
-        );
+        let denied = denying_one(&home, DenyEntry {
+            path: std::path::PathBuf::from("work/someone-elses"),
+            why:  Some("it belongs to somebody else".to_string()),
+        });
         let err = denied
             .check(&theirs.join("x"), "workspace")
             .expect_err("a place the manifest denies is written to");
@@ -622,13 +540,10 @@ mod tests {
         let theirs = home.join("elsewhere");
         std::fs::create_dir_all(theirs.as_path()).unwrap();
 
-        let denied = denying_one(
-            &home,
-            DenyEntry {
-                path: std::path::PathBuf::from("~/elsewhere"),
-                why:  None,
-            },
-        );
+        let denied = denying_one(&home, DenyEntry {
+            path: std::path::PathBuf::from("~/elsewhere"),
+            why:  None,
+        });
         assert!(denied.check(&theirs.join("x"), "writing").is_err());
     }
 
@@ -643,10 +558,11 @@ mod tests {
             path: std::path::PathBuf::from("~/elsewhere"),
             why:  None,
         };
-        let denied =
-            Denied::under_home(&base).denying(std::slice::from_ref(&entry), &base, None);
+        let denied = Denied::under_home(&base).denying(std::slice::from_ref(&entry), &base, None);
         assert!(
-            denied.check(&base.join("elsewhere").join("x"), "writing").is_ok(),
+            denied
+                .check(&base.join("elsewhere").join("x"), "writing")
+                .is_ok(),
             "an unresolvable entry denied a place under the manifest instead"
         );
     }
@@ -657,10 +573,9 @@ mod tests {
         struct Holder {
             deny: Vec<DenyEntry>,
         }
-        let h: Holder = toml::from_str(
-            "deny = [\"bare/one\", { path = \"other\", why = \"because\" }]\n",
-        )
-        .expect("both spellings parse");
+        let h: Holder =
+            toml::from_str("deny = [\"bare/one\", { path = \"other\", why = \"because\" }]\n")
+                .expect("both spellings parse");
         assert_eq!(h.deny.len(), 2);
         assert_eq!(h.deny[0].path, std::path::PathBuf::from("bare/one"));
         assert_eq!(h.deny[0].why, None);
@@ -669,7 +584,10 @@ mod tests {
         // The one with nothing to carry writes back as the short form, so a
         // manifest homma rewrites reads the way a hand-written one does.
         let back = toml::to_string(&h).unwrap();
-        assert!(back.contains("\"bare/one\""), "the bare entry grew a table: {back}");
+        assert!(
+            back.contains("\"bare/one\""),
+            "the bare entry grew a table: {back}"
+        );
         assert!(back.contains("because"), "the reason was dropped: {back}");
     }
 
@@ -863,16 +781,16 @@ mod tests {
         // The behaviour, which survives the disjunct that used to carry it.
         let d = tempfile::tempdir().unwrap();
         let home = abs(d.path());
-        let denied = denying_one(
-            &home,
-            DenyEntry {
-                path: std::path::PathBuf::from("work/projects"),
-                why:  None,
-            },
-        );
+        let denied = denying_one(&home, DenyEntry {
+            path: std::path::PathBuf::from("work/projects"),
+            why:  None,
+        });
         assert!(
             denied
-                .check(&abs(d.path().join("WORK").join("Projects").join("x")), "root")
+                .check(
+                    &abs(d.path().join("WORK").join("Projects").join("x")),
+                    "root"
+                )
                 .is_err()
         );
     }
@@ -948,7 +866,7 @@ mod tests {
     // pinned by nothing. The `HOME` cases need their own process and are at
     // `tests/the_home_must_be_known.rs`.
     const TWO_STAFFED: &str = r#"
-content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+content_repo = "git@example.invalid:someone/content.git"
 
 [org.paja]
 role = "hand"
@@ -1015,7 +933,7 @@ workspace = "/srv/vouti"
     fn an_entry_with_no_workspace_contributes_nothing() {
         let ws = crate::Workspace::parse(
             r#"
-content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+content_repo = "git@example.invalid:someone/content.git"
 
 [org.op]
 role = "king"
@@ -1030,13 +948,10 @@ handle = "op"
     /// `home` plus one place a manifest denied, which is the two-entry list
     /// every test below needs to tell "permitted one" from "emptied the list".
     fn two_entry_list(home: &AbsPath, rel: &str) -> Denied {
-        denying_one(
-            home,
-            DenyEntry {
-                path: std::path::PathBuf::from(rel),
-                why:  Some("it belongs to somebody else".to_string()),
-            },
-        )
+        denying_one(home, DenyEntry {
+            path: std::path::PathBuf::from(rel),
+            why:  Some("it belongs to somebody else".to_string()),
+        })
     }
 
     #[test]

@@ -21,8 +21,8 @@
 //!
 //! Topics replication and the post-push `default_branch` PATCH that the
 //! `Forge` trait advertises for GitHub destinations are out of scope here.
-//! They land alongside the sanity playground (#456) where a real Codeberg
-//! destination exercises the full round-trip.
+//! They want a real destination to exercise the full round-trip against, which
+//! nothing here has.
 //!
 //! Source-side archival is the separate `homma archive` step (see
 //! [`super::archive`]).
@@ -427,8 +427,7 @@ mod tests {
     /// Exercise the `git push --mirror` subprocess against a local file://
     /// destination. Covers argv shape, current_dir, and the no-token path.
     /// The HTTP `extraheader` auth path is not exercised (file:// has no
-    /// transport); that lands alongside the sanity playground (#456) where
-    /// a real HTTPS push is exercisable.
+    /// transport); that wants a destination a real HTTPS push can reach.
     #[test]
     fn push_mirror_against_local_file_dest_succeeds() {
         let tempdir = tempfile::tempdir().unwrap();

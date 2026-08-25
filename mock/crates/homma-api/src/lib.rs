@@ -12,6 +12,7 @@
 pub mod config;
 pub mod contained;
 pub mod denied;
+pub mod deny_entry;
 pub mod git;
 pub mod path;
 pub mod record;
@@ -19,7 +20,8 @@ pub mod reference;
 
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
-pub use denied::{Denied, DenyEntry, Forbidden, NoHome, Standing};
+pub use denied::{Denied, Forbidden, NoHome, Standing};
+pub use deny_entry::DenyEntry;
 pub use git::{CommitIdentity, EmptyPart, Git, Part};
 pub use path::{AbsPath, NotAbsolute};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};

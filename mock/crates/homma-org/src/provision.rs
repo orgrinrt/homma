@@ -425,7 +425,7 @@ mod tests {
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
-        let done = provision(&id, &ws, "git@example.invalid:orgrinrt/content.git", &git).unwrap();
+        let done = provision(&id, &ws, "git@example.invalid:someone/content.git", &git).unwrap();
         assert!(done.cloned);
         assert_eq!(git.clones.borrow().len(), 1);
         assert_eq!(
@@ -511,9 +511,9 @@ mod tests {
     // survived a round. No fake could express that until now, which is the
     // reason rather than an excuse: a double that cannot fail the way production
     // fails certifies nothing.
-    // U-3.2: the registry field reaching the clone. The record settles it for
-    // Vouti, whose author is op and whose committer is a tagged address on op's
-    // own.
+    // The registry's committer field reaching the clone: an entry whose author
+    // and committer differ, which is one account signing for work attributed to
+    // another.
     #[test]
     fn a_distinct_committer_reaches_the_clone() {
         let d = tempfile::tempdir().unwrap();
@@ -521,7 +521,7 @@ mod tests {
         let mut id = staffed_hand(&ws);
         id.git_name = Some("Onni Armas".into());
         id.git_email = Some("ort@hiisi.digital".into());
-        id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+        id.committer_email = Some("someone+alt@example.invalid".into());
         let git = FakeGit::default();
 
         provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
@@ -532,11 +532,11 @@ mod tests {
         assert_eq!(
             got.author_email(),
             "ort@hiisi.digital",
-            "the author stays op"
+            "the author is the registry's, not the committer's"
         );
         assert_eq!(
             got.committer_email(),
-            "orgrinrt+vouti@ikiuni.dev",
+            "someone+alt@example.invalid",
             "and the committer is what distinguishes the crew's writes"
         );
         assert_eq!(
@@ -548,8 +548,8 @@ mod tests {
 
     // `committer_name` reached nothing when it was added: ignoring the registry
     // field entirely left the whole suite green. It shipped as unread plumbing,
-    // which is the exact shape U-3.1 exists to prevent, in the round that added
-    // it because the unit named it.
+    // which is the exact shape the exit test exists to prevent, in the round
+    // that added it.
     #[test]
     fn a_distinct_committer_name_reaches_the_clone() {
         let d = tempfile::tempdir().unwrap();
@@ -610,7 +610,7 @@ mod tests {
         let mut id = staffed_hand(&ws);
         id.git_name = Some("Onni Armas".into());
         id.git_email = Some("ort@hiisi.digital".into());
-        id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+        id.committer_email = Some("someone+alt@example.invalid".into());
         let git = FakeGit::default();
         git.committer_writes_vanish.set(true);
 
@@ -668,7 +668,7 @@ mod tests {
         );
     }
 
-    const CONTENT: &str = "git@example.invalid:orgrinrt/content.git";
+    const CONTENT: &str = "git@example.invalid:someone/content.git";
 
     #[test]
     fn a_workspace_cloned_from_the_wrong_repository_is_refused_not_skipped() {

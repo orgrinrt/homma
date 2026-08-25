@@ -7,7 +7,7 @@
 //!
 //! These exercise the [`homma_core::Forge`] trait. `show` and `exists`
 //! cover the read-side surface; mutating ops (create, archive, delete) are
-//! exposed via [`super::migrate`] and [`super::archive`] in #452.
+//! exposed via [`super::migrate`] and [`super::archive`].
 
 use std::io::Write;
 

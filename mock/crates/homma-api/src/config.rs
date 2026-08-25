@@ -115,10 +115,10 @@ pub struct Identity {
     /// The address commits are *committed* by, when it differs from the author.
     ///
     /// **Absent means the committer is the author**, which is every ordinary
-    /// entry. Present means one clone carries two identities, which the record
-    /// settles for Vouti alone: the author stays op so attribution is his, and
-    /// the committer is a tagged address on his own so it "just works" while
-    /// distinguishing what the crew wrote.
+    /// entry. Present means one clone carries two identities: the author is
+    /// whoever the work is attributed to, and the committer is a separate
+    /// address on the same account, so signing and delivery work while the two
+    /// stay distinguishable in the history.
     ///
     /// Optional rather than defaulted to the author in the type, because a
     /// default here would make "the same" and "deliberately the same"
@@ -127,7 +127,7 @@ pub struct Identity {
     pub committer_email: Option<String>,
     /// The name commits are *committed* by, when it differs from the author's.
     ///
-    /// Shipped a round late. U-3.2 names an optional committer name and email;
+    /// Shipped a round late. The committer is an optional name *and* email;
     /// only the email arrived, and git treats `committer.name` as a first-class
     /// key that a global one can override, so the omission was a hole rather
     /// than a simplification.
@@ -490,11 +490,11 @@ mod tests {
     use super::*;
 
     const MINIMAL: &str = r#"
-content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+content_repo = "git@example.invalid:someone/content.git"
 "#;
 
     const WITH_ORG: &str = r#"
-content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+content_repo = "git@example.invalid:someone/content.git"
 
 [paths]
 hands = "custom/hands"
@@ -528,7 +528,7 @@ handle = "proof"
         let w = Workspace::parse(MINIMAL).expect("should parse");
         assert_eq!(
             w.content_repo,
-            "git@example.invalid:orgrinrt/clause-dev.git"
+            "git@example.invalid:someone/content.git"
         );
         assert!(w.org.is_empty());
     }
@@ -634,7 +634,7 @@ handle = "proof"
         // and a fixture another test already asserts on would say nothing.
         let w = Workspace::parse(
             r#"
-content_repo = "git@example.invalid:orgrinrt/clause-dev.git"
+content_repo = "git@example.invalid:someone/content.git"
 
 [org.silent]
 role = "hand"
