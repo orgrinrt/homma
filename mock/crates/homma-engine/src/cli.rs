@@ -133,16 +133,16 @@ pub enum Command {
     /// and pushes the mirror to the destination. Does not archive or delete
     /// the source; that is a deliberate second step via `homma archive`.
     ///
-    /// The source forge is taken from `[repos.<repo>].forge` unless `--source`
+    /// The source forge is the one detected from the clone's origin remote unless `--source`
     /// overrides it. The source owner and repo name come from
-    /// `[repos.<repo>].owner` and `<repo>` respectively unless overridden.
+    /// the detected owner and the repo's directory name respectively unless overridden.
     Migrate {
-        /// Repo name from `homma.toml` (the key under `[repos.<name>]`).
+        /// The repository's directory name under the workspace root.
         repo:     String,
         /// Target forge profile name from `homma.toml`.
         #[arg(long)]
         to:       String,
-        /// Destination owner. Defaults to the source owner from `[repos.<repo>].owner`.
+        /// Destination owner. Defaults to the owner detected from the clone's origin.
         #[arg(long)]
         to_owner: Option<String>,
         /// Destination owner is an organisation (not a user account). Drives
@@ -150,7 +150,7 @@ pub enum Command {
         /// ignores this (the token's user is implied for `POST /user/repos`).
         #[arg(long)]
         to_org:   bool,
-        /// Source forge override. Defaults to `[repos.<repo>].forge`.
+        /// Source forge override. Defaults to the forge detected from the clone's origin.
         #[arg(long)]
         source:   Option<String>,
         /// Plan only; do not create the destination or push. Emits the
@@ -167,10 +167,10 @@ pub enum Command {
     Archive {
         /// Repo name from `homma.toml`.
         repo:  String,
-        /// Forge profile name. Defaults to `[repos.<repo>].forge`.
+        /// Forge profile name. Defaults to the forge detected from the clone's origin.
         #[arg(long)]
         from:  Option<String>,
-        /// Owner override. Defaults to `[repos.<repo>].owner`.
+        /// Owner override. Defaults to the owner detected from the clone's origin.
         #[arg(long)]
         owner: Option<String>,
     },

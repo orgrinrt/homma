@@ -290,7 +290,7 @@ pub(crate) fn sh_single_quote_escape(s: &str) -> String {
 ///
 /// Both paths are relative, and that is the whole of this function.
 /// `repo_rel_path` is the repo's path under the workspace, which the manifest
-/// already carries as `repos.<name>.local_path`; `hook_rel_path` is the hook's
+/// already holds for the detected member; `hook_rel_path` is the hook's
 /// path under the repo. Neither names a machine.
 ///
 /// A wrapper sits at `<workspace>/.claude/hooks/<file>`, a fixed depth, so it

@@ -88,11 +88,10 @@ pub mod status {
             let local = util::resolve_local_path(&cfg.workspace.path, &repo_cfg.local_path);
             out.push(probe(name, &local));
         }
-        if out.is_empty() && repo.is_some() {
-            return Err(anyhow!(
-                "repo `{}` not declared in [repos.*]",
-                repo.unwrap()
-            ));
+        if out.is_empty() {
+            if let Some(name) = repo {
+                return Err(util::no_such_member(cfg, name));
+            }
         }
         Ok(out)
     }
@@ -318,7 +317,7 @@ pub mod regen {
     pub fn regen(cfg: &Config, repo: Option<&str>, opts: Opts) -> Result<RegenReport> {
         if let Some(name) = repo {
             if cfg.repo(name).is_none() {
-                return Err(anyhow!("repo `{name}` not declared in [repos.*]"));
+                return Err(util::no_such_member(cfg, name));
             }
         }
         // **Every stage, not two of them.** This guard was written when there

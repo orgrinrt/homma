@@ -15,13 +15,6 @@ readme = "../README.md"
 # toolchain fails somewhere inside a dependency instead of at this manifest.
 rust-version = "1.88"
 license = "MPL-2.0"
-# `include` overrides cargo's defaults, and the licence is not on the short list
-# that survives that (`Cargo.toml`, the readme, and whatever `license-file`
-# names). Without this the crate ships MPL-2.0 source and no licence text,
-# which section 3.1 requires to travel with it. Same trick as `readme` above,
-# for the same reason: the file sits one level up and cargo copies in whatever
-# these two keys point at.
-license-file = "../LICENSE"
 repository = "https://github.com/orgrinrt/homma"
 homepage = "https://github.com/orgrinrt/homma"
 categories = ["development-tools", "command-line-utilities"]
@@ -41,7 +34,11 @@ keywords = ["homma", "workspace", "multi-repo", "git"]
 #
 # Shipping a test would mean writing one whose subject is the launcher alone.
 # There is nothing stopping that and nothing currently needing it.
-include = ["src/**/*.rs"]
+# The licence is a symlink to the one at the repository root, so the two cannot
+# drift and the text still lands inside the package: cargo resolves it when it
+# copies. `include` overrides cargo's defaults, and MPL-2.0 section 3.1 wants
+# the text travelling with the source, so it is named rather than assumed.
+include = ["src/**/*.rs", "LICENSE"]
 
 # The launcher machinery is `renki` and is shared with every other tool built
 # the same way. What is left here is this tool's own, which is a descriptor and
@@ -58,3 +55,8 @@ renki = "0.0.1"
 [dev-dependencies]
 homma-core = { path = "../mock/crates/homma-core" }
 tempfile = "3"
+# The descriptor test reads this repository's own manifests to check that the
+# strings in the descriptor name something that is there. `renki` already pulls
+# this in, so a build pays nothing new, and a dev dependency is stripped out of
+# the package.
+toml = "0.8"

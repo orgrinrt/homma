@@ -14,7 +14,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use homma_core::Config;
 use serde::Serialize;
 
@@ -70,11 +70,10 @@ pub mod status {
             let local = util::resolve_local_path(&cfg.workspace.path, &repo_cfg.local_path);
             out.push(probe(name, &local));
         }
-        if out.is_empty() && repo.is_some() {
-            return Err(anyhow!(
-                "repo `{}` not declared in [repos.*]",
-                repo.unwrap()
-            ));
+        if out.is_empty() {
+            if let Some(name) = repo {
+                return Err(util::no_such_member(cfg, name));
+            }
         }
         Ok(out)
     }

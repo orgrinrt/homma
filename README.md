@@ -19,11 +19,13 @@ which of them is current, and the provider clis only know about one forge each.
 `homma` is the attempt at replacing that pile with a single binary that reads a
 manifest at the root and walks the set.
 
-The manifest names the repositories, where each of them lives on which forge,
-and who works in the workspace. From there it reports the state of the whole
-set, drives each member's own tooling, moves a repository from one forge to
-another and archives the source behind it, and stands up the people and the
-directories the workspace is organised around.
+The repositories are not named anywhere. A directory under the root that is its
+own clone is a member, and where it lives comes off its `origin` remote. What
+the manifest carries is the rest: the forges it may talk to, who works in the
+workspace, and the places it may not write. From there it reports the state of
+the whole set, drives each member's own tooling, moves a repository from one
+forge to another and archives the source behind it, and stands up the people and
+the directories the workspace is organised around.
 
 ## Status
 
@@ -36,8 +38,8 @@ into anything that has to keep running unattended just yet.
 
 | Command | What it's for |
 |---|---|
-| `homma status` | The whole workspace at a glance: every repo, its forge, its resolved default branch |
-| `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--remote` also asks each forge whether the repo is really there |
+| `homma status` | The whole workspace at a glance: every repo it found, and the forge and owner off its remote |
+| `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--forge` also asks each forge whether the repo is really there |
 | `homma repo <op>` | Per-repo work against the local tree, without the `cd` |
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
 | `homma migrate` | Mirror-clones a repo to another forge and pushes it, replicating description, visibility and default branch |
@@ -56,7 +58,7 @@ which manifest to read and which directory to treat as the root.
 ```bash
 # from the workspace root, where homma.toml lives
 homma status
-homma verify --remote
+homma verify --forge
 
 # read one repo's metadata off its forge
 homma forge show github orgrinrt/notko
@@ -111,8 +113,8 @@ deny = [
 A bare path is enough. The table form adds the reason you'll see in the
 refusal, which is worth the extra words on anything you might forget you wrote
 down. It goes above the first `[table]`, since it belongs to the manifest and
-not to any section of it. The `~/` works here and only here: `local_path` and
-`workspace.path` take it literally, and you get a directory named `~`.
+not to any section of it. The `~/` works here and only here: `workspace.path`
+takes it literally, and you get a directory named `~`.
 
 One thing the list does not cover, and it is deliberate. `homma agent regen`
 writes into the workspace root even when an entry names it, because the
@@ -154,6 +156,20 @@ where it isn't wanted, on a build machine say.
 The engine is a separate package and isn't installed by hand. The launcher
 builds the pinned one on first use, and `--engine <path>` points it at a
 checkout while you're working on the engine instead.
+
+The pin is one key at the top of the manifest, and which key decides where the
+engine is fetched from:
+
+```toml
+homma_version = "0.0.1"   # a release
+homma_tag     = "0.0.1"   # a tag in the repository
+homma_rev     = "f2b0c4e" # one commit, which is what a workspace wants
+homma_branch  = "dev"     # a moving target, so the engine moves under you
+```
+
+`homma_git` names a different repository to take the engine from, for a fork.
+With no key at all the launcher says so rather than guessing, because a
+workspace that has not decided which engine it runs has not decided.
 
 ## Responsible tooling
 

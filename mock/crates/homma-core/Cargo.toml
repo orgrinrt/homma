@@ -11,8 +11,14 @@ publish = false
 
 [dependencies]
 homma-api = { path = "../homma-api" }
-mockspace-template = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
-mockspace-config = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
+# By revision, not by branch. A branch means the engine built from one pin is
+# not the engine built from the same pin tomorrow, and `cargo install` ignores
+# the committed lockfile, so nothing here holds it still. The launcher's build
+# cache is keyed on this repository's own revision, so the drift lands silently:
+# two operators on the identical pin run different code and neither can tell.
+# Bumping this is a deliberate act, which is the point.
+mockspace-template = { git = "https://github.com/hiisi-digital/mockspace.git", rev = "f1349b66c491a856cbe692f965d8dc86c07cd0e9" }
+mockspace-config = { git = "https://github.com/hiisi-digital/mockspace.git", rev = "f1349b66c491a856cbe692f965d8dc86c07cd0e9" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

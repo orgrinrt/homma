@@ -111,6 +111,8 @@ fn the_manifest_example_parses_as_a_manifest() {
 struct Named {
     /// The words that form a command path: `["docs", "status"]`.
     path:         Vec<String>,
+    /// Every long flag the readme wrote against it.
+    flags:        Vec<String>,
     /// Whether the readme wrote a `<placeholder>` after it.
     has_argument: bool,
     /// The whole span, for a message that points at what to fix.
@@ -120,8 +122,26 @@ struct Named {
 /// Every `` `homma ...` `` span in the readme, parsed.
 fn commands_the_readme_names() -> Vec<Named> {
     let mut out: Vec<Named> = Vec::new();
+    let mut in_a_fence = false;
     for line in README.lines() {
+        if line.trim_start().starts_with("```") {
+            in_a_fence = !in_a_fence;
+            continue;
+        }
+        // A shell block writes the command bare, with no backticks around it,
+        // and that is where the usage examples live. Reading only the
+        // backticked spans is why `homma verify --remote` sat in the usage
+        // block unread while the same defect in the feature table was caught.
+        let fenced;
         let mut rest = line;
+        if in_a_fence {
+            let bare = line.trim_start();
+            if !bare.starts_with("homma ") {
+                continue;
+            }
+            fenced = format!("`{bare}`");
+            rest = &fenced;
+        }
         while let Some(at) = rest.find("`homma ") {
             let after = &rest[at + "`homma ".len() ..];
             let end = after.find('`').unwrap_or(after.len());
@@ -129,8 +149,20 @@ fn commands_the_readme_names() -> Vec<Named> {
             rest = &after[end.min(after.len()) ..];
 
             let mut path = Vec::new();
+            let mut flags = Vec::new();
             let mut has_argument = false;
             for word in span.split_whitespace() {
+                if word.starts_with("--") {
+                    // Kept rather than skipped. A flag the readme names and the
+                    // command line does not take is the same defect as a
+                    // command it names and the binary does not have, and it is
+                    // the one that actually shipped: `--remote` stood in two
+                    // places for as long as it did because this loop stopped
+                    // here.
+                    let name = word.trim_end_matches(&['.', ',', '`'][..]);
+                    flags.push(name.split('=').next().unwrap_or(name).to_string());
+                    continue;
+                }
                 if word.starts_with('<') || word.starts_with('[') {
                     has_argument = true;
                     break;
@@ -138,17 +170,30 @@ fn commands_the_readme_names() -> Vec<Named> {
                 if word.starts_with('-') {
                     break;
                 }
+                if !flags.is_empty() {
+                    // A bare word after a flag is that flag's value, not a
+                    // deeper subcommand.
+                    continue;
+                }
                 path.push(word.to_string());
             }
-            if path.is_empty()
-                || out
-                    .iter()
-                    .any(|n| n.path == path && n.has_argument == has_argument)
+            if path.is_empty() {
+                continue;
+            }
+            if let Some(seen) = out
+                .iter_mut()
+                .find(|n| n.path == path && n.has_argument == has_argument)
             {
+                for f in flags {
+                    if !seen.flags.contains(&f) {
+                        seen.flags.push(f);
+                    }
+                }
                 continue;
             }
             out.push(Named {
                 path,
+                flags,
                 has_argument,
                 as_written: format!("homma {span}"),
             });
@@ -172,6 +217,87 @@ fn help_for(path: &[String]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Every long flag `--help` lists for a command path, plus the global ones.
+///
+/// Read off the shipped binary rather than off the type, for the same reason
+/// [`help_for`] is: the binary is what a reader running a copied line gets.
+/// Clap prints globals under the root's own help and repeats them nowhere, so
+/// the root's set is unioned in.
+fn flags_the_cli_takes(path: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for text in [help_for(path), help_for(&[])] {
+        for line in text.lines() {
+            for word in line.split_whitespace() {
+                if let Some(name) = word.strip_prefix("--") {
+                    let name = name.trim_end_matches(&[',', '<', '>', '='][..]);
+                    if !name.is_empty() && !out.iter().any(|f: &String| f == name) {
+                        out.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// **Every long flag the readme writes against a command is one that command
+/// takes.**
+///
+/// The readme said `homma verify --remote` in two places, in the feature table
+/// and in the usage block, and the flag is `--forge`. A reader copying the
+/// second line of the usage block got exit 2. Nothing caught it because the
+/// reader above stopped at the first `-`, so the flag was never looked at.
+#[test]
+fn every_flag_the_readme_names_is_one_the_command_takes() {
+    let named = commands_the_readme_names();
+    let mut checked = 0usize;
+    let mut wrong = Vec::new();
+    for cmd in &named {
+        if cmd.flags.is_empty() {
+            continue;
+        }
+        let taken = flags_the_cli_takes(&cmd.path);
+        for flag in &cmd.flags {
+            checked += 1;
+            let bare = flag.trim_start_matches('-');
+            if !taken.iter().any(|t| t == bare) {
+                wrong.push(format!(
+                    "`{}` writes `{flag}`, which `homma {} --help` does not list",
+                    cmd.as_written,
+                    cmd.path.join(" ")
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    assert!(
+        checked > 0,
+        "the readme names no flags at all, so this test read nothing"
+    );
+}
+
+/// The control for the check above.
+#[test]
+fn a_flag_no_command_takes_is_reported() {
+    // Both halves. A reader that collected no flags, or a comparison that
+    // matched anything, would pass the test above over a readme full of
+    // invented flags.
+    let taken = flags_the_cli_takes(&["verify".to_string()]);
+    assert!(
+        taken.iter().any(|f| f == "forge"),
+        "the real flag is not listed: {taken:?}"
+    );
+    assert!(
+        !taken.iter().any(|f| f == "remote"),
+        "a flag the cli does not take reads as taken: {taken:?}"
+    );
+    let named = commands_the_readme_names();
+    assert!(
+        named.iter().any(|c| !c.flags.is_empty()),
+        "the reader collected no flags from the readme at all"
+    );
 }
 
 /// Whether clap says this command needs a subcommand to run.

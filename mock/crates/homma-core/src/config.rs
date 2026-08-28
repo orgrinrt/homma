@@ -479,14 +479,22 @@ pub enum ConfigError {
 }
 
 impl std::fmt::Display for ConfigError {
+    /// What went wrong, and not what the thing under it said.
+    ///
+    /// Both variants used to interpolate their source here as well as
+    /// returning it from [`Error::source`], and anything walking the chain
+    /// printed it twice. For the parse variant that is a nine-line diagnostic
+    /// with caret art, rendered twice in one message.
+    ///
+    /// [`Error::source`]: std::error::Error::source
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Parse(e) => write!(f, "homma.toml parse error: {e}"),
+            Self::Parse(_) => write!(f, "homma.toml does not parse"),
             Self::Io {
                 path,
-                source,
+                ..
             } => {
-                write!(f, "failed to read {}: {source}", path.display())
+                write!(f, "failed to read {}", path.display())
             },
         }
     }
