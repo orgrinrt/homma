@@ -1,0 +1,50 @@
+685e00b chore: lock the src changelist
+13fa1ff fix: the engine check reads the manifest's package section
+43bf55c src: open the changelist for the launcher corrections
+8a94f2b chore: lock the doc changelist
+93d0cd1 doc: name the launcher and the engine for what each is
+4d2c127 doc: open the changelist for the design document's crate list
+3df1a8f topic: two claims the launcher round left disagreeing with the tree
+e560ee7 fix: --engine pointed at the repo says where the engine actually is
+9079782 chore: mark the launcher unpublishable while renki is unpublished
+cee04f2 chore: close design round 202608242239
+1682427 feat: run homma from its own launcher over renki
+5babd52 docs: open the src changelist for 202608242239
+10022c6 chore: lock the doc changelist for 202608242239
+20f37a3 docs: topic on the launcher owning the name
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round
+de1d474 chore: lock the src changelist
+ad13abe fix: permit the workspace being aggregated into, which was denied
+c661a1c chore: open the src changelist
+6308d25 chore: lock the doc changelist
+97eafe3 docs: open an empty doc window, the change is source-only
+6f0bcd6 topic: the aggregation pass is denied its own workspace
+3408176 Merge remote-tracking branch 'origin/dev' into fix/the-root-is-not-the-cwd
+0e53261 Merge pull request #27 from orgrinrt/chore/patch-pass-2026-08
+113b828 docs: drop workspace-internal vocabulary and point license at main
+0aac773 chore: remove github actions workflows
+93b4109 docs: describe the shipped command set and drop the unbuilt claims
+9180763 chore: close the round
+fc77192 chore: lock the src changelist
+6adda43 fix: drop the clause that could never decide, and the stray blank line
+31a676c chore: lock doc changelist and open the src window
+d9115f9 docs: open a round for the imports the test module never had
+7d364e1 fix: check the kind name where the path is built, in read and rewrite
+14dce75 fix: route the definition writes through the proving door
+1507a78 fix: restore the imports the test module needs to compile
+5968ffb chore: close the round
+8186ef7 chore: lock the src changelist
+9f1a9b0 chore: drop imports the signature change orphaned
+a872eaf chore: lock doc and open src for the imports
+1315b65 chore: open a round for the orphaned imports

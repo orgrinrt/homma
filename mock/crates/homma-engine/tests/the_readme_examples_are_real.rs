@@ -1,0 +1,453 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+
+//! The readme shows a manifest and a table of commands. Both are claims about
+//! this crate, so both are parsed against it here rather than trusted.
+//!
+//! A readme example that no longer parses is the first thing a new reader
+//! meets and the last thing anybody rereads, so it gets a test of its own.
+
+use assert_cmd::Command;
+use homma_core::config::Config;
+
+fn bin() -> Command {
+    Command::cargo_bin("homma-engine").expect("binary built")
+}
+
+const README: &str = include_str!("../../../../README.md");
+
+/// Every fenced block in the readme tagged with `lang`.
+fn fenced_blocks(lang: &str) -> Vec<String> {
+    let open = format!("```{lang}");
+    let mut blocks = Vec::new();
+    let mut rest = README;
+    while let Some(at) = rest.find(&open) {
+        let body = &rest[at + open.len() ..];
+        let Some(nl) = body.find('\n') else { break };
+        let body = &body[nl + 1 ..];
+        let Some(end) = body.find("```") else { break };
+        blocks.push(body[.. end].to_string());
+        rest = &body[end ..];
+    }
+    blocks
+}
+
+#[test]
+fn the_manifest_example_parses_as_a_manifest() {
+    let blocks = fenced_blocks("toml");
+    assert!(
+        !blocks.is_empty(),
+        "the readme has no toml block, so its manifest example is gone"
+    );
+
+    // Every block, rather than the first. A second example added later is a
+    // second thing that can stop parsing, and a test reading one block reports
+    // on one block whatever the readme grew.
+    //
+    // The one naming a workspace is the manifest. The rest are fragments of a
+    // manifest and cannot stand alone, so each is folded into the manifest's
+    // own keys and the result parsed, which is what checks that a fragment
+    // names real keys carrying values of the right shape.
+    let mut tables: Vec<toml::Table> = Vec::new();
+    for block in &blocks {
+        let parsed: Result<toml::Table, _> = toml::from_str(block);
+        tables.push(parsed.unwrap_or_else(|e| {
+            panic!("a toml block in the readme is not valid toml: {e}\n\n{block}")
+        }));
+    }
+    let whole = tables
+        .iter()
+        .position(|t| t.contains_key("workspace"))
+        .expect("no toml block in the readme names a workspace");
+
+    for (i, fragment) in tables.iter().enumerate() {
+        if i == whole {
+            continue;
+        }
+        let mut merged = tables[whole].clone();
+        for (k, v) in fragment {
+            merged.insert(k.clone(), v.clone());
+        }
+        let parsed: Result<Config, _> = merged.clone().try_into();
+        parsed.unwrap_or_else(|e| {
+            panic!(
+                "a toml fragment in the readme is not a manifest key: {e}\n\n{}",
+                blocks[i]
+            )
+        });
+    }
+
+    let parsed: Result<Config, _> = tables[whole].clone().try_into();
+    let config = parsed.unwrap_or_else(|e| {
+        panic!(
+            "the readme's manifest example does not parse: {e}\n\n{}",
+            blocks[whole]
+        )
+    });
+
+    // Parsing is not enough on its own: a config type that accepted anything
+    // would pass the line above over an empty block. The example has to have
+    // reached the fields it is there to show.
+    assert_eq!(config.workspace.name, "my-stack");
+    assert!(
+        config.forges.contains_key("github"),
+        "the example's forge did not survive the parse"
+    );
+    // Membership is detected rather than parsed, so the example carries no
+    // repositories and a parse cannot produce one. Asserted rather than
+    // dropped: a `repos` that filled itself from somewhere during a parse
+    // would mean detection ran against whatever directory the test happened to
+    // be standing in, which is the shape the split exists to prevent.
+    assert!(
+        config.repos.is_empty(),
+        "a parse produced members, so it reached a filesystem: {:?}",
+        config.repos.keys().collect::<Vec<_>>()
+    );
+}
+
+/// One command the readme names, as it was written there.
+struct Named {
+    /// The words that form a command path: `["docs", "status"]`.
+    path:         Vec<String>,
+    /// Every long flag the readme wrote against it.
+    flags:        Vec<String>,
+    /// Whether the readme wrote a `<placeholder>` after it.
+    has_argument: bool,
+    /// The whole span, for a message that points at what to fix.
+    as_written:   String,
+}
+
+/// Every `` `homma ...` `` span in the readme, parsed.
+fn commands_the_readme_names() -> Vec<Named> {
+    let mut out: Vec<Named> = Vec::new();
+    let mut in_a_fence = false;
+    for line in README.lines() {
+        if line.trim_start().starts_with("```") {
+            in_a_fence = !in_a_fence;
+            continue;
+        }
+        // A shell block writes the command bare, with no backticks around it,
+        // and that is where the usage examples live. Reading only the
+        // backticked spans is why `homma verify --remote` sat in the usage
+        // block unread while the same defect in the feature table was caught.
+        let fenced;
+        let mut rest = line;
+        if in_a_fence {
+            let bare = line.trim_start();
+            if !bare.starts_with("homma ") {
+                continue;
+            }
+            fenced = format!("`{bare}`");
+            rest = &fenced;
+        }
+        while let Some(at) = rest.find("`homma ") {
+            let after = &rest[at + "`homma ".len() ..];
+            let end = after.find('`').unwrap_or(after.len());
+            let span = &after[.. end];
+            rest = &after[end.min(after.len()) ..];
+
+            let mut path = Vec::new();
+            let mut flags = Vec::new();
+            let mut has_argument = false;
+            for word in span.split_whitespace() {
+                if word.starts_with("--") {
+                    // Kept rather than skipped. A flag the readme names and the
+                    // command line does not take is the same defect as a
+                    // command it names and the binary does not have, and it is
+                    // the one that actually shipped: `--remote` stood in two
+                    // places for as long as it did because this loop stopped
+                    // here.
+                    let name = word.trim_end_matches(&['.', ',', '`'][..]);
+                    flags.push(name.split('=').next().unwrap_or(name).to_string());
+                    continue;
+                }
+                if word.starts_with('<') || word.starts_with('[') {
+                    has_argument = true;
+                    break;
+                }
+                if word.starts_with('-') {
+                    break;
+                }
+                if !flags.is_empty() {
+                    // A bare word after a flag is that flag's value, not a
+                    // deeper subcommand.
+                    continue;
+                }
+                path.push(word.to_string());
+            }
+            if path.is_empty() {
+                continue;
+            }
+            if let Some(seen) = out
+                .iter_mut()
+                .find(|n| n.path == path && n.has_argument == has_argument)
+            {
+                for f in flags {
+                    if !seen.flags.contains(&f) {
+                        seen.flags.push(f);
+                    }
+                }
+                continue;
+            }
+            out.push(Named {
+                path,
+                flags,
+                has_argument,
+                as_written: format!("homma {span}"),
+            });
+        }
+    }
+    out
+}
+
+/// `--help` for a command path, as the shipped binary prints it.
+fn help_for(path: &[String]) -> String {
+    let out = bin()
+        .args(path)
+        .arg("--help")
+        .output()
+        .expect("the binary would not run");
+    assert!(
+        out.status.success(),
+        "`homma {} --help` failed, so the readme names a command the cli does \
+         not take:\n{}",
+        path.join(" "),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Every long flag `--help` lists for a command path, plus the global ones.
+///
+/// Read off the shipped binary rather than off the type, for the same reason
+/// [`help_for`] is: the binary is what a reader running a copied line gets.
+/// Clap prints globals under the root's own help and repeats them nowhere, so
+/// the root's set is unioned in.
+fn flags_the_cli_takes(path: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for text in [help_for(path), help_for(&[])] {
+        for line in text.lines() {
+            for word in line.split_whitespace() {
+                if let Some(name) = word.strip_prefix("--") {
+                    let name = name.trim_end_matches(&[',', '<', '>', '='][..]);
+                    if !name.is_empty() && !out.iter().any(|f: &String| f == name) {
+                        out.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// **Every long flag the readme writes against a command is one that command
+/// takes.**
+///
+/// The readme said `homma verify --remote` in two places, in the feature table
+/// and in the usage block, and the flag is `--forge`. A reader copying the
+/// second line of the usage block got exit 2. Nothing caught it because the
+/// reader above stopped at the first `-`, so the flag was never looked at.
+#[test]
+fn every_flag_the_readme_names_is_one_the_command_takes() {
+    let named = commands_the_readme_names();
+    let mut checked = 0usize;
+    let mut wrong = Vec::new();
+    for cmd in &named {
+        if cmd.flags.is_empty() {
+            continue;
+        }
+        let taken = flags_the_cli_takes(&cmd.path);
+        for flag in &cmd.flags {
+            checked += 1;
+            let bare = flag.trim_start_matches('-');
+            if !taken.iter().any(|t| t == bare) {
+                wrong.push(format!(
+                    "`{}` writes `{flag}`, which `homma {} --help` does not list",
+                    cmd.as_written,
+                    cmd.path.join(" ")
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    assert!(
+        checked > 0,
+        "the readme names no flags at all, so this test read nothing"
+    );
+}
+
+/// The control for the check above.
+#[test]
+fn a_flag_no_command_takes_is_reported() {
+    // Both halves. A reader that collected no flags, or a comparison that
+    // matched anything, would pass the test above over a readme full of
+    // invented flags.
+    let taken = flags_the_cli_takes(&["verify".to_string()]);
+    assert!(
+        taken.iter().any(|f| f == "forge"),
+        "the real flag is not listed: {taken:?}"
+    );
+    assert!(
+        !taken.iter().any(|f| f == "remote"),
+        "a flag the cli does not take reads as taken: {taken:?}"
+    );
+    let named = commands_the_readme_names();
+    assert!(
+        named.iter().any(|c| !c.flags.is_empty()),
+        "the reader collected no flags from the readme at all"
+    );
+}
+
+/// Whether clap says this command needs a subcommand to run.
+///
+/// Its usage line carries `<COMMAND>` when it does. Read off the shipped
+/// binary rather than off the type, because the binary is what a reader who
+/// copies a line out of the readme is going to run, and `homma-engine` has no
+/// library target to reach the type through.
+fn wants_a_subcommand(help: &str) -> bool {
+    help.lines()
+        .find(|l| l.starts_with("Usage:"))
+        .is_some_and(|l| l.contains("<COMMAND>"))
+}
+
+/// **Every command the readme names runs as it is written there.**
+///
+/// The previous version ran each with `--help` and asked only whether that
+/// succeeded. `--help` succeeds on a parent command whether or not the command
+/// runs on its own, so the table offered `homma docs` for as long as it did,
+/// and `homma docs` is a usage error.
+#[test]
+fn every_command_the_readme_names_runs_as_written() {
+    let named = commands_the_readme_names();
+    assert!(
+        named.len() >= 8,
+        "the readme names {} commands, too few to be the table this test is \
+         about",
+        named.len()
+    );
+
+    let mut wrong = Vec::new();
+    for n in &named {
+        let help = help_for(&n.path);
+        match (wants_a_subcommand(&help), n.has_argument) {
+            (true, false) => {
+                wrong.push(format!(
+                    "`{}` needs a subcommand and the readme writes it without one",
+                    n.as_written
+                ));
+            },
+            (false, true) => {
+                wrong.push(format!(
+                    "`{}` takes no subcommand and the readme writes one after it",
+                    n.as_written
+                ));
+            },
+            _ => {},
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// The rows of the readme's command table.
+///
+/// The table specifically, rather than the whole readme. A command mentioned in
+/// a paragraph further down is not documented as a command, and `agent` was
+/// exactly that: a top-level command, discussed in the prose, and absent from
+/// the table nobody would read past.
+fn the_command_table() -> String {
+    let after = README
+        .split("| Command | What it's for |")
+        .nth(1)
+        .expect("the readme has no command table");
+    after
+        .split("\n\n")
+        .next()
+        .expect("the command table does not end")
+        .to_string()
+}
+
+/// **Every command the cli has is in the readme's table.**
+///
+/// The check ran one way only, so a command added later is documented or this
+/// says which one is not.
+#[test]
+fn every_command_the_cli_has_is_one_the_readme_names() {
+    let help = help_for(&[]);
+    let commands = help
+        .split("\nCommands:\n")
+        .nth(1)
+        .expect("the top-level help has no command list");
+    let commands = commands.split("\n\n").next().unwrap_or(commands);
+
+    let table = the_command_table();
+    // The parse of the table itself, so an empty one cannot report every
+    // command as documented by matching nothing against nothing.
+    assert!(
+        table.lines().filter(|l| l.starts_with("| `homma ")).count() >= 8,
+        "read too few rows out of the readme's command table:\n{table}"
+    );
+
+    let mut missing = Vec::new();
+    let mut found = 0;
+    for line in commands.lines() {
+        let Some(name) = line.split_whitespace().next() else {
+            continue;
+        };
+        // clap's own, and not homma's to document.
+        if name == "help" {
+            continue;
+        }
+        found += 1;
+        if !table.contains(&format!("`homma {name}")) {
+            missing.push(name.to_string());
+        }
+    }
+    // The parse, asserted rather than trusted: a help format this stopped
+    // recognising would leave the loop above finding nothing and reporting
+    // success.
+    assert!(
+        found >= 8,
+        "read {found} commands out of the top-level help, which is too few to \
+         be its command list"
+    );
+    assert!(
+        missing.is_empty(),
+        "the cli has commands the readme's table does not name: {missing:?}"
+    );
+}
+
+/// **The readme names `token_cmd`.**
+///
+/// A manifest may carry an argument list homma runs to obtain a credential, so
+/// a manifest taken from somewhere else runs a program of its choosing. The
+/// readme said tokens come out of the environment and stopped there, which is
+/// true and is the half that is safe.
+#[test]
+fn the_readme_names_the_credential_command_a_manifest_can_carry() {
+    assert!(
+        README.contains("token_cmd"),
+        "the manifest can name a program to run for a credential and the readme \
+         does not say so"
+    );
+}
+
+#[test]
+fn the_readme_names_the_output_flag_the_cli_actually_has() {
+    // It used to say `--json`, which the cli has never taken.
+    assert!(
+        !README.contains("`--json`"),
+        "the readme offers `--json`; the flag is `--output json`"
+    );
+    assert!(
+        README.contains("`--output json`"),
+        "the readme stopped naming the flag that makes its json claim true"
+    );
+    // A bad value for the flag is rejected by name, which proves the flag is
+    // read without needing a workspace on disk to run `status` against.
+    bin()
+        .args(["--output", "json", "status", "--help"])
+        .assert()
+        .success();
+}

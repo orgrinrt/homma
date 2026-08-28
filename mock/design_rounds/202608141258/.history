@@ -1,0 +1,50 @@
+e3e0fdb chore: lock the src changelist
+8f23321 style: land the formatting from the same round
+f1b4aa7 fix: resolve the root, answer absence with none, widen the url parser
+2aa27fe chore: open the src changelist
+5564496 chore: lock the doc changelist
+69b2e59 docs: what the git contract promises about paths and absence
+4b02132 chore: open the doc changelist
+c0a1154 chore: open a round for the relative-path bypass
+4b9792c chore: close the guard round
+4e54591 chore: lock the src changelist
+314010c test: split the integration tests, repair the corrupted comments
+7ac410f fix: pin the remote guard, compare remotes by host and owner
+f225d0d chore: open the src changelist
+ac817a6 chore: lock the doc changelist
+9781b2e docs: what makes two remotes the same, and the nested-repo refusal
+39500f9 chore: reopen the doc changelist
+795ef37 chore: lock the doc changelist
+6a5c5a7 chore: open the doc changelist
+1e65420 chore: open a round for the untested guard
+3694e99 chore: close the local round
+cf4439c chore: lock the src changelist
+fc2b138 chore: open an empty src changelist
+815daa3 chore: lock the doc changelist
+dfcae9d docs: local is the default and no key is required
+7bed3b5 chore: open the doc changelist
+e2be5be chore: open a round for the local default
+825d532 chore: close the root round
+b101ed2 chore: lock the src changelist
+7b17da8 fix: the root is the config's directory, and content_repo is a uri or local
+2d0596d chore: open the src changelist
+445414f chore: lock the doc changelist
+f44e189 docs: the root is the config's directory and origin is verified
+34dea11 chore: open the doc changelist
+acedddc chore: open a round for the root and origin defects
+b58b1f4 feat: distinguish mapped from staffed, and add an identity by command
+adce3a2 chore: adopt mockspace and add the record vocabulary, store and registry
+4fc3a78 fix: exempt the mockspace tool repo from the adoption gate
+9360863 feat: accept launcher pin as mockspace adoption marker
+285f645 chore: pin nightly toolchain to nightly-2026-05-28
+6b0feb2 chore: add restrict-main-merges workflow
+b728cb7 feat: section-aware alias detection and bash e2e tests
+051deb5 feat: harden multi-hook filter to preserve hand-authored hooks
+6cb03c8 feat: drop per-repo rule aggregation; keep hook aggregation only
+b2be8a6 refactor: drop IntoMockspaceConfig bridge per mockspace v2 schema split
+2cfd575 feat(homma): workspace .claude aggregation + git-ops gate (#454 phase 2 + 3) (#10)
+5463978 feat(homma): agent + docs commands phase 1 (#454) (#9)
+12876f3 feat(homma): migrate + archive commands (#452) (#8)
+574981e feat(homma): CLI shape with status, verify, repo, forge commands (#7)
+536901c feat(homma-core): GitHubClient impl (REST v3) (#6)
+9c4b008 feat(homma-core): ForgejoClient + switch mockspace deps to git refs (#5)

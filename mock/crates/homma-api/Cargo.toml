@@ -1,0 +1,19 @@
+[package]
+name = "homma-api"
+version = "0.0.0"
+description = "The record vocabulary homma speaks: records, kinds, references and identity"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+trybuild = "1"
+serde_json = "1"

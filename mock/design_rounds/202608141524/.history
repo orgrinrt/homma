@@ -1,0 +1,50 @@
+4c09fc4 chore: lock the src changelist
+9477b09 style: land the formatting from the same round
+535d2f1 fix: a configured path cannot leave the workspace it is joined to
+9bda969 chore: open the src changelist
+97f1e89 chore: lock the doc changelist
+2f02bfd docs: descending and anchoring are different operations
+aff46eb chore: open the doc changelist
+47a7303 chore: open a round for the join and resolve split
+f4d3897 chore: close the filesystem round
+d3d63f0 chore: lock the src changelist
+2602bc9 style: land the formatting from the same round
+00cbc89 fix: ask the filesystem about containment, on every path that writes
+ac08664 chore: open the src changelist
+e77fce9 chore: lock the doc changelist
+2a69130 docs: containment is asked of the filesystem
+6269668 chore: open the doc changelist
+810387f chore: open a round for filesystem containment
+edcfe1d chore: close the containment round
+5cf35e6 chore: lock the src changelist
+f7239c4 style: land the formatting from the same round
+37d6d00 fix: refuse a workspace inside another repository
+9f69c6a chore: open the src changelist
+87f060d chore: lock the doc changelist
+a8e4ab6 docs: what the type carries, and what containment means
+5bd518e chore: open the doc changelist
+2d0e30f chore: open a round for containment
+0234fb7 chore: close the AbsPath round
+7024a98 chore: lock the src changelist
+26314fb style: land the formatting from the same round
+d497874 feat: make a relative path unrepresentable at the git contract
+2064605 chore: lock the doc changelist
+9370911 docs: the precondition is a type rather than a promise
+ab22653 chore: open the doc changelist
+b633e87 chore: open a round for the untyped precondition
+5eae0b0 chore: close the relative-path round
+e3e0fdb chore: lock the src changelist
+8f23321 style: land the formatting from the same round
+f1b4aa7 fix: resolve the root, answer absence with none, widen the url parser
+2aa27fe chore: open the src changelist
+5564496 chore: lock the doc changelist
+69b2e59 docs: what the git contract promises about paths and absence
+4b02132 chore: open the doc changelist
+c0a1154 chore: open a round for the relative-path bypass
+4b9792c chore: close the guard round
+4e54591 chore: lock the src changelist
+314010c test: split the integration tests, repair the corrupted comments
+7ac410f fix: pin the remote guard, compare remotes by host and owner
+f225d0d chore: open the src changelist
+ac817a6 chore: lock the doc changelist
+9781b2e docs: what makes two remotes the same, and the nested-repo refusal

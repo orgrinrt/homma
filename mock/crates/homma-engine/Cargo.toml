@@ -1,0 +1,33 @@
+[package]
+name = "homma-engine"
+version = "0.0.0"
+description = "Workspace management CLI for multi-repo Rust workspaces. Native git/forge ops, replaces gh-CLI usage."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Named for the package rather than for the command. The command is `homma` and
+# it belongs to the launcher, which resolves this engine and runs it.
+[[bin]]
+name = "homma-engine"
+path = "src/main.rs"
+
+[dependencies]
+homma-core = { path = "../homma-core" }
+homma-api = { path = "../homma-api" }
+homma-org = { path = "../homma-org" }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+anyhow = "1"
+toml = "0.8"
+tempfile = "3"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

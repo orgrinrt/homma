@@ -1,0 +1,281 @@
+# homma-org
+
+Who exists, where their work happens, and what is generated for them.
+
+## The registry
+
+Identity is a configuration entry, never a running process. An entry carries the
+handle everything else addresses, the role that says what kind of participant it
+is, and whatever that role requires: an author name and address, optionally a
+committer name and address where the two differ, a workspace path, a pinned
+session, the repositories it holds, the path to its generated definition.
+
+Because identity is configuration, a participant survives its process dying. What
+is lost when a session ends is a transcript; what the entry describes is still
+true, and starting it again restores a participant rather than creating a new one.
+
+## The workspace lifecycle
+
+A workspace is a clone of the content repository with member repositories inside
+it, and it belongs to exactly one identity. Creating one is: clone, set the
+author and committer identities in that clone's own configuration, link the
+memory directory into the place the agent harness expects, and generate the
+definition.
+
+The memory link is worth stating because it is load-bearing and non-obvious. The
+harness writes agent memory to a path it chooses; the layout wants it beside
+everything else belonging to that identity. A relative symlink from the harness's
+path to the layout's satisfies both, survives cloning to any machine, and is
+carried by version control as a link rather than a copy.
+
+Repositories are added when work needs them rather than up front, so a workspace
+describes what its owner actually does.
+
+**The workspace root is the configuration file's own directory**, never the
+current one. The current directory says where somebody happened to be standing,
+which is not a statement about which workspace is being operated on; treating it
+as one clones an arbitrary repository and writes a participant's directories into
+whatever tree the operator was in. An explicit root still overrides, because
+standing a workspace up elsewhere on purpose is a real thing to do.
+
+**The content repository is configured as a git URI, or as `local`, which is the
+default.** A URI because that is what a workspace is cloned from; configuring a
+name instead means resolving it into one, and the resolution has to come from
+somewhere, which the round that tried took from the root's own remote, a fact
+about the operator's shell rather than about the workspace.
+
+**`local` means the configuration's own directory is the content repository**,
+initialised if it is not one yet. That is the shape a workspace starts in before
+it has a remote, and it is why the key can be omitted entirely: a fresh directory
+with a registry in it is already a workspace. An existing repository is left
+alone rather than re-initialised, since standing up twice is the same answer.
+
+**The root's remote is then a cross-check rather than a source.** Two independent
+facts say which repository this is, so both are used and a disagreement is
+refused naming each. A root that is a clone of something else is not the
+workspace this configuration describes, and its tree is not ours to write in.
+
+**Containment is asked of the filesystem, never computed from the path.**
+Resolution walks the components from the root and follows every symlink it meets,
+whether or not that link's target exists, so a symlink cannot hide an ancestor
+and `..` cannot invent one. A directory counts as a repository when it carries a
+`.git` **or** when it is itself bare. Computing containment from the path alone
+is what let five rounds each close one route and open the next.
+
+An earlier version of this paragraph described resolving "as far as it exists"
+and re-appending the rest, which is what the code did until the ninth round
+deleted it: `Path::exists()` follows a link, so a dangling one read as absent and
+was taken as written, while the write followed it anyway.
+
+**And containment is not the only question.** It asks whether a path stays inside
+a root the operator named, which says nothing about whether that root was
+somewhere nothing may be written at all. Three kinds of place are denied, and a
+`Root` carries them so that neither check can be performed without the other.
+
+The first is the operator's own `~/.claude`, where an assistant keeps its
+settings, its hooks and live credentials. The second is every other
+participant's workspace, which the registry is the thing that knows. The third
+is whatever the manifest's `deny` names, which is how an operator says a
+directory of their own is not homma's to write in.
+
+The distinction that makes it awkward: `.claude/agent-memory/<name>/` inside the
+content repository is project scope and licensed, while `~/.claude` is user scope
+and denied. Same directory name, opposite verdicts, and when the root is a home
+they are one directory.
+
+**So the comparison is against the directory, not against the path that names
+it.** A path is a way of writing a directory down and a filesystem is free to
+accept several: this one is case-insensitive, so `~/.CLAUDE` and `~/.claude` are
+one inode, and `/Users/<user>` is a firmlink to `/System/Volumes/Data/Users/<user>`,
+which is not a symlink and which no amount of link resolution collapses. Both
+were reproduced against a live deny list. A comparison of path components
+answers no in each case and the write lands beside the operator's credentials.
+
+What a directory is, is `(dev, ino)`. The check walks the candidate's ancestors,
+stats each one that exists, and compares that pair against the denied location's,
+because the leaf is usually about to be created and the answer lives at the
+deepest existing prefix.
+
+**The two together were still not enough, and the region they missed is the one
+that mattered.** The identity comparison answers nothing about a directory that
+does not exist yet, so for an absent denied location only the component
+comparison ran, and that is the comparison folding defeats. Absent plus folded
+was answered by neither, and all three deny items were reproduced being written
+into on exactly that condition.
+
+So the comparison stops trying to be exact. It asks whether two paths **could**
+denote one directory, which is the honest question when one of them cannot be
+consulted, and the components are compared case-insensitively whether or not the
+target exists. The identity comparison stays beside it, because a firmlink shares
+no components at all.
+
+That over-refuses on a case-sensitive filesystem, deliberately. An operator who
+wants `~/work/PROJECTS` to be a different directory from `~/work/projects` is
+refused and told why, which is a strange thing to want and a cheap thing to lose.
+Case folding is done through uppercase and back rather than by lowercasing, which
+is not a refinement but a correctness fix: `straße` against `STRASSE` and `Σigma`
+against `ςigma` are each one directory here, and lowercasing alone answers no to
+both.
+
+Unicode normalisation is what remains: APFS folds NFD against NFC as well as
+case, the standard library has no normalisation, and every current entry is ASCII
+while a registry-derived one need not be.
+
+**Two guards, answering two questions, and neither implies the other.**
+`enclosing_repo` asks whether a path sits inside a repository that is not itself,
+and it is called on the root and on the workspace, which are the paths a caller
+hands in. `Root::contain` asks whether a path resolves inside the workspace root,
+against the filesystem, and it is the only thing that can produce the
+`ContainedPath` the write functions accept.
+
+**The proven surface is stated rather than assumed**, because ten review rounds
+each closed one route while a sentence here claimed the class was shut:
+
+- `Root::create_dir_all` and `link_memory` take a proven path, so neither can be
+  called without one. That is the whole of what the types enforce. An earlier
+  version of this bullet said a write computed from an unchecked path does not
+  compile, and a reviewer compiled a counterexample in one line: `std::fs`
+  accepts anything that is `AsRef<Path>`, which every path type here satisfies.
+- Every path `Layout` hands out is proven, and `prepare` and `write_definitions`
+  take those. That is a fact about these functions and not a property of the
+  crate, because nothing stops a new function taking a bare path.
+- The **body** of the memory symlink is proven too. It is a path the kernel
+  follows, it was computed lexically between as-written paths while the link was
+  created at its resolved location, and a link in the chain made the two disagree
+  by a level. That is the tenth round's defect and it is why this list exists in
+  place of a claim of totality.
+- `AbsPath::resolved` follows a dangling link rather than treating it as absent,
+  because every write opens with `O_CREAT` and follows one.
+
+**What is not closed, said plainly.** Proving a path and then creating it leaves
+a window a concurrent writer can plant a link in. Closing it means walking and
+creating one component at a time with the check between each, which is a larger
+change than any round so far has carried. Creation re-proves afterwards, which
+turns a silent escape into a loud one and is half of an answer rather than an
+answer.
+
+**Homma creates the root, never the path to it.** A root whose own parent does
+not exist is refused, and that is a rule rather than a nicety:
+`create_dir_all` on a path under a missing root creates every missing ancestor,
+and the root's ancestors are above the root by definition, so containment says
+nothing about them. With the root under a home directory that reached
+`~/.claude/`, which is denied outright.
+
+An earlier version of this paragraph argued the opposite and was wrong in its
+quantifier: it ranged over prefixes below the root, which is where the argument
+holds, while the call it described does not stop there.
+
+**A workspace is refused when it sits inside another repository.** Not "under
+the workspace root", which is false: a workspace legitimately lives outside the
+content repository, and a directory of participant workspaces sitting beside it
+is the ordinary case.
+
+**And homma creates the workspace's own parent, never a chain of them.** One
+level is required, because gix will not create it and a clone into a path with no
+parent fails with an error that reads as a network fault. A chain was never
+required, and `create_dir_all` supplied one: a workspace configured at
+`somewhere/.claude/hands/paja` built `somewhere/.claude` on the way, three levels
+above the root when spelled with `..`.
+
+That is the same rule as the root, stated for the other directory homma creates.
+The two are separate because the workspace is deliberately outside the
+containment root, so no `Root` covers it and none can.
+
+A workspace pointed at a directory that already exists inside the operator's
+`.claude`, or inside another participant's workspace, is refused: the deny list
+is checked against the workspace as well as against the root, and refusing to
+build a path into a home was never the same question as refusing to write into
+one.
+
+**The list that governs the root is not the list that checks the workspace.**
+Every participant's workspace is denied under the root, the standee's own
+included, because a root inside a workspace is backwards and the workspace is
+required to sit outside the root. The workspace itself is checked against the
+same list minus its own entry, or it would deny itself.
+
+**The aggregation pass goes through the same mechanism**, and the two rounds
+before this one each got it wrong in a different way. The first left it out and
+called the question somebody else's. The second added a check on the directory
+and left every write below it built with an ordinary join, which a symlink one
+component down carries straight out, while refusing the operator's own workspace
+by accident and documenting that it had not.
+
+What it may not aggregate into: a home directory's own `.claude`, which is never
+a workspace, and any workspace belonging to another participant. What it may:
+its own.
+
+**A denied workspace is denied to everyone but its owner**, and that is a
+derivation rather than a reading. What is forbidden is writing into a workspace
+that is somebody else's, so a participant may not write there for exactly the
+reason no participant may write into another's, and the owner may, because
+nobody is denied their own. Every workspace is a clone of the same shape, so a
+participant regenerating theirs is the ordinary path.
+
+That is the same two-list distinction the stand-up already makes, where the
+standee's own workspace is denied under the root and not to itself, so this is a
+second consumer of an existing shape rather than a new rule.
+
+The same question already had an answer, `enclosing_repo`, and it was being asked
+about the root instead of about the thing being created.
+
+**An existing workspace has its remote checked before it is skipped.** Standing up
+twice is the same answer only when what is already there is the right thing; a
+workspace cloned from the wrong repository would otherwise be permanent, since a
+later run reports it already present and succeeds.
+
+**Two remotes name the same repository when their host, owner and name agree.**
+Comparing the last path segment alone treats a fork as its upstream and a mirror
+as the thing it mirrors, which is the ordinary case in a workspace keeping a
+public repository and a private one. A local path is compared as a path, resolved
+first, because two spellings of one directory are one directory.
+
+**A `local` root inside another repository's working tree is refused.** Nothing
+would otherwise stop a nested repository being initialised there, with a
+participant's directories landing in a tree belonging to somebody else, which the
+deny list forbids outright.
+
+**Setting the identities in that clone's own configuration is the step whose
+absence is invisible.** Nothing fails, no test goes red, and the first sign is a
+commit landing under whoever the machine's global configuration names. So it is
+asserted rather than assumed: after standing up, that clone reports back all four
+values it was given, and the machine's global configuration is unchanged.
+
+**Four rather than two, and six keys rather than four.** Git resolves an identity
+from `author.*` and `committer.*`, falling back to `user.*` for whatever is unset,
+and it does so across scopes: a global `author.name` beats a local `user.name`.
+So a clone that configured only the `user.*` pair committed under the machine's
+name on any machine that had one, and a read-back that compared only the author
+passed a write that dropped the committer.
+
+**Standing up twice is the same answer**, which now covers the clone as well as
+the directories and the memory. A workspace that already holds the content
+repository is left alone rather than re-cloned, and nothing remembered is cleared.
+
+**A mapped identity is refused, not promoted.** An entry that deliberately has no
+workspace is a decision somebody recorded, and creating one for it as a side
+effect of standing it up would let a typo become a workspace. Promotion is an edit
+to the registry, made on purpose.
+
+## Generation
+
+The definition an agent runs under is generated from the registry entry plus a
+shared template plus a hand-written character fragment that is never regenerated.
+The shared part cannot drift between participants because none of them owns it;
+the character is authored once and belongs to whoever it describes.
+
+The same pass writes the settings and hooks that constrain a workspace. It is the
+sole writer of the agent configuration directory in every workspace it manages,
+which is what makes the constraints uniform and what makes a workspace it did not
+create simply not have them.
+
+## The surface
+
+**`Registry`** reads the identities out of a workspace's configuration. It
+answers who exists, who holds a role, and which entries cannot yet be stood up,
+with what each is missing. That last one exists so a gap is reported before a
+clone starts rather than discovered halfway through one.
+
+**`Layout`** answers where things sit for a given identity, and **`prepare`**
+creates them: the directories, and the memory link into the path the harness
+expects. Both are relative to a workspace root, so nothing about where a
+workspace lives is compiled in.

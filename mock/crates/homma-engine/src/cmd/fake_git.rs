@@ -1,0 +1,152 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+
+//! A `Git` that answers from tables a test fills in.
+//!
+//! Its own module because `stand.rs` crossed the file-size limit carrying it,
+//! and because a fake used by more than one test module wants one definition
+//! rather than two that drift apart.
+//!
+//! **It deliberately asserts nothing about its arguments.** An earlier version
+//! asserted that paths were absolute, which the parameter type already
+//! guarantees. The assertion was a tautology, nothing ever executed it, and two
+//! successive rounds cited it as evidence of a property it did not establish.
+//! A fake earns its place by making a branch reachable, not by restating the
+//! signature.
+
+#![cfg(test)]
+
+use std::path::PathBuf;
+
+use homma_api::{AbsPath, Git};
+
+pub const CONTENT: &str = "git@example.invalid:someone/content.git";
+
+pub struct FakeGit {
+    /// What `origin_url` answers for the workspace root.
+    pub root_origin: Option<String>,
+    pub cloned:      std::cell::RefCell<Vec<(String, AbsPath)>>,
+    pub identities:  std::cell::RefCell<Vec<(AbsPath, homma_api::CommitIdentity)>>,
+    /// A path, and the repository it sits inside. Empty means nothing is
+    /// nested, which is what most tests want.
+    pub enclosures:  std::cell::RefCell<Vec<(AbsPath, AbsPath)>>,
+}
+
+impl FakeGit {
+    /// A root that is a clone of the content repository. The ordinary case.
+    pub fn at_the_content_repo() -> Self {
+        Self {
+            root_origin: Some(CONTENT.into()),
+            cloned:      Default::default(),
+            identities:  Default::default(),
+            enclosures:  Default::default(),
+        }
+    }
+
+    /// A root that is a clone of something else entirely.
+    pub fn somewhere_else() -> Self {
+        Self {
+            root_origin: Some("git@example.invalid:someone/member.git".into()),
+            cloned:      Default::default(),
+            identities:  Default::default(),
+            enclosures:  Default::default(),
+        }
+    }
+
+    /// A root that is not a repository at all.
+    pub fn no_origin() -> Self {
+        Self {
+            root_origin: None,
+            cloned:      Default::default(),
+            identities:  Default::default(),
+            enclosures:  Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Never;
+
+impl std::fmt::Display for Never {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "never")
+    }
+}
+
+impl std::error::Error for Never {}
+
+impl Git for FakeGit {
+    type Error = Never;
+
+    fn is_repo(&self, path: &AbsPath) -> bool {
+        self.cloned.borrow().iter().any(|(_, p)| p == path)
+    }
+
+    fn clone_repo(&self, url: &str, dest: &AbsPath) -> Result<(), Never> {
+        self.cloned
+            .borrow_mut()
+            .push((url.to_string(), dest.clone()));
+        Ok(())
+    }
+
+    fn init(&self, _path: &AbsPath) -> Result<(), Never> {
+        Ok(())
+    }
+
+    fn set_identity(&self, path: &AbsPath, id: &homma_api::CommitIdentity) -> Result<(), Never> {
+        // The whole identity is recorded rather than half of it. A double that
+        // discards part of its argument cannot fail the way production fails,
+        // which is how a guard on this branch went four rounds pinned by
+        // nothing.
+        //
+        // **This line is pinned in `stand.rs`, both halves.** A previous version
+        // of this comment said the committer was asserted in `homma-org`, which
+        // has its own separate `FakeGit`, so nothing anywhere exercised this
+        // one's committer path: substituting `id.author_name` here for the
+        // committer left the suite green. `stand.rs` now stands up one entry
+        // whose four values all differ and one that carries no committer, so
+        // both a substitution and a dropped fallback fail.
+        self.identities
+            .borrow_mut()
+            .push((path.clone(), id.clone()));
+        Ok(())
+    }
+
+    fn enclosing_repo(&self, path: &AbsPath) -> Result<Option<AbsPath>, Never> {
+        Ok(self
+            .enclosures
+            .borrow()
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, e)| e.clone()))
+    }
+
+    fn origin_url(&self, path: &AbsPath) -> Result<Option<String>, Never> {
+        // A cloned workspace reports what it was cloned from; anything else is
+        // the root, and reports what this fake was built to say.
+        Ok(self
+            .cloned
+            .borrow()
+            .iter()
+            .find(|(_, p)| p == path)
+            .map(|(u, _)| u.clone())
+            .or_else(|| self.root_origin.clone()))
+    }
+
+    fn identity(&self, path: &AbsPath) -> Result<Option<homma_api::CommitIdentity>, Never> {
+        Ok(self
+            .identities
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(p, _)| p == path)
+            .map(|(_, id)| id.clone()))
+    }
+}
+
+/// A tempdir path as the type the contract takes.
+pub fn abs(p: impl Into<PathBuf>) -> AbsPath {
+    AbsPath::new(p).expect("a tempdir path is absolute")
+}

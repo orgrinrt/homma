@@ -1,0 +1,50 @@
+ebff44f chore: lock it
+0c48fba feat: state the twin restriction in the prime definition
+27374f3 chore: lock it
+342a353 chore: open a round for the third belief defect
+a1e00e5 chore: close the readme round
+f29e9e7 chore: lock it
+28a3be7 chore: open an empty src changelist
+6c830f3 chore: lock it
+47b3213 docs: say what the repository is rather than what it was
+e133f27 chore: close the review-findings round
+a669393 chore: lock it
+d9328b0 fix: six blocking defects the review found
+226bce4 chore: open the src changelist for the fixes
+530db3f chore: lock it
+c352b43 docs: stop claiming a terminal split that is not built
+a08f349 chore: open a round for the review findings
+8972868 chore: close the standup-defects round
+d0ee1c8 chore: lock it
+82d8844 feat: forbid trunk commits in the generated standing instruction
+0ccc598 chore: close the naming round
+d8c5f0b chore: lock it
+d5cbc9b chore: open an empty src changelist to close the naming round
+471d398 chore: lock the naming doc changelist
+ce7ce0e docs: name the types the design describes
+46c2108 chore: close the taxonomy round
+a737a4d chore: lock the taxonomy src changelist
+c92a1bc fix: tell a generated definition which git identity is its own
+1cdc161 feat: generate definitions and add the org command surface
+89c54c7 feat: the record vocabulary, the store, and the registry
+f8e5aa8 chore: open the src changelist for the taxonomy round
+e37b8e6 chore: relock the taxonomy doc changelist
+db69165 docs: withdraw the one-engine claim to an open question
+c9cfb01 chore: lock the taxonomy doc changelist
+f0c6cfd docs: the taxonomy and a design per new crate
+7d47d02 chore: settle the crate taxonomy
+97cb152 chore: open the crate taxonomy round
+404981f chore: close the mockspace adoption round
+d56b7d9 chore: lock the src changelist for the adoption round
+aa313b9 chore: adopt mockspace and re-root the workspace under mock/
+4fc3a78 fix: exempt the mockspace tool repo from the adoption gate
+9360863 feat: accept launcher pin as mockspace adoption marker
+285f645 chore: pin nightly toolchain to nightly-2026-05-28
+6b0feb2 chore: add restrict-main-merges workflow
+b728cb7 feat: section-aware alias detection and bash e2e tests
+051deb5 feat: harden multi-hook filter to preserve hand-authored hooks
+6cb03c8 feat: drop per-repo rule aggregation; keep hook aggregation only
+b2be8a6 refactor: drop IntoMockspaceConfig bridge per mockspace v2 schema split
+2cfd575 feat(homma): workspace .claude aggregation + git-ops gate (#454 phase 2 + 3) (#10)
+5463978 feat(homma): agent + docs commands phase 1 (#454) (#9)
+12876f3 feat(homma): migrate + archive commands (#452) (#8)

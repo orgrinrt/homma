@@ -1,0 +1,34 @@
+# Copyright headers, kept current by `ante` rather than by hand.
+#
+# `ante check` reports what is out of date and `ante fix` writes it, so a year
+# rolling over or an address changing is a re-run instead of an edit of seventy
+# files.
+
+# MPL-2.0, matching `license` in the workspace manifest, which is the one that
+# governs. The URL follows from the identifier and is not repeated here, so the
+# two cannot disagree.
+spdxLicense = "MPL-2.0"
+
+maintainerEmail = "contact@hiisi.digital"
+
+# From git, rather than from a list somebody keeps current. A list in a config
+# file is a second copy of what the history already knows and goes stale
+# quietly.
+contributorSelection = "commits"
+maxContributors = 3
+
+include = [
+    "launcher/src/**/*.rs",
+    "launcher/tests/**/*.rs",
+    "mock/crates/*/src/**/*.rs",
+    "mock/crates/*/tests/**/*.rs",
+]
+
+# The trybuild fixtures are paired with `.stderr` files pinning the line each
+# diagnostic lands on, so a header shifts every one of them and the suite goes
+# red until the expectations are regenerated. They exist to fail to compile in
+# a particular way and are never distributed.
+exclude = [
+    "**/target/**",
+    "mock/crates/*/tests/compile_fail/**",
+]

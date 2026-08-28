@@ -1,0 +1,61 @@
+# homma-store
+
+Records on disk, and the only code that writes them.
+
+## One vocabulary, and an open question about engines
+
+Everything here is a record: an id, a kind, a provenance reference, and whatever
+attributes its kind declares. A message is a record whose kind is `message`, and a
+channel is a namespace over records.
+
+**Whether correspondence and structural records share one physical engine is not
+settled.** One reading says append-only is a flag a kind declares and one write
+path serves both. Another says append-only is not a spare bit but the reason the
+sole-writer machinery exists at all, that a mutable task has none of that problem,
+and that a flag forking the whole write path is two engines sharing a door. Both
+readings are recorded in the round; the question belongs to the workspace's owner.
+
+What is not in question, and what this crate is built around, is that the
+**vocabulary** is one. Provenance resolution, reference extraction and date typing
+are storage-agnostic functions written once, whatever ends up writing the bytes.
+
+## The file shape
+
+Newline-delimited records, one per line, in files namespaced by kind and
+addressed within it. Appending is the common operation and the format makes it
+cheap; a reader that wants the tail reads the tail.
+
+Records whose kind declares them mutable are rewritten in place. Records whose
+kind declares them append-only never are, and a correction to one is another
+record that supersedes it rather than an edit that erases it.
+
+## The sole writer
+
+Every write goes through one process. This is not a convention: a command-line
+tool invoked by several agents is several processes appending to one file, and
+that is the multi-writer problem regardless of the binary they share. The daemon
+owning the store is what makes serialised appends true.
+
+Readers are unrestricted. A record on disk is readable by anything, and nothing
+about the format requires the daemon to interpret it.
+
+## Derived, and therefore absent
+
+An index over the store is derivable from it and is rebuildable at any time, so it
+is not part of the store and is not committed. Queries at present volume read the
+files. When that stops being adequate, the index arrives without the store
+changing shape.
+
+## The surface
+
+**`Store`** is a directory of records, opened at a root. Two operations enter
+anything: `append`, which is how everything arrives, and `replace`, which is
+refused unless the kind declares itself mutable. `read` returns a kind's records
+in the order they were written.
+
+**`Error`** says why something did not happen, and the variants are the reasons
+worth distinguishing: a kind that is append-only being asked to rewrite, an id
+that is not there, a record that does not satisfy its kind, and the ordinary
+failures of disk and encoding. The immutability refusal names the record and
+suggests superseding it, because that is the correct move and a bare refusal
+would leave the caller to guess it.

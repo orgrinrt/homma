@@ -1,0 +1,50 @@
+8f6c541 chore: lock src changelist for the deny anchor
+e3d0283 refactor: split the config tests out of config.rs
+d520880 fix: anchor relative deny entries at load
+3595abd src: changelist for the deny anchor
+88a6b48 docs: lock the doc changelist
+b32adee doc: changelist for the deny anchor
+dadfbd3 topic: one anchor for a relative deny
+c3b9de1 docs: close the deny-coverage round
+63d3df1 docs: lock the src changelist
+aad288a test: pin the manifest fold, and record the one nothing reaches
+ee84fd8 src: changelist to pin the two folds
+ebb865e docs: lock the doc changelist
+26e75c9 docs: say what the deny list does not cover
+9ade308 doc: changelist for what the deny list does not cover
+170444a topic: what the deny list does not cover
+0e0234d docs: close the deny-key round
+8237dde docs: lock the src changelist
+cb49f18 test: read every toml block in the readme, not the first
+1324ad9 docs: open the src changelist
+b916ad7 docs: lock the doc changelist
+ad0de47 docs: document the deny key in the readme
+b2c1777 doc: changelist for the deny key
+48826b7 topic: the deny key, in the readme
+f7910b3 chore: close design round 202608250858
+6f2a97d chore: lock src changelist for 202608250858
+069fbd8 fix: state the rules rather than citing what a reader cannot open
+3b88601 fix: deny rather than allow silently when the gate cannot read its input
+4291281 src: changelist for what a stranger gets
+60dc1ae chore: lock doc changelist for 202608250858
+dbcdf1e docs: name the runnable commands, the token_cmd surface, and the rules themselves
+fc054ed chore: unlock doc changelist for 202608250858
+73fb643 chore: lock doc changelist for 202608250858
+310dfe6 doc: changelist for what a stranger gets
+46fcb60 topic: what a stranger gets, and what it tells them
+7188ec5 fix: ship the licence with the launcher and check both routes out of the package
+c8ef4e5 chore: close design round 202608250741
+63326d2 docs: rewrite the readme for the first release
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config

@@ -1,0 +1,62 @@
+[package]
+name = "homma"
+version = "0.0.1"
+edition = "2024"
+# The published crate, and the whole of what an operator installs. The engine
+# (`homma-engine`) stays private: this launcher git-installs whatever engine the
+# workspace pins, so it needs no version relationship to it.
+publish = true
+description = "Launcher for the homma workspace harness: resolves the engine a workspace pins, builds it once per version into a shared cache, and runs it from any working directory."
+# The repository's own, since this crate is the whole of what an operator
+# installs. Cargo ships whatever `readme` names whether or not `include`
+# mentions it, which is the only way to reach a file above the package.
+readme = "../README.md"
+# `renki` is the floor and it declares 1.88. Stated here too, or an older
+# toolchain fails somewhere inside a dependency instead of at this manifest.
+rust-version = "1.88"
+license = "MPL-2.0"
+repository = "https://github.com/orgrinrt/homma"
+homepage = "https://github.com/orgrinrt/homma"
+categories = ["development-tools", "command-line-utilities"]
+keywords = ["homma", "workspace", "multi-repo", "git"]
+
+# The package ships no test, and that is the honest answer rather than a gap.
+#
+# Every test here is a test about this repository. Three of them read
+# `mock/crates/homma-engine/`, which is the engine's source and sits above this
+# package, and one reaches `homma-core` through a path dev-dependency cargo
+# strips on publish. In a tarball none of that is there, so the package's own
+# suite goes red on a fresh machine.
+#
+# `cargo publish` never notices either shape: verification builds the lib and
+# the bins and no test at all. So the first person to meet it is whoever
+# unpacks the crate, against a version that cannot be replaced.
+#
+# Shipping a test would mean writing one whose subject is the launcher alone.
+# There is nothing stopping that and nothing currently needing it.
+# The licence is a symlink to the one at the repository root, so the two cannot
+# drift and the text still lands inside the package: cargo resolves it when it
+# copies. `include` overrides cargo's defaults, and MPL-2.0 section 3.1 wants
+# the text travelling with the source, so it is named rather than assumed.
+include = ["src/**/*.rs", "LICENSE"]
+
+# The launcher machinery is `renki` and is shared with every other tool built
+# the same way. What is left here is this tool's own, which is a descriptor and
+# nothing else.
+[dependencies]
+# A `0.0.x` requirement is already the exact version and nothing else, which is
+# what this wants: it is the launcher every operator installs, and it moves when
+# the number here moves rather than when a branch does.
+renki = "0.0.1"
+
+# The engine's config type, so a test can hold both ends of the one file this
+# tool and its engine share. Dev-only: the launcher itself never reads the
+# config as anything but text, which is what keeps it engine-agnostic.
+[dev-dependencies]
+homma-core = { path = "../mock/crates/homma-core" }
+tempfile = "3"
+# The descriptor test reads this repository's own manifests to check that the
+# strings in the descriptor name something that is there. `renki` already pulls
+# this in, so a build pays nothing new, and a dev dependency is stripped out of
+# the package.
+toml = "0.8"

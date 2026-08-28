@@ -1,0 +1,36 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+
+//! gix-orthogonal forge client layer for homma.
+//!
+//! `gix` covers the git protocol side of a migration (clone, mirror, push,
+//! ref bookkeeping). The forge layer covers everything outside git: creating
+//! the destination repo via the forge's REST API, replicating description /
+//! visibility / default branch, and archiving or deleting the source. The
+//! two layers compose: the migrate command reads source metadata via the
+//! [`Forge`] trait, creates the destination via the same trait, mirrors via
+//! [`crate::GixRepo::mirror_into`], and tears down the source via [`Forge`]
+//! again.
+//!
+//! Public surface:
+//! - [`Forge`] trait: operations every concrete client (`ForgejoClient`,
+//!   [`GitHubClient`]) implements.
+//! - [`RepoMetadata`], [`CreateRepoSpec`], [`Visibility`]: the value types
+//!   the trait operates on.
+//! - [`ForgeError`]: concrete error type.
+//! - [`url`] module: pure URL composers (clone, web, api). Used by the
+//!   migrate command to build URLs without instantiating a client.
+
+pub mod error;
+pub mod forgejo;
+pub mod github;
+pub mod token;
+pub mod trait_def;
+pub mod url;
+
+pub use error::ForgeError;
+pub use forgejo::ForgejoClient;
+pub use github::GitHubClient;
+pub use trait_def::{CreateRepoSpec, Forge, OwnerKind, RepoMetadata, Visibility};

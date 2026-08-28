@@ -1,0 +1,130 @@
+# homma-api
+
+The vocabulary every other crate speaks. Types and the traits over them, and no
+I/O of any kind.
+
+## A record
+
+Everything homma stores is a record. A message, a task, a delivery cursor, an
+entry in a monitoring log: one shape, distinguished by what its kind says about
+it.
+
+Three fields are required of every record, because homma's own machinery reads
+them.
+
+**`id`** addresses it. **`kind`** names the declaration that governs it.
+**`provenance`** is a reference to whoever created it, and the standing of a
+record is derived from what that reference points at rather than stored beside it:
+a person's own reference is ratified, an agent's is agent output, a forge's is
+mapped and read-only. Storing the standing as well would let the two disagree,
+which is the whole reason it is derived.
+
+Everything else a record carries is declared by its kind.
+
+## A kind
+
+A kind is configuration, not code. It names the attributes a record of that kind
+has, their types, which are required, and whether records of that kind may be
+edited after they are written.
+
+That last flag is what lets correspondence and structural work share one engine.
+Messages declare themselves append-only and are never edited; tasks declare
+themselves mutable and change as work moves. Nothing about the store knows which
+is which, and a workspace that wants a third behaviour declares a third kind.
+
+## Attribute types
+
+Present, because something uses each:
+
+**`text`**, with a hint saying whether it is plain or carries markup.
+**`instant`**, a point in time. **`ref<ns>`**, a reference into a namespace, which
+is the one type that collapses several: a handle is a reference into the
+registry's namespace, a link to another record is a reference into that record's
+kind, and a forge reference is a reference into a forge's.
+
+Deliberately absent, and each for a reason rather than an oversight: a date
+distinct from an instant, a duration, a number, a decimal with declared precision,
+a recurrence, a fractional rank, and an ordered workflow with terminal and
+off-path states. Each is designed and none is needed by the first records that
+exist. Kinds being configuration means every one of them is additive when it
+arrives, so building them ahead of a consumer would fix a shape nothing has
+pushed on.
+
+## Configuration
+
+**No key is required.** The content repository defaults to `local`, meaning the
+configuration's own directory, which homma initialises if it is not a repository
+yet; a git URI names one elsewhere. Every path likewise has a default homma will
+create and an override for a workspace whose convention differs, so a directory
+holding an empty registry is already a workspace.
+Identities are blocks: a role, a handle, and whatever that role needs. A person
+needs a git identity and a workspace; a consultant needs neither.
+
+## What the git contract promises
+
+**Every path handed to it is an `AbsPath`, a type that cannot be relative.** A
+relative path resolves against whatever directory the process happens to be in,
+so a guard walking upward from one walks up from the process's directory and
+passes, and a clone target that is one lands wherever the operator was standing.
+
+**Descending and anchoring are different operations and only one may leave.**
+
+*Anchoring* takes a path the caller is entitled to put anywhere. A workspace
+legitimately lives outside the content repository, so a relative one going up is
+correct, and what guards it is a containment check against the filesystem.
+
+*Descending* walks into a tree we own: a repository's own `.git`, a handle's
+directory, a definition's filename. **Nothing descended into has any business
+leaving**, so it cannot: a parent component clamps at the receiver rather than at
+the filesystem root. Every caller passes a literal, and none of them was trying
+to leave.
+
+Sharing one method between the two is how a configured path reached another
+repository's tree. The configured paths additionally carry a type that refuses an
+absolute or escaping value **when the configuration is parsed**, so the failure is
+reported where somebody can act on it rather than where a file lands.
+
+**What the type carries is absoluteness, and nothing else.** It does not carry
+containment: `/a/b/../../etc` is absolute, and so is a path pointing straight
+into somebody else's repository. Containment is a question about the filesystem
+rather than about the value, so it stays a runtime check, and the check belongs
+on **the path being written to** rather than on the one it was resolved against.
+A round that put the type in place and left that check on the wrong path shipped
+the same escape it was closing.
+
+**The type is the point, and prose was tried first.** Stating the precondition in
+a comment means re-checking it at every call. Checking it at runtime in one
+implementation leaves the other six unchecked, which is what happened: three
+consecutive rounds each closed the route they were shown and left the next one
+open, and the runtime check that was added turned out to be unreachable in both
+fakes. A precondition in the signature is checked once, by the compiler, for every
+caller that will ever exist.
+
+**Absence is `None`, not an error.** Asked what a remote points at, a directory
+that is not a repository points at nothing; that is an answer, not a failure. An
+error means a repository that exists and cannot be read. Collapsing the two makes
+the ordinary bootstrap, a directory with a registry and a remote to clone from,
+fail outright.
+
+## Mapped and staffed
+
+An identity whose role owns a workspace is in one of two states, and they are not
+degrees of completeness.
+
+**Staffed** means it has a workspace on disk, a git identity, and repositories. It
+is somebody who works.
+
+**Mapped** means the entry records that a boundary has been drawn and who owns it,
+so the same ground is not carved twice by somebody arriving later. It has no
+workspace and is not supposed to have one.
+
+Without the distinction the two are indistinguishable, because a mapped entry
+lacks exactly the fields an unfinished one lacks. A registry holding a dozen
+mapped entries then reports a dozen broken ones, and a report that is wrong a
+dozen times is a report nobody reads.
+
+**The staffing state is declared, never inferred from an absent workspace.** Inference is
+cheaper and wrong: an entry whose workspace was mistyped or dropped would read as
+a deliberate decision, which is the confusion the distinction exists to remove. So
+an entry says it is staffed, and a staffed entry lacking its workspace is still a
+gap and still reported.
