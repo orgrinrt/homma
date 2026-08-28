@@ -22,7 +22,14 @@ use renki::{Anchor, Hooks, Locate, Tool, pin_keys};
 
 /// The canonical repository: the engine source when a config sets no
 /// `homma_git`.
-pub const CANONICAL_URL: &str = "ssh://git@github.com/orgrinrt/homma.git";
+///
+/// Over https, because this is the url every installed launcher hands to
+/// `git ls-remote` and `cargo install --git` on a machine that is not the
+/// author's. The repository is public and an ssh url turns that into a
+/// permission error for anybody without a key registered on the forge, which
+/// is a failure on first run rather than a failure at some later step. A
+/// consumer who does want ssh sets `homma_git` and gets it.
+pub const CANONICAL_URL: &str = "https://github.com/orgrinrt/homma.git";
 
 /// homma, as a launcher.
 pub const TOOL: Tool = Tool {
@@ -30,21 +37,21 @@ pub const TOOL: Tool = Tool {
     // the anchor is the config itself. Anchoring on `.git` would stop at the
     // first member clone walking up and never reach the workspace root, and
     // running this from inside a member clone is how it is normally used.
-    anchor:          Anchor::ConfigFile,
-    short:           "homma",
-    config_file:     "homma.toml",
-    pin_keys:        pin_keys!("homma"),
+    anchor: Anchor::ConfigFile,
+    short: "homma",
+    config_file: "homma.toml",
+    pin_keys: pin_keys!("homma"),
     // The engine package, which is not the command. The command is this crate.
-    engine_crate:    "homma-engine",
+    engine_crate: "homma-engine",
     cache_namespace: "homma",
-    default_url:     CANONICAL_URL,
-    launcher_crate:  "homma",
+    default_url: CANONICAL_URL,
+    launcher_crate: "homma",
     // No working directory to descend into. The engine's own root is the
     // workspace root, which is where the config was found, so there is nothing
     // below it to name.
-    workdir:         None,
-    locate:          Some(Locate::DEFAULT),
-    hooks:           Hooks {
+    workdir: None,
+    locate: Some(Locate::DEFAULT),
+    hooks: Hooks {
         verify_engine_dir: Some(engine_dir_holds_the_engine),
         ..Hooks::NONE
     },
@@ -73,10 +80,24 @@ pub const ENGINE_SUBDIR: &str = "mock/crates/homma-engine";
 /// as a virtual manifest complaint naming neither the flag that caused it nor
 /// the directory that would have worked.
 fn engine_dir_holds_the_engine(dir: &Path) -> Result<(), String> {
-    let manifest = std::fs::read_to_string(dir.join("Cargo.toml"))
-        .map_err(|e| format!("{}: {e}", dir.join("Cargo.toml").display()))?;
-    if package_name(&manifest).as_deref() == Some(TOOL.engine_crate) {
+    // `renki::package_name` rather than a reader of this crate's own. There was
+    // one here, a text scan, and it had the defect renki's documentation names:
+    // it knew one of TOML's spellings of an assignment and refused a manifest
+    // written in another, so `[ package ]` with spaces was reported as not
+    // being this engine at all. Reading the document as a document is what
+    // makes that go away, and renki already parses TOML for the build registry.
+    let declared = renki::package_name(dir);
+    if declared.as_deref() == Ok(TOOL.engine_crate) {
         return Ok(());
+    }
+    // A directory with no manifest at all is a different mistake from one
+    // holding the wrong package, and the reader already says which file it
+    // could not read. Passing that through is what tells somebody who pointed
+    // the flag at an empty directory what was actually looked for.
+    if !dir.join("Cargo.toml").is_file() {
+        return Err(declared
+            .err()
+            .unwrap_or_else(|| format!("{} holds no Cargo.toml", dir.display())));
     }
     let suggestion = dir.join(ENGINE_SUBDIR);
     if suggestion.join("Cargo.toml").is_file() {
@@ -90,55 +111,6 @@ fn engine_dir_holds_the_engine(dir: &Path) -> Result<(), String> {
         "{} is not a homma-engine checkout. The engine lives at {ENGINE_SUBDIR} inside one",
         dir.display()
     ))
-}
-
-/// Every `name` declared in one section of a manifest, by section header.
-///
-/// A text scan rather than a parser, because pulling a TOML dependency into a
-/// launcher whose whole point is having almost none would cost more than it
-/// buys, and the one line this reads is the least likely in the file to grow
-/// exotic syntax.
-///
-/// The section matters, and matching the bare text does not do. A package named
-/// something else entirely can declare a `[[bin]]` under the engine's name, a
-/// dependency table can carry a renamed dependency, and a comment can say
-/// anything at all. All three read as the engine to a substring scan, and none
-/// of them is a package `cargo install` would build as the engine.
-#[must_use]
-pub fn names_in_section(manifest: &str, header: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut inside = false;
-    for line in manifest.lines() {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if line.starts_with('[') {
-            inside = line == header;
-            continue;
-        }
-        if !inside {
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("name")
-            && let Some(value) = rest.trim_start().strip_prefix('=')
-        {
-            let value = value.trim();
-            let Some(quote) = value.chars().next() else {
-                continue;
-            };
-            if quote != '"' && quote != '\'' {
-                continue;
-            }
-            if let Some(name) = value[1 ..].split(quote).next() {
-                out.push(name.to_string());
-            }
-        }
-    }
-    out
-}
-
-/// The name a manifest's `[package]` section declares, if it has one.
-#[must_use]
-pub fn package_name(manifest: &str) -> Option<String> {
-    names_in_section(manifest, "[package]").into_iter().next()
 }
 
 /// The process entry, over the descriptor.

@@ -11,7 +11,7 @@ use homma_core::Config;
 pub mod status {
     use std::io::Write;
 
-    use anyhow::{Context, anyhow};
+    use anyhow::Context;
     use homma_core::{GixRepo, RepoOps};
     use serde::Serialize;
 
@@ -54,7 +54,7 @@ pub mod status {
     pub fn run(cfg: &Config, repo_name: &str, format: OutputFormat) -> Result<()> {
         let entry = cfg
             .repo(repo_name)
-            .ok_or_else(|| anyhow!("repo `{repo_name}` not declared in [repos.*]"))?;
+            .ok_or_else(|| util::no_such_member(cfg, repo_name))?;
         let local_path = util::resolve_local_path(&cfg.workspace.path, &entry.local_path);
         let repo = GixRepo::open(&local_path)
             .with_context(|| format!("opening repo at {}", local_path.display()))?;

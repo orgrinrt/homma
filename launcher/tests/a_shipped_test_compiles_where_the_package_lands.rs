@@ -93,17 +93,19 @@ fn cannot_run_in_the_tarball(body: &str, stripped: &BTreeSet<String>) -> Vec<Str
     for macro_name in ["include_str!", "include_bytes!", "include!"] {
         let mut rest = body;
         while let Some(at) = rest.find(macro_name) {
-            let after = &rest[at + macro_name.len()..];
+            let after = &rest[at + macro_name.len() ..];
             let Some(open) = after.find('"') else { break };
-            let tail = &after[open + 1..];
+            let tail = &after[open + 1 ..];
             let Some(close) = tail.find('"') else { break };
-            let path = &tail[..close];
+            let path = &tail[.. close];
             // One `../` climbs out of `tests/` to the package root, which is
             // fine. A second leaves the package.
             if path.matches("../").count() > 1 {
-                why.push(format!("includes `{path}`, which climbs out of the package"));
+                why.push(format!(
+                    "includes `{path}`, which climbs out of the package"
+                ));
             }
-            rest = &tail[close..];
+            rest = &tail[close ..];
         }
     }
 
@@ -135,9 +137,11 @@ fn include_names_no_test_that_cannot_run_where_the_package_lands() {
         let body = match std::fs::read_to_string(dir.join(test)) {
             Ok(b) => b,
             Err(e) => {
-                problems.push(format!("{test} is named in `include` and cannot be read: {e}"));
+                problems.push(format!(
+                    "{test} is named in `include` and cannot be read: {e}"
+                ));
                 continue;
-            }
+            },
         };
         for why in cannot_run_in_the_tarball(&body, &stripped) {
             problems.push(format!("{test} {why}"));
@@ -156,7 +160,10 @@ fn the_check_catches_both_routes_out_of_the_package() {
     assert_eq!(cannot_run_in_the_tarball(walks_up, &stripped).len(), 1);
 
     let stripped_import = "use homma_core::config::Config;";
-    assert_eq!(cannot_run_in_the_tarball(stripped_import, &stripped).len(), 1);
+    assert_eq!(
+        cannot_run_in_the_tarball(stripped_import, &stripped).len(),
+        1
+    );
 
     let escapes = r#"const R: &str = include_str!("../../README.md");"#;
     assert_eq!(cannot_run_in_the_tarball(escapes, &stripped).len(), 1);
@@ -177,5 +184,8 @@ fn the_check_catches_both_routes_out_of_the_package() {
     let deps = "[dev-dependencies]\nhomma-core = { path = \"../x\" }\ntempfile = \"3\"\n";
     let s = stripped_dev_deps(deps);
     assert!(s.contains("homma_core"));
-    assert!(!s.contains("tempfile"), "a registry dev-dep is not stripped");
+    assert!(
+        !s.contains("tempfile"),
+        "a registry dev-dep is not stripped"
+    );
 }

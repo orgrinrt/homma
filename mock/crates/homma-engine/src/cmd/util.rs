@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use homma_api::AbsPath;
+use homma_core::config::Config;
 
 /// Resolve a repo-relative path against the workspace root.
 ///
@@ -32,6 +33,30 @@ pub(crate) fn resolve_local_path(workspace_root: &Path, repo_path: &Path) -> Pat
                 workspace_root.join(repo_path)
             }
         },
+    }
+}
+
+/// The error for a repository name that names no member of this workspace.
+///
+/// One place, because the four commands that need it used to carry four copies
+/// of a sentence telling the operator to declare the repo in a table the
+/// manifest no longer accepts. Membership is read off the directories under the
+/// workspace root, so the honest answer names what was found rather than what
+/// the operator should have written.
+pub(crate) fn no_such_member(cfg: &Config, name: &str) -> anyhow::Error {
+    let mut found: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
+    found.sort_unstable();
+    if found.is_empty() {
+        anyhow::anyhow!(
+            "no repository named `{name}` under {}, and no repository at all was found there",
+            cfg.workspace.path.display()
+        )
+    } else {
+        anyhow::anyhow!(
+            "no repository named `{name}` under {}. found: {}",
+            cfg.workspace.path.display(),
+            found.join(", ")
+        )
     }
 }
 

@@ -1441,6 +1441,7 @@ dependencies = [
  "homma-core",
  "renki",
  "tempfile",
+ "toml",
 ]
 
 [[package]]
@@ -1912,7 +1913,7 @@ dependencies = [
 [[package]]
 name = "mockspace-config"
 version = "0.1.0"
-source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#6fd4e4d4d0a06e9a67ca0e1fe778bcd6a0b4e769"
+source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#f1349b66c491a856cbe692f965d8dc86c07cd0e9"
 dependencies = [
  "serde",
  "toml",
@@ -1921,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "mockspace-template"
 version = "0.1.0"
-source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#6fd4e4d4d0a06e9a67ca0e1fe778bcd6a0b4e769"
+source = "git+https://github.com/hiisi-digital/mockspace.git?branch=dev#f1349b66c491a856cbe692f965d8dc86c07cd0e9"
 dependencies = [
  "minijinja",
  "serde",

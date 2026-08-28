@@ -68,7 +68,8 @@ pub struct Opts<'a> {
     /// Destination owner is an org namespace, not a user. Drives
     /// `CreateRepoSpec::in_org()`.
     pub to_org:   bool,
-    /// Source forge profile override. `None` reads `[repos.<repo>].forge`.
+    /// Source forge profile override. `None` uses the forge detected from the
+    /// clone's origin remote.
     pub source:   Option<&'a str>,
     /// Plan-only: emit the plan and exit without contacting the destination.
     pub dry_run:  bool,

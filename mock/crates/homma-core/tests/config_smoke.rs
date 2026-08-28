@@ -87,9 +87,15 @@ owner = "orgrinrt"
 local_path = "notko"
 "#;
     let err = Config::parse(src).expect_err("a [repos] table must be refused");
+    // Down the chain, because the outer message says which file and the toml
+    // error under it says which key. Reading only the outer one passed while
+    // the outer one was a copy of the inner.
+    let under = std::error::Error::source(&err)
+        .expect("a parse failure carries the toml error under it")
+        .to_string();
     assert!(
-        format!("{err}").contains("repos"),
-        "the refusal does not name what is wrong: {err}"
+        under.contains("repos"),
+        "the refusal does not name what is wrong: {under}"
     );
 }
 
@@ -132,4 +138,54 @@ name = "demo"
     )
     .unwrap();
     assert_eq!(config.workspace.name, "demo");
+}
+
+#[test]
+fn a_config_error_says_what_went_wrong_once_and_not_twice() {
+    // `Display` used to interpolate the source that `Error::source` also
+    // returns, so anything walking the chain rendered it twice. For a parse
+    // failure that is a nine-line diagnostic with caret art, printed twice in
+    // one message, and the second copy is what the reader gives up on.
+    use std::error::Error;
+
+    let err = Config::parse("[repos.a]\nforge = \"gh\"\n").expect_err("a [repos] table is refused");
+    let head = format!("{err}");
+    let under = err
+        .source()
+        .expect("a parse failure carries the toml error under it")
+        .to_string();
+
+    assert!(
+        !head.contains(&under),
+        "the outer message already carries the source, so the chain prints it twice:\n{head}"
+    );
+    // And it still says which file and which failure, so nothing was lost by
+    // taking the copy out.
+    assert!(
+        head.contains("homma.toml"),
+        "the message does not name the file: {head}"
+    );
+    assert!(
+        under.contains("repos"),
+        "the source does not name the bad key: {under}"
+    );
+}
+
+#[test]
+fn the_check_above_can_fail() {
+    // The control. A `Display` that returned an empty string, or a source that
+    // was empty, would pass the containment check above without meaning
+    // anything.
+    use std::error::Error;
+
+    let err = Config::parse("[repos.a]\n").expect_err("a [repos] table is refused");
+    assert!(!format!("{err}").is_empty(), "the outer message is empty");
+    assert!(
+        !err.source().expect("a source").to_string().is_empty(),
+        "the source message is empty"
+    );
+    // A message that did carry its source would be caught, which is the shape
+    // this replaced.
+    let doubled = format!("{}: {}", err, err.source().expect("a source"));
+    assert!(doubled.contains(&err.source().expect("a source").to_string()));
 }

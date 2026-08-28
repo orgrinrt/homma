@@ -119,13 +119,31 @@ fn the_engine_name_counts_only_where_a_package_declares_itself() {
 #[test]
 fn a_package_declaring_itself_the_engine_is_accepted_however_it_spells_it() {
     // The control on the one above. Refusing everything would pass that test
-    // and break the flag entirely, and TOML has three spellings of the same
-    // assignment that a scan for one literal string gets wrong.
+    // and break the flag entirely.
+    //
+    // Every spelling TOML actually allows, rather than the ones a scanner
+    // happened to handle. The list used to stop at whitespace around the
+    // equals sign, which is where the scanner that stood here stopped too, so
+    // the test covered exactly the surface that worked. A header written
+    // `[ package ]` is valid, cargo reads it, and the scanner reported the
+    // directory as no checkout of this engine at all.
     for manifest in [
         "[package]\nname = \"homma-engine\"\nversion = \"0.1.0\"\n",
         "[package]\nname=\"homma-engine\"\nversion = \"0.1.0\"\n",
         "[package]\nname = 'homma-engine'\nversion = \"0.1.0\"\n",
         "[package]\nname   =    \"homma-engine\"   # with a trailing comment\n",
+        // A spaced header.
+        "[ package ]\nname = \"homma-engine\"\nversion = \"0.1.0\"\n",
+        // A quoted key, which TOML allows and cargo accepts.
+        "[package]\n\"name\" = \"homma-engine\"\nversion = \"0.1.0\"\n",
+        // Dotted, with no section header at all.
+        "package.name = \"homma-engine\"\npackage.version = \"0.1.0\"\n",
+        // An inline table.
+        "package = { name = \"homma-engine\", version = \"0.1.0\" }\n",
+        // A multi-line basic string, which is a string like any other.
+        "[package]\nname = \"\"\"homma-engine\"\"\"\nversion = \"0.1.0\"\n",
+        // The name after other keys, so nothing may depend on it coming first.
+        "[package]\nversion = \"0.1.0\"\nedition = \"2021\"\nname = \"homma-engine\"\n",
     ] {
         with_manifest(manifest).unwrap_or_else(|e| panic!("refused {manifest:?}: {e}"));
     }

@@ -149,8 +149,16 @@ fn map_status_truncates_multibyte_safely() {
             ..
         } => {
             assert!(body.ends_with("... [truncated]"));
-            // Truncated body is still valid UTF-8: re-parsing succeeds.
-            assert!(std::str::from_utf8(body.as_bytes()).is_ok());
+            // The cut lands on a character boundary. `body` is a `String`, so
+            // asserting it decodes as utf-8 asserts nothing: the type already
+            // guarantees it and the truncation would have panicked before
+            // reaching here. What is checkable is the length, which is where a
+            // byte-count cut on multi-byte input goes wrong.
+            assert!(
+                body.len() <= 512 + "... [truncated]".len(),
+                "the truncation kept more than it says it does: {} bytes",
+                body.len()
+            );
         },
         _ => panic!("wrong variant"),
     }

@@ -11,7 +11,8 @@
 //! destination repo is verified end-to-end.
 //!
 //! Defaults come from `homma.toml`: `--from` falls back to
-//! `[repos.<repo>].forge`, `--owner` to `[repos.<repo>].owner`.
+//! the forge detected from the clone's origin, `--owner` to the owner detected
+//! with it.
 
 use std::io::Write;
 
