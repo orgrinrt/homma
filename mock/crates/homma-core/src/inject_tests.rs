@@ -469,3 +469,59 @@ impl Inject {
         self
     }
 }
+
+#[test]
+fn a_format_that_reads_all_of_a_large_input_does_not_deadlock() {
+    // The pipes are finite in both directions, and this is the case where that
+    // matters. Writing the input from the calling thread blocks until the child
+    // accepts all of it, and nothing drains the child's stdout until
+    // `wait_with_output` runs, which is afterwards. So once the child has
+    // written a pipe buffer's worth it stops reading, this side is still
+    // writing, and neither moves again.
+    //
+    // It held for small inputs and only for small inputs, which is why the
+    // other forty tests here never saw it: none of them feeds more than a few
+    // hundred bytes. A kilobyte came back fine and a megabyte sat until it was
+    // killed.
+    //
+    // `cat` is the whole point of the arm: it reads everything and writes
+    // everything, so both buffers fill. `head -1` above cannot reach this,
+    // because it closes the pipe rather than filling it.
+    let mut entry = sh("seq 1 200000");
+    entry.format = Some("cat".into());
+    let got = run(entry);
+
+    // Well past any pipe buffer, so a passing run means the two directions
+    // really were concurrent.
+    assert!(
+        got.text.len() > 1_000_000,
+        "expected the whole of it back, got {} bytes",
+        got.text.len()
+    );
+    assert!(
+        got.text.starts_with('1'),
+        "the start is missing: {:?}",
+        &got.text[.. 20.min(got.text.len())]
+    );
+    assert!(got.text.ends_with("200000"), "the end is missing");
+    assert!(
+        got.failed.is_none(),
+        "a large input is not a failure: {got:?}"
+    );
+}
+
+#[test]
+fn a_large_input_survives_a_format_that_transforms_it() {
+    // The control for the test above. A passing size assertion could be a
+    // pipeline that echoed something long back without reading its input, so
+    // this one makes the output depend on the input having arrived whole.
+    let mut entry = sh("seq 1 200000");
+    entry.format = Some("wc -l".into());
+    let got = run(entry);
+    assert_eq!(
+        got.text.trim(),
+        "200000",
+        "the reader did not see every line: {got:?}"
+    );
+    assert!(got.failed.is_none(), "{got:?}");
+}

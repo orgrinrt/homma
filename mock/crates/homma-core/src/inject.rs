@@ -258,11 +258,29 @@ fn pipe_through(pipeline: &str, input: &str, cwd: &Path) -> Result<String, Strin
     // Taken out of the child so the handle drops and the pipe closes. A
     // pipeline whose first stage reads to end of input never sees one
     // otherwise, and both sides wait forever.
+    //
+    // **Written from a thread of its own, because both pipes are finite.**
+    // Doing it here blocks this thread until the whole input is accepted, and
+    // nothing drains the child's stdout until `wait_with_output` runs, which is
+    // after. So the moment the child has written a pipe buffer's worth it stops
+    // reading, this side is still trying to write, and neither moves again. It
+    // held for small inputs and only for small inputs: a kilobyte came back
+    // fine and a megabyte through `cat` sat until it was killed.
+    //
+    // An injected tool printing the agenda or the rule corpus is well past
+    // that, and what it hangs is `homma status`.
     if let Some(mut stdin) = child.stdin.take() {
+        let buf = input.as_bytes().to_vec();
         // A pipeline that reads none of its input closes the pipe early, and
         // writing into a closed pipe is `EPIPE` rather than a fault: `head -1`
         // is the ordinary case and it must not read as a failure.
-        let _ = stdin.write_all(input.as_bytes());
+        //
+        // Detached rather than joined. `stdin` drops when this closure ends,
+        // which is what closes the pipe, and joining would put the wait back on
+        // this thread and reinstate the deadlock.
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&buf);
+        });
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
     if !out.status.success() {
