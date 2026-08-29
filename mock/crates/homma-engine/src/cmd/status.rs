@@ -12,7 +12,7 @@
 use std::io::Write;
 
 use anyhow::Result;
-use homma_core::{Config, ForgeKind};
+use homma_core::{Config, ForgeKind, Injected};
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
@@ -24,6 +24,10 @@ pub struct StatusReport {
     pub workspace: WorkspaceLine,
     pub forges:    Vec<ForgeLine>,
     pub repos:     Vec<RepoLine>,
+    /// What the workspace's own tools said, in the order `[[status.inject]]`
+    /// declares them. Empty where the manifest declares none, which is most of
+    /// them.
+    pub injected:  Vec<Injected>,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,12 +61,16 @@ pub struct RepoLine {
 }
 
 pub fn run(cfg: &Config, format: OutputFormat) -> Result<()> {
-    let report = build_report(cfg);
+    // Run before the report is built rather than inside it, so `build_report`
+    // stays a pure function of the config and can be tested without spawning
+    // anything. A workspace declaring no injections spawns nothing either way.
+    let injected = homma_core::inject::run_all(&cfg.status, &cfg.workspace.path);
+    let report = build_report(cfg, injected);
     emit(&report, format)?;
     Ok(())
 }
 
-fn build_report(cfg: &Config) -> StatusReport {
+fn build_report(cfg: &Config, injected: Vec<Injected>) -> StatusReport {
     let workspace = WorkspaceLine {
         name:                   cfg.workspace.name.clone(),
         path:                   cfg.workspace.path.display().to_string(),
@@ -100,6 +108,7 @@ fn build_report(cfg: &Config) -> StatusReport {
         workspace,
         forges,
         repos,
+        injected,
     }
 }
 
@@ -153,6 +162,136 @@ impl HumanRender for StatusReport {
                 )?;
             }
         }
+        for block in &self.injected {
+            writeln!(out)?;
+            match &block.failed {
+                // The failure goes on the heading rather than under it, so a
+                // block with nothing in it does not read as a tool that had
+                // nothing to say.
+                Some(why) => writeln!(out, "{}: {why}", block.title)?,
+                None => {
+                    writeln!(out, "{}:", block.title)?;
+                    // Indented here rather than by the tool, which does not
+                    // know it is being embedded and prints the same either way
+                    // when run by hand. A blank line stays blank; two spaces on
+                    // it would be trailing whitespace in somebody's terminal.
+                    for line in block.text.lines() {
+                        if line.is_empty() {
+                            writeln!(out)?;
+                        } else {
+                            writeln!(out, "  {line}")?;
+                        }
+                    }
+                },
+            }
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block(title: &str, text: &str, failed: Option<&str>) -> Injected {
+        Injected {
+            title:  title.into(),
+            text:   text.into(),
+            failed: failed.map(str::to_string),
+        }
+    }
+
+    fn report(injected: Vec<Injected>) -> StatusReport {
+        let cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a minimal manifest parses");
+        build_report(&cfg, injected)
+    }
+
+    fn rendered(report: &StatusReport) -> String {
+        let mut out = Vec::new();
+        report
+            .render_human(&mut out)
+            .expect("writing to a vec cannot fail");
+        String::from_utf8(out).expect("the render is utf-8")
+    }
+
+    #[test]
+    fn a_block_prints_its_title_and_its_text_indented() {
+        let text = rendered(&report(vec![block("context", "450733 of 1000000", None)]));
+        assert!(text.contains("context:\n  450733 of 1000000\n"), "{text}");
+    }
+
+    #[test]
+    fn a_blank_line_inside_a_block_stays_blank() {
+        // Two spaces on an otherwise empty line is trailing whitespace in
+        // somebody's terminal and in every diff of a captured status.
+        let text = rendered(&report(vec![block("t", "a\n\nb", None)]));
+        assert!(text.contains("  a\n\n  b\n"), "{text:?}");
+    }
+
+    #[test]
+    fn a_failed_block_says_so_on_the_heading() {
+        // On the heading rather than under it, so a block with nothing in it
+        // does not read as a tool that had nothing to say.
+        let text = rendered(&report(vec![block("agenda", "", Some("agenda exited 1"))]));
+        assert!(text.contains("agenda: agenda exited 1\n"), "{text}");
+        assert!(
+            !text.contains("agenda:\n"),
+            "the empty-body shape must not appear: {text}"
+        );
+    }
+
+    #[test]
+    fn blocks_print_in_the_order_they_arrived() {
+        let text = rendered(&report(vec![
+            block("first", "1", None),
+            block("second", "2", None),
+            block("third", "3", None),
+        ]));
+        let at = |needle: &str| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("missing {needle} in {text}"))
+        };
+        assert!(at("first:") < at("second:"));
+        assert!(at("second:") < at("third:"));
+    }
+
+    #[test]
+    fn a_report_with_no_injections_prints_nothing_extra() {
+        // The control. Every assertion above would hold against a render that
+        // printed blocks unconditionally, and a workspace declaring none is
+        // every workspace but one.
+        let bare = rendered(&report(vec![]));
+        let with = rendered(&report(vec![block("t", "x", None)]));
+        assert!(!bare.contains("t:"), "{bare}");
+        assert_eq!(with.len() - bare.len(), "\nt:\n  x\n".len(), "{with:?}");
+    }
+
+    #[test]
+    fn the_blocks_reach_the_json_document_too() {
+        let doc = serde_json::to_value(report(vec![block("context", "45%", None)]))
+            .expect("the report serialises");
+        let blocks = doc["injected"].as_array().expect("an injected array");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["title"], "context");
+        assert_eq!(blocks[0]["text"], "45%");
+        assert!(
+            blocks[0].get("failed").is_none(),
+            "a block that worked carries no failure key: {blocks:?}"
+        );
+    }
+
+    #[test]
+    fn a_failed_block_carries_its_reason_into_the_json_too() {
+        let doc = serde_json::to_value(report(vec![block("agenda", "", Some("exited 1"))]))
+            .expect("the report serialises");
+        assert_eq!(doc["injected"][0]["failed"], "exited 1");
+    }
+
+    #[test]
+    fn building_a_report_spawns_nothing() {
+        // `build_report` is a pure function of the config, which is what lets
+        // it be tested at all. Injections run in `run`, before it.
+        let cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a minimal manifest parses");
+        assert!(build_report(&cfg, Vec::new()).injected.is_empty());
     }
 }

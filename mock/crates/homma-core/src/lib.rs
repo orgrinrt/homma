@@ -16,6 +16,7 @@
 
 pub mod config;
 pub mod forge;
+pub mod inject;
 pub mod repo;
 pub mod testing;
 
@@ -37,6 +38,7 @@ pub use forge::{
     RepoMetadata,
     Visibility,
 };
+pub use inject::{Inject, Injected, StatusConfig};
 pub use mockspace_config as mockspace;
 pub use mockspace_template as template;
 pub use repo::{Branch, GixRepo, MirrorOpts, Remote, RepoError, RepoOps, Status, TrackingStatus};
