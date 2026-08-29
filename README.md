@@ -132,6 +132,39 @@ token off stdout. That is a program the manifest chooses, so a manifest you got
 from somewhere else runs whatever it names when a forge is asked for anything.
 Read that key before you trust a manifest you did not write.
 
+A workspace grows tools that homma has no business owning. What fills a session's
+context window, what the rule corpus costs to load, what is still open on the
+tracker: real things, but somebody else's, and not something a workspace
+orchestrator should have an opinion about. So `homma status` can carry what they
+say instead, through `[[status.inject]]`:
+
+```toml
+[[status.inject]]
+tool = "tools/context"
+
+[[status.inject]]
+title = "the rule corpus"
+tool = ["tools/rules/rules", "size"]
+format = "grep -v '^gated'"
+```
+
+Each one runs in the workspace root, in the order it is declared, and its stdout
+becomes a block under the repos. `title` is optional and falls back to the
+program's own file name, which is usually what you would have typed anyway.
+`format` is optional too, a shell line the output goes through on its way out, so
+`head -3` and friends work the way you would expect.
+
+The command itself is an argument list rather than a shell line, same as
+`token_cmd`, and a bare string counts as a one word one. A relative path with a
+separator in it resolves against the workspace root, and a bare name is left for
+`PATH`.
+
+Tools break, and `homma status` is the cheap look you take at a workspace before
+anything else, so a tool that is missing or exits non-zero does not take the rest
+of it down. The block says what happened and carries the first line the tool put
+on stderr, and everything else still prints. Same warning as `token_cmd` here
+though: these are programs the manifest picks.
+
 ## Installation
 
 What goes on `PATH` is a small launcher. It finds the workspace, reads the

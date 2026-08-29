@@ -71,6 +71,14 @@ pub struct Config {
     #[serde(default)]
     pub auth: AuthConfig,
 
+    /// `[status]`: the workspace tools whose output `homma status` carries.
+    ///
+    /// See [`crate::inject`], which holds the shape and the runner both. Here
+    /// so `deny_unknown_fields` accepts the table, and so a caller reaching for
+    /// it has it on the config it already loaded.
+    #[serde(default)]
+    pub status: crate::inject::StatusConfig,
+
     /// The engine pin, which belongs to the launcher and not to this program.
     ///
     /// The launcher reads this same file to decide which engine to build and
@@ -149,6 +157,12 @@ impl Config {
         // hand every consumer a member whose path points at a directory that
         // was never looked in.
         let root = cfg.workspace.path.clone();
+        // The root rather than `beside`, which the two calls above take. A
+        // workspace's own tools are addressed from the root and the child runs
+        // there, so one anchor that is also the working directory beats two
+        // that disagree about which `tools/` was meant. The two are the same
+        // wherever `workspace.path` is left at `.`, which is the ordinary case.
+        crate::inject::settle(&mut cfg.status, &root);
         cfg.detect_members(&root, &crate::repo::GixGit);
         Ok(cfg)
     }
