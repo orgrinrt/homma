@@ -126,6 +126,14 @@ pub enum Command {
         op: DocsOp,
     },
 
+    /// The release: a gate run on the pushing machine, its record and commit
+    /// status, and the merge, tag, changelog, forge release and registry
+    /// publish that carry the working trunk onto the release line.
+    Release {
+        #[command(subcommand)]
+        op: ReleaseOp,
+    },
+
     /// Migrate a repo from one configured forge to another.
     ///
     /// Reads source metadata, creates the destination repo (with description,
@@ -247,6 +255,77 @@ pub enum DocsOp {
         /// Single repo from `homma.toml`. Default: all.
         #[arg(long)]
         repo: Option<String>,
+    },
+}
+
+/// `release` subcommands: the gate, the record it leaves, and the merge, tag,
+/// changelog, forge release and registry publish that carry `dev` onto
+/// `main`.
+#[derive(Debug, Subcommand)]
+pub enum ReleaseOp {
+    /// The invariants a release rests on, by id, blocking ones first. Exits
+    /// non-zero when any blocks.
+    Check {
+        /// The repository's directory name under the workspace root; the one
+        /// the working directory is in when omitted.
+        repo: Option<String>,
+    },
+    /// Run the gate on the checkout now, record the run, post its status.
+    Gate {
+        /// The repository's directory name; the working directory's when omitted.
+        repo: Option<String>,
+        /// Refuse unless the checkout is at this sha, since the gate measures
+        /// the tree it is given and nothing else.
+        #[arg(long)]
+        sha:  Option<String>,
+        /// What the pre-push hook calls: reads the refs being pushed on stdin,
+        /// gates the tip when it is among them, and exits non-zero on red so
+        /// the push stops.
+        #[arg(long, conflicts_with_all = ["sha", "post"])]
+        hook: bool,
+        /// Post the status of an already recorded run on this sha again,
+        /// without running anything.
+        #[arg(long, conflicts_with = "sha")]
+        post: Option<String>,
+    },
+    /// Print what a release at this level would do, and do nothing.
+    Plan {
+        repo:  String,
+        /// `patch`, `minor` or `major`; never inferred.
+        #[arg(long)]
+        level: homma_api::Level,
+    },
+    /// The release: check, the recorded green run, the plan, then the bump,
+    /// the merge and tag, the forge release, the publishes and the badges.
+    Run {
+        /// One repository, or every repository with something unreleased
+        /// when omitted.
+        repo:    Option<String>,
+        /// `patch`, `minor` or `major`; never inferred.
+        #[arg(long)]
+        level:   homma_api::Level,
+        /// Stop after printing the plan.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Rewrite the `badges` branch from the newest recorded run and the
+    /// current version.
+    Badges {
+        repo: String,
+    },
+    /// The pre-push hook.
+    Hook {
+        #[command(subcommand)]
+        op: HookOp,
+    },
+}
+
+/// `release hook` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum HookOp {
+    /// Write the pre-push hook into the repository, or refuse and say why.
+    Install {
+        repo: String,
     },
 }
 

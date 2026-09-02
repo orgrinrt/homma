@@ -531,3 +531,80 @@ api_url = "https://127.0.0.1:9"
         // and nothing is claimed about the repo itself
         .stdout(predicate::str::contains("repo_not_on_forge").not());
 }
+
+/// A member with one committed crate, so the release subcommands have a
+/// manifest and a history to read.
+fn committed_crate(root: &Path, name: &str) {
+    clone_at(root, name, Some("https://github.com/orgrinrt/x.git"));
+    let path = root.join(name);
+    std::fs::write(
+        path.join("Cargo.toml"),
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["config", "user.email", "t@t"],
+        vec!["config", "user.name", "t"],
+        vec!["config", "commit.gpgsign", "false"],
+        vec!["add", "."],
+        vec!["commit", "-qm", "feat: first"],
+    ] {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+}
+
+#[test]
+fn release_is_listed_and_plan_prints_the_next_version_without_moving_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    bin()
+        .args(["--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("release"));
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "plan", "x", "--level", "minor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("version 0.1.0 becomes 0.2.0, tagged `v0.2.0`"))
+        .stdout(predicate::str::contains("feat: first"))
+        .stdout(predicate::str::contains("x to crates-io"));
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "plan", "x"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--level"));
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "plan", "x", "--level", "huge"])
+        .assert()
+        .failure();
+    assert!(!dir.path().join("x/CHANGELOG.md").exists());
+}
+
+#[test]
+fn release_hook_install_writes_the_pre_push_and_check_reports_by_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "hook", "install", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hooks/pre-push"));
+    let script = std::fs::read_to_string(dir.path().join("x/.git/hooks/pre-push")).unwrap();
+    assert!(script.contains("homma release gate --hook"));
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "hook", "install", "nope"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("`nope` is not a repository"));
+}
