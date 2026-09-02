@@ -320,16 +320,27 @@ fn run_cmd(
                     lines.push(format!("{name}: nothing unreleased, passed over"));
                 },
                 Ok(_) => active.push(name.clone()),
+                // a manifest off the level refuses a single run, so it
+                // refuses the sweep too rather than being passed over
+                Err(
+                    e @ plan::PlanError::OffLevel {
+                        ..
+                    },
+                ) => {
+                    return Err(anyhow!("{name}: {e}"));
+                },
                 Err(e) => lines.push(format!("{name}: passed over, {e}")),
             }
         }
         // the sweep goes in name order, and a dependent released ahead of
         // what it depends on has its tag and forge release pushed before the
         // publish fails, so an edge between two repos it would release
-        // refuses the run; an edge to a repo it passes over is no edge
+        // refuses the run; an edge to a repo it passes over is no edge, and
+        // a repo whose own member crate carries its name is not its own edge
         for name in &active {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
-            if let Some(dep) = sibling_dependency(&root, &active) {
+            let others: Vec<String> = active.iter().filter(|n| *n != name).cloned().collect();
+            if let Some(dep) = sibling_dependency(&root, &others) {
                 return Err(anyhow!(
                     "`{name}` depends on `{dep}`, and a workspace-wide release goes in name order; \
                      release `{dep}` first, then `{name}`, each by name"
