@@ -173,3 +173,12 @@ fn the_default_engine_url_resolves_with_no_credentials() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// The readme names `HOMMA_NO_SELF_UPDATE` as the opt-out, and the name is
+/// derived from the short name rather than written anywhere in this tree, so a
+/// change to how `renki` derives it leaves the readme naming a variable
+/// nothing reads.
+#[test]
+fn the_opt_out_the_readme_names_is_the_one_the_launcher_reads() {
+    assert_eq!(homma::TOOL.no_self_update_env(), "HOMMA_NO_SELF_UPDATE");
+}
