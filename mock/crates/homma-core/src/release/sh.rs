@@ -5,7 +5,9 @@
 //! One way to run a program: every gate step and every git call goes through
 //! here, so what was run, where, and what came back is captured once.
 
-use std::{fmt, path::Path, process::Command};
+use std::fmt;
+use std::path::Path;
+use std::process::Command;
 
 /// What a program produced: its exit status and both streams, decoded lossily
 /// since a build tool's output is for reading rather than for parsing bytes.
@@ -75,16 +77,18 @@ pub fn run(cwd: &Path, program: &str, args: &[&str]) -> Result<Output, Spawn> {
         .args(args)
         .current_dir(cwd)
         .output()
-        .map_err(|source| Spawn {
-            program: program.to_string(),
-            source,
+        .map_err(|source| {
+            Spawn {
+                program: program.to_string(),
+                source,
+            }
         })?;
     Ok(Output {
         program: program.to_string(),
-        args: args.iter().map(|a| a.to_string()).collect(),
-        status: out.status.code(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        args:    args.iter().map(|a| a.to_string()).collect(),
+        status:  out.status.code(),
+        stdout:  String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr:  String::from_utf8_lossy(&out.stderr).into_owned(),
     })
 }
 
@@ -102,23 +106,26 @@ pub fn run_with_env(
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let out = cmd.output().map_err(|source| Spawn {
-        program: program.to_string(),
-        source,
+    let out = cmd.output().map_err(|source| {
+        Spawn {
+            program: program.to_string(),
+            source,
+        }
     })?;
     Ok(Output {
         program: program.to_string(),
-        args: args.iter().map(|a| a.to_string()).collect(),
-        status: out.status.code(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        args:    args.iter().map(|a| a.to_string()).collect(),
+        status:  out.status.code(),
+        stdout:  String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr:  String::from_utf8_lossy(&out.stderr).into_owned(),
     })
 }
 
 /// Run `program` with `args` in `cwd`, feeding `stdin` to it, for the git
 /// plumbing that reads an object or a tree listing from its input.
 pub fn run_stdin(cwd: &Path, program: &str, args: &[&str], stdin: &str) -> Result<Output, Spawn> {
-    use std::{io::Write, process::Stdio};
+    use std::io::Write;
+    use std::process::Stdio;
     let mut child = Command::new(program)
         .args(args)
         .current_dir(cwd)
@@ -126,26 +133,32 @@ pub fn run_stdin(cwd: &Path, program: &str, args: &[&str], stdin: &str) -> Resul
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|source| Spawn {
-            program: program.to_string(),
-            source,
+        .map_err(|source| {
+            Spawn {
+                program: program.to_string(),
+                source,
+            }
         })?;
     if let Some(mut pipe) = child.stdin.take() {
-        pipe.write_all(stdin.as_bytes()).map_err(|source| Spawn {
-            program: program.to_string(),
-            source,
+        pipe.write_all(stdin.as_bytes()).map_err(|source| {
+            Spawn {
+                program: program.to_string(),
+                source,
+            }
         })?;
     }
-    let out = child.wait_with_output().map_err(|source| Spawn {
-        program: program.to_string(),
-        source,
+    let out = child.wait_with_output().map_err(|source| {
+        Spawn {
+            program: program.to_string(),
+            source,
+        }
     })?;
     Ok(Output {
         program: program.to_string(),
-        args: args.iter().map(|a| a.to_string()).collect(),
-        status: out.status.code(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        args:    args.iter().map(|a| a.to_string()).collect(),
+        status:  out.status.code(),
+        stdout:  String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr:  String::from_utf8_lossy(&out.stderr).into_owned(),
     })
 }
 
@@ -182,10 +195,9 @@ mod tests {
 
     #[test]
     fn an_environment_variable_reaches_the_child_and_only_that_child() {
-        let out = run_with_env(&std::env::temp_dir(), "sh", &["-c", "echo $HOMMA_SH_T"], &[(
-            "HOMMA_SH_T",
-            "set",
-        )])
+        let out = run_with_env(&std::env::temp_dir(), "sh", &["-c", "echo $HOMMA_SH_T"], &[
+            ("HOMMA_SH_T", "set"),
+        ])
         .unwrap();
         assert_eq!(out.stdout, "set\n");
         assert!(std::env::var("HOMMA_SH_T").is_err());

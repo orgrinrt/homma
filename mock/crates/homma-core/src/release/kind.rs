@@ -4,7 +4,8 @@
 //--------------------------------------------------------------------------------------------------
 //! What a repository is, read off the manifests at its root.
 
-use std::{fmt, path::Path};
+use std::fmt;
+use std::path::Path;
 
 use homma_api::RepoKind;
 

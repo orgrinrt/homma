@@ -6,7 +6,8 @@
 //! history and tags, merging, tagging, pushing, committing named paths, and
 //! writing an orphan branch. Each is a thin call to `git` through `sh`.
 
-use std::{fmt, path::Path};
+use std::fmt;
+use std::path::Path;
 
 use super::sh;
 
@@ -14,7 +15,10 @@ use super::sh;
 #[derive(Debug)]
 pub enum GitError {
     /// `git` exited non-zero; the command line and its stderr.
-    Failed { command: String, stderr: String },
+    Failed {
+        command: String,
+        stderr:  String,
+    },
     /// `git` could not be started.
     Spawn(sh::Spawn),
     /// A ref or an object that was asked for is not there.
@@ -69,13 +73,14 @@ fn trimmed(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
 
 /// The full sha of `rev`.
 pub fn sha(cwd: &Path, rev: &str) -> Result<String, GitError> {
-    let s = trimmed(cwd, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
-        .map_err(|_| GitError::Missing(rev.to_string()))?;
-    if s.is_empty() {
-        Err(GitError::Missing(rev.to_string()))
-    } else {
-        Ok(s)
-    }
+    let s = trimmed(cwd, &[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        &format!("{rev}^{{commit}}"),
+    ])
+    .map_err(|_| GitError::Missing(rev.to_string()))?;
+    if s.is_empty() { Err(GitError::Missing(rev.to_string())) } else { Ok(s) }
 }
 
 /// The sha of `HEAD`.
@@ -101,7 +106,11 @@ pub fn is_clean(cwd: &Path) -> Result<bool, GitError> {
 /// this is name order; callers that need version order parse and sort.
 pub fn tags(cwd: &Path) -> Result<Vec<String>, GitError> {
     let out = trimmed(cwd, &["tag", "--list"])?;
-    Ok(out.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+    Ok(out
+        .lines()
+        .map(str::to_string)
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 /// The commit a tag points at, through the tag object when it is annotated.
@@ -116,14 +125,21 @@ pub fn tag_is_annotated(cwd: &Path, tag: &str) -> Result<bool, GitError> {
 
 /// Whether `ancestor` is reachable from `descendant`.
 pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool, GitError> {
-    let out = sh::run(cwd, "git", &["merge-base", "--is-ancestor", ancestor, descendant])?;
+    let out = sh::run(cwd, "git", &[
+        "merge-base",
+        "--is-ancestor",
+        ancestor,
+        descendant,
+    ])?;
     match out.status {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
-        _ => Err(GitError::Failed {
-            command: out.command_line(),
-            stderr:  out.stderr,
-        }),
+        _ => {
+            Err(GitError::Failed {
+                command: out.command_line(),
+                stderr:  out.stderr,
+            })
+        },
     }
 }
 
@@ -149,14 +165,14 @@ pub fn subjects(cwd: &Path, from: &str, to: &str) -> Result<Vec<Subject>, GitErr
 /// The number in `Merge pull request #12 from` or a trailing `(#12)`.
 fn pr_number(subject: &str) -> Option<u64> {
     let idx = subject.find('#')?;
-    let digits: String = subject[idx + 1..]
+    let digits: String = subject[idx + 1 ..]
         .chars()
         .take_while(char::is_ascii_digit)
         .collect();
     if digits.is_empty() {
         return None;
     }
-    let before = &subject[..idx];
+    let before = &subject[.. idx];
     if before.contains("pull request") || before.ends_with('(') {
         digits.parse().ok()
     } else {
@@ -362,7 +378,10 @@ mod tests {
         assert!(is_clean(p).unwrap());
         assert_eq!(current_branch(p).unwrap().as_deref(), Some("main"));
         let again = write_orphan_branch(p, "badges", &[("gate.json", "x")], "badges").unwrap();
-        assert_eq!(files_on(p, "badges").unwrap(), vec![("gate.json".to_string(), "x".to_string())]);
+        assert_eq!(files_on(p, "badges").unwrap(), vec![(
+            "gate.json".to_string(),
+            "x".to_string()
+        )]);
         assert_eq!(parent_count(p, &again).unwrap(), 0);
     }
 
