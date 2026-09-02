@@ -364,10 +364,9 @@ impl GateRun {
             "red" => Verdict::Red,
             other => return Err(NotAGateRun(format!("verdict `{other}`"))),
         };
-        let steps: Vec<StepOutcome> =
-            toml::from_str::<StepsBlob>(&text("steps")?)
-                .map_err(|e| NotAGateRun(e.to_string()))?
-                .steps;
+        let steps: Vec<StepOutcome> = toml::from_str::<StepsBlob>(&text("steps")?)
+            .map_err(|e| NotAGateRun(e.to_string()))?
+            .steps;
         Ok(GateRun {
             repo: text("repo")?,
             sha: text("sha")?,
