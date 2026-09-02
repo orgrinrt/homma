@@ -12,7 +12,7 @@
 //! Not `#[cfg(test)]`: a unit test in this crate and an integration test in
 //! another both need it, and `cfg(test)` does not cross a crate boundary.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Every place git would read a configuration that is not a repository's own.
 pub fn global_config_paths() -> Vec<PathBuf> {
@@ -48,4 +48,26 @@ pub fn global_configs_now() -> Vec<(PathBuf, Vec<u8>)> {
         "no global git configuration exists, so this test would assert nothing"
     );
     found
+}
+
+/// Make `dir` a real repository, so anything reading it reads what git would.
+///
+/// Here rather than in each test crate because the hook-wiring probe is read
+/// through gix, and only a genuine repository exercises that path. A
+/// hand-written `.git` would be a fixture shaped to satisfy the reader rather
+/// than a repository, which is the setup-that-helps failure.
+pub fn init_repo(dir: &Path) {
+    std::fs::create_dir_all(dir).expect("a temp dir is creatable");
+    gix::init(dir).expect("an empty directory is a legitimate repository");
+}
+
+/// Point a repository's `core.hooksPath` at `value`.
+///
+/// Appended as text because that is what git itself writes, which keeps this
+/// independent of whichever gix version owns the write path.
+pub fn set_hooks_path(dir: &Path, value: &str) {
+    let at = dir.join(".git").join("config");
+    let mut body = std::fs::read_to_string(&at).unwrap_or_default();
+    body.push_str(&format!("[core]\n\thooksPath = {value}\n"));
+    std::fs::write(at, body).expect("the repository's own config is writable");
 }

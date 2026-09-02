@@ -14,11 +14,12 @@
 use anyhow::{Context, Result};
 use homma_core::Config;
 
-use crate::cli::{AgentOp, Cli, Command, DocsOp, ForgeOp, OrgOp, RepoOp};
+use crate::cli::{AgentOp, Cli, Command, ConfigOp, DocsOp, ForgeOp, OrgOp, RepoOp};
 
 pub mod agent;
 pub mod aggregate;
 pub mod archive;
+pub mod config;
 pub mod docs;
 #[cfg(test)]
 pub mod fake_git;
@@ -53,10 +54,11 @@ pub enum Outcome {
 /// Dispatch the parsed CLI to the right command body.
 pub fn run(cli: Cli) -> Result<Outcome> {
     match &cli.command {
-        Command::Status => {
+        Command::Status {
+            full,
+        } => {
             let cfg = load_config(&cli)?;
-            status::run(&cfg, cli.output)?;
-            Ok(Outcome::Ok)
+            status::run(&cfg, *full, cli.output)
         },
         Command::Org {
             op,
@@ -183,6 +185,19 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     let cfg = load_config(&cli)?;
                     repo::status::run(&cfg, repo, cli.output)?;
                     Ok(Outcome::Ok)
+                },
+                RepoOp::Config {
+                    op,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    match op {
+                        ConfigOp::Check {
+                            repo,
+                        } => config::check(&cfg, repo.as_deref(), cli.output),
+                        ConfigOp::Init {
+                            repo,
+                        } => config::init(&cfg, repo.as_deref(), cli.output),
+                    }
                 },
             }
         },
