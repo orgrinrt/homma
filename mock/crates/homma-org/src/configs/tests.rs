@@ -12,17 +12,17 @@ const NIGHTLY: &str = "[toolchain]\nchannel = \"nightly-2026-05-28\"\n";
 
 /// A workspace with the canonical configs in it and repo directories to
 /// compare, plus the `Root` a placement writes through.
-struct Fixture {
-    _dir:  tempfile::TempDir,
-    _home: tempfile::TempDir,
-    root:  Root,
-    ws:    PathBuf,
+pub(super) struct Fixture {
+    _dir:          tempfile::TempDir,
+    _home:         tempfile::TempDir,
+    root:          Root,
+    pub(super) ws: PathBuf,
 }
 
 impl Fixture {
     /// `configs` is `(tag directory, file name, body)`. An empty tag directory
     /// puts the file loose at the top level, which is the untagged case.
-    fn new(configs: &[(&str, &str, &str)]) -> Self {
+    pub(super) fn new(configs: &[(&str, &str, &str)]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         // Resolved, because a temp dir on macOS is under `/var`, which is a
         // symlink to `/private/var`, and an unresolved root compares equal to
@@ -72,7 +72,7 @@ impl Fixture {
         std::fs::write(at, body).unwrap();
     }
 
-    fn templates(&self) -> Vec<Template> {
+    pub(super) fn templates(&self) -> Vec<Template> {
         templates(&self.ws).unwrap()
     }
 
@@ -260,17 +260,6 @@ fn an_unknown_template_the_repo_already_has_is_not_reported() {
 }
 
 #[test]
-fn the_readme_beside_the_templates_is_not_one() {
-    let f = Fixture::new(&[
-        ("", "README.md", "# the configs\n"),
-        ("rust_required", "README.md", "# the rust ones\n"),
-        ("rust_required", "deny.toml", "x\n"),
-    ]);
-    let names: Vec<_> = f.templates().into_iter().map(|t| t.file_name).collect();
-    assert_eq!(names, vec!["deny.toml".to_string()]);
-}
-
-#[test]
 fn a_tag_directory_decides_who_wants_the_template() {
     let f = Fixture::new(&[
         ("rust_required", "deny.toml", "a\n"),
@@ -347,47 +336,6 @@ fn the_strongest_severity_among_the_sets_a_repo_is_in_wins() {
     // Neither: nothing to say at all.
     let other = f.repo("plain", false);
     assert_eq!(inspect(other.as_path(), &f.templates()), vec![]);
-}
-
-#[test]
-fn a_directory_naming_an_unknown_ecosystem_is_refused_at_load() {
-    // Not skipped and not treated as untagged. A tag directory somebody spelled
-    // wrong would otherwise turn a required config into a silently unplaced
-    // one, which is the failure this whole directory exists to prevent.
-    let f = Fixture::new(&[("ruby_required", "gemfile", "a\n")]);
-    assert!(matches!(templates(&f.ws), Err(TemplateError::BadTag(..))));
-}
-
-#[test]
-fn one_file_under_two_tag_directories_is_refused_at_load() {
-    let f = Fixture::new(&[
-        ("rust_required", "deny.toml", "a\n"),
-        ("deno_suggested", "deny.toml", "b\n"),
-    ]);
-    assert!(matches!(templates(&f.ws), Err(TemplateError::Conflict(..))));
-}
-
-#[test]
-fn a_tagged_file_conflicts_with_an_untagged_one_of_the_same_name() {
-    let f = Fixture::new(&[("", "deny.toml", "a\n"), ("rust_required", "deny.toml", "b\n")]);
-    assert!(matches!(templates(&f.ws), Err(TemplateError::Conflict(..))));
-}
-
-#[test]
-fn one_directory_naming_an_ecosystem_twice_is_refused_at_load() {
-    let f = Fixture::new(&[("rust_required+rust_suggested", "deny.toml", "a\n")]);
-    assert!(matches!(templates(&f.ws), Err(TemplateError::BadTag(..))));
-}
-
-#[test]
-fn a_missing_configs_directory_is_an_error_rather_than_an_empty_list() {
-    // An empty list would make every repo pass, which is a check reporting
-    // success because it could not run.
-    let dir = tempfile::tempdir().unwrap();
-    assert!(matches!(
-        templates(dir.path()),
-        Err(TemplateError::Missing(_))
-    ));
 }
 
 #[test]
@@ -583,56 +531,4 @@ fn ensure_and_inspect_agree_on_what_is_missing() {
         "clippy.toml".to_string(),
         "deny.toml".to_string()
     ]);
-}
-
-#[test]
-fn the_shared_rustfmt_config_is_the_reason_the_nightly_set_exists() {
-    // The hand check, kept and re-run rather than written down as a number. The
-    // shared copy is not merely a config we happen to use on nightly: most of
-    // what it sets does not exist on stable at all, so a stable repo given it
-    // formats to the defaults and warns once per option while doing so. That is
-    // a property of the file, and the only thing that knows which options are
-    // unstable is rustfmt itself.
-    //
-    // Skipped where a stable rustfmt is not installed. The set's behaviour is
-    // covered by the cases above regardless; this one is about the actual file,
-    // and a machine without stable cannot ask it.
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../..")
-        .join(CONFIGS_DIR);
-    let Some(body) = ["rustfmt.toml", "rust_nightly_required/rustfmt.toml"]
-        .iter()
-        .find_map(|rel| std::fs::read(base.join(rel)).ok())
-    else {
-        return;
-    };
-    let probe = tempfile::tempdir().unwrap();
-    std::fs::write(probe.path().join("rustfmt.toml"), &body).unwrap();
-    std::fs::write(probe.path().join("x.rs"), "fn main() {}\n").unwrap();
-    let Ok(out) = std::process::Command::new("rustfmt")
-        .args(["+stable", "--check", "--edition", "2021", "x.rs"])
-        .current_dir(probe.path())
-        .output()
-    else {
-        return;
-    };
-    let complaints = String::from_utf8_lossy(&out.stderr);
-    if complaints.contains("toolchain 'stable' is not installed")
-        || complaints.contains("no such command")
-    {
-        return;
-    }
-    let unstable = complaints
-        .lines()
-        .filter(|l| l.contains("unstable features are only available in nightly"))
-        .count();
-    assert!(
-        unstable >= 40,
-        "only {unstable} of the shared rustfmt options are nightly-only, out of {}; if that is \
-         real, a stable variant is now writable and the nightly set can go.\n{complaints}",
-        String::from_utf8_lossy(&body)
-            .lines()
-            .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
-            .count()
-    );
 }

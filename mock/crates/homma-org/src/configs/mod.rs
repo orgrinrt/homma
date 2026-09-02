@@ -389,3 +389,6 @@ pub fn ensure(root: &Root, repo_dir: &ContainedPath, templates: &[Template]) -> 
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod loading;
