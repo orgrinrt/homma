@@ -306,7 +306,37 @@ fn the_registry_must_ascend_skip_nothing_and_match_the_tags_both_ways() {
     assert!(!ids.contains(&"order.ascends"), "{ids:?}");
     let findings = run(&f, &published(&[]), None);
     assert_eq!(self::ids(&findings), ["reg.unpublished"]);
-    assert!(!blocked(&findings));
+    assert!(
+        blocked(&findings),
+        "the newest tag with nothing published is a release half done"
+    );
+}
+
+#[test]
+fn an_older_tag_with_nothing_published_warns_and_the_newest_blocks() {
+    let f = Fixture::crate_at("0.1.0");
+    f.tag("v0.1.0");
+    f.manifest("0.2.0");
+    f.git(&["commit", "--quiet", "-am", "chore: bump"]);
+    f.git(&["push", "--quiet", "origin", "main"]);
+    f.tag("v0.2.0");
+    // v0.1.0 predates the package being on the registry at all
+    let findings = run(&f, &published(&["0.2.0"]), None);
+    let unpublished: Vec<_> = findings
+        .iter()
+        .filter(|x| x.id == "reg.unpublished")
+        .collect();
+    assert_eq!(unpublished.len(), 1, "{findings:?}");
+    assert_eq!(unpublished[0].severity, CheckSeverity::Warn);
+    assert!(!blocked(&findings), "{findings:?}");
+    let findings = run(&f, &published(&["0.1.0"]), None);
+    let unpublished: Vec<_> = findings
+        .iter()
+        .filter(|x| x.id == "reg.unpublished")
+        .collect();
+    assert_eq!(unpublished.len(), 1, "{findings:?}");
+    assert_eq!(unpublished[0].severity, CheckSeverity::Error);
+    assert!(blocked(&findings));
 }
 
 #[test]
@@ -319,7 +349,10 @@ fn jsr_and_npm_disagreeing_is_both_sameset() {
     p.versions.insert((Registry::Npm, "x".into()), vec![]);
     let findings = run(&f, &p, None);
     assert!(ids(&findings).contains(&"both.sameset"));
-    assert!(!blocked(&findings));
+    assert!(
+        blocked(&findings),
+        "a package on one registry and not the other is a publish half done"
+    );
 }
 
 #[test]

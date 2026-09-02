@@ -280,9 +280,12 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         }
         for (t, tv) in &versioned {
             if !versions.contains(tv) {
+                // the newest tag with nothing published for it is a release
+                // half done; an older one is history
+                let newest = versioned.last().is_some_and(|(n, _)| n == t);
                 push(
                     "reg.unpublished",
-                    CheckSeverity::Warn,
+                    if newest { CheckSeverity::Error } else { CheckSeverity::Warn },
                     format!("`{t}` is not on {reg} as {name}"),
                 );
             }
@@ -310,13 +313,13 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         if js != ns {
             push(
                 "both.sameset",
-                CheckSeverity::Warn,
+                CheckSeverity::Error,
                 "jsr and npm hold different version sets".into(),
             );
         }
     }
 
-    out.sort_by(|a, b| b.severity.cmp(&a.severity));
+    out.sort_by_key(|f| std::cmp::Reverse(f.severity));
     Ok(out)
 }
 

@@ -650,7 +650,7 @@ fn release_badges_reads_the_newest_run_whichever_branch_it_measured() {
         .failure()
         .stderr(predicate::str::contains("no gate run recorded for `x`"));
     // a green run on the trunk's tip, which is where the hook records them
-    let store = homma_store::Store::open(&dir.path().join(".data/homma"));
+    let store = homma_store::Store::open(dir.path().join(".data/homma"));
     let mut step = StepOutcome::skipped(Step::Tests);
     step.skipped = false;
     step.passed = true;

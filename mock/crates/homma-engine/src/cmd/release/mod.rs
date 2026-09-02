@@ -306,41 +306,45 @@ fn run_cmd(
         Some(n) => vec![n.to_string()],
         None => release_order(cfg),
     };
-    // a workspace-wide run goes in name order, and a dependent released
-    // ahead of what it depends on has its tag and forge release pushed before
-    // the publish fails, so a run with such an edge in it is refused outright
-    if repo.is_none() {
+    let mut lines = Vec::new();
+    // a workspace-wide run first decides which repos it will release: a repo
+    // the sweep passes over is named, with why, since a silent skip is how
+    // three stack repos went unreleased without a word
+    let names: Vec<String> = if repo.is_none() {
+        let mut active = Vec::new();
         for name in &names {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
-            if let Some(dep) = sibling_dependency(&root, &names) {
+            let (trunk, _) = branches_for(cfg, &root);
+            match plan::plan(&root, trunk, level, &clock::today()) {
+                Ok(p) if p.commits.is_empty() => {
+                    lines.push(format!("{name}: nothing unreleased, passed over"));
+                },
+                Ok(_) => active.push(name.clone()),
+                Err(e) => lines.push(format!("{name}: passed over, {e}")),
+            }
+        }
+        // the sweep goes in name order, and a dependent released ahead of
+        // what it depends on has its tag and forge release pushed before the
+        // publish fails, so an edge between two repos it would release
+        // refuses the run; an edge to a repo it passes over is no edge
+        for name in &active {
+            let (_, _, root) = resolve_repo(cfg, Some(name))?;
+            if let Some(dep) = sibling_dependency(&root, &active) {
                 return Err(anyhow!(
                     "`{name}` depends on `{dep}`, and a workspace-wide release goes in name order; \
                      release `{dep}` first, then `{name}`, each by name"
                 ));
             }
         }
-    }
-    let mut lines = Vec::new();
+        active
+    } else {
+        names
+    };
     let mut ok = true;
     for name in &names {
         let (name, r, root) = resolve_repo(cfg, Some(name))?;
         let root = &root;
         let (trunk, release_line) = branches_for(cfg, root);
-        if repo.is_none() {
-            // a repo the sweep passes over is named, with why: a silent
-            // skip is how three stack repos went unreleased without a word
-            match plan::plan(root, trunk, level, &clock::today()) {
-                Ok(p) if p.commits.is_empty() => {
-                    lines.push(format!("{name}: nothing unreleased, passed over"));
-                    continue;
-                },
-                Ok(_) => {},
-                Err(e) => {
-                    lines.push(format!("{name}: passed over, {e}"));
-                    continue;
-                },
-            }
-        }
         let (forge, owner) = forge_for(cfg, r)?;
         let published = published_for(root)?;
         let tip = homma_core::release::git::sha(root, trunk)?;

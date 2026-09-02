@@ -72,6 +72,13 @@ pub enum PlanError {
     Version(version::VersionError),
     /// The publishable crates depend on each other in a cycle.
     Cycle(String),
+    /// The manifest sits at a version that is neither the last tag's nor what
+    /// the level makes of it.
+    OffLevel {
+        manifest: Version,
+        level:    Level,
+        next:     Version,
+    },
 }
 
 impl fmt::Display for PlanError {
@@ -81,6 +88,17 @@ impl fmt::Display for PlanError {
             PlanError::NoManifest(e) => write!(f, "{e}"),
             PlanError::Version(e) => write!(f, "{e}"),
             PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
+            PlanError::OffLevel {
+                manifest,
+                level,
+                next,
+            } => {
+                write!(
+                    f,
+                    "the manifest is at {manifest} and a {level} release makes {next}; set it to \
+                 {next} or pick the level that makes {manifest}"
+                )
+            },
         }
     }
 }
@@ -118,11 +136,23 @@ pub fn plan(root: &Path, head: &str, level: Level, date: &str) -> Result<Plan, P
         Some((t, _)) => git::subjects(root, t, head)?,
         None => git::subjects_to(root, head)?,
     };
-    // the working version may already sit one step up, in which case that is
-    // the release and nothing bumps
+    // the level makes the version out of the last tag's; a manifest already
+    // there is the release and nothing bumps, and a manifest anywhere else
+    // above the tag disagrees with the level and is refused rather than
+    // silently taken over it
     let next = match &last {
-        Some((_, v)) if &current > v => current.clone(),
-        _ => current.bumped(level),
+        Some((_, v)) => {
+            let next = v.bumped(level);
+            if current != *v && current != next {
+                return Err(PlanError::OffLevel {
+                    manifest: current,
+                    level,
+                    next,
+                });
+            }
+            next
+        },
+        None => current.bumped(level),
     };
     let tags = git::tags(root)?;
     let tag = check::tag_name(&tags, &next);
@@ -231,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_already_bumped_is_the_release_and_a_major_on_zero_is_a_minor() {
+    fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
         let d = repo("0.1.0");
         assert!(
             sh::run(d.path(), "git", &["tag", "-a", "v0.1.0", "-m", "v0.1.0"])
@@ -253,11 +283,20 @@ mod tests {
             .unwrap()
             .ok()
         );
-        let p = plan(d.path(), "HEAD", Level::Major, "d").unwrap();
+        // 0.1.1 is what a patch makes of v0.1.0, and not what a major makes
+        let err = plan(d.path(), "HEAD", Level::Major, "d").unwrap_err();
+        assert!(
+            matches!(&err, PlanError::OffLevel { manifest, next, .. }
+                if *manifest == Version::new(0, 1, 1) && *next == Version::new(0, 2, 0)),
+            "{err}"
+        );
+        assert!(err.to_string().contains("0.1.1"));
+        assert!(err.to_string().contains("0.2.0"));
+        let p = plan(d.path(), "HEAD", Level::Patch, "d").unwrap();
         assert_eq!(
             p.next,
             Version::new(0, 1, 1),
-            "already one up, so that is it"
+            "already at the level's version, so that is the release"
         );
         std::fs::write(
             d.path().join("Cargo.toml"),
