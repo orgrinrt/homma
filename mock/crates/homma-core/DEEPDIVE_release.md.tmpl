@@ -115,7 +115,8 @@ local alike and pointing at the same commit both sides (`tag.pushed`,
 one (`tag.bump.tagged`).
 
 `main` holds nothing unreleased: the newest release tag is the tip of `main`, or
-what lies between is a hotpatch named as such. The manifest version at a tag
+what lies between is a hotpatch named as such (`main.unreleased`, the one id
+the catalogue did not have, since it never read `main`). The manifest version at a tag
 equals the tag (`man.version.matches`), and the working version is above the
 highest published one and its smallest legal successor at the level given
 (`man.current.forward`, `man.current.smallest`).
