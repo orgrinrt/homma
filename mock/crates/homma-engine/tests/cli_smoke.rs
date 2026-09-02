@@ -655,11 +655,11 @@ fn release_badges_reads_the_newest_run_whichever_branch_it_measured() {
     step.skipped = false;
     step.passed = true;
     let run = GateRun {
-        repo: "x".into(),
-        sha: dev_tip.clone(),
-        ran_at: "2026-09-02T22:00:00Z".into(),
+        repo:    "x".into(),
+        sha:     dev_tip.clone(),
+        ran_at:  "2026-09-02T22:00:00Z".into(),
         verdict: Verdict::Green,
-        steps: vec![step],
+        steps:   vec![step],
     };
     store.append(&GateRun::kind(), &run.to_record()).unwrap();
     bin()

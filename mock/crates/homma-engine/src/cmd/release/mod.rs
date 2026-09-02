@@ -449,7 +449,8 @@ mod tests {
             "origin",
             &format!("https://github.com/orgrinrt/{name}.git"),
         ]);
-        let mut manifest = format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
+        let mut manifest =
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
         for d in deps {
             manifest.push_str(&format!(
                 "{d} = {{ git = \"https://github.com/orgrinrt/{d}.git\" }}\n"
@@ -472,7 +473,10 @@ mod tests {
         member(dir.path(), "zed", &[]);
         member(dir.path(), "alpha", &["zed"]);
         let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
-        assert_eq!(release_order(&cfg), vec!["zed".to_string(), "alpha".to_string()]);
+        assert_eq!(release_order(&cfg), vec![
+            "zed".to_string(),
+            "alpha".to_string()
+        ]);
     }
 
     #[test]
@@ -486,6 +490,9 @@ mod tests {
         member(dir.path(), "zed", &[]);
         member(dir.path(), "alpha", &[]);
         let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
-        assert_eq!(release_order(&cfg), vec!["alpha".to_string(), "zed".to_string()]);
+        assert_eq!(release_order(&cfg), vec![
+            "alpha".to_string(),
+            "zed".to_string()
+        ]);
     }
 }
