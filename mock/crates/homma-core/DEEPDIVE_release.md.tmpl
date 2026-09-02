@@ -27,7 +27,10 @@ The gate is a fixed list of steps run against one commit of one repo, on the
 machine of whoever is pushing, and it produces a verdict and a set of numbers.
 It decides what a repo is from its root: a `Cargo.toml` makes it a crate or a
 cargo workspace, a `deno.json` makes it a deno package, and a repo with both is
-gated as both. What a step runs per kind:
+gated as both. A repo that keeps its manifests under a subdirectory, `mock/` in
+this workspace, is read as having none today; the workspace-wide run names such
+a repo as passed over rather than skipping it in silence, and reading that
+shape is owed. What a step runs per kind:
 
 | step | crate | deno package | blocks |
 |---|---|---|---|
