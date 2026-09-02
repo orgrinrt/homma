@@ -18,6 +18,7 @@ pub mod numbers;
 pub mod plan;
 pub mod publish;
 pub mod registry;
+pub mod run;
 pub mod sh;
 pub mod status;
 pub mod version;
