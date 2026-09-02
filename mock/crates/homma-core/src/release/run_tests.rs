@@ -23,7 +23,9 @@ impl Runner for Fake {
         args: &[&str],
         _env: &[(&str, &str)],
     ) -> Result<sh::Output, sh::Spawn> {
-        self.0.borrow_mut().push(format!("{program} {}", args.join(" ")));
+        self.0
+            .borrow_mut()
+            .push(format!("{program} {}", args.join(" ")));
         Ok(sh::Output {
             program: program.into(),
             args:    args.iter().map(|a| a.to_string()).collect(),
@@ -64,7 +66,13 @@ impl Forge for Recorder {
         Ok(true)
     }
 
-    fn set_commit_status(&self, _: &str, _: &str, _: &str, _: &CommitStatus) -> Result<(), ForgeError> {
+    fn set_commit_status(
+        &self,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &CommitStatus,
+    ) -> Result<(), ForgeError> {
         Ok(())
     }
 
@@ -95,7 +103,11 @@ impl Fixture {
     fn new() -> Self {
         let work = tempfile::tempdir().unwrap();
         let bare = tempfile::tempdir().unwrap();
-        assert!(sh::run(bare.path(), "git", &["init", "--quiet", "--bare"]).unwrap().ok());
+        assert!(
+            sh::run(bare.path(), "git", &["init", "--quiet", "--bare"])
+                .unwrap()
+                .ok()
+        );
         let f = Fixture {
             work,
             _bare: bare,
@@ -106,7 +118,11 @@ impl Fixture {
         f.git(&["config", "tag.gpgsign", "false"]);
         f.git(&["config", "commit.gpgsign", "false"]);
         f.git(&["remote", "add", "origin", f._bare.path().to_str().unwrap()]);
-        std::fs::write(f.root().join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
+        std::fs::write(
+            f.root().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
         f.git(&["add", "."]);
         f.git(&["commit", "--quiet", "-m", "feat: first"]);
         f.git(&["tag", "-a", "v0.1.0", "-m", "v0.1.0"]);
@@ -125,18 +141,20 @@ fn green_run(sha: &str) -> GateRun {
     tests.numbers.insert("tests".into(), "3".into());
     tests.numbers.insert("passed".into(), "3".into());
     GateRun {
-        repo: "x".into(),
-        sha: sha.into(),
-        ran_at: "t".into(),
+        repo:    "x".into(),
+        sha:     sha.into(),
+        ran_at:  "t".into(),
         verdict: Verdict::Green,
-        steps: vec![tests],
+        steps:   vec![tests],
     }
 }
 
 fn published() -> Published {
     let mut p = Published::default();
     p.versions
-        .insert((Registry::CratesIo, "x".into()), vec![Version::new(0, 1, 0)]);
+        .insert((Registry::CratesIo, "x".into()), vec![Version::new(
+            0, 1, 0,
+        )]);
     p
 }
 
@@ -144,11 +162,20 @@ fn token(r: Registry) -> Result<String, String> {
     Ok(format!("t-{r}"))
 }
 
-fn served(_: Registry, _: &str, _: &Version) -> Result<bool, crate::release::registry::Unreachable> {
+fn served(
+    _: Registry,
+    _: &str,
+    _: &Version,
+) -> Result<bool, crate::release::registry::Unreachable> {
     Ok(true)
 }
 
-fn setup<'a>(runner: &'a Fake, forge: &'a Recorder, published: &'a Published, trunk: &'a str) -> Setup<'a> {
+fn setup<'a>(
+    runner: &'a Fake,
+    forge: &'a Recorder,
+    published: &'a Published,
+    trunk: &'a str,
+) -> Setup<'a> {
     Setup {
         runner,
         forge,
@@ -171,9 +198,18 @@ fn a_blocking_finding_refuses_before_anything_runs() {
     let runner = Fake(RefCell::new(Vec::new()));
     let forge = Recorder::default();
     let p = published();
-    let err = release(&setup(&runner, &forge, &p, "dev"), f.root(), Level::Patch, None, false).unwrap_err();
+    let err = release(
+        &setup(&runner, &forge, &p, "dev"),
+        f.root(),
+        Level::Patch,
+        None,
+        false,
+    )
+    .unwrap_err();
     match err {
-        ReleaseError::Blocked(findings) => assert!(findings.iter().any(|x| x.id == "tree.untracked")),
+        ReleaseError::Blocked(findings) => {
+            assert!(findings.iter().any(|x| x.id == "tree.untracked"))
+        },
         other => panic!("{other:?}"),
     }
     assert!(runner.0.borrow().is_empty());
@@ -186,18 +222,27 @@ fn no_run_or_a_red_run_or_a_run_on_another_sha_refuses() {
     let tip = f.git(&["rev-parse", "dev"]);
     assert!(matches!(
         step_gate_run(f.root(), "dev", None),
-        Err(ReleaseError::NoGreenRun { found: None, .. })
+        Err(ReleaseError::NoGreenRun {
+            found: None,
+            ..
+        })
     ));
     let mut red = green_run(&tip);
     red.verdict = Verdict::Red;
     assert!(matches!(
         step_gate_run(f.root(), "dev", Some(&red)),
-        Err(ReleaseError::NoGreenRun { found: Some(Verdict::Red), .. })
+        Err(ReleaseError::NoGreenRun {
+            found: Some(Verdict::Red),
+            ..
+        })
     ));
     let elsewhere = green_run("0000000");
     assert!(matches!(
         step_gate_run(f.root(), "dev", Some(&elsewhere)),
-        Err(ReleaseError::NoGreenRun { found: None, .. })
+        Err(ReleaseError::NoGreenRun {
+            found: None,
+            ..
+        })
     ));
     step_gate_run(f.root(), "dev", Some(&green_run(&tip))).unwrap();
 }
@@ -209,7 +254,14 @@ fn a_dry_run_returns_the_plan_and_moves_nothing() {
     let runner = Fake(RefCell::new(Vec::new()));
     let forge = Recorder::default();
     let p = published();
-    let out = release(&setup(&runner, &forge, &p, "dev"), f.root(), Level::Minor, Some(&green_run(&tip)), true).unwrap();
+    let out = release(
+        &setup(&runner, &forge, &p, "dev"),
+        f.root(),
+        Level::Minor,
+        Some(&green_run(&tip)),
+        true,
+    )
+    .unwrap();
     let plan = out.unwrap_err();
     assert_eq!(plan.next, Version::new(0, 2, 0));
     assert_eq!(plan.commits.len(), 1);
@@ -226,17 +278,32 @@ fn the_whole_release_bumps_merges_tags_releases_publishes_and_writes_badges() {
     let runner = Fake(RefCell::new(Vec::new()));
     let forge = Recorder::default();
     let p = published();
-    let done = release(&setup(&runner, &forge, &p, "dev"), f.root(), Level::Patch, Some(&green_run(&tip)), false)
-        .unwrap()
-        .unwrap();
+    let done = release(
+        &setup(&runner, &forge, &p, "dev"),
+        f.root(),
+        Level::Patch,
+        Some(&green_run(&tip)),
+        false,
+    )
+    .unwrap()
+    .unwrap();
     // the bump commit on dev carries the manifest and the changelog
-    assert_eq!(f.git(&["log", "-1", "--format=%s", "dev"]), "chore: release 0.1.1");
+    assert_eq!(
+        f.git(&["log", "-1", "--format=%s", "dev"]),
+        "chore: release 0.1.1"
+    );
     let changed = f.git(&["show", "--name-only", "--format=", &done.bump_sha]);
-    assert!(changed.contains("Cargo.toml") && changed.contains("CHANGELOG.md"), "{changed}");
+    assert!(
+        changed.contains("Cargo.toml") && changed.contains("CHANGELOG.md"),
+        "{changed}"
+    );
     let manifest = f.git(&["show", "dev:Cargo.toml"]);
     assert!(manifest.contains("version = \"0.1.1\""));
     let log = f.git(&["show", "dev:CHANGELOG.md"]);
-    assert!(log.starts_with("# Changelog\n\n## 0.1.1 (2026-09-02)\n"), "{log}");
+    assert!(
+        log.starts_with("# Changelog\n\n## 0.1.1 (2026-09-02)\n"),
+        "{log}"
+    );
     assert!(log.contains("feat: the thing"));
     // main got a merge commit and the tag sits on it, annotated
     assert_eq!(f.git(&["rev-parse", "main"]), done.tag_sha);
@@ -246,21 +313,35 @@ fn the_whole_release_bumps_merges_tags_releases_publishes_and_writes_badges() {
     // everything is on the remote
     assert_eq!(f.git(&["rev-parse", "origin/main"]), done.tag_sha);
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), done.bump_sha);
-    assert!(git::remote_tags(f.root(), "origin").unwrap().iter().any(|(n, s)| n == "v0.1.1" && *s == done.tag_sha));
+    assert!(
+        git::remote_tags(f.root(), "origin")
+            .unwrap()
+            .iter()
+            .any(|(n, s)| n == "v0.1.1" && *s == done.tag_sha)
+    );
     assert_eq!(f.git(&["rev-parse", "origin/badges"]), done.badges_sha);
     assert_eq!(git::parent_count(f.root(), "badges").unwrap(), 0);
     let on = git::files_on(f.root(), "badges").unwrap();
     assert!(on.iter().any(|(n, _)| n == "version.json"));
-    assert!(on.iter().any(|(n, body)| n == "tests.json" && body.contains("3 of 3")));
+    assert!(
+        on.iter()
+            .any(|(n, body)| n == "tests.json" && body.contains("3 of 3"))
+    );
     // the forge release carries the block, and the publish ran once
     let releases = forge.releases.borrow();
     assert_eq!(releases.len(), 1);
     assert_eq!(releases[0].0, "v0.1.1");
     assert!(releases[0].1.starts_with("## 0.1.1 (2026-09-02)"));
     let ran = runner.0.borrow();
-    assert!(ran.iter().any(|l| l == "cargo publish -p x --locked"), "{ran:?}");
+    assert!(
+        ran.iter().any(|l| l == "cargo publish -p x --locked"),
+        "{ran:?}"
+    );
     // and the tree is back on the trunk, clean
-    assert_eq!(git::current_branch(f.root()).unwrap().as_deref(), Some("dev"));
+    assert_eq!(
+        git::current_branch(f.root()).unwrap().as_deref(),
+        Some("dev")
+    );
     assert!(git::is_clean(f.root()).unwrap());
 }
 
@@ -276,7 +357,9 @@ fn a_repo_released_from_its_trunk_tags_the_bump_commit_and_merges_nothing() {
     let p = published();
     let mut s = setup(&runner, &forge, &p, "main");
     s.release = "main";
-    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap().unwrap();
+    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
     assert_eq!(done.bump_sha, done.tag_sha);
     assert_eq!(git::parent_count(f.root(), "main").unwrap(), 1);
     assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), done.bump_sha);

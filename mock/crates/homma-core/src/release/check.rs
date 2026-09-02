@@ -318,9 +318,11 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     // main holds nothing unreleased; where the trunk is the release line the
     // unreleased commits are what the release is for, so nothing to hold
     let release_sha = git::sha(root, inputs.release).ok();
-    if let (Some(release_sha), Some((newest, _)), true) =
-        (&release_sha, versioned.last(), inputs.trunk != inputs.release)
-    {
+    if let (Some(release_sha), Some((newest, _)), true) = (
+        &release_sha,
+        versioned.last(),
+        inputs.trunk != inputs.release,
+    ) {
         let newest_target = git::tag_target(root, newest)?;
         if newest_target != *release_sha {
             let between = git::subjects(root, newest, inputs.release)?;

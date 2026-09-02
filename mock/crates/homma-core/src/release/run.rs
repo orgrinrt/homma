@@ -43,7 +43,10 @@ pub enum ReleaseError {
     /// The check found something that blocks.
     Blocked(Vec<Finding>),
     /// No green gate run on the tip of the trunk.
-    NoGreenRun { sha: String, found: Option<Verdict> },
+    NoGreenRun {
+        sha:   String,
+        found: Option<Verdict>,
+    },
     /// The tree is not on the trunk.
     NotOnTrunk(Option<String>),
     Plan(PlanError),
@@ -69,12 +72,26 @@ impl fmt::Display for ReleaseError {
                 found,
             } => {
                 match found {
-                    Some(v) => write!(f, "the newest gate run on {sha} is {v}; a green one is needed"),
-                    None => write!(f, "no gate run recorded on {sha}; push it through the hook or run `homma release gate`"),
+                    Some(v) => {
+                        write!(
+                            f,
+                            "the newest gate run on {sha} is {v}; a green one is needed"
+                        )
+                    },
+                    None => {
+                        write!(
+                            f,
+                            "no gate run recorded on {sha}; push it through the hook or run `homma release gate`"
+                        )
+                    },
                 }
             },
             ReleaseError::NotOnTrunk(b) => {
-                write!(f, "the tree is on {}, and a release runs from the trunk", b.as_deref().unwrap_or("a detached head"))
+                write!(
+                    f,
+                    "the tree is on {}, and a release runs from the trunk",
+                    b.as_deref().unwrap_or("a detached head")
+                )
             },
             ReleaseError::Plan(e) => write!(f, "{e}"),
             ReleaseError::Git(e) => write!(f, "{e}"),
@@ -108,7 +125,11 @@ pub struct Released {
 }
 
 /// Step 1: the check, refusing on anything blocking.
-pub fn step_check(setup: &Setup<'_>, root: &Path, level: Level) -> Result<Vec<Finding>, ReleaseError> {
+pub fn step_check(
+    setup: &Setup<'_>,
+    root: &Path,
+    level: Level,
+) -> Result<Vec<Finding>, ReleaseError> {
     let findings = check::check(&check::Inputs {
         root,
         remote: setup.remote,
@@ -124,7 +145,11 @@ pub fn step_check(setup: &Setup<'_>, root: &Path, level: Level) -> Result<Vec<Fi
 }
 
 /// Step 2: a green gate run on exactly the trunk's tip.
-pub fn step_gate_run(root: &Path, trunk: &str, newest: Option<&GateRun>) -> Result<(), ReleaseError> {
+pub fn step_gate_run(
+    root: &Path,
+    trunk: &str,
+    newest: Option<&GateRun>,
+) -> Result<(), ReleaseError> {
     let sha = git::sha(root, trunk)?;
     match newest {
         Some(run) if run.sha == sha && run.verdict == Verdict::Green => Ok(()),
@@ -157,7 +182,10 @@ pub fn step_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, 
             paths.push("Cargo.toml");
             if root.join("Cargo.lock").is_file() {
                 // the lock names the workspace's own versions
-                let _ = setup.runner.run(root, "cargo", &["update", "--workspace", "--offline"], &[]);
+                let _ =
+                    setup
+                        .runner
+                        .run(root, "cargo", &["update", "--workspace", "--offline"], &[]);
                 paths.push("Cargo.lock");
             }
         }
@@ -173,7 +201,11 @@ pub fn step_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, 
 
 /// Steps 5 and 6: merge the trunk into the release line with a merge commit
 /// and tag that, or tag the bump where the two are one branch; push both.
-pub fn step_merge_and_tag(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, ReleaseError> {
+pub fn step_merge_and_tag(
+    setup: &Setup<'_>,
+    root: &Path,
+    plan: &Plan,
+) -> Result<String, ReleaseError> {
     let sha = if setup.trunk == setup.release {
         git::head(root)?
     } else {
@@ -183,7 +215,12 @@ pub fn step_merge_and_tag(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result
         sha
     };
     git::tag_annotated(root, &plan.tag, &sha, &plan.tag)?;
-    git::push(root, setup.remote, &format!("refs/tags/{}", plan.tag), false)?;
+    git::push(
+        root,
+        setup.remote,
+        &format!("refs/tags/{}", plan.tag),
+        false,
+    )?;
     if setup.trunk != setup.release {
         git::switch(root, setup.trunk)?;
     }
@@ -192,9 +229,12 @@ pub fn step_merge_and_tag(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result
 
 /// Step 7: the forge release on the tag, with the block as its body.
 pub fn step_forge_release(setup: &Setup<'_>, plan: &Plan) -> Result<(), ReleaseError> {
-    setup
-        .forge
-        .create_release(setup.owner, setup.name, &plan.tag, plan.changelog.trim_end())?;
+    setup.forge.create_release(
+        setup.owner,
+        setup.name,
+        &plan.tag,
+        plan.changelog.trim_end(),
+    )?;
     Ok(())
 }
 
@@ -203,13 +243,34 @@ pub fn step_publish(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), R
     for (reg, name) in &plan.publishes {
         match reg {
             Registry::CratesIo => {
-                publish::publish_crate(setup.runner, root, name, &plan.next, setup.token, setup.served)?
+                publish::publish_crate(
+                    setup.runner,
+                    root,
+                    name,
+                    &plan.next,
+                    setup.token,
+                    setup.served,
+                )?
             },
             Registry::Jsr => {
-                publish::publish_jsr(setup.runner, root, name, &plan.next, setup.token, setup.served)?
+                publish::publish_jsr(
+                    setup.runner,
+                    root,
+                    name,
+                    &plan.next,
+                    setup.token,
+                    setup.served,
+                )?
             },
             Registry::Npm => {
-                publish::publish_npm(setup.runner, root, name, &plan.next, setup.token, setup.served)?
+                publish::publish_npm(
+                    setup.runner,
+                    root,
+                    name,
+                    &plan.next,
+                    setup.token,
+                    setup.served,
+                )?
             },
         }
     }
@@ -217,10 +278,20 @@ pub fn step_publish(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), R
 }
 
 /// Step 9: the badges branch, from the run that gated the release.
-pub fn step_badges(setup: &Setup<'_>, root: &Path, run: &GateRun, plan: &Plan) -> Result<String, ReleaseError> {
+pub fn step_badges(
+    setup: &Setup<'_>,
+    root: &Path,
+    run: &GateRun,
+    plan: &Plan,
+) -> Result<String, ReleaseError> {
     let files = badges::files(run, &plan.next);
     let sha = badges::write(root, &files)?;
-    git::push(root, setup.remote, &format!("refs/heads/{}", badges::BRANCH), true)?;
+    git::push(
+        root,
+        setup.remote,
+        &format!("refs/heads/{}", badges::BRANCH),
+        true,
+    )?;
     Ok(sha)
 }
 
