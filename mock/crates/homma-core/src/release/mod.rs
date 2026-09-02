@@ -9,10 +9,12 @@
 
 pub mod badges;
 pub mod changelog;
+pub mod check;
 pub mod gate;
 pub mod git;
 pub mod kind;
 pub mod numbers;
+pub mod registry;
 pub mod sh;
 pub mod status;
 pub mod version;

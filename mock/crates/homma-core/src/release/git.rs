@@ -268,6 +268,79 @@ pub fn parent_count(cwd: &Path, rev: &str) -> Result<usize, GitError> {
     Ok(out.split_whitespace().count().saturating_sub(1))
 }
 
+/// The tags on `remote` with the commit each points at, peeled through the
+/// tag object, so an annotated tag reports its commit the way `tag_target`
+/// does locally.
+pub fn remote_tags(cwd: &Path, remote: &str) -> Result<Vec<(String, String)>, GitError> {
+    let out = trimmed(cwd, &["ls-remote", "--tags", remote])?;
+    let mut peeled: Vec<(String, String)> = Vec::new();
+    let mut plain: Vec<(String, String)> = Vec::new();
+    for line in out.lines() {
+        let Some((sha, r)) = line.split_once('\t') else { continue };
+        let Some(name) = r.strip_prefix("refs/tags/") else { continue };
+        match name.strip_suffix("^{}") {
+            Some(n) => peeled.push((n.to_string(), sha.to_string())),
+            None => plain.push((name.to_string(), sha.to_string())),
+        }
+    }
+    for (name, sha) in plain {
+        if !peeled.iter().any(|(n, _)| *n == name) {
+            peeled.push((name, sha));
+        }
+    }
+    peeled.sort();
+    Ok(peeled)
+}
+
+/// Whether `branch` on `remote` holds every commit of the local `branch`.
+/// A branch with no remote counterpart is unpushed by definition.
+pub fn is_pushed(cwd: &Path, remote: &str, branch: &str) -> Result<bool, GitError> {
+    let upstream = format!("{remote}/{branch}");
+    match sha(cwd, &upstream) {
+        Ok(_) => is_ancestor(cwd, branch, &upstream),
+        Err(GitError::Missing(_)) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// The paths `git status` reports as untracked.
+pub fn untracked(cwd: &Path) -> Result<Vec<String>, GitError> {
+    // not trimmed: the two status columns may open with a space
+    let out = git(cwd, &["status", "--porcelain", "--untracked-files=all"])?.stdout;
+    Ok(out
+        .lines()
+        .filter_map(|l| l.strip_prefix("?? "))
+        .map(str::to_string)
+        .collect())
+}
+
+/// The paths `git status` reports as modified, staged or not, tracked only.
+pub fn modified(cwd: &Path) -> Result<Vec<String>, GitError> {
+    let out = git(cwd, &["status", "--porcelain"])?.stdout;
+    Ok(out
+        .lines()
+        .filter(|l| !l.starts_with("?? ") && l.len() > 3)
+        .map(|l| l[3 ..].to_string())
+        .collect())
+}
+
+/// Every tracked path at `rev`.
+pub fn tracked_at(cwd: &Path, rev: &str) -> Result<Vec<String>, GitError> {
+    let out = trimmed(cwd, &["ls-tree", "-r", "--name-only", rev])?;
+    Ok(out.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+}
+
+/// The content of `path` at `rev`, or none when it is not there.
+pub fn show(cwd: &Path, rev: &str, path: &str) -> Result<Option<String>, GitError> {
+    let out = sh::run(cwd, "git", &["show", &format!("{rev}:{path}")])?;
+    Ok(out.ok().then_some(out.stdout))
+}
+
+/// Fetch tags and branches from `remote`, pruning what is gone.
+pub fn fetch(cwd: &Path, remote: &str) -> Result<(), GitError> {
+    git(cwd, &["fetch", "--quiet", "--tags", "--prune", remote]).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,5 +468,46 @@ mod tests {
         commit_paths(p, &["mine"], "chore: mine").unwrap();
         let status = trimmed(p, &["status", "--porcelain"]).unwrap();
         assert_eq!(status, "A  theirs");
+    }
+
+    #[test]
+    fn modified_and_untracked_are_told_apart_and_tracked_at_reads_a_rev() {
+        let d = repo();
+        let p = d.path();
+        assert!(modified(p).unwrap().is_empty());
+        assert!(untracked(p).unwrap().is_empty());
+        std::fs::write(p.join("a"), "changed").unwrap();
+        std::fs::create_dir(p.join("d")).unwrap();
+        std::fs::write(p.join("d/new"), "n").unwrap();
+        assert_eq!(modified(p).unwrap(), vec!["a"]);
+        assert_eq!(untracked(p).unwrap(), vec!["d/new"]);
+        assert_eq!(tracked_at(p, "HEAD").unwrap(), vec!["a"]);
+        assert_eq!(show(p, "HEAD", "a").unwrap().as_deref(), Some("a"));
+        assert_eq!(show(p, "HEAD", "d/new").unwrap(), None);
+    }
+
+    #[test]
+    fn a_remote_answers_its_tags_peeled_and_a_branch_is_pushed_only_once_it_is_there() {
+        let d = repo();
+        let p = d.path();
+        let bare = tempfile::tempdir().unwrap();
+        git(bare.path(), &["init", "--quiet", "--bare"]).unwrap();
+        git(p, &["remote", "add", "origin", bare.path().to_str().unwrap()]).unwrap();
+        assert!(!is_pushed(p, "origin", "main").unwrap());
+        push(p, "origin", "main", false).unwrap();
+        assert!(is_pushed(p, "origin", "main").unwrap());
+        let h = head(p).unwrap();
+        tag_annotated(p, "v0.1.0", &h, "v0.1.0").unwrap();
+        git(p, &["tag", "light", &h]).unwrap();
+        assert!(remote_tags(p, "origin").unwrap().is_empty());
+        push(p, "origin", "refs/tags/v0.1.0", false).unwrap();
+        push(p, "origin", "refs/tags/light", false).unwrap();
+        let tags = remote_tags(p, "origin").unwrap();
+        assert_eq!(tags, vec![("light".to_string(), h.clone()), ("v0.1.0".to_string(), h.clone())]);
+        std::fs::write(p.join("b"), "b").unwrap();
+        commit_paths(p, &["b"], "feat: b").unwrap();
+        assert!(!is_pushed(p, "origin", "main").unwrap(), "a new commit is unpushed");
+        fetch(p, "origin").unwrap();
+        assert!(!is_pushed(p, "origin", "main").unwrap());
     }
 }
