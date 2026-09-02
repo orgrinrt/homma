@@ -17,6 +17,7 @@
 pub mod config;
 pub mod forge;
 pub mod inject;
+pub mod release;
 pub mod repo;
 pub mod testing;
 
