@@ -45,7 +45,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::url::api_root;
-use super::{CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
+use super::{
+    CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility,
+};
 use crate::config::ForgeConfig;
 
 const ACCEPT: &str = "application/vnd.github+json";
@@ -252,6 +254,23 @@ impl Forge for GitHubClient {
             Err(ureq::Error::Status(401, _)) => Ok(false),
             Err(ureq::Error::Status(403, _)) => Ok(true),
             Err(e) => Err(map_ureq_error(e, "", "user")),
+        }
+    }
+
+    /// `POST {api}/repos/{owner}/{name}/statuses/{sha}`. GitHub creates a new
+    /// status per call and shows the newest one per context, so posting
+    /// `pending` and then `success` on the same context is the normal shape.
+    fn set_commit_status(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+        status: &CommitStatus,
+    ) -> Result<(), ForgeError> {
+        let url = format!("{}/statuses/{sha}", self.repo_path(owner, name));
+        match self.post_json(&url, status) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }
 }

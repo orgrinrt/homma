@@ -116,6 +116,25 @@ impl Forge for MockForge {
     fn credential_works(&self) -> Result<bool, ForgeError> {
         Ok(true)
     }
+
+    /// A status on a repo the mock does not hold is the one error the real
+    /// forges answer with; on a held repo it is accepted and forgotten.
+    fn set_commit_status(
+        &self,
+        owner: &str,
+        name: &str,
+        _sha: &str,
+        _status: &homma_core::forge::CommitStatus,
+    ) -> Result<(), ForgeError> {
+        if self.repo_exists(owner, name)? {
+            Ok(())
+        } else {
+            Err(ForgeError::RepoNotFound {
+                owner: owner.into(),
+                name:  name.into(),
+            })
+        }
+    }
 }
 
 fn sample_source() -> RepoMetadata {

@@ -33,4 +33,6 @@ pub mod url;
 pub use error::ForgeError;
 pub use forgejo::ForgejoClient;
 pub use github::GitHubClient;
-pub use trait_def::{CreateRepoSpec, Forge, OwnerKind, RepoMetadata, Visibility};
+pub use trait_def::{
+    CommitStatus, CreateRepoSpec, Forge, OwnerKind, RepoMetadata, StatusState, Visibility,
+};

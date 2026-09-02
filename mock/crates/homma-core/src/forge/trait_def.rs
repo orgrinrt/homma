@@ -73,6 +73,39 @@ pub trait Forge {
     /// the question unanswered, a network failure or an unexpected status, is
     /// an error, because it is not evidence either way.
     fn credential_works(&self) -> Result<bool, ForgeError>;
+
+    /// Post a commit status on `sha`, which is how a gate run on the pushing
+    /// machine becomes something a branch ruleset can require. Both forges
+    /// take `POST /repos/{owner}/{name}/statuses/{sha}` with the same body.
+    fn set_commit_status(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+        status: &CommitStatus,
+    ) -> Result<(), ForgeError>;
+}
+
+/// One commit status: the context a ruleset names, its state, and a line
+/// about it. `target_url` is where a reader goes for the run itself, and it
+/// is optional because a local run has nowhere public to point at.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CommitStatus {
+    pub context:     String,
+    pub state:       StatusState,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_url:  Option<String>,
+}
+
+/// The states both forges accept for a commit status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusState {
+    Pending,
+    Success,
+    Failure,
+    Error,
 }
 
 /// Snapshot of a repo as the forge sees it.
