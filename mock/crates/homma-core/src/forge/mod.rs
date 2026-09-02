@@ -34,5 +34,11 @@ pub use error::ForgeError;
 pub use forgejo::ForgejoClient;
 pub use github::GitHubClient;
 pub use trait_def::{
-    CommitStatus, CreateRepoSpec, Forge, OwnerKind, RepoMetadata, StatusState, Visibility,
+    CommitStatus,
+    CreateRepoSpec,
+    Forge,
+    OwnerKind,
+    RepoMetadata,
+    StatusState,
+    Visibility,
 };

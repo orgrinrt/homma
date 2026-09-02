@@ -531,14 +531,23 @@ fn a_commit_status_is_posted_to_the_statuses_endpoint_with_its_context_and_state
         .set_commit_status("o", "r", "abc123", &status)
         .unwrap();
     let text = seen.lock().unwrap().clone();
-    assert!(text.starts_with("POST /repos/o/r/statuses/abc123 "), "{text}");
-    assert!(text.to_ascii_lowercase().contains("authorization:"), "{text}");
+    assert!(
+        text.starts_with("POST /repos/o/r/statuses/abc123 "),
+        "{text}"
+    );
+    assert!(
+        text.to_ascii_lowercase().contains("authorization:"),
+        "{text}"
+    );
     let body = text.rsplit("\r\n\r\n").next().unwrap();
     let json: serde_json::Value = serde_json::from_str(body).unwrap();
     assert_eq!(json["context"], "homma/gate");
     assert_eq!(json["state"], "success");
     assert_eq!(json["description"], "green, 12 tests");
-    assert!(json.get("target_url").is_none(), "an absent url is not sent as null");
+    assert!(
+        json.get("target_url").is_none(),
+        "an absent url is not sent as null"
+    );
 }
 
 #[test]

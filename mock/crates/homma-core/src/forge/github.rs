@@ -45,9 +45,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::url::api_root;
-use super::{
-    CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility,
-};
+use super::{CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
 use crate::config::ForgeConfig;
 
 const ACCEPT: &str = "application/vnd.github+json";

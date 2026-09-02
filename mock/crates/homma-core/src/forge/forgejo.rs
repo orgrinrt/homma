@@ -26,9 +26,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::url::api_root;
-use super::{
-    CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility,
-};
+use super::{CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
 use crate::config::ForgeConfig;
 
 /// A [`Forge`] backed by the Forgejo / Gitea REST API.
