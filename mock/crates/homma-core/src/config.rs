@@ -469,11 +469,8 @@ pub struct RegistryConfig {
 
 impl RegistryConfig {
     /// The registries a release knows, with the host each is reached at.
-    pub const KNOWN: &'static [(&'static str, &'static str)] = &[
-        ("crates-io", "crates.io"),
-        ("jsr", "jsr.io"),
-        ("npm", "registry.npmjs.org"),
-    ];
+    pub const KNOWN: &'static [(&'static str, &'static str)] =
+        &[("crates-io", "crates.io"), ("jsr", "jsr.io"), ("npm", "registry.npmjs.org")];
 }
 
 /// `[auth]`: where a forge credential comes from when the environment holds
