@@ -194,7 +194,11 @@ mod tests {
         // package of its own, is seen through the member listing
         let w = dir.path().join("ws");
         std::fs::create_dir_all(w.join("crates/inner")).unwrap();
-        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\"]\n").unwrap();
+        std::fs::write(
+            w.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
         std::fs::write(
             w.join("crates/inner/Cargo.toml"),
             "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[dependencies]\nzed = { git = \"https://github.com/orgrinrt/zed.git\" }\n",

@@ -197,10 +197,9 @@ fn a_subject_names_a_hotpatch_as_a_word_and_not_after_a_negation() {
     f.tag("v0.1.0");
     f.commit("fix: this is not a hotpatch");
     f.git(&["push", "--quiet", "origin", "main"]);
-    assert_eq!(
-        ids(&run(&f, &published(&["0.1.0"]), None)),
-        ["main.unreleased"]
-    );
+    assert_eq!(ids(&run(&f, &published(&["0.1.0"]), None)), [
+        "main.unreleased"
+    ]);
 }
 
 #[test]
