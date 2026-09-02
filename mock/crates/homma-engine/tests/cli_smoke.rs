@@ -610,3 +610,75 @@ fn release_hook_install_writes_the_pre_push_and_check_reports_by_id() {
         .failure()
         .stderr(predicate::str::contains("`nope` is not a repository"));
 }
+
+#[test]
+fn release_badges_reads_the_newest_run_whichever_branch_it_measured() {
+    use homma_api::{GateRun, Step, StepOutcome, Verdict};
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    let repo = dir.path().join("x");
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    // a `dev`/`main` repo whose trunk is one commit past the release line,
+    // pushing to a bare origin so the badges branch has somewhere to land
+    let bare = dir.path().join("origin.git");
+    std::process::Command::new("git")
+        .args(["init", "-q", "--bare", bare.to_str().unwrap()])
+        .status()
+        .unwrap();
+    git(&["remote", "set-url", "origin", bare.to_str().unwrap()]);
+    git(&["branch", "-M", "main"]);
+    git(&["switch", "-qc", "dev"]);
+    std::fs::write(repo.join("src.rs"), "fn f() {}\n").unwrap();
+    git(&["add", "src.rs"]);
+    git(&["commit", "-qm", "feat: more"]);
+    let dev_tip = git(&["rev-parse", "dev"]).trim().to_string();
+    // with nothing recorded the command says so and writes nothing
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "badges", "x"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no gate run recorded for `x`"));
+    // a green run on the trunk's tip, which is where the hook records them
+    let store = homma_store::Store::open(&dir.path().join(".data/homma"));
+    let mut step = StepOutcome::skipped(Step::Tests);
+    step.skipped = false;
+    step.passed = true;
+    let run = GateRun {
+        repo: "x".into(),
+        sha: dev_tip.clone(),
+        ran_at: "2026-09-02T22:00:00Z".into(),
+        verdict: Verdict::Green,
+        steps: vec![step],
+    };
+    store.append(&GateRun::kind(), &run.to_record()).unwrap();
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "badges", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote"))
+        .stdout(predicate::str::contains(format!(
+            "from the run on {}",
+            &dev_tip[.. 7]
+        )));
+    let on_origin = std::process::Command::new("git")
+        .args(["-C", bare.to_str().unwrap(), "branch", "--list", "badges"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&on_origin.stdout).contains("badges"));
+    let gate = std::process::Command::new("git")
+        .args(["-C", bare.to_str().unwrap(), "show", "badges:gate.json"])
+        .output()
+        .unwrap();
+    assert!(gate.status.success(), "the badges branch carries gate.json");
+}

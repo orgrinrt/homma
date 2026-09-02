@@ -354,6 +354,57 @@ fn the_npmrc_is_readable_by_its_owner_alone_while_it_exists() {
 }
 
 #[test]
+fn a_planted_file_or_symlink_at_the_private_path_is_refused_and_untouched() {
+    let d = tempfile::tempdir().unwrap();
+    // a file already there keeps its own mode on an open that does not
+    // create it, so it is refused rather than written into
+    let planted = d.path().join("planted");
+    std::fs::write(&planted, "before\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o666)).unwrap();
+    }
+    let err = write_private(&planted, "secret\n").unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(std::fs::read_to_string(&planted).unwrap(), "before\n");
+    // a symlink would carry the bytes to its target; a dangling one too,
+    // since a plain create follows it and creates the target
+    #[cfg(unix)]
+    {
+        let target = d.path().join("target");
+        let link = d.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let err = write_private(&link, "secret\n").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert!(!target.exists(), "the link's target was created through it");
+        std::fs::write(&target, "theirs\n").unwrap();
+        let err = write_private(&link, "secret\n").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "theirs\n");
+    }
+    // and the fresh path is written with the private mode
+    let fresh = d.path().join("fresh");
+    write_private(&fresh, "secret\n").unwrap();
+    assert_eq!(std::fs::read_to_string(&fresh).unwrap(), "secret\n");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+}
+
+#[test]
+fn the_private_path_differs_between_two_calls_and_sits_in_the_temp_dir() {
+    let a = private_path("homma-npmrc");
+    let b = private_path("homma-npmrc");
+    assert_ne!(a, b);
+    assert!(a.starts_with(std::env::temp_dir()));
+    let name = a.file_name().unwrap().to_str().unwrap();
+    assert!(name.starts_with(&format!("homma-npmrc-{}-", std::process::id())));
+}
+
+#[test]
 fn a_failed_jsr_publish_reports_its_command_and_log_with_the_token_redacted() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join("deno.json"), r#"{"name": "@h/x"}"#).unwrap();

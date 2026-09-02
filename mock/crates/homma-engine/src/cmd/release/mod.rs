@@ -290,6 +290,15 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: &str, level: Level) -> Result<Outcome
     })
 }
 
+/// The order the repos release in when none is named.
+///
+/// FIXME: name order. The deep dive asks for dependency order across repos,
+/// so a crate lands before the one that depends on it; that needs the
+/// cross-repo graph, which nothing reads yet. The gap is a red test below.
+fn release_order(cfg: &Config) -> Vec<String> {
+    cfg.repos.keys().cloned().collect()
+}
+
 fn run_cmd(
     cli: &Cli,
     cfg: &Config,
@@ -301,10 +310,7 @@ fn run_cmd(
     let token = token_source(cfg);
     let names: Vec<String> = match repo {
         Some(n) => vec![n.to_string()],
-        // FIXME: every repo goes in name order; the dependency order across
-        // repos the deep dive asks for needs the cross-repo graph, which
-        // nothing reads yet.
-        None => cfg.repos.keys().cloned().collect(),
+        None => release_order(cfg),
     };
     let mut lines = Vec::new();
     let mut ok = true;
@@ -368,12 +374,11 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     let (name, _, root) = resolve_repo(cfg, Some(repo))?;
     let root = &root;
     let store = store(cli);
-    let tip = homma_core::release::git::sha(root, &cfg.defaults.public_branch)?;
-    let run: GateRun = record::newest_for(&store, name, &tip)?.ok_or_else(|| {
-        anyhow!(
-            "no gate run recorded on the tip of `{}`",
-            cfg.defaults.public_branch
-        )
+    // the newest record, whichever commit it measured: runs are recorded
+    // for the checked-out head, which is the trunk, and the release line's
+    // tip is a merge commit no gate ever ran on
+    let run: GateRun = record::newest(&store, name)?.ok_or_else(|| {
+        anyhow!("no gate run recorded for `{name}`; push it through the hook or run `homma release gate`")
     })?;
     let kind = homma_core::release::kind::detect(root)?;
     let v = version::read(root, kind)?;
@@ -388,10 +393,11 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     finish(cli, Report {
         ok:    true,
         lines: vec![format!(
-            "wrote {} file(s) to `{}` at {}",
+            "wrote {} file(s) to `{}` at {}, from the run on {}",
             files.len(),
             badges::BRANCH,
-            &sha[.. 7]
+            &sha[.. 7],
+            &run.sha[.. 7]
         )],
     })
 }
@@ -412,5 +418,74 @@ fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
             })
         },
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    fn git(path: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+
+    /// A member clone at `root/name` whose manifest names `deps` as git
+    /// dependencies on sibling members.
+    fn member(root: &Path, name: &str, deps: &[&str]) {
+        let path = root.join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        git(&path, &["init", "-q"]);
+        git(&path, &[
+            "remote",
+            "add",
+            "origin",
+            &format!("https://github.com/orgrinrt/{name}.git"),
+        ]);
+        let mut manifest = format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
+        for d in deps {
+            manifest.push_str(&format!(
+                "{d} = {{ git = \"https://github.com/orgrinrt/{d}.git\" }}\n"
+            ));
+        }
+        std::fs::write(path.join("Cargo.toml"), manifest).unwrap();
+    }
+
+    #[test]
+    #[ignore = "catalogue: repos release in name order where the deep dive asks for dependency order across repos; tracked by the FIXME on release_order"]
+    fn a_repo_releases_after_the_sibling_it_depends_on_whatever_their_names() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("homma.toml"),
+            "[workspace]\nname = \"t\"\npath = \".\"\n\n[forges.github]\nkind = \"github\"\nbase_url = \"https://github.com\"\napi_url = \"https://api.github.com\"\n",
+        )
+        .unwrap();
+        // `alpha` depends on `zed`, so `zed` lands first, against the
+        // alphabet
+        member(dir.path(), "zed", &[]);
+        member(dir.path(), "alpha", &["zed"]);
+        let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
+        assert_eq!(release_order(&cfg), vec!["zed".to_string(), "alpha".to_string()]);
+    }
+
+    #[test]
+    fn independent_repos_release_in_name_order() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("homma.toml"),
+            "[workspace]\nname = \"t\"\npath = \".\"\n\n[forges.github]\nkind = \"github\"\nbase_url = \"https://github.com\"\napi_url = \"https://api.github.com\"\n",
+        )
+        .unwrap();
+        member(dir.path(), "zed", &[]);
+        member(dir.path(), "alpha", &[]);
+        let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
+        assert_eq!(release_order(&cfg), vec!["alpha".to_string(), "zed".to_string()]);
     }
 }

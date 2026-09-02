@@ -20,11 +20,24 @@ pub fn newest_for(
     repo: &str,
     sha: &str,
 ) -> Result<Option<GateRun>, homma_store::Error> {
+    newest_where(store, |r| r.repo == repo && r.sha == sha)
+}
+
+/// The newest run recorded for `repo` on any sha, or none. This is what the
+/// badges read: the last thing the gate measured, whichever commit it was.
+pub fn newest(store: &Store, repo: &str) -> Result<Option<GateRun>, homma_store::Error> {
+    newest_where(store, |r| r.repo == repo)
+}
+
+fn newest_where(
+    store: &Store,
+    keep: impl Fn(&GateRun) -> bool,
+) -> Result<Option<GateRun>, homma_store::Error> {
     let mut runs: Vec<GateRun> = store
         .read(homma_api::GATE_RUN_KIND)?
         .iter()
         .filter_map(|r| GateRun::from_record(r).ok())
-        .filter(|r| r.repo == repo && r.sha == sha)
+        .filter(|r| keep(r))
         .collect();
     runs.sort_by(|a, b| a.ran_at.cmp(&b.ran_at));
     Ok(runs.pop())
@@ -78,6 +91,13 @@ mod tests {
         assert_eq!(got.verdict, Verdict::Green);
         assert!(newest_for(&store, "x", "ccc").unwrap().is_none());
         assert!(newest_for(&store, "z", "aaa").unwrap().is_none());
+        // the newest on any sha is the one on `bbb`, and it is a run on the
+        // repo asked for, not the later one on `y`
+        let any = newest(&store, "x").unwrap().unwrap();
+        assert_eq!(any.sha, "bbb");
+        assert_eq!(any.ran_at, "2026-09-02T22:00:00Z");
+        assert_eq!(newest(&store, "y").unwrap().unwrap().sha, "aaa");
+        assert!(newest(&store, "z").unwrap().is_none());
     }
 
     #[test]
@@ -85,5 +105,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path());
         assert!(newest_for(&store, "x", "aaa").unwrap().is_none());
+        assert!(newest(&store, "x").unwrap().is_none());
     }
 }

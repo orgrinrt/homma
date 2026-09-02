@@ -5,8 +5,11 @@
 //! Publishing: one `cargo publish` per member in dependency order, `deno
 //! publish`, and the npm build and publish where the package ships there.
 //! A token reaches its tool through the environment of the one call and never
-//! the shell that ran homma; jsr is the exception, since `deno publish` takes
-//! it on the arguments alone, and there it is kept out of every line printed.
+//! the shell that ran homma, with two exceptions the tools force: `deno
+//! publish` takes its token on the arguments alone, so there it is kept out
+//! of every line printed, and `npm publish` reads its token from a user
+//! config, so there it goes in a file only the owner can read, created for
+//! the call at a path nothing else could have planted, and removed after.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -249,7 +252,7 @@ pub fn publish_npm(
         root.to_path_buf()
     };
     let t = token(Registry::Npm).map_err(|e| PublishError::NoToken(Registry::Npm, e))?;
-    let npmrc = std::env::temp_dir().join(format!("homma-npmrc-{}", std::process::id()));
+    let npmrc = private_path("homma-npmrc");
     write_private(&npmrc, &format!("//registry.npmjs.org/:_authToken={t}\n"))?;
     let out = runner.run(&dir, "npm", &["publish", "--access", "public"], &[(
         "NPM_CONFIG_USERCONFIG",
@@ -266,12 +269,31 @@ pub fn publish_npm(
     wait_until_served(Registry::Npm, name, version, served)
 }
 
+/// A path under the temp directory that nothing else could have planted
+/// ahead of the call: the pid, the clock's nanoseconds and a counter, so it
+/// is not guessable from the process alone and two calls in one process
+/// never agree, and `write_private` refuses it anyway where something is
+/// already there.
+fn private_path(stem: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("{stem}-{}-{nanos}-{seq}", std::process::id()))
+}
+
 /// Write a file only its owner can read, created with that mode rather than
-/// chmodded after, so there is no moment it is readable by anyone else.
-fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+/// chmodded after, so there is no moment it is readable by anyone else. The
+/// open refuses an existing path, a symlink included, because a file already
+/// there keeps its own mode and a link would carry the bytes wherever it
+/// points; a planted path is an error and never a write.
+pub(crate) fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
     let mut open = std::fs::OpenOptions::new();
-    open.write(true).create(true).truncate(true);
+    open.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
