@@ -256,6 +256,115 @@ workspace is a decision somebody recorded, and creating one for it as a side
 effect of standing it up would let a typo become a workspace. Promotion is an edit
 to the registry, made on purpose.
 
+## The shared tool configs
+
+Some tool configs are meant to be the same in every repository. Formatting,
+the dependency audit, whatever else joins them later. One canonical copy of each
+lives in the content repository, under `.shared/configs/`, and a repository gets
+that copy rather than authoring its own. A repository without a formatting config
+formats to the tool's defaults instead of ours, which surfaces months later as
+noise inside somebody's unrelated change.
+
+Each file is stored under the name it deploys as, so there is nothing to map and
+nothing to drift.
+
+### A template says where it belongs by where it sits
+
+Which repositories want a given config is a property of that config, so it
+travels with it, as the directory the file sits in.
+
+```
+.shared/configs/rust_required/deny.toml
+.shared/configs/rust_nightly_required/rustfmt.toml
+```
+
+The directory name is one or more tags, each `<ecosystem>_<severity>`, joined
+with `+` where several apply. Severity may be left off and defaults to
+`required`, so `rust/` and `rust_required/` are the same thing. A config two
+ecosystems want sits in one directory naming both rather than in two directories,
+because two copies of one file is the drift a single canonical copy exists to
+prevent.
+
+The stored file is byte for byte the deployed file. Nothing is stripped out of
+it on the way, so comparing a repository's copy against the canonical one stays a
+comparison of bytes, and a template of any kind works, including the ones whose
+format has nowhere to put a comment.
+
+Adding a config is dropping a file into a directory. Nothing in homma is edited,
+and every repository that wants it is short one from that moment.
+
+A file sitting loose with no tag directory is a config nobody has said where to
+put. It is reported for a person and placed nowhere, because a config in the
+wrong repository is quieter than one that is missing.
+
+### An ecosystem is a name and a giveaway
+
+An ecosystem is a set of repositories identified by something on disk.
+
+| Ecosystem | A repository is in it when |
+|---|---|
+| `any` | always |
+| `rust` | `Cargo.toml` at the root or under `mock/` |
+| `rust_nightly` | `rust`, and a `rust-toolchain.toml` naming a nightly channel |
+| `deno` | `deno.json`, `deno.jsonc` or `deno.lock` |
+| `node` | `package.json` |
+
+`rust_nightly` is not a second axis on top of `rust`, though it looks like one.
+The axis is which repositories a config belongs in, and every row above is a name
+plus a giveaway, so a nightly pin is a giveaway like any other. It earns its
+place because a config can genuinely need one: a formatting config setting
+options that exist only on nightly does nothing in a repository pinned to stable
+except warn once per option and then format to the defaults.
+
+### There is no way to write down a refusal
+
+A repository cannot declare that it does not want a config it is otherwise in
+the set for.
+
+The reason is that a written refusal is remembered and a derived one is worked
+out again. A repository that cannot take the nightly formatting config says so
+by not pinning a nightly, and that is read off the repository every time the
+check runs, so it is right whenever the repository changes and needs nobody to
+revisit it. A sentence saying the same thing keeps saying it after it stops
+being true, and nothing can tell, because the thing it claims is exactly the
+thing nobody rechecks.
+
+So when a repository turns out to need a refusal that is not derivable, the fix
+is to make it derivable, which is a new giveaway or a new tag and both are data.
+Where it genuinely cannot be, it is reported for a person and stays reported.
+
+### Absence is acted on, difference never is
+
+A missing config is a fact: nothing was decided, and the canonical copy is what
+somebody would have put there.
+
+A config that differs is a question this cannot answer, because a deliberate
+exception and a stale copy look identical on disk. It is reported and left
+exactly as it is. Refusing to proceed over one would mean the only way forward is
+to overwrite the difference, which is a worse version of doing that on purpose.
+
+Severity says how hard the rule is. A missing `required` config is what stops a
+commit. A missing `suggested` one is reported and stops nothing, which is what
+lets a new config reach every repository and be adopted before it starts
+refusing anything.
+
+### A config may be satisfied from more than one place
+
+A template names the paths that satisfy it, and having any one of them is having
+it. A toolchain pin under `mock/` counts as much as one at the root, and a
+repository that keeps only the inner one is not missing anything. Placement, when
+it happens, uses the first path named.
+
+### Placing one is a deliberate act
+
+Placing a config turns a check on, and a check that was not running has not been
+passing. The consequences land wherever that tool looks, which is routinely
+somewhere nobody had in mind when they placed the file.
+
+So nothing places a config as a side effect of doing something else. The
+comparison that reports is separate from the command that places, a person runs
+the second one, and dealing with what the new check finds is part of running it.
+
 ## Generation
 
 The definition an agent runs under is generated from the registry entry plus a
