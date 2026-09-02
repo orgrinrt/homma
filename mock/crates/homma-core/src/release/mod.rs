@@ -7,6 +7,8 @@
 //! registry publish that carry `dev` onto `main`. `DEEPDIVE_release.md` in
 //! this crate's design is the whole of it; each module here is one section.
 
+pub mod gate;
 pub mod git;
 pub mod kind;
+pub mod numbers;
 pub mod sh;
