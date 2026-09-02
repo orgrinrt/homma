@@ -84,6 +84,25 @@ pub trait Forge {
         sha: &str,
         status: &CommitStatus,
     ) -> Result<(), ForgeError>;
+
+    /// Create a release on `tag` with `body` as its notes, which is the
+    /// changelog block verbatim. Both forges take
+    /// `POST /repos/{owner}/{name}/releases`.
+    fn create_release(
+        &self,
+        owner: &str,
+        name: &str,
+        tag: &str,
+        body: &str,
+    ) -> Result<(), ForgeError>;
+}
+
+/// The body both forges take for a release.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ReleaseBody {
+    pub tag_name: String,
+    pub name:     String,
+    pub body:     String,
 }
 
 /// One commit status: the context a ruleset names, its state, and a line

@@ -190,6 +190,10 @@ mod tests {
                 .push((owner.into(), name.into(), sha.into(), status.clone()));
             Ok(())
         }
+
+        fn create_release(&self, _: &str, _: &str, _: &str, _: &str) -> Result<(), ForgeError> {
+            unreachable!()
+        }
     }
 
     #[test]

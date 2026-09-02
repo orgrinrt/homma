@@ -135,6 +135,17 @@ impl Forge for MockForge {
             })
         }
     }
+
+    fn create_release(&self, owner: &str, name: &str, _t: &str, _b: &str) -> Result<(), ForgeError> {
+        if self.repo_exists(owner, name)? {
+            Ok(())
+        } else {
+            Err(ForgeError::RepoNotFound {
+                owner: owner.into(),
+                name:  name.into(),
+            })
+        }
+    }
 }
 
 fn sample_source() -> RepoMetadata {

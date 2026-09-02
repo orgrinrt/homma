@@ -162,6 +162,24 @@ pub fn subjects(cwd: &Path, from: &str, to: &str) -> Result<Vec<Subject>, GitErr
         .collect())
 }
 
+/// Every subject reachable from `to`, newest first, for a repo with no tag
+/// yet, where the first release carries its whole history.
+pub fn subjects_to(cwd: &Path, to: &str) -> Result<Vec<Subject>, GitError> {
+    let out = trimmed(cwd, &["log", "--format=%h%x09%s", to])?;
+    Ok(out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|line| {
+            let (sha, subject) = line.split_once('\t').unwrap_or((line, ""));
+            Subject {
+                sha:     sha.to_string(),
+                subject: subject.to_string(),
+                pr:      pr_number(subject),
+            }
+        })
+        .collect())
+}
+
 /// The number in `Merge pull request #12 from` or a trailing `(#12)`.
 fn pr_number(subject: &str) -> Option<u64> {
     let idx = subject.find('#')?;

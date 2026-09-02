@@ -381,6 +381,10 @@ mod tests {
         ) -> Result<(), ForgeError> {
             unreachable!("verify never posts a status")
         }
+
+        fn create_release(&self, _o: &str, _n: &str, _t: &str, _b: &str) -> Result<(), ForgeError> {
+            unreachable!("verify never releases")
+        }
     }
 
     /// A manifest with one repo on `gh`, plus an unused `cb` profile, so the
