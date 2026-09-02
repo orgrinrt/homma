@@ -393,8 +393,14 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     f.git(&["config", "remote.origin.pushurl", "/nonexistent/nowhere.git"]);
     let err = step_merge_and_tag(&s, f.root(), &plan).unwrap_err();
     assert!(matches!(err, ReleaseError::Git(_)), "{err}");
-    assert_eq!(git::current_branch(f.root()).unwrap().as_deref(), Some("dev"));
+    assert_eq!(
+        git::current_branch(f.root()).unwrap().as_deref(),
+        Some("dev")
+    );
     assert!(git::is_clean(f.root()).unwrap());
-    assert!(!f.git(&["tag", "--list"]).contains("v0.1.1"), "no tag was made");
+    assert!(
+        !f.git(&["tag", "--list"]).contains("v0.1.1"),
+        "no tag was made"
+    );
     let _ = tip;
 }

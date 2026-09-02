@@ -359,7 +359,13 @@ fn a_failed_jsr_publish_reports_its_command_and_log_with_the_token_redacted() {
     std::fs::write(d.path().join("deno.json"), r#"{"name": "@h/x"}"#).unwrap();
     struct Echoing;
     impl Runner for Echoing {
-        fn run(&self, _: &Path, program: &str, args: &[&str], _: &[(&str, &str)]) -> Result<sh::Output, sh::Spawn> {
+        fn run(
+            &self,
+            _: &Path,
+            program: &str,
+            args: &[&str],
+            _: &[(&str, &str)],
+        ) -> Result<sh::Output, sh::Spawn> {
             Ok(sh::Output {
                 program: program.into(),
                 args:    args.iter().map(|a| a.to_string()).collect(),
@@ -369,7 +375,15 @@ fn a_failed_jsr_publish_reports_its_command_and_log_with_the_token_redacted() {
             })
         }
     }
-    let err = publish_jsr(&Echoing, d.path(), "@h/x", &Version::new(0, 1, 0), &token, &served_now).unwrap_err();
+    let err = publish_jsr(
+        &Echoing,
+        d.path(),
+        "@h/x",
+        &Version::new(0, 1, 0),
+        &token,
+        &served_now,
+    )
+    .unwrap_err();
     let text = err.to_string();
     assert!(!text.contains("tok-jsr"), "{text}");
     assert!(text.contains("deno publish --token <token>"), "{text}");
