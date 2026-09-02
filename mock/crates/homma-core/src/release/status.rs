@@ -139,7 +139,12 @@ mod tests {
     #[test]
     fn a_description_never_exceeds_the_forges_cap() {
         let steps = (0 .. 40)
-            .map(|_| outcome(Step::Tests, true, &[("tests", "1000000"), ("passed", "1000000")]))
+            .map(|_| {
+                outcome(Step::Tests, true, &[
+                    ("tests", "1000000"),
+                    ("passed", "1000000"),
+                ])
+            })
             .collect();
         let d = description(&run(steps));
         assert!(d.len() <= 140, "{}", d.len());
@@ -194,7 +199,10 @@ mod tests {
         post(&forge, "o", "r", &r).unwrap();
         let seen = forge.0.borrow();
         assert_eq!(seen.len(), 1);
-        assert_eq!((seen[0].0.as_str(), seen[0].1.as_str(), seen[0].2.as_str()), ("o", "r", "abc"));
+        assert_eq!(
+            (seen[0].0.as_str(), seen[0].1.as_str(), seen[0].2.as_str()),
+            ("o", "r", "abc")
+        );
         assert_eq!(seen[0].3.state, StatusState::Success);
     }
 }

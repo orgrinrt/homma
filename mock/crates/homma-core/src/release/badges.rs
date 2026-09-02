@@ -23,7 +23,10 @@ pub fn files(run: &GateRun, version: &Version) -> Vec<(String, Badge)> {
         Verdict::Green => ("passing", "brightgreen"),
         Verdict::Red => ("failing", "red"),
     };
-    out.push(("gate.json".into(), Badge::new("gate", gate_text, gate_colour)));
+    out.push((
+        "gate.json".into(),
+        Badge::new("gate", gate_text, gate_colour),
+    ));
     for step in &run.steps {
         match step.step {
             Step::Tests => {
@@ -46,16 +49,16 @@ pub fn files(run: &GateRun, version: &Version) -> Vec<(String, Badge)> {
                     } else {
                         "orange"
                     };
-                    out.push(("docs.json".into(), Badge::new("docs", format!("{pct}%"), colour)));
+                    out.push((
+                        "docs.json".into(),
+                        Badge::new("docs", format!("{pct}%"), colour),
+                    ));
                 }
             },
             Step::Deny if !step.skipped => {
                 let n = step.numbers.get("advisories").cloned().unwrap_or_default();
                 let colour = if n == "0" { "brightgreen" } else { "red" };
-                out.push((
-                    "deny.json".into(),
-                    Badge::new("advisories", n, colour),
-                ));
+                out.push(("deny.json".into(), Badge::new("advisories", n, colour)));
             },
             _ => {},
         }
@@ -119,7 +122,12 @@ mod tests {
         ]);
         let f = files(&r, &Version::new(1, 2, 3));
         let names: Vec<&str> = f.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, ["gate.json", "tests.json", "docs.json", "version.json"]);
+        assert_eq!(names, [
+            "gate.json",
+            "tests.json",
+            "docs.json",
+            "version.json"
+        ]);
         assert_eq!(f[0].1.message, "passing");
         assert_eq!(f[1].1.message, "12 of 12");
         assert_eq!(f[1].1.color, "brightgreen");
@@ -138,7 +146,10 @@ mod tests {
         assert_eq!(f[0].1.color, "red");
         assert_eq!(f[1].1.color, "red");
         let deny = f.iter().find(|(n, _)| n == "deny.json").unwrap();
-        assert_eq!((deny.1.message.as_str(), deny.1.color.as_str()), ("2", "red"));
+        assert_eq!(
+            (deny.1.message.as_str(), deny.1.color.as_str()),
+            ("2", "red")
+        );
     }
 
     #[test]
@@ -161,7 +172,10 @@ mod tests {
         std::fs::write(d.path().join("a"), "a").unwrap();
         g(&["-c", "user.name=t", "-c", "user.email=t@t", "add", "."]);
         g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"]);
-        let r = run(vec![outcome(Step::Tests, &[("tests", "1"), ("passed", "1")])]);
+        let r = run(vec![outcome(Step::Tests, &[
+            ("tests", "1"),
+            ("passed", "1"),
+        ])]);
         let f = files(&r, &Version::new(0, 1, 0));
         let sha = write(d.path(), &f).unwrap();
         assert_eq!(git::parent_count(d.path(), &sha).unwrap(), 0);
@@ -172,7 +186,11 @@ mod tests {
         assert_eq!(parsed.message, "1 of 1");
         assert!(on[1].1.contains("\"schemaVersion\": 1"));
         let again = write(d.path(), &f).unwrap();
-        assert_eq!(git::parent_count(d.path(), &again).unwrap(), 0, "a rewrite is still an orphan");
+        assert_eq!(
+            git::parent_count(d.path(), &again).unwrap(),
+            0,
+            "a rewrite is still an orphan"
+        );
         assert!(git::current_branch(d.path()).unwrap().as_deref() == Some("main"));
     }
 }

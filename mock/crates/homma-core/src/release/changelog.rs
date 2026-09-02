@@ -29,8 +29,7 @@ pub fn prefix(subject: &str) -> Option<&str> {
 /// git gave them, which is newest first.
 pub fn block(version: &Version, date: &str, subjects: &[Subject]) -> String {
     let mut out = format!("## {version} ({date})\n");
-    let mut groups: Vec<(&str, Vec<&Subject>)> =
-        GROUPS.iter().map(|g| (*g, Vec::new())).collect();
+    let mut groups: Vec<(&str, Vec<&Subject>)> = GROUPS.iter().map(|g| (*g, Vec::new())).collect();
     let mut other = Vec::new();
     for s in subjects {
         match prefix(&s.subject) {
@@ -97,7 +96,10 @@ pub fn prepend(root: &Path, block: &str) -> std::io::Result<()> {
 pub fn newest_block(text: &str) -> Option<&str> {
     let start = text.find("\n## ")? + 1;
     let rest = &text[start ..];
-    let end = rest[3 ..].find("\n## ").map(|i| i + 3).unwrap_or(rest.len());
+    let end = rest[3 ..]
+        .find("\n## ")
+        .map(|i| i + 3)
+        .unwrap_or(rest.len());
     Some(rest[.. end].trim_end())
 }
 
@@ -150,7 +152,10 @@ mod tests {
         let one = block(&Version::new(0, 1, 0), "d1", &[s("a", "feat: a", None)]);
         prepend(d.path(), &one).unwrap();
         let text = std::fs::read_to_string(d.path().join("CHANGELOG.md")).unwrap();
-        assert_eq!(text, "# Changelog\n\n## 0.1.0 (d1)\n\n### feat\n\n- feat: a `a`\n");
+        assert_eq!(
+            text,
+            "# Changelog\n\n## 0.1.0 (d1)\n\n### feat\n\n- feat: a `a`\n"
+        );
         let two = block(&Version::new(0, 1, 1), "d2", &[s("b", "fix: b", None)]);
         prepend(d.path(), &two).unwrap();
         let text = std::fs::read_to_string(d.path().join("CHANGELOG.md")).unwrap();

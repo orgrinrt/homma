@@ -49,7 +49,12 @@ pub fn read(root: &Path, kind: RepoKind) -> Result<Version, VersionError> {
         },
         (Some(c), _) => Ok(c),
         (None, Some(d)) => Ok(d),
-        (None, None) => Err(VersionError::Manifest("manifest".into(), "no manifest".into())),
+        (None, None) => {
+            Err(VersionError::Manifest(
+                "manifest".into(),
+                "no manifest".into(),
+            ))
+        },
     }
 }
 
@@ -84,22 +89,23 @@ fn cargo_version_item(doc: &mut toml_edit::DocumentMut) -> Option<&mut toml_edit
 
 fn read_cargo(root: &Path) -> Result<Version, VersionError> {
     let text = std::fs::read_to_string(root.join("Cargo.toml"))?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| VersionError::Manifest("Cargo.toml".into(), e.to_string()))?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
+        VersionError::Manifest("Cargo.toml".into(), e.to_string())
+    })?;
     let item = cargo_version_item(&mut doc)
         .and_then(|i| i.as_str())
         .ok_or_else(|| VersionError::Manifest("Cargo.toml".into(), "no version".into()))?;
-    item.parse()
-        .map_err(|e: homma_api::NotAVersion| VersionError::Manifest("Cargo.toml".into(), e.to_string()))
+    item.parse().map_err(|e: homma_api::NotAVersion| {
+        VersionError::Manifest("Cargo.toml".into(), e.to_string())
+    })
 }
 
 fn write_cargo(root: &Path, version: &Version) -> Result<(), VersionError> {
     let path = root.join("Cargo.toml");
     let text = std::fs::read_to_string(&path)?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| VersionError::Manifest("Cargo.toml".into(), e.to_string()))?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
+        VersionError::Manifest("Cargo.toml".into(), e.to_string())
+    })?;
     let item = cargo_version_item(&mut doc)
         .ok_or_else(|| VersionError::Manifest("Cargo.toml".into(), "no version".into()))?;
     let decor = item.as_value().map(|v| v.decor().clone());
@@ -161,9 +167,9 @@ fn read_deno(root: &Path) -> Result<Version, VersionError> {
     let text = std::fs::read_to_string(root.join("deno.json"))?;
     let (a, b) = deno_version_span(&text)
         .ok_or_else(|| VersionError::Manifest("deno.json".into(), "no version".into()))?;
-    text[a .. b]
-        .parse()
-        .map_err(|e: homma_api::NotAVersion| VersionError::Manifest("deno.json".into(), e.to_string()))
+    text[a .. b].parse().map_err(|e: homma_api::NotAVersion| {
+        VersionError::Manifest("deno.json".into(), e.to_string())
+    })
 }
 
 fn write_deno(root: &Path, version: &Version) -> Result<(), VersionError> {
@@ -188,7 +194,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let text = "# top\n[package]\nname = \"x\"   # name\nversion = \"0.1.2\" # v\nedition = \"2024\"\n\n[dependencies]\nserde = \"1\"\n";
         std::fs::write(d.path().join("Cargo.toml"), text).unwrap();
-        assert_eq!(read(d.path(), RepoKind::Crate).unwrap(), Version::new(0, 1, 2));
+        assert_eq!(
+            read(d.path(), RepoKind::Crate).unwrap(),
+            Version::new(0, 1, 2)
+        );
         write(d.path(), RepoKind::Crate, &Version::new(0, 1, 3)).unwrap();
         let after = std::fs::read_to_string(d.path().join("Cargo.toml")).unwrap();
         assert_eq!(after, text.replace("0.1.2", "0.1.3"));
@@ -199,11 +208,17 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let text = "[workspace]\nmembers = [\"a\"]\n\n[workspace.package]\nversion = \"1.0.0\"\n\n[package]\nname = \"root\"\nversion = \"9.9.9\"\n";
         std::fs::write(d.path().join("Cargo.toml"), text).unwrap();
-        assert_eq!(read(d.path(), RepoKind::Crate).unwrap(), Version::new(1, 0, 0));
+        assert_eq!(
+            read(d.path(), RepoKind::Crate).unwrap(),
+            Version::new(1, 0, 0)
+        );
         write(d.path(), RepoKind::Crate, &Version::new(1, 1, 0)).unwrap();
         let after = std::fs::read_to_string(d.path().join("Cargo.toml")).unwrap();
         assert!(after.contains("version = \"1.1.0\""));
-        assert!(after.contains("version = \"9.9.9\""), "the member's own version is untouched");
+        assert!(
+            after.contains("version = \"9.9.9\""),
+            "the member's own version is untouched"
+        );
     }
 
     #[test]
@@ -211,12 +226,24 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let text = "{\n  \"name\": \"@x/y\",\n  \"imports\": { \"z\": \"jsr:@a/b@1\", \"version\": \"nope\" },\n  \"version\":   \"2.3.4\",\n  \"exports\": \"./mod.ts\"\n}\n";
         std::fs::write(d.path().join("deno.json"), text).unwrap();
-        assert_eq!(deno_version_span(text).map(|(a, b)| &text[a .. b]), Some("2.3.4"));
-        assert_eq!(read(d.path(), RepoKind::Deno).unwrap(), Version::new(2, 3, 4));
+        assert_eq!(
+            deno_version_span(text).map(|(a, b)| &text[a .. b]),
+            Some("2.3.4")
+        );
+        assert_eq!(
+            read(d.path(), RepoKind::Deno).unwrap(),
+            Version::new(2, 3, 4)
+        );
         let as_value = "{\"name\": \"version\", \"version\": \"1.0.0\"}";
-        assert_eq!(deno_version_span(as_value).map(|(a, b)| &as_value[a .. b]), Some("1.0.0"));
+        assert_eq!(
+            deno_version_span(as_value).map(|(a, b)| &as_value[a .. b]),
+            Some("1.0.0")
+        );
         let escaped = "{\"desc\": \"a \\\"version\\\" of it\", \"version\": \"1.0.0\"}";
-        assert_eq!(deno_version_span(escaped).map(|(a, b)| &escaped[a .. b]), Some("1.0.0"));
+        assert_eq!(
+            deno_version_span(escaped).map(|(a, b)| &escaped[a .. b]),
+            Some("1.0.0")
+        );
     }
 
     #[test]
@@ -224,7 +251,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let text = "{\n  \"name\": \"@x/y\",\n  \"version\":   \"2.3.4\",\n  \"exports\": \"./mod.ts\"\n}\n";
         std::fs::write(d.path().join("deno.json"), text).unwrap();
-        assert_eq!(read(d.path(), RepoKind::Deno).unwrap(), Version::new(2, 3, 4));
+        assert_eq!(
+            read(d.path(), RepoKind::Deno).unwrap(),
+            Version::new(2, 3, 4)
+        );
         write(d.path(), RepoKind::Deno, &Version::new(3, 0, 0)).unwrap();
         let after = std::fs::read_to_string(d.path().join("deno.json")).unwrap();
         assert_eq!(after, text.replace("2.3.4", "3.0.0"));
@@ -233,19 +263,35 @@ mod tests {
     #[test]
     fn both_manifests_must_agree_and_both_get_written() {
         let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join("Cargo.toml"), "[package]\nname=\"x\"\nversion=\"0.1.0\"\n").unwrap();
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname=\"x\"\nversion=\"0.1.0\"\n",
+        )
+        .unwrap();
         std::fs::write(d.path().join("deno.json"), "{\"version\": \"0.2.0\"}").unwrap();
-        assert!(matches!(read(d.path(), RepoKind::Both), Err(VersionError::Manifest(..))));
+        assert!(matches!(
+            read(d.path(), RepoKind::Both),
+            Err(VersionError::Manifest(..))
+        ));
         write(d.path(), RepoKind::Both, &Version::new(0, 3, 0)).unwrap();
-        assert_eq!(read(d.path(), RepoKind::Both).unwrap(), Version::new(0, 3, 0));
+        assert_eq!(
+            read(d.path(), RepoKind::Both).unwrap(),
+            Version::new(0, 3, 0)
+        );
     }
 
     #[test]
     fn a_manifest_without_a_version_is_an_error() {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
-        assert!(matches!(read(d.path(), RepoKind::Crate), Err(VersionError::Manifest(..))));
+        assert!(matches!(
+            read(d.path(), RepoKind::Crate),
+            Err(VersionError::Manifest(..))
+        ));
         std::fs::write(d.path().join("deno.json"), "{}").unwrap();
-        assert!(matches!(read(d.path(), RepoKind::Deno), Err(VersionError::Manifest(..))));
+        assert!(matches!(
+            read(d.path(), RepoKind::Deno),
+            Err(VersionError::Manifest(..))
+        ));
     }
 }
