@@ -205,6 +205,12 @@ pub fn merge_no_ff(cwd: &Path, from: &str, message: &str) -> Result<String, GitE
     head(cwd)
 }
 
+/// Abort a merge in progress. Fails where none is, which a caller cleaning up
+/// after a failed step ignores.
+pub fn abort_merge(cwd: &Path) -> Result<(), GitError> {
+    git(cwd, &["merge", "--abort"]).map(|_| ())
+}
+
 /// Switch to `branch`.
 pub fn switch(cwd: &Path, branch: &str) -> Result<(), GitError> {
     git(cwd, &["switch", "--quiet", branch]).map(|_| ())

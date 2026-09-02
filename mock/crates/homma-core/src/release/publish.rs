@@ -4,8 +4,9 @@
 //--------------------------------------------------------------------------------------------------
 //! Publishing: one `cargo publish` per member in dependency order, `deno
 //! publish`, and the npm build and publish where the package ships there.
-//! Tokens reach the tools through the environment of the one call and never
-//! the shell that ran homma.
+//! A token reaches its tool through the environment of the one call and never
+//! the shell that ran homma; jsr is the exception, since `deno publish` takes
+//! it on the arguments alone, and there it is kept out of every line printed.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -209,16 +210,14 @@ pub fn publish_jsr(
     served: Served<'_>,
 ) -> Result<(), PublishError> {
     let t = token(Registry::Jsr).map_err(|e| PublishError::NoToken(Registry::Jsr, e))?;
-    let out = runner.run(
-        root,
-        "deno",
-        &["publish", "--allow-dirty", "--token", &t],
-        &[],
-    )?;
+    // `deno publish` takes the token on its arguments and nowhere else, so
+    // this is the one call that cannot keep it in the environment; what it
+    // can do is keep it out of everything printed afterwards
+    let out = runner.run(root, "deno", &["publish", "--token", &t], &[])?;
     if !out.ok() {
         return Err(PublishError::Failed {
-            command: out.command_line(),
-            log:     out.log(),
+            command: out.command_line().replace(&t, "<token>"),
+            log:     out.log().replace(&t, "<token>"),
         });
     }
     wait_until_served(Registry::Jsr, name, version, served)

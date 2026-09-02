@@ -260,12 +260,11 @@ fn jsr_takes_the_token_on_its_arguments_and_npm_builds_then_publishes_from_npm_d
     .unwrap();
     let seen = fake.seen.borrow();
     assert!(
-        seen[0]
-            .0
-            .ends_with("$ deno publish --allow-dirty --token tok-jsr"),
-        "{}",
+        seen[0].0.ends_with("$ deno publish --token tok-jsr"),
+        "the tool takes it on its arguments and nowhere else: {}",
         seen[0].0
     );
+    assert!(!seen[0].0.contains("--allow-dirty"));
     assert!(
         seen[1].0.ends_with("$ deno task build:npm"),
         "{}",
@@ -352,4 +351,27 @@ fn the_npmrc_is_readable_by_its_owner_alone_while_it_exists() {
     .unwrap();
     #[cfg(unix)]
     assert_eq!(*peek.0.borrow(), Some(0o600));
+}
+
+#[test]
+fn a_failed_jsr_publish_reports_its_command_and_log_with_the_token_redacted() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("deno.json"), r#"{"name": "@h/x"}"#).unwrap();
+    struct Echoing;
+    impl Runner for Echoing {
+        fn run(&self, _: &Path, program: &str, args: &[&str], _: &[(&str, &str)]) -> Result<sh::Output, sh::Spawn> {
+            Ok(sh::Output {
+                program: program.into(),
+                args:    args.iter().map(|a| a.to_string()).collect(),
+                status:  Some(1),
+                stdout:  String::new(),
+                stderr:  format!("error: token tok-jsr was refused\n"),
+            })
+        }
+    }
+    let err = publish_jsr(&Echoing, d.path(), "@h/x", &Version::new(0, 1, 0), &token, &served_now).unwrap_err();
+    let text = err.to_string();
+    assert!(!text.contains("tok-jsr"), "{text}");
+    assert!(text.contains("deno publish --token <token>"), "{text}");
+    assert!(text.contains("token <token> was refused"), "{text}");
 }

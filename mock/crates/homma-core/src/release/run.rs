@@ -210,19 +210,33 @@ pub fn step_merge_and_tag(
         git::head(root)?
     } else {
         git::switch(root, setup.release)?;
-        let sha = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.next))?;
-        git::push(root, setup.remote, setup.release, false)?;
-        sha
+        // a failure here hands the tree back to the trunk before it is
+        // reported, so a failed release leaves the branch it borrowed
+        let merged = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.next))
+            .and_then(|sha| git::push(root, setup.remote, setup.release, false).map(|_| sha));
+        match merged {
+            Ok(sha) => sha,
+            Err(e) => {
+                let _ = git::abort_merge(root);
+                let _ = git::switch(root, setup.trunk);
+                return Err(e.into());
+            },
+        }
     };
-    git::tag_annotated(root, &plan.tag, &sha, &plan.tag)?;
-    git::push(
-        root,
-        setup.remote,
-        &format!("refs/tags/{}", plan.tag),
-        false,
-    )?;
+    let tagged = git::tag_annotated(root, &plan.tag, &sha, &plan.tag).and_then(|_| {
+        git::push(
+            root,
+            setup.remote,
+            &format!("refs/tags/{}", plan.tag),
+            false,
+        )
+    });
     if setup.trunk != setup.release {
-        git::switch(root, setup.trunk)?;
+        let back = git::switch(root, setup.trunk);
+        tagged?;
+        back?;
+    } else {
+        tagged?;
     }
     Ok(sha)
 }

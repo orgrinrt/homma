@@ -378,3 +378,23 @@ fn the_bump_refuses_off_the_trunk() {
         Err(ReleaseError::NotOnTrunk(Some(b))) if b == "main"
     ));
 }
+
+#[test]
+fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
+    let f = Fixture::new();
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Fake(RefCell::new(Vec::new()));
+    let forge = Recorder::default();
+    let p = published();
+    let plan = plan::plan(f.root(), "dev", Level::Patch, "d").unwrap();
+    let s = setup(&runner, &forge, &p, "dev");
+    step_bump(&s, f.root(), &plan).unwrap();
+    // the remote refuses the push of main, which is what a ruleset does
+    f.git(&["config", "remote.origin.pushurl", "/nonexistent/nowhere.git"]);
+    let err = step_merge_and_tag(&s, f.root(), &plan).unwrap_err();
+    assert!(matches!(err, ReleaseError::Git(_)), "{err}");
+    assert_eq!(git::current_branch(f.root()).unwrap().as_deref(), Some("dev"));
+    assert!(git::is_clean(f.root()).unwrap());
+    assert!(!f.git(&["tag", "--list"]).contains("v0.1.1"), "no tag was made");
+    let _ = tip;
+}
