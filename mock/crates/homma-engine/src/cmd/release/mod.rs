@@ -24,6 +24,9 @@ use crate::cli::{Cli, HookOp, ReleaseOp};
 use crate::cmd::{Outcome, config_path, load_config};
 use crate::output::{HumanRender, emit};
 
+mod order;
+use order::{release_order, sibling_dependency};
+
 pub mod clock;
 pub mod record;
 
@@ -290,15 +293,6 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: &str, level: Level) -> Result<Outcome
     })
 }
 
-/// The order the repos release in when none is named.
-///
-/// FIXME: name order. The deep dive asks for dependency order across repos,
-/// so a crate lands before the one that depends on it; that needs the
-/// cross-repo graph, which nothing reads yet. The gap is a red test below.
-fn release_order(cfg: &Config) -> Vec<String> {
-    cfg.repos.keys().cloned().collect()
-}
-
 fn run_cmd(
     cli: &Cli,
     cfg: &Config,
@@ -312,6 +306,20 @@ fn run_cmd(
         Some(n) => vec![n.to_string()],
         None => release_order(cfg),
     };
+    // a workspace-wide run goes in name order, and a dependent released
+    // ahead of what it depends on has its tag and forge release pushed before
+    // the publish fails, so a run with such an edge in it is refused outright
+    if repo.is_none() {
+        for name in &names {
+            let (_, _, root) = resolve_repo(cfg, Some(name))?;
+            if let Some(dep) = sibling_dependency(&root, &names) {
+                return Err(anyhow!(
+                    "`{name}` depends on `{dep}`, and a workspace-wide release goes in name order; \
+                     release `{dep}` first, then `{name}`, each by name"
+                ));
+            }
+        }
+    }
     let mut lines = Vec::new();
     let mut ok = true;
     for name in &names {
@@ -421,78 +429,3 @@ fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::*;
-
-    fn git(path: &Path, args: &[&str]) {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(path)
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "git {args:?}: {out:?}");
-    }
-
-    /// A member clone at `root/name` whose manifest names `deps` as git
-    /// dependencies on sibling members.
-    fn member(root: &Path, name: &str, deps: &[&str]) {
-        let path = root.join(name);
-        std::fs::create_dir_all(&path).unwrap();
-        git(&path, &["init", "-q"]);
-        git(&path, &[
-            "remote",
-            "add",
-            "origin",
-            &format!("https://github.com/orgrinrt/{name}.git"),
-        ]);
-        let mut manifest =
-            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
-        for d in deps {
-            manifest.push_str(&format!(
-                "{d} = {{ git = \"https://github.com/orgrinrt/{d}.git\" }}\n"
-            ));
-        }
-        std::fs::write(path.join("Cargo.toml"), manifest).unwrap();
-    }
-
-    #[test]
-    #[ignore = "catalogue: repos release in name order where the deep dive asks for dependency order across repos; tracked by the FIXME on release_order"]
-    fn a_repo_releases_after_the_sibling_it_depends_on_whatever_their_names() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("homma.toml"),
-            "[workspace]\nname = \"t\"\npath = \".\"\n\n[forges.github]\nkind = \"github\"\nbase_url = \"https://github.com\"\napi_url = \"https://api.github.com\"\n",
-        )
-        .unwrap();
-        // `alpha` depends on `zed`, so `zed` lands first, against the
-        // alphabet
-        member(dir.path(), "zed", &[]);
-        member(dir.path(), "alpha", &["zed"]);
-        let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
-        assert_eq!(release_order(&cfg), vec![
-            "zed".to_string(),
-            "alpha".to_string()
-        ]);
-    }
-
-    #[test]
-    fn independent_repos_release_in_name_order() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("homma.toml"),
-            "[workspace]\nname = \"t\"\npath = \".\"\n\n[forges.github]\nkind = \"github\"\nbase_url = \"https://github.com\"\napi_url = \"https://api.github.com\"\n",
-        )
-        .unwrap();
-        member(dir.path(), "zed", &[]);
-        member(dir.path(), "alpha", &[]);
-        let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
-        assert_eq!(release_order(&cfg), vec![
-            "alpha".to_string(),
-            "zed".to_string()
-        ]);
-    }
-}

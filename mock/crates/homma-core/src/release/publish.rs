@@ -253,10 +253,18 @@ pub fn publish_npm(
     };
     let t = token(Registry::Npm).map_err(|e| PublishError::NoToken(Registry::Npm, e))?;
     let npmrc = private_path("homma-npmrc");
+    // a path npm cannot be handed is a refusal, never an empty config name,
+    // which would send it to whatever ambient credential the machine holds
+    let Some(npmrc_str) = npmrc.to_str() else {
+        return Err(PublishError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("the temp path {} is not utf-8", npmrc.display()),
+        )));
+    };
     write_private(&npmrc, &format!("//registry.npmjs.org/:_authToken={t}\n"))?;
     let out = runner.run(&dir, "npm", &["publish", "--access", "public"], &[(
         "NPM_CONFIG_USERCONFIG",
-        npmrc.to_str().unwrap_or_default(),
+        npmrc_str,
     )]);
     let _ = std::fs::remove_file(&npmrc);
     let out = out?;

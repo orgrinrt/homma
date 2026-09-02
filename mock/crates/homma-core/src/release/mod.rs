@@ -15,6 +15,7 @@ pub mod git;
 pub mod hook;
 pub mod kind;
 pub mod numbers;
+pub mod packages;
 pub mod plan;
 pub mod publish;
 pub mod registry;

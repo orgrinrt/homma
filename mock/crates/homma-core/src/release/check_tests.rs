@@ -184,6 +184,49 @@ fn main_past_the_newest_tag_blocks_unless_every_commit_is_a_hotpatch() {
 }
 
 #[test]
+fn a_version_bump_on_main_carries_a_tag_whether_committed_there_or_merged_in() {
+    let f = Fixture::crate_at("0.1.0");
+    f.tag("v0.1.0");
+    // a bump committed straight onto main, untagged
+    f.manifest("0.2.0");
+    f.git(&["add", "Cargo.toml"]);
+    f.git(&["commit", "--quiet", "-m", "chore: release 0.2.0"]);
+    f.git(&["push", "--quiet", "origin", "main"]);
+    let findings = run(&f, &published(&["0.1.0", "0.2.0"]), None);
+    let bumps: Vec<&Finding> = findings.iter().filter(|x| x.id == "tag.bump.tagged").collect();
+    assert_eq!(bumps.len(), 1, "{findings:?}");
+    assert!(bumps[0].message.contains("0.2.0"));
+    assert!(bumps[0].severity.blocks());
+    f.tag("v0.2.0");
+    assert!(!ids(&run(&f, &published(&["0.1.0", "0.2.0"]), None)).contains(&"tag.bump.tagged"));
+    // a bump made on the trunk and merged in: the merge commit is the bump
+    // on main's first-parent walk, and it is the merge that wants the tag
+    f.git(&["switch", "--quiet", "dev"]);
+    f.git(&["merge", "--quiet", "--ff-only", "main"]);
+    f.manifest("0.3.0");
+    f.git(&["add", "Cargo.toml"]);
+    f.git(&["commit", "--quiet", "-m", "chore: release 0.3.0"]);
+    f.git(&["switch", "--quiet", "main"]);
+    f.git(&["merge", "--quiet", "--no-ff", "-m", "release: 0.3.0", "dev"]);
+    f.git(&["push", "--quiet", "origin", "main", "dev"]);
+    let findings = run(&f, &published(&["0.1.0", "0.2.0", "0.3.0"]), None);
+    let bumps: Vec<&Finding> = findings.iter().filter(|x| x.id == "tag.bump.tagged").collect();
+    assert_eq!(bumps.len(), 1, "{findings:?}");
+    let merge = sh::run(f.root(), "git", &["rev-parse", "main"]).unwrap();
+    assert!(bumps[0].message.starts_with(&merge.stdout.trim()[.. 7]));
+    // tagging the bump commit on dev rather than the merge does not clear it
+    let bump_on_dev = sh::run(f.root(), "git", &["rev-parse", "dev"]).unwrap();
+    f.git(&["tag", "-a", "v0.3.0", "-m", "v0.3.0", bump_on_dev.stdout.trim()]);
+    f.git(&["push", "--quiet", "origin", "refs/tags/v0.3.0"]);
+    assert!(ids(&run(&f, &published(&["0.1.0", "0.2.0", "0.3.0"]), None)).contains(&"tag.bump.tagged"));
+    f.git(&["tag", "-d", "v0.3.0"]);
+    f.git(&["push", "--quiet", "--delete", "origin", "refs/tags/v0.3.0"]);
+    f.tag("v0.3.0");
+    let findings = run(&f, &published(&["0.1.0", "0.2.0", "0.3.0"]), None);
+    assert!(!ids(&findings).contains(&"tag.bump.tagged"), "{findings:?}");
+}
+
+#[test]
 fn the_manifest_at_a_tag_must_equal_the_tag() {
     let f = Fixture::crate_at("0.1.0");
     f.tag("v0.2.0");

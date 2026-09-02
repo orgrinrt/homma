@@ -180,6 +180,26 @@ pub fn subjects_to(cwd: &Path, to: &str) -> Result<Vec<Subject>, GitError> {
         .collect())
 }
 
+/// The shas on `rev`'s first-parent walk whose diff against their first
+/// parent touches `path`, newest first. A merge counts where the merge
+/// brought the change in, which is how a bump made on the trunk shows on
+/// the release line.
+pub fn first_parent_touching(cwd: &Path, rev: &str, path: &str) -> Result<Vec<String>, GitError> {
+    let out = trimmed(cwd, &[
+        "log",
+        "--first-parent",
+        "--format=%H",
+        rev,
+        "--",
+        path,
+    ])?;
+    Ok(out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
 /// The number in `Merge pull request #12 from` or a trailing `(#12)`.
 fn pr_number(subject: &str) -> Option<u64> {
     let idx = subject.find('#')?;
