@@ -29,9 +29,9 @@ pub fn cargo_tests(log: &str) -> Option<(u64, u64)> {
                 w if w.starts_with("passed") => {
                     passed += n;
                     total += n;
-                }
+                },
                 w if w.starts_with("failed") || w.starts_with("ignored") => total += n,
-                _ => {}
+                _ => {},
             }
         }
     }
@@ -57,7 +57,7 @@ pub fn deno_tests(log: &str) -> Option<(u64, u64)> {
             match word {
                 "passed" => passed = n,
                 "failed" => failed = n,
-                _ => {}
+                _ => {},
             }
         }
         return Some((passed + failed, passed));
@@ -101,7 +101,8 @@ mod tests {
 
     #[test]
     fn a_failed_cargo_run_counts_the_failures_in_the_total() {
-        let log = "test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out\n";
+        let log =
+            "test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out\n";
         assert_eq!(cargo_tests(log), Some((6, 4)));
     }
 
@@ -114,9 +115,18 @@ mod tests {
 
     #[test]
     fn deno_counts_come_off_its_summary_line_in_both_shapes() {
-        assert_eq!(deno_tests("ok | 12 passed | 0 failed (300ms)\n"), Some((12, 12)));
-        assert_eq!(deno_tests("FAILED | 9 passed | 3 failed (1s)\n"), Some((12, 9)));
-        assert_eq!(deno_tests("ok | 2 passed (1 step) | 0 failed (5ms)\n"), Some((2, 2)));
+        assert_eq!(
+            deno_tests("ok | 12 passed | 0 failed (300ms)\n"),
+            Some((12, 12))
+        );
+        assert_eq!(
+            deno_tests("FAILED | 9 passed | 3 failed (1s)\n"),
+            Some((12, 9))
+        );
+        assert_eq!(
+            deno_tests("ok | 2 passed (1 step) | 0 failed (5ms)\n"),
+            Some((2, 2))
+        );
     }
 
     #[test]

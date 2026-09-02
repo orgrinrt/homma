@@ -57,7 +57,12 @@ pub enum GateError {
 impl fmt::Display for GateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GateError::Dirty => write!(f, "the checkout has uncommitted changes; commit or stash first"),
+            GateError::Dirty => {
+                write!(
+                    f,
+                    "the checkout has uncommitted changes; commit or stash first"
+                )
+            },
             GateError::NoManifest(e) => write!(f, "{e}"),
             GateError::Git(e) => write!(f, "{e}"),
             GateError::Spawn(e) => write!(f, "{e}"),
@@ -100,7 +105,8 @@ pub fn run_gate(
     }
     let wall = started.elapsed().as_secs_f64();
     if let Some(last) = steps.last_mut() {
-        last.numbers.insert("wall_seconds".into(), format!("{wall:.1}"));
+        last.numbers
+            .insert("wall_seconds".into(), format!("{wall:.1}"));
     }
     let verdict = GateRun::verdict_of(&steps);
     Ok(GateRun {
@@ -182,27 +188,36 @@ fn measure(outcome: &mut StepOutcome) {
             if cargo.is_some() || deno.is_some() {
                 let (t1, p1) = cargo.unwrap_or((0, 0));
                 let (t2, p2) = deno.unwrap_or((0, 0));
-                outcome.numbers.insert("tests".into(), (t1 + t2).to_string());
-                outcome.numbers.insert("passed".into(), (p1 + p2).to_string());
+                outcome
+                    .numbers
+                    .insert("tests".into(), (t1 + t2).to_string());
+                outcome
+                    .numbers
+                    .insert("passed".into(), (p1 + p2).to_string());
             }
-        }
+        },
         Step::Docs => {
             if let Some(pct) = numbers::doc_coverage(&outcome.log) {
                 outcome.numbers.insert("documented_percent".into(), pct);
             }
-        }
+        },
         Step::Deny => {
-            outcome
-                .numbers
-                .insert("advisories".into(), numbers::deny_findings(&outcome.log).to_string());
-        }
-        _ => {}
+            outcome.numbers.insert(
+                "advisories".into(),
+                numbers::deny_findings(&outcome.log).to_string(),
+            );
+        },
+        _ => {},
     }
 }
 
 /// What a step runs on this repo, per the design's table. An empty list is a
 /// step nothing asked for.
-fn calls_for(root: &Path, repo_kind: RepoKind, step: Step) -> Result<Vec<Call<'static>>, GateError> {
+fn calls_for(
+    root: &Path,
+    repo_kind: RepoKind,
+    step: Step,
+) -> Result<Vec<Call<'static>>, GateError> {
     let mut calls = Vec::new();
     let crate_ = repo_kind.has_crate();
     let deno = repo_kind.has_deno();
@@ -214,7 +229,7 @@ fn calls_for(root: &Path, repo_kind: RepoKind, step: Step) -> Result<Vec<Call<'s
             if deno {
                 calls.push(Call::new("deno", &["fmt", "--check"]));
             }
-        }
+        },
         Step::Lint => {
             if crate_ {
                 calls.push(Call::new("cargo", &[
@@ -234,7 +249,7 @@ fn calls_for(root: &Path, repo_kind: RepoKind, step: Step) -> Result<Vec<Call<'s
                     calls.push(c);
                 }
             }
-        }
+        },
         Step::Tests => {
             if crate_ {
                 calls.push(Call::new("cargo", &["test", "--all-features"]));
@@ -259,12 +274,12 @@ fn calls_for(root: &Path, repo_kind: RepoKind, step: Step) -> Result<Vec<Call<'s
                     calls.push(Call::new("deno", &["test"]));
                 }
             }
-        }
+        },
         Step::Deny => {
             if crate_ && root.join("deny.toml").is_file() {
                 calls.push(Call::new("cargo", &["deny", "check"]));
             }
-        }
+        },
         Step::Docs => {
             if crate_ {
                 calls.push(
@@ -275,12 +290,12 @@ fn calls_for(root: &Path, repo_kind: RepoKind, step: Step) -> Result<Vec<Call<'s
             if deno {
                 calls.push(Call::new("deno", &["doc", "--lint"]));
             }
-        }
+        },
         Step::Notices => {
             if root.join("ante.toml").is_file() {
                 calls.push(Call::new("ante", &["check"]));
             }
-        }
+        },
     }
     Ok(calls)
 }
@@ -315,8 +330,8 @@ pub fn feature_sets(root: &Path) -> Result<Vec<Vec<String>>, GateError> {
                 None => {
                     return Err(GateError::Manifest(
                         "feature_sets: a feature name is a string".into(),
-                    ))
-                }
+                    ));
+                },
             }
         }
         out.push(names);
@@ -337,8 +352,10 @@ pub fn deno_exports(root: &Path) -> Result<Vec<String>, GateError> {
     Ok(match doc.get("exports") {
         Some(serde_json::Value::String(s)) => vec![s.clone()],
         Some(serde_json::Value::Object(map)) => {
-            map.values().filter_map(|v| v.as_str().map(str::to_string)).collect()
-        }
+            map.values()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        },
         _ => Vec::new(),
     })
 }
@@ -349,228 +366,5 @@ fn deno_has_task(root: &Path, task: &str) -> Result<bool, GateError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::cell::RefCell;
-
-    use homma_api::Verdict;
-
-    use super::*;
-
-    /// Answers each command line from a table and records what was asked.
-    struct Fake {
-        replies: Vec<(&'static str, i32, &'static str)>,
-        seen:    RefCell<Vec<String>>,
-    }
-
-    impl Fake {
-        fn new(replies: Vec<(&'static str, i32, &'static str)>) -> Self {
-            Self {
-                replies,
-                seen: RefCell::new(Vec::new()),
-            }
-        }
-    }
-
-    impl Runner for Fake {
-        fn run(
-            &self,
-            _cwd: &Path,
-            program: &str,
-            args: &[&str],
-            _env: &[(&str, &str)],
-        ) -> Result<sh::Output, sh::Spawn> {
-            let line = format!("{program} {}", args.join(" "));
-            self.seen.borrow_mut().push(line.clone());
-            let (status, stdout) = self
-                .replies
-                .iter()
-                .find(|(prefix, _, _)| line.starts_with(prefix))
-                .map(|(_, s, o)| (*s, *o))
-                .unwrap_or((0, ""));
-            Ok(sh::Output {
-                program: program.into(),
-                args:    args.iter().map(|a| a.to_string()).collect(),
-                status:  Some(status),
-                stdout:  stdout.into(),
-                stderr:  String::new(),
-            })
-        }
-    }
-
-    fn crate_root(manifest: &str) -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join("Cargo.toml"), manifest).unwrap();
-        d
-    }
-
-    fn git_repo_with(files: &[(&str, &str)]) -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
-        for (name, body) in files {
-            std::fs::write(d.path().join(name), body).unwrap();
-        }
-        let run = |args: &[&str]| {
-            let out = sh::run(d.path(), "git", args).unwrap();
-            assert!(out.ok(), "{}", out.log());
-        };
-        run(&["init", "-q", "-b", "main"]);
-        run(&["-c", "user.name=t", "-c", "user.email=t@t", "add", "."]);
-        run(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"]);
-        d
-    }
-
-    #[test]
-    fn a_crate_without_feature_sets_is_tested_with_all_and_with_none() {
-        let d = crate_root("[package]\nname = \"x\"\nversion = \"0.1.0\"\n");
-        let fake = Fake::new(vec![("cargo test", 0, "test result: ok. 2 passed; 0 failed; 0 ignored\n")]);
-        let out = run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
-        assert!(out.passed && !out.skipped);
-        assert_eq!(fake.seen.borrow().as_slice(), &[
-            "cargo test --all-features",
-            "cargo test --no-default-features"
-        ]);
-        assert_eq!(out.numbers["tests"], "4");
-        assert_eq!(out.numbers["passed"], "4");
-    }
-
-    #[test]
-    fn feature_sets_from_the_manifest_each_get_a_run() {
-        let d = crate_root(
-            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[], [\"a\"], [\"a\", \"b\"]]\n",
-        );
-        assert_eq!(feature_sets(d.path()).unwrap(), vec![
-            vec![],
-            vec!["a".to_string()],
-            vec!["a".to_string(), "b".to_string()]
-        ]);
-        let fake = Fake::new(vec![]);
-        run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
-        assert_eq!(fake.seen.borrow().as_slice(), &[
-            "cargo test --all-features",
-            "cargo test --no-default-features",
-            "cargo test --no-default-features --features a",
-            "cargo test --no-default-features --features a,b"
-        ]);
-    }
-
-    #[test]
-    fn a_malformed_feature_set_is_a_manifest_error_not_a_skip() {
-        let d = crate_root(
-            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [\"a\"]\n",
-        );
-        assert!(matches!(feature_sets(d.path()), Err(GateError::Manifest(_))));
-    }
-
-    #[test]
-    fn a_failing_call_stops_the_step_and_turns_a_blocking_step_red() {
-        let d = crate_root("[package]\nname = \"x\"\nversion = \"0.1.0\"\n");
-        let fake = Fake::new(vec![("cargo test --all-features", 101, "test result: FAILED. 1 passed; 1 failed; 0 ignored\n")]);
-        let out = run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
-        assert!(!out.passed);
-        assert!(out.is_red());
-        assert_eq!(fake.seen.borrow().len(), 1);
-        assert!(out.log.starts_with("$ cargo test --all-features\n"));
-        assert_eq!(out.numbers["passed"], "1");
-    }
-
-    #[test]
-    fn docs_reports_its_fraction_and_never_blocks() {
-        let d = crate_root("[package]\nname = \"x\"\nversion = \"0.1.0\"\n");
-        let fake = Fake::new(vec![("cargo doc", 1, "| Total | 3 | 75.0% | 0 |\n")]);
-        let out = run_step(&fake, d.path(), RepoKind::Crate, Step::Docs).unwrap();
-        assert!(!out.passed);
-        assert!(!out.is_red());
-        assert_eq!(out.numbers["documented_percent"], "75.0");
-    }
-
-    #[test]
-    fn deny_and_notices_run_only_when_their_config_exists() {
-        let d = crate_root("[package]\nname = \"x\"\nversion = \"0.1.0\"\n");
-        let fake = Fake::new(vec![]);
-        assert!(run_step(&fake, d.path(), RepoKind::Crate, Step::Deny).unwrap().skipped);
-        assert!(run_step(&fake, d.path(), RepoKind::Crate, Step::Notices).unwrap().skipped);
-        std::fs::write(d.path().join("deny.toml"), "").unwrap();
-        std::fs::write(d.path().join("ante.toml"), "").unwrap();
-        let fake = Fake::new(vec![("cargo deny", 1, "error[vulnerability]: x\n")]);
-        let deny = run_step(&fake, d.path(), RepoKind::Crate, Step::Deny).unwrap();
-        assert!(deny.is_red());
-        assert_eq!(deny.numbers["advisories"], "1");
-        let notices = run_step(&fake, d.path(), RepoKind::Crate, Step::Notices).unwrap();
-        assert!(notices.passed && !notices.skipped);
-        assert_eq!(fake.seen.borrow().as_slice(), &["cargo deny check", "ante check"]);
-    }
-
-    #[test]
-    fn a_deno_package_lints_then_checks_every_export_and_tests_through_its_task() {
-        let d = tempfile::tempdir().unwrap();
-        std::fs::write(
-            d.path().join("deno.json"),
-            r#"{"exports": {".": "./mod.ts", "./x": "./x.ts"}, "tasks": {"test": "deno test -A"}}"#,
-        )
-        .unwrap();
-        let fake = Fake::new(vec![("deno task test", 0, "ok | 3 passed | 0 failed (1ms)\n")]);
-        let lint = run_step(&fake, d.path(), RepoKind::Deno, Step::Lint).unwrap();
-        assert!(lint.passed);
-        let tests = run_step(&fake, d.path(), RepoKind::Deno, Step::Tests).unwrap();
-        assert_eq!(tests.numbers["tests"], "3");
-        let seen = fake.seen.borrow();
-        assert_eq!(seen[0], "deno lint");
-        assert!(seen[1..3].contains(&"deno check ./mod.ts".to_string()));
-        assert!(seen[1..3].contains(&"deno check ./x.ts".to_string()));
-        assert_eq!(seen[3], "deno task test");
-    }
-
-    #[test]
-    fn a_deno_package_without_a_test_task_runs_deno_test_and_a_string_export_is_one_check() {
-        let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join("deno.json"), r#"{"exports": "./mod.ts"}"#).unwrap();
-        assert_eq!(deno_exports(d.path()).unwrap(), vec!["./mod.ts"]);
-        let fake = Fake::new(vec![]);
-        run_step(&fake, d.path(), RepoKind::Deno, Step::Tests).unwrap();
-        assert_eq!(fake.seen.borrow().as_slice(), &["deno test"]);
-    }
-
-    #[test]
-    fn a_repo_that_is_both_runs_both_halves_of_a_step() {
-        let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join("Cargo.toml"), "[package]\nname=\"x\"\nversion=\"0.1.0\"\n").unwrap();
-        std::fs::write(d.path().join("deno.json"), "{}").unwrap();
-        let fake = Fake::new(vec![]);
-        run_step(&fake, d.path(), RepoKind::Both, Step::Format).unwrap();
-        assert_eq!(fake.seen.borrow().as_slice(), &["cargo fmt --check", "deno fmt --check"]);
-    }
-
-    #[test]
-    fn the_whole_gate_refuses_a_dirty_tree_and_runs_every_step_on_a_clean_one() {
-        let d = git_repo_with(&[("Cargo.toml", "[package]\nname=\"x\"\nversion=\"0.1.0\"\n")]);
-        let fake = Fake::new(vec![("cargo test", 0, "test result: ok. 1 passed; 0 failed; 0 ignored\n")]);
-        let run = run_gate(&fake, d.path(), "x", "2026-09-02T20:00:00Z").unwrap();
-        assert_eq!(run.verdict, Verdict::Green);
-        assert_eq!(run.steps.len(), Step::ALL.len());
-        assert_eq!(run.sha, git::head(d.path()).unwrap());
-        assert!(run.steps.last().unwrap().numbers.contains_key("wall_seconds"));
-        assert!(run.steps.iter().any(|s| s.step == Step::Deny && s.skipped));
-        std::fs::write(d.path().join("Cargo.toml"), "changed").unwrap();
-        assert!(matches!(
-            run_gate(&fake, d.path(), "x", "2026-09-02T20:00:00Z"),
-            Err(GateError::Dirty)
-        ));
-    }
-
-    #[test]
-    fn one_red_blocking_step_makes_the_run_red_while_a_failing_docs_step_does_not() {
-        let d = git_repo_with(&[("Cargo.toml", "[package]\nname=\"x\"\nversion=\"0.1.0\"\n")]);
-        let fake = Fake::new(vec![("cargo doc", 1, "")]);
-        assert_eq!(run_gate(&fake, d.path(), "x", "t").unwrap().verdict, Verdict::Green);
-        let fake = Fake::new(vec![("cargo fmt", 1, "Diff in src/lib.rs\n")]);
-        let run = run_gate(&fake, d.path(), "x", "t").unwrap();
-        assert_eq!(run.verdict, Verdict::Red);
-        assert!(run.steps[0].log.contains("Diff in src/lib.rs"));
-    }
-
-    #[test]
-    fn a_tree_with_no_manifest_is_an_error_not_an_empty_green() {
-        let d = git_repo_with(&[("README.md", "hi")]);
-        let fake = Fake::new(vec![]);
-        assert!(matches!(run_gate(&fake, d.path(), "x", "t"), Err(GateError::NoManifest(_))));
-    }
-}
+#[path = "gate_tests.rs"]
+mod tests;

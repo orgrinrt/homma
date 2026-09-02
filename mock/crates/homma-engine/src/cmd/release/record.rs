@@ -53,10 +53,26 @@ mod tests {
     fn the_newest_run_on_the_exact_sha_comes_back_and_another_sha_does_not() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path());
-        append(&store, &run("x", "aaa", "2026-09-02T20:00:00Z", Verdict::Red)).unwrap();
-        append(&store, &run("x", "aaa", "2026-09-02T21:00:00Z", Verdict::Green)).unwrap();
-        append(&store, &run("x", "bbb", "2026-09-02T22:00:00Z", Verdict::Green)).unwrap();
-        append(&store, &run("y", "aaa", "2026-09-02T23:00:00Z", Verdict::Green)).unwrap();
+        append(
+            &store,
+            &run("x", "aaa", "2026-09-02T20:00:00Z", Verdict::Red),
+        )
+        .unwrap();
+        append(
+            &store,
+            &run("x", "aaa", "2026-09-02T21:00:00Z", Verdict::Green),
+        )
+        .unwrap();
+        append(
+            &store,
+            &run("x", "bbb", "2026-09-02T22:00:00Z", Verdict::Green),
+        )
+        .unwrap();
+        append(
+            &store,
+            &run("y", "aaa", "2026-09-02T23:00:00Z", Verdict::Green),
+        )
+        .unwrap();
         let got = newest_for(&store, "x", "aaa").unwrap().unwrap();
         assert_eq!(got.ran_at, "2026-09-02T21:00:00Z");
         assert_eq!(got.verdict, Verdict::Green);

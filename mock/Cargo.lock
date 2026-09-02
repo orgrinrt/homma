@@ -1620,6 +1620,7 @@ dependencies = [
  "homma-api",
  "homma-core",
  "homma-org",
+ "homma-store",
  "predicates",
  "serde",
  "serde_json",
