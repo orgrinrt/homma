@@ -71,6 +71,14 @@ pub struct Config {
     #[serde(default)]
     pub auth: AuthConfig,
 
+    /// `[registries.<key>]`: the package registries a release publishes to,
+    /// keyed `crates-io`, `jsr` and `npm`, each with the same two credential
+    /// fields a forge has. The three exist whether or not the manifest names
+    /// them, so the inherited `[auth]` command reaches them the way it reaches
+    /// a forge, with `{forge}` standing for the registry key.
+    #[serde(default)]
+    pub registries: BTreeMap<String, RegistryConfig>,
+
     /// `[status]`: the workspace tools whose output `homma status` carries.
     ///
     /// See [`crate::inject`], which holds the shape and the runner both. Here
@@ -307,6 +315,29 @@ impl Config {
             }
             forge.token_cmd = Some(argv);
         }
+        for (key, host) in RegistryConfig::KNOWN {
+            self.registries.entry(key.to_string()).or_default();
+            let reg = self.registries.get_mut(*key).expect("just inserted");
+            let Some(argv) = reg.token_cmd.take().or_else(|| inherited.clone()) else {
+                continue;
+            };
+            let mut argv: Vec<String> = argv
+                .into_iter()
+                .map(|a| a.replace("{forge}", key).replace("{host}", host))
+                .collect();
+            if let Some(first) = argv.first_mut() {
+                let p = Path::new(first.as_str());
+                if p.is_relative() && p.components().count() > 1 {
+                    *first = normalise(&config_dir.join(p)).display().to_string();
+                }
+            }
+            reg.token_cmd = Some(argv);
+        }
+    }
+
+    /// Look up a registry by its key, `crates-io`, `jsr` or `npm`.
+    pub fn registry(&self, key: &str) -> Option<&RegistryConfig> {
+        self.registries.get(key)
     }
 
     /// Look up a repo by name.
@@ -421,6 +452,28 @@ pub struct ForgeConfig {
     /// separately.
     #[serde(default)]
     pub token_cmd: Option<Vec<String>>,
+}
+
+/// `[registries.<key>]` entry: where a package registry's publish token
+/// comes from, the same two fields as a forge and resolved the same way.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegistryConfig {
+    #[serde(default)]
+    pub token_env: Option<String>,
+    /// Inherited from [`AuthConfig::token_cmd`] when unset, with `{forge}`
+    /// replaced by the registry key and `{host}` by its host.
+    #[serde(default)]
+    pub token_cmd: Option<Vec<String>>,
+}
+
+impl RegistryConfig {
+    /// The registries a release knows, with the host each is reached at.
+    pub const KNOWN: &'static [(&'static str, &'static str)] = &[
+        ("crates-io", "crates.io"),
+        ("jsr", "jsr.io"),
+        ("npm", "registry.npmjs.org"),
+    ];
 }
 
 /// `[auth]`: where a forge credential comes from when the environment holds

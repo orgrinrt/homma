@@ -251,7 +251,7 @@ pub fn publish_npm(
     };
     let t = token(Registry::Npm).map_err(|e| PublishError::NoToken(Registry::Npm, e))?;
     let npmrc = std::env::temp_dir().join(format!("homma-npmrc-{}", std::process::id()));
-    std::fs::write(&npmrc, format!("//registry.npmjs.org/:_authToken={t}\n"))?;
+    write_private(&npmrc, &format!("//registry.npmjs.org/:_authToken={t}\n"))?;
     let out = runner.run(&dir, "npm", &["publish", "--access", "public"], &[(
         "NPM_CONFIG_USERCONFIG",
         npmrc.to_str().unwrap_or_default(),
@@ -265,6 +265,20 @@ pub fn publish_npm(
         });
     }
     wait_until_served(Registry::Npm, name, version, served)
+}
+
+/// Write a file only its owner can read, created with that mode rather than
+/// chmodded after, so there is no moment it is readable by anyone else.
+fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600);
+    }
+    open.open(path)?.write_all(text.as_bytes())
 }
 
 fn has_deno_task(root: &Path, task: &str) -> bool {

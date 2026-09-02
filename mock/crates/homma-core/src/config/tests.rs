@@ -49,6 +49,31 @@ api_url = "https://codeberg.org/api/v1"
     }
 
     #[test]
+    fn the_three_registries_exist_and_take_the_inherited_command_with_their_own_key() {
+        let c = cfg(TWO_FORGES);
+        for (key, host) in RegistryConfig::KNOWN {
+            let reg = c.registry(key).unwrap_or_else(|| panic!("{key} is missing"));
+            let argv = reg.token_cmd.as_ref().unwrap();
+            assert_eq!(argv[0], "/ws/.shared/scripts/release/auth");
+            assert_eq!(argv[2], *key);
+            assert!(!argv.iter().any(|a| a.contains("{host}") || a.contains(host)));
+            assert_eq!(reg.token_env, None);
+        }
+    }
+
+    #[test]
+    fn a_registrys_own_fields_are_kept_and_a_wrong_field_is_refused() {
+        let c = cfg(&format!(
+            "{TWO_FORGES}\n[registries.npm]\ntoken_env = \"NPM_TOKEN\"\ntoken_cmd = [\"op\", \"read\", \"{{forge}}\", \"{{host}}\"]\n"
+        ));
+        let npm = c.registry("npm").unwrap();
+        assert_eq!(npm.token_env.as_deref(), Some("NPM_TOKEN"));
+        assert_eq!(npm.token_cmd.as_ref().unwrap(), &["op", "read", "npm", "registry.npmjs.org"]);
+        assert_eq!(c.registry("jsr").unwrap().token_cmd.as_ref().unwrap()[2], "jsr");
+        assert!(Config::parse(&format!("{TWO_FORGES}\n[registries.npm]\ntoken = \"x\"\n")).is_err());
+    }
+
+    #[test]
     fn a_relative_program_path_is_anchored_to_the_workspace_root() {
         // Not to the working directory. `homma` is meant to run from inside a
         // member clone, where a path relative to cwd names nothing.

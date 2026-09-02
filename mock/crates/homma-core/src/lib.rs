@@ -27,6 +27,7 @@ pub use config::{
     Defaults,
     ForgeConfig,
     ForgeKind,
+    RegistryConfig,
     RepoConfig,
     WorkspaceConfig,
 };

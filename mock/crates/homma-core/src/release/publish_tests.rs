@@ -303,3 +303,28 @@ fn npm_without_a_build_task_or_an_npm_dir_publishes_from_the_root() {
     assert!(lines[0].contains("$ npm publish"));
     assert!(!lines[0].starts_with("npm $"));
 }
+
+#[test]
+fn the_npmrc_is_readable_by_its_owner_alone_while_it_exists() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("deno.json"), r#"{"name": "@h/x"}"#).unwrap();
+    std::fs::write(d.path().join("package.json"), "{}").unwrap();
+    struct Peek(RefCell<Option<u32>>);
+    impl Runner for Peek {
+        fn run(&self, _: &Path, program: &str, args: &[&str], env: &[(&str, &str)]) -> Result<sh::Output, sh::Spawn> {
+            let path = env.iter().find(|(k, _)| *k == "NPM_CONFIG_USERCONFIG").map(|(_, v)| *v).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                *self.0.borrow_mut() = Some(std::fs::metadata(path).unwrap().permissions().mode() & 0o777);
+            }
+            let text = std::fs::read_to_string(path).unwrap();
+            assert_eq!(text, "//registry.npmjs.org/:_authToken=tok-npm\n");
+            Ok(sh::Output { program: program.into(), args: args.iter().map(|a| a.to_string()).collect(), status: Some(0), stdout: String::new(), stderr: String::new() })
+        }
+    }
+    let peek = Peek(RefCell::new(None));
+    publish_npm(&peek, d.path(), "x", &Version::new(0, 1, 0), &token, &served_now).unwrap();
+    #[cfg(unix)]
+    assert_eq!(*peek.0.borrow(), Some(0o600));
+}
