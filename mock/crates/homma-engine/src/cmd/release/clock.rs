@@ -69,7 +69,10 @@ mod tests {
         let n = now();
         assert_eq!(t.len(), 10);
         assert_eq!(n.len(), 20);
-        assert!(n.starts_with(&t) || n.starts_with(&today()), "{n} against {t}");
+        assert!(
+            n.starts_with(&t) || n.starts_with(&today()),
+            "{n} against {t}"
+        );
         assert!(n.ends_with('Z'));
         assert_eq!(&n[10 .. 11], "T");
     }

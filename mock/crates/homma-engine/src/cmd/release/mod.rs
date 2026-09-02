@@ -61,8 +61,12 @@ fn store(cli: &Cli) -> Store {
 
 /// The repo named, or the one the working directory is inside, with its
 /// root made absolute against the workspace.
-fn resolve_repo<'a>(cfg: &'a Config, name: Option<&str>) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
-    let root_of = |r: &RepoConfig| crate::cmd::util::resolve_local_path(&cfg.workspace.path, &r.local_path);
+fn resolve_repo<'a>(
+    cfg: &'a Config,
+    name: Option<&str>,
+) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
+    let root_of =
+        |r: &RepoConfig| crate::cmd::util::resolve_local_path(&cfg.workspace.path, &r.local_path);
     if let Some(n) = name {
         return cfg
             .repos
@@ -80,7 +84,9 @@ fn resolve_repo<'a>(cfg: &'a Config, name: Option<&str>) -> Result<(&'a str, &'a
             here.starts_with(&p)
         })
         .max_by_key(|(_, _, root)| root.components().count())
-        .ok_or_else(|| anyhow!("the working directory is not inside a workspace repository; name one"))
+        .ok_or_else(|| {
+            anyhow!("the working directory is not inside a workspace repository; name one")
+        })
 }
 
 /// The trunk and the release line for this repo: the workspace's working
@@ -134,7 +140,16 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
             sha,
             hook,
             post,
-        } => gate_cmd(cli, &cfg, repo.as_deref(), sha.as_deref(), *hook, post.as_deref()),
+        } => {
+            gate_cmd(
+                cli,
+                &cfg,
+                repo.as_deref(),
+                sha.as_deref(),
+                *hook,
+                post.as_deref(),
+            )
+        },
         ReleaseOp::Plan {
             repo,
             level,
@@ -178,7 +193,14 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     } else {
         findings
             .iter()
-            .map(|f| format!("{:<5} {:<22} {}", format!("{:?}", f.severity).to_ascii_lowercase(), f.id, f.message))
+            .map(|f| {
+                format!(
+                    "{:<5} {:<22} {}",
+                    format!("{:?}", f.severity).to_ascii_lowercase(),
+                    f.id,
+                    f.message
+                )
+            })
             .collect()
     };
     finish(cli, Report {
@@ -206,19 +228,28 @@ fn gate_cmd(
             .with_context(|| format!("posting the status on {sha}"))?;
         return finish(cli, Report {
             ok:    true,
-            lines: vec![format!("posted {} on {sha}: {}", status::CONTEXT, status::description(&run))],
+            lines: vec![format!(
+                "posted {} on {sha}: {}",
+                status::CONTEXT,
+                status::description(&run)
+            )],
         });
     }
     let head = homma_core::release::git::head(root)?;
     if hook && !pushing_head(&head)? {
         return finish(cli, Report {
             ok:    true,
-            lines: vec![format!("{} is not among the refs being pushed; nothing to gate", &head[.. 7])],
+            lines: vec![format!(
+                "{} is not among the refs being pushed; nothing to gate",
+                &head[.. 7]
+            )],
         });
     }
     if let Some(want) = sha {
         if !head.starts_with(want) {
-            return Err(anyhow!("the checkout is at {head}, not {want}; the gate measures the tree it is given"));
+            return Err(anyhow!(
+                "the checkout is at {head}, not {want}; the gate measures the tree it is given"
+            ));
         }
     }
     let run = gate::run_gate(&Real, root, name, &clock::now())?;
@@ -259,7 +290,13 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: &str, level: Level) -> Result<Outcome
     })
 }
 
-fn run_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level, dry_run: bool) -> Result<Outcome> {
+fn run_cmd(
+    cli: &Cli,
+    cfg: &Config,
+    repo: Option<&str>,
+    level: Level,
+    dry_run: bool,
+) -> Result<Outcome> {
     let store = store(cli);
     let token = token_source(cfg);
     let names: Vec<String> = match repo {
@@ -332,16 +369,30 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     let root = &root;
     let store = store(cli);
     let tip = homma_core::release::git::sha(root, &cfg.defaults.public_branch)?;
-    let run: GateRun = record::newest_for(&store, name, &tip)?
-        .ok_or_else(|| anyhow!("no gate run recorded on the tip of `{}`", cfg.defaults.public_branch))?;
+    let run: GateRun = record::newest_for(&store, name, &tip)?.ok_or_else(|| {
+        anyhow!(
+            "no gate run recorded on the tip of `{}`",
+            cfg.defaults.public_branch
+        )
+    })?;
     let kind = homma_core::release::kind::detect(root)?;
     let v = version::read(root, kind)?;
     let files = badges::files(&run, &v);
     let sha = badges::write(root, &files)?;
-    homma_core::release::git::push(root, "origin", &format!("refs/heads/{}", badges::BRANCH), true)?;
+    homma_core::release::git::push(
+        root,
+        "origin",
+        &format!("refs/heads/{}", badges::BRANCH),
+        true,
+    )?;
     finish(cli, Report {
         ok:    true,
-        lines: vec![format!("wrote {} file(s) to `{}` at {}", files.len(), badges::BRANCH, &sha[.. 7])],
+        lines: vec![format!(
+            "wrote {} file(s) to `{}` at {}",
+            files.len(),
+            badges::BRANCH,
+            &sha[.. 7]
+        )],
     })
 }
 
