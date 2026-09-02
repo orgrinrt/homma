@@ -8,6 +8,7 @@
 use std::path::Path;
 
 use homma_core::Config;
+use homma_core::release::publish;
 
 /// The order the repos release in when none is named.
 ///
@@ -23,29 +24,40 @@ pub(super) fn release_order(cfg: &Config) -> Vec<String> {
 }
 
 /// The first sibling member `root`'s manifests depend on, if any: a
-/// `Cargo.toml` dependency whose git url ends in the sibling's name or whose
-/// package name is the sibling's, or a `deno.json` import whose specifier
-/// carries the sibling's name as a path segment.
+/// `Cargo.toml` dependency in the root or any workspace member whose git url
+/// ends in the sibling's name or whose package name is the sibling's, or a
+/// `deno.json` import whose specifier carries the sibling's name as a path
+/// segment.
 pub(super) fn sibling_dependency(root: &Path, siblings: &[String]) -> Option<String> {
     let names_git = |url: &str, s: &str| {
         let url = url.trim_end_matches('/').trim_end_matches(".git");
         url.rsplit('/').next() == Some(s)
     };
-    if let Ok(text) = std::fs::read_to_string(root.join("Cargo.toml")) {
-        if let Ok(doc) = toml::from_str::<toml::Value>(&text) {
-            for table in ["dependencies", "build-dependencies", "dev-dependencies"] {
-                let Some(t) = doc.get(table).and_then(|d| d.as_table()) else {
-                    continue;
-                };
-                for (key, value) in t {
-                    let package = value
-                        .get("package")
-                        .and_then(|p| p.as_str())
-                        .unwrap_or(key.as_str());
-                    let git = value.get("git").and_then(|g| g.as_str()).unwrap_or("");
-                    if let Some(s) = siblings.iter().find(|s| *s == package || names_git(git, s)) {
-                        return Some(s.clone());
-                    }
+    // the same member listing the publish walks, so an edge declared in a
+    // member crate is seen; the root goes first, since it is not listed
+    // where it names no package of its own
+    let mut dirs: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+    dirs.extend(publish::crate_dirs(root).into_values());
+    dirs.dedup();
+    for dir in dirs {
+        let Ok(text) = std::fs::read_to_string(dir.join("Cargo.toml")) else {
+            continue;
+        };
+        let Ok(doc) = toml::from_str::<toml::Value>(&text) else {
+            continue;
+        };
+        for table in ["dependencies", "build-dependencies", "dev-dependencies"] {
+            let Some(t) = doc.get(table).and_then(|d| d.as_table()) else {
+                continue;
+            };
+            for (key, value) in t {
+                let package = value
+                    .get("package")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or(key.as_str());
+                let git = value.get("git").and_then(|g| g.as_str()).unwrap_or("");
+                if let Some(s) = siblings.iter().find(|s| *s == package || names_git(git, s)) {
+                    return Some(s.clone());
                 }
             }
         }
@@ -178,6 +190,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sibling_dependency(&d, &siblings), None);
+        // an edge declared in a workspace member, with a root that names no
+        // package of its own, is seen through the member listing
+        let w = dir.path().join("ws");
+        std::fs::create_dir_all(w.join("crates/inner")).unwrap();
+        std::fs::write(w.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\"]\n").unwrap();
+        std::fs::write(
+            w.join("crates/inner/Cargo.toml"),
+            "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[dependencies]\nzed = { git = \"https://github.com/orgrinrt/zed.git\" }\n",
+        )
+        .unwrap();
+        assert_eq!(sibling_dependency(&w, &siblings), Some("zed".into()));
+        std::fs::write(
+            w.join("crates/inner/Cargo.toml"),
+            "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        assert_eq!(sibling_dependency(&w, &siblings), None);
     }
 
     #[test]

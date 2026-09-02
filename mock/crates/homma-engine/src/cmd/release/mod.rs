@@ -327,11 +327,18 @@ fn run_cmd(
         let root = &root;
         let (trunk, release_line) = branches_for(cfg, root);
         if repo.is_none() {
-            let Ok(p) = plan::plan(root, trunk, level, &clock::today()) else {
-                continue;
-            };
-            if p.commits.is_empty() {
-                continue;
+            // a repo the sweep passes over is named, with why: a silent
+            // skip is how three stack repos went unreleased without a word
+            match plan::plan(root, trunk, level, &clock::today()) {
+                Ok(p) if p.commits.is_empty() => {
+                    lines.push(format!("{name}: nothing unreleased, passed over"));
+                    continue;
+                },
+                Ok(_) => {},
+                Err(e) => {
+                    lines.push(format!("{name}: passed over, {e}"));
+                    continue;
+                },
             }
         }
         let (forge, owner) = forge_for(cfg, r)?;

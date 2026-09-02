@@ -184,6 +184,26 @@ fn main_past_the_newest_tag_blocks_unless_every_commit_is_a_hotpatch() {
 }
 
 #[test]
+fn a_subject_names_a_hotpatch_as_a_word_and_not_after_a_negation() {
+    assert!(names_hotpatch("fix: hotpatch the readme"));
+    assert!(names_hotpatch("Hotpatch: typo"));
+    assert!(names_hotpatch("docs: a hotpatch, nothing more"));
+    assert!(!names_hotpatch("fix: this is not a hotpatch"));
+    assert!(!names_hotpatch("fix: no hotpatch here"));
+    assert!(!names_hotpatch("fix: hotpatching the reader"));
+    assert!(!names_hotpatch("feat: real work"));
+    // and on main: one negated subject past the tag blocks
+    let f = Fixture::crate_at("0.1.0");
+    f.tag("v0.1.0");
+    f.commit("fix: this is not a hotpatch");
+    f.git(&["push", "--quiet", "origin", "main"]);
+    assert_eq!(
+        ids(&run(&f, &published(&["0.1.0"]), None)),
+        ["main.unreleased"]
+    );
+}
+
+#[test]
 fn a_version_bump_on_main_carries_a_tag_whether_committed_there_or_merged_in() {
     let f = Fixture::crate_at("0.1.0");
     f.tag("v0.1.0");

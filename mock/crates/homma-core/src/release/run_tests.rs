@@ -402,5 +402,11 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
         !f.git(&["tag", "--list"]).contains("v0.1.1"),
         "no tag was made"
     );
-    let _ = tip;
+    // the trunk holds the bump and nothing past it: the failed merge left
+    // no commit behind on dev
+    assert_eq!(
+        f.git(&["rev-parse", "dev^"]).trim(),
+        tip.trim(),
+        "dev is one bump past where it started"
+    );
 }

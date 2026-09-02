@@ -136,7 +136,7 @@ pub fn crate_order(root: &Path, names: &[String]) -> Result<Vec<(String, PathBuf
 
 /// Every crate directory under `root`: the root itself and each workspace
 /// member, keyed by package name.
-fn crate_dirs(root: &Path) -> BTreeMap<String, PathBuf> {
+pub fn crate_dirs(root: &Path) -> BTreeMap<String, PathBuf> {
     let mut out = BTreeMap::new();
     let read_name = |dir: &Path| -> Option<String> {
         let text = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;

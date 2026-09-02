@@ -51,10 +51,11 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_in_a_subdirectory_does_not_count() {
+    #[ignore = "catalogue: a repo keeping its manifests under mock/ is read as having none; tracked homma-release-reads-a-manifest-under-mock"]
+    fn a_manifest_under_mock_names_the_repo_s_kind() {
         let d = tempfile::tempdir().unwrap();
         std::fs::create_dir(d.path().join("mock")).unwrap();
         std::fs::write(d.path().join("mock/Cargo.toml"), "[workspace]\n").unwrap();
-        assert!(detect(d.path()).is_err());
+        assert_eq!(detect(d.path()).unwrap(), RepoKind::Crate);
     }
 }

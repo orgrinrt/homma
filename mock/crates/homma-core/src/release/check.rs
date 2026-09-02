@@ -172,9 +172,7 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         let newest_target = git::tag_target(root, newest)?;
         if newest_target != *release_sha {
             let between = git::subjects(root, newest, inputs.release)?;
-            let hotpatch = between
-                .iter()
-                .all(|s| s.subject.to_ascii_lowercase().contains("hotpatch"));
+            let hotpatch = between.iter().all(|s| names_hotpatch(&s.subject));
             if !hotpatch {
                 push(
                     "main.unreleased",
@@ -323,6 +321,23 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
 }
 
 /// Whether `b` is one legal step above `a` at some level.
+/// A subject names a hotpatch where `hotpatch` stands as a word of its own,
+/// in any case, and neither of the two words before it is a negation; "this
+/// is not a hotpatch" and "no hotpatch here" name nothing.
+fn names_hotpatch(subject: &str) -> bool {
+    let words: Vec<String> = subject
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    words.iter().enumerate().any(|(i, w)| {
+        let negated = words[i.saturating_sub(2) .. i]
+            .iter()
+            .any(|p| p == "not" || p == "no");
+        w == "hotpatch" && !negated
+    })
+}
+
 fn is_adjacent(a: &Version, b: &Version) -> bool {
     [Level::Patch, Level::Minor, Level::Major]
         .iter()
