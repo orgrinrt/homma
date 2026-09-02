@@ -48,7 +48,11 @@ pub struct Unreachable {
 
 impl fmt::Display for Unreachable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} could not answer for {}: {}", self.registry, self.package, self.why)
+        write!(
+            f,
+            "{} could not answer for {}: {}",
+            self.registry, self.package, self.why
+        )
     }
 }
 
@@ -79,10 +83,7 @@ pub fn url(registry: Registry, package: &str) -> String {
 
 /// Every version `registry` holds for `package`, in the order the registry
 /// lists them, which is publish order on all three.
-pub fn published_versions(
-    registry: Registry,
-    package: &str,
-) -> Result<Vec<Version>, Unreachable> {
+pub fn published_versions(registry: Registry, package: &str) -> Result<Vec<Version>, Unreachable> {
     let target = url(registry, package);
     let fail = |why: String| {
         Unreachable {
@@ -113,7 +114,10 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
                 let row: serde_json::Value =
                     serde_json::from_str(line).map_err(|e| e.to_string())?;
                 if let Some(v) = row.get("vers").and_then(|v| v.as_str()) {
-                    out.push(v.parse().map_err(|e: homma_api::NotAVersion| e.to_string())?);
+                    out.push(
+                        v.parse()
+                            .map_err(|e: homma_api::NotAVersion| e.to_string())?,
+                    );
                 }
             }
         },
@@ -123,10 +127,17 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
                 return Ok(out);
             };
             for (v, meta) in map {
-                if meta.get("yanked").and_then(|y| y.as_bool()).unwrap_or(false) {
+                if meta
+                    .get("yanked")
+                    .and_then(|y| y.as_bool())
+                    .unwrap_or(false)
+                {
                     continue;
                 }
-                out.push(v.parse().map_err(|e: homma_api::NotAVersion| e.to_string())?);
+                out.push(
+                    v.parse()
+                        .map_err(|e: homma_api::NotAVersion| e.to_string())?,
+                );
             }
             out.sort();
         },
@@ -140,11 +151,17 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
                     .collect();
                 dated.sort_by(|a, b| a.1.cmp(b.1));
                 for (v, _) in dated {
-                    out.push(v.parse().map_err(|e: homma_api::NotAVersion| e.to_string())?);
+                    out.push(
+                        v.parse()
+                            .map_err(|e: homma_api::NotAVersion| e.to_string())?,
+                    );
                 }
             } else if let Some(map) = doc.get("versions").and_then(|v| v.as_object()) {
                 for v in map.keys() {
-                    out.push(v.parse().map_err(|e: homma_api::NotAVersion| e.to_string())?);
+                    out.push(
+                        v.parse()
+                            .map_err(|e: homma_api::NotAVersion| e.to_string())?,
+                    );
                 }
             }
         },
@@ -162,22 +179,41 @@ mod tests {
         assert_eq!(crates_index_path("ab"), "2/ab");
         assert_eq!(crates_index_path("abc"), "3/a/abc");
         assert_eq!(crates_index_path("notko"), "no/tk/notko");
-        assert_eq!(crates_index_path("Include_Proc_Macro"), "in/cl/include_proc_macro");
+        assert_eq!(
+            crates_index_path("Include_Proc_Macro"),
+            "in/cl/include_proc_macro"
+        );
     }
 
     #[test]
     fn each_registry_has_its_url() {
-        assert_eq!(url(Registry::CratesIo, "renki"), "https://index.crates.io/re/nk/renki");
-        assert_eq!(url(Registry::Jsr, "@hiisi/loitsu"), "https://jsr.io/@hiisi/loitsu/meta.json");
-        assert_eq!(url(Registry::Jsr, "hiisi/loitsu"), "https://jsr.io/@hiisi/loitsu/meta.json");
-        assert_eq!(url(Registry::Npm, "loitsu"), "https://registry.npmjs.org/loitsu");
+        assert_eq!(
+            url(Registry::CratesIo, "renki"),
+            "https://index.crates.io/re/nk/renki"
+        );
+        assert_eq!(
+            url(Registry::Jsr, "@hiisi/loitsu"),
+            "https://jsr.io/@hiisi/loitsu/meta.json"
+        );
+        assert_eq!(
+            url(Registry::Jsr, "hiisi/loitsu"),
+            "https://jsr.io/@hiisi/loitsu/meta.json"
+        );
+        assert_eq!(
+            url(Registry::Npm, "loitsu"),
+            "https://registry.npmjs.org/loitsu"
+        );
     }
 
     #[test]
     fn the_index_is_one_object_per_line_in_publish_order() {
         let body = "{\"name\":\"x\",\"vers\":\"0.1.0\"}\n{\"name\":\"x\",\"vers\":\"0.1.1\"}\n\n{\"name\":\"x\",\"vers\":\"0.2.0\"}\n";
         let v = parse(Registry::CratesIo, body).unwrap();
-        assert_eq!(v, vec![Version::new(0, 1, 0), Version::new(0, 1, 1), Version::new(0, 2, 0)]);
+        assert_eq!(v, vec![
+            Version::new(0, 1, 0),
+            Version::new(0, 1, 1),
+            Version::new(0, 2, 0)
+        ]);
     }
 
     #[test]

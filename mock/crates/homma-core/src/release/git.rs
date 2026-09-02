@@ -327,7 +327,11 @@ pub fn modified(cwd: &Path) -> Result<Vec<String>, GitError> {
 /// Every tracked path at `rev`.
 pub fn tracked_at(cwd: &Path, rev: &str) -> Result<Vec<String>, GitError> {
     let out = trimmed(cwd, &["ls-tree", "-r", "--name-only", rev])?;
-    Ok(out.lines().map(str::to_string).filter(|l| !l.is_empty()).collect())
+    Ok(out
+        .lines()
+        .map(str::to_string)
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 /// The content of `path` at `rev`, or none when it is not there.
@@ -492,7 +496,13 @@ mod tests {
         let p = d.path();
         let bare = tempfile::tempdir().unwrap();
         git(bare.path(), &["init", "--quiet", "--bare"]).unwrap();
-        git(p, &["remote", "add", "origin", bare.path().to_str().unwrap()]).unwrap();
+        git(p, &[
+            "remote",
+            "add",
+            "origin",
+            bare.path().to_str().unwrap(),
+        ])
+        .unwrap();
         assert!(!is_pushed(p, "origin", "main").unwrap());
         push(p, "origin", "main", false).unwrap();
         assert!(is_pushed(p, "origin", "main").unwrap());
@@ -503,10 +513,16 @@ mod tests {
         push(p, "origin", "refs/tags/v0.1.0", false).unwrap();
         push(p, "origin", "refs/tags/light", false).unwrap();
         let tags = remote_tags(p, "origin").unwrap();
-        assert_eq!(tags, vec![("light".to_string(), h.clone()), ("v0.1.0".to_string(), h.clone())]);
+        assert_eq!(tags, vec![
+            ("light".to_string(), h.clone()),
+            ("v0.1.0".to_string(), h.clone())
+        ]);
         std::fs::write(p.join("b"), "b").unwrap();
         commit_paths(p, &["b"], "feat: b").unwrap();
-        assert!(!is_pushed(p, "origin", "main").unwrap(), "a new commit is unpushed");
+        assert!(
+            !is_pushed(p, "origin", "main").unwrap(),
+            "a new commit is unpushed"
+        );
         fetch(p, "origin").unwrap();
         assert!(!is_pushed(p, "origin", "main").unwrap());
     }

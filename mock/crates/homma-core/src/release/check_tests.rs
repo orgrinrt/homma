@@ -9,8 +9,8 @@ use super::*;
 use crate::release::sh;
 
 struct Fixture {
-    work:   tempfile::TempDir,
-    _bare:  tempfile::TempDir,
+    work:  tempfile::TempDir,
+    _bare: tempfile::TempDir,
 }
 
 impl Fixture {
@@ -29,7 +29,10 @@ impl Fixture {
         let bare = tempfile::tempdir().unwrap();
         let out = sh::run(bare.path(), "git", &["init", "--quiet", "--bare"]).unwrap();
         assert!(out.ok());
-        let f = Fixture { work, _bare: bare };
+        let f = Fixture {
+            work,
+            _bare: bare,
+        };
         f.git(&["init", "--quiet", "-b", "main"]);
         f.git(&["config", "user.email", "t@t"]);
         f.git(&["config", "user.name", "t"]);
@@ -144,7 +147,10 @@ fn a_tag_off_main_is_unreachable_and_a_lightweight_or_unpushed_one_is_named() {
     assert!(ids.contains(&"tag.reachable"), "{ids:?}");
     assert!(ids.contains(&"tag.annotated"), "{ids:?}");
     assert!(ids.contains(&"tag.pushed"), "{ids:?}");
-    assert!(findings[0].severity >= findings[findings.len() - 1].severity, "blocking first");
+    assert!(
+        findings[0].severity >= findings[findings.len() - 1].severity,
+        "blocking first"
+    );
 }
 
 #[test]
@@ -190,7 +196,10 @@ fn the_manifest_at_a_tag_must_equal_the_tag() {
 fn the_working_version_must_be_above_the_published_and_the_smallest_step_at_the_level() {
     let f = Fixture::crate_at("0.1.0");
     f.tag("v0.1.0");
-    assert!(run(&f, &published(&["0.1.0"]), Some(Level::Patch)).is_empty(), "at the published version, the run bumps");
+    assert!(
+        run(&f, &published(&["0.1.0"]), Some(Level::Patch)).is_empty(),
+        "at the published version, the run bumps"
+    );
     let findings = run(&f, &published(&["0.1.0", "0.1.1"]), Some(Level::Patch));
     assert_eq!(ids(&findings), ["man.current.forward", "reg.orphan"]);
     f.git(&["switch", "--quiet", "dev"]);
@@ -199,7 +208,10 @@ fn the_working_version_must_be_above_the_published_and_the_smallest_step_at_the_
     f.git(&["push", "--quiet", "origin", "dev"]);
     let findings = run(&f, &published(&["0.1.0"]), Some(Level::Minor));
     assert_eq!(ids(&findings), ["man.current.smallest"]);
-    assert!(run(&f, &published(&["0.1.0"]), None).is_empty(), "no level, no smallest check");
+    assert!(
+        run(&f, &published(&["0.1.0"]), None).is_empty(),
+        "no level, no smallest check"
+    );
     f.manifest("0.2.0");
     f.git(&["commit", "--quiet", "-am", "chore: step"]);
     f.git(&["push", "--quiet", "origin", "dev"]);
@@ -213,7 +225,10 @@ fn the_registry_must_ascend_skip_nothing_and_match_the_tags_both_ways() {
     let findings = run(&f, &published(&["0.1.0", "0.3.0", "0.2.0"]), None);
     let ids = ids(&findings);
     assert!(ids.contains(&"order.ascends"), "{ids:?}");
-    assert!(!ids.contains(&"semver.gaps"), "0.1, 0.2, 0.3 skip nothing: {ids:?}");
+    assert!(
+        !ids.contains(&"semver.gaps"),
+        "0.1, 0.2, 0.3 skip nothing: {ids:?}"
+    );
     assert_eq!(ids.iter().filter(|i| **i == "reg.orphan").count(), 2);
     let findings = run(&f, &published(&["0.1.0", "0.1.2"]), None);
     let ids = self::ids(&findings);
@@ -229,7 +244,8 @@ fn jsr_and_npm_disagreeing_is_both_sameset() {
     let f = Fixture::crate_at("0.1.0");
     f.tag("v0.1.0");
     let mut p = published(&["0.1.0"]);
-    p.versions.insert((Registry::Jsr, "@h/x".into()), vec![Version::new(0, 1, 0)]);
+    p.versions
+        .insert((Registry::Jsr, "@h/x".into()), vec![Version::new(0, 1, 0)]);
     p.versions.insert((Registry::Npm, "x".into()), vec![]);
     let findings = run(&f, &p, None);
     assert!(ids(&findings).contains(&"both.sameset"));

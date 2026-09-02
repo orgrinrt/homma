@@ -128,7 +128,12 @@ fn expand_member(root: &Path, member: &str) -> Vec<std::path::PathBuf> {
     match member.strip_suffix("/*") {
         Some(parent) => {
             let mut dirs: Vec<_> = std::fs::read_dir(root.join(parent))
-                .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
+                .map(|rd| {
+                    rd.flatten()
+                        .map(|e| e.path())
+                        .filter(|p| p.is_dir())
+                        .collect()
+                })
                 .unwrap_or_default();
             dirs.sort();
             dirs
@@ -142,12 +147,11 @@ fn expand_member(root: &Path, member: &str) -> Vec<std::path::PathBuf> {
 /// none yet.
 pub fn tag_name(tags: &[String], version: &Version) -> String {
     let bare = tags.iter().any(|t| t.parse::<Version>().is_ok());
-    let prefixed = tags.iter().any(|t| t.strip_prefix('v').is_some_and(|r| r.parse::<Version>().is_ok()));
-    if bare && !prefixed {
-        version.to_string()
-    } else {
-        format!("v{version}")
-    }
+    let prefixed = tags.iter().any(|t| {
+        t.strip_prefix('v')
+            .is_some_and(|r| r.parse::<Version>().is_ok())
+    });
+    if bare && !prefixed { version.to_string() } else { format!("v{version}") }
 }
 
 /// The version a tag names, with or without a `v`.
@@ -184,66 +188,130 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     // the tree
     let modified = git::modified(root)?;
     if !modified.is_empty() {
-        push("tree.clean", CheckSeverity::Error, format!("modified: {}", modified.join(", ")));
+        push(
+            "tree.clean",
+            CheckSeverity::Error,
+            format!("modified: {}", modified.join(", ")),
+        );
     }
     let untracked = git::untracked(root)?;
     if !untracked.is_empty() {
-        push("tree.untracked", CheckSeverity::Error, format!("untracked: {}", untracked.join(", ")));
+        push(
+            "tree.untracked",
+            CheckSeverity::Error,
+            format!("untracked: {}", untracked.join(", ")),
+        );
     }
     let branch = git::current_branch(root)?;
     match &branch {
-        None => push("tree.attached", CheckSeverity::Error, "HEAD is detached".into()),
+        None => {
+            push(
+                "tree.attached",
+                CheckSeverity::Error,
+                "HEAD is detached".into(),
+            )
+        },
         Some(b) => {
             if !git::is_pushed(root, inputs.remote, b)? {
-                push("tree.pushed", CheckSeverity::Error, format!("`{b}` has commits `{}` lacks", inputs.remote));
+                push(
+                    "tree.pushed",
+                    CheckSeverity::Error,
+                    format!("`{b}` has commits `{}` lacks", inputs.remote),
+                );
             }
         },
     }
     let tracked = git::tracked_at(root, "HEAD")?;
-    let workflows: Vec<&String> = tracked.iter().filter(|p| p.starts_with(".github/workflows/")).collect();
+    let workflows: Vec<&String> = tracked
+        .iter()
+        .filter(|p| p.starts_with(".github/workflows/"))
+        .collect();
     if !workflows.is_empty() {
-        push("hist.workflow.tree", CheckSeverity::Error, format!("{} workflow file(s) in the tree", workflows.len()));
+        push(
+            "hist.workflow.tree",
+            CheckSeverity::Error,
+            format!("{} workflow file(s) in the tree", workflows.len()),
+        );
     }
 
     // the tags
     let tags = git::tags(root)?;
-    let mut versioned: Vec<(String, Version)> =
-        tags.iter().filter_map(|t| tag_version(t).map(|v| (t.clone(), v))).collect();
+    let mut versioned: Vec<(String, Version)> = tags
+        .iter()
+        .filter_map(|t| tag_version(t).map(|v| (t.clone(), v)))
+        .collect();
     versioned.sort_by(|a, b| a.1.cmp(&b.1));
-    let bare = versioned.iter().filter(|(t, _)| !t.starts_with('v')).count();
+    let bare = versioned
+        .iter()
+        .filter(|(t, _)| !t.starts_with('v'))
+        .count();
     if bare != 0 && bare != versioned.len() {
-        push("tag.prefix", CheckSeverity::Warn, format!("{bare} of {} tags lack the `v`", versioned.len()));
+        push(
+            "tag.prefix",
+            CheckSeverity::Warn,
+            format!("{bare} of {} tags lack the `v`", versioned.len()),
+        );
     }
     let mut by_target: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for (t, _) in &versioned {
         if !git::tag_is_annotated(root, t)? {
-            push("tag.annotated", CheckSeverity::Warn, format!("`{t}` is lightweight"));
+            push(
+                "tag.annotated",
+                CheckSeverity::Warn,
+                format!("`{t}` is lightweight"),
+            );
         }
         let target = git::tag_target(root, t)?;
         if !git::is_ancestor(root, &target, inputs.release)? {
-            push("tag.reachable", CheckSeverity::Error, format!("`{t}` is not on `{}`", inputs.release));
+            push(
+                "tag.reachable",
+                CheckSeverity::Error,
+                format!("`{t}` is not on `{}`", inputs.release),
+            );
         }
         by_target.entry(target).or_default().push(t);
     }
     for (target, names) in &by_target {
         if names.len() > 1 {
-            push("tag.dupes", CheckSeverity::Warn, format!("{} share {}", names.join(", "), &target[.. 7.min(target.len())]));
+            push(
+                "tag.dupes",
+                CheckSeverity::Warn,
+                format!(
+                    "{} share {}",
+                    names.join(", "),
+                    &target[.. 7.min(target.len())]
+                ),
+            );
         }
     }
     let remote_tags = git::remote_tags(root, inputs.remote)?;
     for (t, _) in &versioned {
         match remote_tags.iter().find(|(n, _)| n == t) {
-            None => push("tag.pushed", CheckSeverity::Error, format!("`{t}` is not on `{}`", inputs.remote)),
+            None => {
+                push(
+                    "tag.pushed",
+                    CheckSeverity::Error,
+                    format!("`{t}` is not on `{}`", inputs.remote),
+                )
+            },
             Some((_, remote_sha)) => {
                 if *remote_sha != git::tag_target(root, t)? {
-                    push("tag.sha.agrees", CheckSeverity::Fatal, format!("`{t}` points elsewhere on `{}`", inputs.remote));
+                    push(
+                        "tag.sha.agrees",
+                        CheckSeverity::Fatal,
+                        format!("`{t}` points elsewhere on `{}`", inputs.remote),
+                    );
                 }
             },
         }
     }
     for (name, _) in &remote_tags {
         if tag_version(name).is_some() && !tags.contains(name) {
-            push("tag.local", CheckSeverity::Warn, format!("`{name}` is on `{}` and not here", inputs.remote));
+            push(
+                "tag.local",
+                CheckSeverity::Warn,
+                format!("`{name}` is on `{}` and not here", inputs.remote),
+            );
         }
     }
 
@@ -253,9 +321,19 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         let newest_target = git::tag_target(root, newest)?;
         if newest_target != *release_sha {
             let between = git::subjects(root, newest, inputs.release)?;
-            let hotpatch = between.iter().all(|s| s.subject.to_ascii_lowercase().contains("hotpatch"));
+            let hotpatch = between
+                .iter()
+                .all(|s| s.subject.to_ascii_lowercase().contains("hotpatch"));
             if !hotpatch {
-                push("main.unreleased", CheckSeverity::Error, format!("{} commit(s) on `{}` past `{newest}`", between.len(), inputs.release));
+                push(
+                    "main.unreleased",
+                    CheckSeverity::Error,
+                    format!(
+                        "{} commit(s) on `{}` past `{newest}`",
+                        between.len(),
+                        inputs.release
+                    ),
+                );
             }
         }
     }
@@ -268,7 +346,11 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
             let manifest_version = manifest_version_at(root, t, k)?;
             if let Some(mv) = manifest_version {
                 if mv != *v {
-                    push("man.version.matches", CheckSeverity::Fatal, format!("`{t}` carries manifest version {mv}"));
+                    push(
+                        "man.version.matches",
+                        CheckSeverity::Fatal,
+                        format!("`{t}` carries manifest version {mv}"),
+                    );
                 }
             }
         }
@@ -280,10 +362,18 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     if let Some(w) = &working {
         if let Some(hp) = &highest_published {
             if w < hp {
-                push("man.current.forward", CheckSeverity::Error, format!("working version {w} is below the published {hp}"));
+                push(
+                    "man.current.forward",
+                    CheckSeverity::Error,
+                    format!("working version {w} is below the published {hp}"),
+                );
             } else if let Some(level) = inputs.level {
                 if w != hp && !hp.is_smallest_successor(w, level) {
-                    push("man.current.smallest", CheckSeverity::Error, format!("{w} is not the {level} step above {hp}"));
+                    push(
+                        "man.current.smallest",
+                        CheckSeverity::Error,
+                        format!("{w} is not the {level} step above {hp}"),
+                    );
                 }
             }
         }
@@ -293,36 +383,68 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     for ((reg, name), versions) in &inputs.published.versions {
         for pair in versions.windows(2) {
             if pair[1] < pair[0] {
-                push("order.ascends", CheckSeverity::Error, format!("{name} on {reg}: {} after {}", pair[1], pair[0]));
+                push(
+                    "order.ascends",
+                    CheckSeverity::Error,
+                    format!("{name} on {reg}: {} after {}", pair[1], pair[0]),
+                );
             }
         }
         let mut sorted = versions.clone();
         sorted.sort();
         for pair in sorted.windows(2) {
             if !is_adjacent(&pair[0], &pair[1]) {
-                push("semver.gaps", CheckSeverity::Error, format!("{name} on {reg}: {} skips to {}", pair[0], pair[1]));
+                push(
+                    "semver.gaps",
+                    CheckSeverity::Error,
+                    format!("{name} on {reg}: {} skips to {}", pair[0], pair[1]),
+                );
             }
         }
         for v in versions {
             if !versioned.iter().any(|(_, tv)| tv == v) {
-                push("reg.orphan", CheckSeverity::Error, format!("{name} {v} is on {reg} with no tag"));
+                push(
+                    "reg.orphan",
+                    CheckSeverity::Error,
+                    format!("{name} {v} is on {reg} with no tag"),
+                );
             }
         }
         for (t, tv) in &versioned {
             if !versions.contains(tv) {
-                push("reg.unpublished", CheckSeverity::Warn, format!("`{t}` is not on {reg} as {name}"));
+                push(
+                    "reg.unpublished",
+                    CheckSeverity::Warn,
+                    format!("`{t}` is not on {reg} as {name}"),
+                );
             }
         }
     }
-    let jsr: Vec<_> = inputs.published.versions.iter().filter(|((r, _), _)| *r == Registry::Jsr).map(|(_, v)| v.clone()).collect();
-    let npm: Vec<_> = inputs.published.versions.iter().filter(|((r, _), _)| *r == Registry::Npm).map(|(_, v)| v.clone()).collect();
+    let jsr: Vec<_> = inputs
+        .published
+        .versions
+        .iter()
+        .filter(|((r, _), _)| *r == Registry::Jsr)
+        .map(|(_, v)| v.clone())
+        .collect();
+    let npm: Vec<_> = inputs
+        .published
+        .versions
+        .iter()
+        .filter(|((r, _), _)| *r == Registry::Npm)
+        .map(|(_, v)| v.clone())
+        .collect();
     if let (Some(j), Some(n)) = (jsr.first(), npm.first()) {
         let mut js = j.clone();
         let mut ns = n.clone();
         js.sort();
         ns.sort();
         if js != ns {
-            push("both.sameset", CheckSeverity::Warn, "jsr and npm hold different version sets".into());
+            push(
+                "both.sameset",
+                CheckSeverity::Warn,
+                "jsr and npm hold different version sets".into(),
+            );
         }
     }
 
@@ -338,7 +460,11 @@ fn is_adjacent(a: &Version, b: &Version) -> bool {
         || (a.major == 0 && *b == Version::new(1, 0, 0))
 }
 
-fn manifest_version_at(root: &Path, rev: &str, k: RepoKind) -> Result<Option<Version>, git::GitError> {
+fn manifest_version_at(
+    root: &Path,
+    rev: &str,
+    k: RepoKind,
+) -> Result<Option<Version>, git::GitError> {
     let file = if k.has_crate() { "Cargo.toml" } else { "deno.json" };
     let Some(text) = git::show(root, rev, file)? else {
         return Ok(None);
