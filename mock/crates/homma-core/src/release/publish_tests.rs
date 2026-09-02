@@ -36,12 +36,20 @@ impl Runner for Fake {
         args: &[&str],
         env: &[(&str, &str)],
     ) -> Result<sh::Output, sh::Spawn> {
-        let line = format!("{} $ {program} {}", cwd.file_name().unwrap_or_default().to_string_lossy(), args.join(" "));
+        let line = format!(
+            "{} $ {program} {}",
+            cwd.file_name().unwrap_or_default().to_string_lossy(),
+            args.join(" ")
+        );
         self.seen.borrow_mut().push((
             line.clone(),
-            env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            env.iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
         ));
-        let fails = self.fail_prefix.is_some_and(|p| format!("{program} {}", args.join(" ")).starts_with(p));
+        let fails = self
+            .fail_prefix
+            .is_some_and(|p| format!("{program} {}", args.join(" ")).starts_with(p));
         Ok(sh::Output {
             program: program.into(),
             args:    args.iter().map(|a| a.to_string()).collect(),
@@ -70,7 +78,10 @@ fn never_served(_: Registry, _: &str, _: &Version) -> Result<bool, registry::Unr
 
 fn workspace(members: &[(&str, &[&str])]) -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
-    let names: Vec<String> = members.iter().map(|(n, _)| format!("\"crates/{n}\"")).collect();
+    let names: Vec<String> = members
+        .iter()
+        .map(|(n, _)| format!("\"crates/{n}\""))
+        .collect();
     std::fs::write(
         d.path().join("Cargo.toml"),
         format!("[workspace]\nmembers = [{}]\n", names.join(", ")),
@@ -79,7 +90,8 @@ fn workspace(members: &[(&str, &[&str])]) -> tempfile::TempDir {
     for (name, deps) in members {
         let dir = d.path().join("crates").join(name);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut text = format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
+        let mut text =
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
         for dep in *deps {
             text.push_str(&format!("{dep} = {{ path = \"../{dep}\" }}\n"));
         }
@@ -129,24 +141,61 @@ fn a_dependency_outside_the_publishable_set_does_not_order_anything() {
 fn a_crate_publishes_with_the_token_in_its_own_environment_and_waits() {
     let d = workspace(&[("a", &[])]);
     let fake = Fake::new(None);
-    publish_crate(&fake, d.path(), "a", &Version::new(0, 1, 0), &token, &served_now).unwrap();
+    publish_crate(
+        &fake,
+        d.path(),
+        "a",
+        &Version::new(0, 1, 0),
+        &token,
+        &served_now,
+    )
+    .unwrap();
     let seen = fake.seen.borrow();
-    assert!(seen[0].0.ends_with("$ cargo publish -p a --locked"), "{}", seen[0].0);
-    assert_eq!(seen[0].1, vec![("CARGO_REGISTRY_TOKEN".to_string(), "tok-crates-io".to_string())]);
-    assert!(std::env::var("CARGO_REGISTRY_TOKEN").is_err(), "nothing leaked into this process");
+    assert!(
+        seen[0].0.ends_with("$ cargo publish -p a --locked"),
+        "{}",
+        seen[0].0
+    );
+    assert_eq!(seen[0].1, vec![(
+        "CARGO_REGISTRY_TOKEN".to_string(),
+        "tok-crates-io".to_string()
+    )]);
+    assert!(
+        std::env::var("CARGO_REGISTRY_TOKEN").is_err(),
+        "nothing leaked into this process"
+    );
 }
 
 #[test]
 fn no_token_refuses_before_running_anything_and_a_refused_publish_carries_its_log() {
     let d = workspace(&[("a", &[])]);
     let fake = Fake::new(None);
-    let err = publish_crate(&fake, d.path(), "a", &Version::new(0, 1, 0), &no_token, &served_now).unwrap_err();
+    let err = publish_crate(
+        &fake,
+        d.path(),
+        "a",
+        &Version::new(0, 1, 0),
+        &no_token,
+        &served_now,
+    )
+    .unwrap_err();
     assert!(matches!(err, PublishError::NoToken(Registry::CratesIo, _)));
     assert!(fake.lines().is_empty());
     let fake = Fake::new(Some("cargo publish"));
-    let err = publish_crate(&fake, d.path(), "a", &Version::new(0, 1, 0), &token, &served_now).unwrap_err();
+    let err = publish_crate(
+        &fake,
+        d.path(),
+        "a",
+        &Version::new(0, 1, 0),
+        &token,
+        &served_now,
+    )
+    .unwrap_err();
     match err {
-        PublishError::Failed { command, log } => {
+        PublishError::Failed {
+            command,
+            log,
+        } => {
             assert_eq!(command, "cargo publish -p a --locked");
             assert!(log.contains("refused"));
         },
@@ -158,8 +207,19 @@ fn no_token_refuses_before_running_anything_and_a_refused_publish_carries_its_lo
 fn a_version_the_registry_never_serves_is_reported_after_the_wait() {
     let d = workspace(&[("a", &[])]);
     let fake = Fake::new(None);
-    let err = publish_crate(&fake, d.path(), "a", &Version::new(0, 1, 0), &token, &never_served).unwrap_err();
-    assert!(matches!(err, PublishError::NotServed(Registry::CratesIo, ..)));
+    let err = publish_crate(
+        &fake,
+        d.path(),
+        "a",
+        &Version::new(0, 1, 0),
+        &token,
+        &never_served,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        PublishError::NotServed(Registry::CratesIo, ..)
+    ));
     let calls = RefCell::new(0);
     let eventually = |_: Registry, _: &str, _: &Version| {
         *calls.borrow_mut() += 1;
@@ -180,14 +240,47 @@ fn jsr_takes_the_token_on_its_arguments_and_npm_builds_then_publishes_from_npm_d
     std::fs::create_dir(d.path().join("npm")).unwrap();
     std::fs::write(d.path().join("npm/package.json"), "{}").unwrap();
     let fake = Fake::new(None);
-    publish_jsr(&fake, d.path(), "@h/x", &Version::new(0, 1, 0), &token, &served_now).unwrap();
-    publish_npm(&fake, d.path(), "x", &Version::new(0, 1, 0), &token, &served_now).unwrap();
+    publish_jsr(
+        &fake,
+        d.path(),
+        "@h/x",
+        &Version::new(0, 1, 0),
+        &token,
+        &served_now,
+    )
+    .unwrap();
+    publish_npm(
+        &fake,
+        d.path(),
+        "x",
+        &Version::new(0, 1, 0),
+        &token,
+        &served_now,
+    )
+    .unwrap();
     let seen = fake.seen.borrow();
-    assert!(seen[0].0.ends_with("$ deno publish --allow-dirty --token tok-jsr"), "{}", seen[0].0);
-    assert!(seen[1].0.ends_with("$ deno task build:npm"), "{}", seen[1].0);
-    assert!(seen[2].0.starts_with("npm $ npm publish --access public"), "{}", seen[2].0);
+    assert!(
+        seen[0]
+            .0
+            .ends_with("$ deno publish --allow-dirty --token tok-jsr"),
+        "{}",
+        seen[0].0
+    );
+    assert!(
+        seen[1].0.ends_with("$ deno task build:npm"),
+        "{}",
+        seen[1].0
+    );
+    assert!(
+        seen[2].0.starts_with("npm $ npm publish --access public"),
+        "{}",
+        seen[2].0
+    );
     assert_eq!(seen[2].1[0].0, "NPM_CONFIG_USERCONFIG");
-    assert!(!Path::new(&seen[2].1[0].1).exists(), "the npmrc is removed after the call");
+    assert!(
+        !Path::new(&seen[2].1[0].1).exists(),
+        "the npmrc is removed after the call"
+    );
 }
 
 #[test]
@@ -196,7 +289,15 @@ fn npm_without_a_build_task_or_an_npm_dir_publishes_from_the_root() {
     std::fs::write(d.path().join("deno.json"), r#"{"name": "@h/x"}"#).unwrap();
     std::fs::write(d.path().join("package.json"), "{}").unwrap();
     let fake = Fake::new(None);
-    publish_npm(&fake, d.path(), "x", &Version::new(0, 1, 0), &token, &served_now).unwrap();
+    publish_npm(
+        &fake,
+        d.path(),
+        "x",
+        &Version::new(0, 1, 0),
+        &token,
+        &served_now,
+    )
+    .unwrap();
     let lines = fake.lines();
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("$ npm publish"));

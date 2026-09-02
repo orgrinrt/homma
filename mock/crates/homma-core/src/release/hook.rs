@@ -67,13 +67,15 @@ impl From<std::io::Error> for HookError {
 /// The directory git will read hooks from for `root`, and whether it lies
 /// inside the repo.
 pub fn hooks_dir(root: &Path) -> Result<(PathBuf, bool), HookError> {
-    let out = sh::run(root, "git", &["config", "--get", "core.hooksPath"]).map_err(GitError::from)?;
+    let out =
+        sh::run(root, "git", &["config", "--get", "core.hooksPath"]).map_err(GitError::from)?;
     let configured = out.stdout.trim();
     let dir = if out.ok() && !configured.is_empty() {
         let p = PathBuf::from(configured);
         if p.is_absolute() { p } else { root.join(p) }
     } else {
-        let hooks = sh::run(root, "git", &["rev-parse", "--git-path", "hooks"]).map_err(GitError::from)?;
+        let hooks =
+            sh::run(root, "git", &["rev-parse", "--git-path", "hooks"]).map_err(GitError::from)?;
         if !hooks.ok() {
             return Err(GitError::Failed {
                 command: hooks.command_line(),
@@ -91,7 +93,10 @@ pub fn hooks_dir(root: &Path) -> Result<(PathBuf, bool), HookError> {
         Err(_) => {
             match (dir.parent(), dir.file_name()) {
                 (Some(parent), Some(name)) => {
-                    parent.canonicalize().map(|c| c.join(name)).unwrap_or_else(|_| dir.clone())
+                    parent
+                        .canonicalize()
+                        .map(|c| c.join(name))
+                        .unwrap_or_else(|_| dir.clone())
                 },
                 _ => dir.clone(),
             }
@@ -115,13 +120,17 @@ pub fn install(root: &Path) -> Result<Installed, HookError> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     }
-    Ok(Installed { path })
+    Ok(Installed {
+        path,
+    })
 }
 
 /// Whether the hook at `root` is the one this module writes.
 pub fn is_installed(root: &Path) -> Result<bool, HookError> {
     let (dir, _) = hooks_dir(root)?;
-    Ok(std::fs::read_to_string(dir.join("pre-push")).map(|s| s == SCRIPT).unwrap_or(false))
+    Ok(std::fs::read_to_string(dir.join("pre-push"))
+        .map(|s| s == SCRIPT)
+        .unwrap_or(false))
 }
 
 #[cfg(test)]
@@ -140,12 +149,19 @@ mod tests {
         let d = repo();
         assert!(!is_installed(d.path()).unwrap());
         let i = install(d.path()).unwrap();
-        assert!(i.path.ends_with(".git/hooks/pre-push"), "{}", i.path.display());
+        assert!(
+            i.path.ends_with(".git/hooks/pre-push"),
+            "{}",
+            i.path.display()
+        );
         assert_eq!(std::fs::read_to_string(&i.path).unwrap(), SCRIPT);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_ne!(std::fs::metadata(&i.path).unwrap().permissions().mode() & 0o111, 0);
+            assert_ne!(
+                std::fs::metadata(&i.path).unwrap().permissions().mode() & 0o111,
+                0
+            );
         }
         assert!(is_installed(d.path()).unwrap());
         let again = install(d.path()).unwrap();
@@ -158,7 +174,11 @@ mod tests {
         let out = sh::run(d.path(), "git", &["config", "core.hooksPath", ".githooks"]).unwrap();
         assert!(out.ok());
         let i = install(d.path()).unwrap();
-        assert!(i.path.ends_with(".githooks/pre-push"), "{}", i.path.display());
+        assert!(
+            i.path.ends_with(".githooks/pre-push"),
+            "{}",
+            i.path.display()
+        );
         let elsewhere = tempfile::tempdir().unwrap();
         let out = sh::run(d.path(), "git", &[
             "config",
@@ -170,11 +190,18 @@ mod tests {
         match install(d.path()) {
             Err(HookError::HooksPathOutside(p)) => {
                 assert_eq!(p, elsewhere.path());
-                assert!(HookError::HooksPathOutside(p).to_string().contains("mockspace"));
+                assert!(
+                    HookError::HooksPathOutside(p)
+                        .to_string()
+                        .contains("mockspace")
+                );
             },
             other => panic!("{other:?}"),
         }
-        assert!(!elsewhere.path().join("pre-push").exists(), "nothing was written outside");
+        assert!(
+            !elsewhere.path().join("pre-push").exists(),
+            "nothing was written outside"
+        );
         assert!(!is_installed(d.path()).unwrap());
     }
 

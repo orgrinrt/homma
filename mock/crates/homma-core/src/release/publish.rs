@@ -19,7 +19,10 @@ use super::registry::{self, Registry};
 #[derive(Debug)]
 pub enum PublishError {
     /// The tool ran and refused; the command line and its log.
-    Failed { command: String, log: String },
+    Failed {
+        command: String,
+        log:     String,
+    },
     Spawn(super::sh::Spawn),
     /// The credential tool gave no token for this registry.
     NoToken(Registry, String),
@@ -32,7 +35,10 @@ pub enum PublishError {
 impl fmt::Display for PublishError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PublishError::Failed { command, log } => write!(f, "`{command}` failed:\n{log}"),
+            PublishError::Failed {
+                command,
+                log,
+            } => write!(f, "`{command}` failed:\n{log}"),
             PublishError::Spawn(e) => write!(f, "{e}"),
             PublishError::NoToken(r, why) => write!(f, "no token for {r}: {why}"),
             PublishError::NotServed(r, p, v) => write!(f, "{r} never served {p} {v}"),
@@ -76,7 +82,8 @@ pub fn crate_order(root: &Path, names: &[String]) -> Result<Vec<(String, PathBuf
             continue;
         };
         let text = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap_or_default();
-        let doc: toml::Value = toml::from_str(&text).unwrap_or(toml::Value::Table(Default::default()));
+        let doc: toml::Value =
+            toml::from_str(&text).unwrap_or(toml::Value::Table(Default::default()));
         let mut on = Vec::new();
         for table in ["dependencies", "build-dependencies"] {
             if let Some(t) = doc.get(table).and_then(|d| d.as_table()) {
@@ -105,8 +112,11 @@ pub fn crate_order(root: &Path, names: &[String]) -> Result<Vec<(String, PathBuf
         match ready {
             Some(n) => placed.push(n),
             None => {
-                let stuck: Vec<&str> =
-                    deps.keys().filter(|n| !placed.contains(n)).map(String::as_str).collect();
+                let stuck: Vec<&str> = deps
+                    .keys()
+                    .filter(|n| !placed.contains(n))
+                    .map(String::as_str)
+                    .collect();
                 return Err(stuck.join(", "));
             },
         }
@@ -127,7 +137,10 @@ fn crate_dirs(root: &Path) -> BTreeMap<String, PathBuf> {
     let read_name = |dir: &Path| -> Option<String> {
         let text = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
         let doc: toml::Value = toml::from_str(&text).ok()?;
-        doc.get("package")?.get("name")?.as_str().map(str::to_string)
+        doc.get("package")?
+            .get("name")?
+            .as_str()
+            .map(str::to_string)
     };
     if let Some(n) = read_name(root) {
         out.insert(n, root.to_path_buf());
@@ -142,9 +155,16 @@ fn crate_dirs(root: &Path) -> BTreeMap<String, PathBuf> {
         .unwrap_or_default();
     for m in members.iter().filter_map(|m| m.as_str()) {
         let dirs: Vec<PathBuf> = match m.strip_suffix("/*") {
-            Some(parent) => std::fs::read_dir(root.join(parent))
-                .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
-                .unwrap_or_default(),
+            Some(parent) => {
+                std::fs::read_dir(root.join(parent))
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.is_dir())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            },
             None => vec![root.join(m)],
         };
         for dir in dirs {
@@ -166,7 +186,10 @@ pub fn publish_crate(
     served: Served<'_>,
 ) -> Result<(), PublishError> {
     let t = token(Registry::CratesIo).map_err(|e| PublishError::NoToken(Registry::CratesIo, e))?;
-    let out = runner.run(root, "cargo", &["publish", "-p", name, "--locked"], &[("CARGO_REGISTRY_TOKEN", &t)])?;
+    let out = runner.run(root, "cargo", &["publish", "-p", name, "--locked"], &[(
+        "CARGO_REGISTRY_TOKEN",
+        &t,
+    )])?;
     if !out.ok() {
         return Err(PublishError::Failed {
             command: out.command_line(),
@@ -186,7 +209,12 @@ pub fn publish_jsr(
     served: Served<'_>,
 ) -> Result<(), PublishError> {
     let t = token(Registry::Jsr).map_err(|e| PublishError::NoToken(Registry::Jsr, e))?;
-    let out = runner.run(root, "deno", &["publish", "--allow-dirty", "--token", &t], &[])?;
+    let out = runner.run(
+        root,
+        "deno",
+        &["publish", "--allow-dirty", "--token", &t],
+        &[],
+    )?;
     if !out.ok() {
         return Err(PublishError::Failed {
             command: out.command_line(),
@@ -216,7 +244,11 @@ pub fn publish_npm(
             });
         }
     }
-    let dir = if root.join("npm/package.json").is_file() { root.join("npm") } else { root.to_path_buf() };
+    let dir = if root.join("npm/package.json").is_file() {
+        root.join("npm")
+    } else {
+        root.to_path_buf()
+    };
     let t = token(Registry::Npm).map_err(|e| PublishError::NoToken(Registry::Npm, e))?;
     let npmrc = std::env::temp_dir().join(format!("homma-npmrc-{}", std::process::id()));
     std::fs::write(&npmrc, format!("//registry.npmjs.org/:_authToken={t}\n"))?;
@@ -258,11 +290,19 @@ pub fn wait_until_served(
             std::thread::sleep(poll_interval());
         }
     }
-    Err(PublishError::NotServed(registry, package.to_string(), version.clone()))
+    Err(PublishError::NotServed(
+        registry,
+        package.to_string(),
+        version.clone(),
+    ))
 }
 
 /// The real answer to "is it served yet", off the registry.
-pub fn registry_serves(registry: Registry, package: &str, version: &Version) -> Result<bool, registry::Unreachable> {
+pub fn registry_serves(
+    registry: Registry,
+    package: &str,
+    version: &Version,
+) -> Result<bool, registry::Unreachable> {
     Ok(registry::published_versions(registry, package)?.contains(version))
 }
 

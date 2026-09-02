@@ -34,12 +34,22 @@ impl fmt::Display for Plan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.last_tag {
             Some(t) => writeln!(f, "{} commit(s) since `{t}`:", self.commits.len())?,
-            None => writeln!(f, "{} commit(s), and no release tag yet:", self.commits.len())?,
+            None => {
+                writeln!(
+                    f,
+                    "{} commit(s), and no release tag yet:",
+                    self.commits.len()
+                )?
+            },
         }
         for c in &self.commits {
             writeln!(f, "  {} {}", c.sha, c.subject)?;
         }
-        writeln!(f, "version {} becomes {}, tagged `{}`", self.current, self.next, self.tag)?;
+        writeln!(
+            f,
+            "version {} becomes {}, tagged `{}`",
+            self.current, self.next, self.tag
+        )?;
         writeln!(f)?;
         f.write_str(&self.changelog)?;
         writeln!(f)?;
@@ -174,7 +184,10 @@ mod tests {
     }
 
     fn commit(d: &Path, subject: &str) {
-        let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         std::fs::write(d.join(format!("f{n}")), "x").unwrap();
         for args in [vec!["add", "."], vec!["commit", "--quiet", "-m", subject]] {
             assert!(sh::run(d, "git", &args).unwrap().ok());
@@ -203,7 +216,11 @@ mod tests {
     #[test]
     fn commits_are_counted_from_the_newest_tag_and_the_tag_follows_the_convention() {
         let d = repo("0.1.0");
-        assert!(sh::run(d.path(), "git", &["tag", "-a", "0.1.0", "-m", "0.1.0"]).unwrap().ok());
+        assert!(
+            sh::run(d.path(), "git", &["tag", "-a", "0.1.0", "-m", "0.1.0"])
+                .unwrap()
+                .ok()
+        );
         commit(d.path(), "feat: later");
         let p = plan(d.path(), "HEAD", Level::Minor, "d").unwrap();
         assert_eq!(p.last_tag.as_deref(), Some("0.1.0"));
@@ -216,13 +233,47 @@ mod tests {
     #[test]
     fn a_manifest_already_bumped_is_the_release_and_a_major_on_zero_is_a_minor() {
         let d = repo("0.1.0");
-        assert!(sh::run(d.path(), "git", &["tag", "-a", "v0.1.0", "-m", "v0.1.0"]).unwrap().ok());
-        std::fs::write(d.path().join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.1\"\n").unwrap();
-        assert!(sh::run(d.path(), "git", &["commit", "--quiet", "-am", "chore: bump"]).unwrap().ok());
+        assert!(
+            sh::run(d.path(), "git", &["tag", "-a", "v0.1.0", "-m", "v0.1.0"])
+                .unwrap()
+                .ok()
+        );
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.1\"\n",
+        )
+        .unwrap();
+        assert!(
+            sh::run(d.path(), "git", &[
+                "commit",
+                "--quiet",
+                "-am",
+                "chore: bump"
+            ])
+            .unwrap()
+            .ok()
+        );
         let p = plan(d.path(), "HEAD", Level::Major, "d").unwrap();
-        assert_eq!(p.next, Version::new(0, 1, 1), "already one up, so that is it");
-        std::fs::write(d.path().join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
-        assert!(sh::run(d.path(), "git", &["commit", "--quiet", "-am", "chore: back"]).unwrap().ok());
+        assert_eq!(
+            p.next,
+            Version::new(0, 1, 1),
+            "already one up, so that is it"
+        );
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        assert!(
+            sh::run(d.path(), "git", &[
+                "commit",
+                "--quiet",
+                "-am",
+                "chore: back"
+            ])
+            .unwrap()
+            .ok()
+        );
         let p = plan(d.path(), "HEAD", Level::Major, "d").unwrap();
         assert_eq!(p.next, Version::new(0, 2, 0), "a major on 0.x is a minor");
     }
@@ -231,6 +282,9 @@ mod tests {
     fn a_tree_without_a_manifest_is_not_plannable() {
         let d = tempfile::tempdir().unwrap();
         assert!(sh::run(d.path(), "git", &["init", "--quiet"]).unwrap().ok());
-        assert!(matches!(plan(d.path(), "HEAD", Level::Patch, "d"), Err(PlanError::NoManifest(_))));
+        assert!(matches!(
+            plan(d.path(), "HEAD", Level::Patch, "d"),
+            Err(PlanError::NoManifest(_))
+        ));
     }
 }
