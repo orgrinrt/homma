@@ -124,3 +124,25 @@ fn an_empty_argument_list_is_not_a_program() {
     // A config carrying `token_cmd = []` must not try to run something.
     assert_eq!(resolve(&forge(None, Some(&[]))), None);
 }
+
+#[test]
+fn a_registry_resolves_the_same_way_a_forge_does() {
+    use crate::config::RegistryConfig;
+    let var = "HOMMA_TEST_REGISTRY_TOKEN_A";
+    // SAFETY: the test process owns its environment and no other test reads this name.
+    unsafe { std::env::set_var(var, "from-env") };
+    let reg = RegistryConfig {
+        token_env: Some(var.into()),
+        token_cmd: Some(vec!["echo".into(), "from-cmd".into()]),
+    };
+    assert_eq!(resolve_registry(&reg).as_deref(), Some("from-env"));
+    unsafe { std::env::set_var(var, "") };
+    assert_eq!(
+        resolve_registry(&reg).as_deref(),
+        Some("from-cmd"),
+        "an empty variable falls through"
+    );
+    unsafe { std::env::remove_var(var) };
+    let none = RegistryConfig::default();
+    assert_eq!(resolve_registry(&none), None);
+}

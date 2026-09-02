@@ -1607,6 +1607,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml 0.8.23",
+ "toml_edit",
  "ureq",
 ]
 
@@ -1620,6 +1621,7 @@ dependencies = [
  "homma-api",
  "homma-core",
  "homma-org",
+ "homma-store",
  "predicates",
  "serde",
  "serde_json",

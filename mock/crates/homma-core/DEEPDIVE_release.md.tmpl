@@ -1,0 +1,221 @@
+# Release
+
+How a commit gets measured, how the measurement reaches the forge, and how a
+measured `dev` becomes a tagged, published, announced `main`. One document
+because it is one mechanism seen at three moments: at every push, at the merge,
+and on the badge a reader lands on afterwards.
+
+## What a release is
+
+A release is a merge of `dev` into `main`, and every such merge is one. Four
+things travel together and a release is half done until all four exist: the
+merge commit on `main`, an annotated tag on that commit named for the version,
+a GitHub release on that tag whose body is the changelog block, and the registry
+publish of the version the manifest names. Nothing is released off `dev`, and a
+release tag on any commit `main` cannot reach is a defect the check below names.
+
+The one carve-out is a hotpatch or a small thing that had to reach `main` and
+was not worth a version. It is merged without the other three, it is rare, and
+it is said to be that when it happens. The next release then carries it.
+
+`0.x` versions bump the way cargo and jsr read them: a breaking change on a
+`0.x` line is a minor. The version itself is never inferred; the level is given.
+
+## The gate
+
+The gate is a fixed list of steps run against one commit of one repo, on the
+machine of whoever is pushing, and it produces a verdict and a set of numbers.
+It decides what a repo is from its root: a `Cargo.toml` makes it a crate or a
+cargo workspace, a `deno.json` makes it a deno package, and a repo with both is
+gated as both. A repo that keeps its manifests under a subdirectory, `mock/` in
+this workspace, is read as having none today; the workspace-wide run names such
+a repo as passed over rather than skipping it in silence, and reading that
+shape is owed. What a step runs per kind:
+
+| step | crate | deno package | blocks |
+|---|---|---|---|
+| format | `cargo fmt --check` | `deno fmt --check` | yes |
+| lint | `cargo clippy --all-targets --all-features -- -D warnings` | `deno lint` then `deno check` on every export | yes |
+| tests | `cargo test --all-features`, then once per feature set the manifest metadata names | `deno test` with the permissions `deno.json` declares | yes |
+| deny | `cargo deny check`, only when `deny.toml` exists | nothing | yes |
+| docs | rustdoc coverage on nightly, the documented fraction of public items | `deno doc --lint` | reports |
+| notices | `ante check`, only when `ante.toml` exists | the same | yes |
+
+A step that blocks turns the verdict red on failure. A step that reports puts its
+number in the record and the verdict stands. The numbers a run produces are the
+test count and how many passed, the documented fraction, the deny advisory count
+where it ran, and the wall time of the whole gate; anything a step prints is kept
+in the record as its log rather than summarised.
+
+The feature sets a crate wants tested beyond `--all-features` come from
+`[package.metadata.homma] feature_sets = [["a"], ["a", "b"]]` in its manifest,
+and a crate without that entry is tested with all features and with none. A
+gate never edits a tree; it runs in the checkout it is given and fails if that
+checkout is dirty, because a number measured on a tree with unstaged changes
+describes no commit.
+
+## The run record
+
+A gate run lands in the store as a record of kind `gate-run`, which the
+workspace declares like any other kind, append-only. Its attributes: `repo` as a
+reference into the repos namespace, `sha` as text, `ran_at` as an instant,
+`verdict` as text holding `green` or `red`, `steps` as text holding the per-step
+outcome and numbers as json, and `log` as text. A number rides as text because
+the store's three attribute types are what the records that exist have needed,
+and a fourth is added when a kind needs to sort or sum one, which this does not.
+
+The record is what the release reads. `homma release run` looks for the newest
+`gate-run` on the exact sha at the tip of `dev`, refuses when there is none or
+the newest is red, and never runs the gate itself. So the gate runs once, at the
+push, and everything after it trusts the record. A run against a different sha,
+however recent, is not evidence about this one.
+
+## The commit status
+
+Every run posts a commit status to the forge on the sha it measured, under the
+context `homma/gate`, with `success` or `failure` as the state and the numbers
+in the description in the order the table lists them. The forge api is the same
+shape on GitHub and Forgejo, one write per status, and the forge trait grows one
+method for it. The token comes from the forge's configured `token_cmd`.
+
+The trunk rulesets on `dev` and `main` require `homma/gate` to be `success` on
+the head of any pull request before it can merge, and the workspace's ruleset
+applicator carries that requirement. Nothing runs on the remote. The remote is
+told that something ran here, and it refuses a merge until it has been told,
+which is the whole of how a locally run gate governs a remotely merged branch.
+
+A status write that fails because the network is down does not turn the run red.
+The record is kept and the status is posted by the next run or by
+`homma release gate --post <sha>`, and until then the forge holds the merge,
+which is the correct state for a commit the forge has not heard about.
+
+## The hook
+
+`homma release hook install <repo>` writes a `pre-push` hook into the repo's
+hooks directory that runs the gate on every tip being pushed and refuses the
+push when the verdict is red. A green run writes its record and posts its
+status before the push proceeds, so a branch never reaches the remote without
+its status. The hook is a few lines that call `homma release gate --hook`, so
+the logic stays in the binary and the file never drifts from it.
+
+The install refuses when `core.hooksPath` points outside the repo, which is the
+case for a repo mockspace manages, since those route every hook through
+mockspace's own durable directory. Such a repo is gated at release time only
+until mockspace's pre-push delegates to homma, and the refusal says so.
+
+## The check
+
+Before anything moves, `homma release check <repo>` establishes the invariants
+and prints every one it cannot, by id. The ids are those of the check catalogue
+the workspace's earlier Python runner carried, so the port is checkable against
+it, and the set a release needs green is this:
+
+The tags: every release tag is reachable from `main` (`tag.reachable`, tightened
+to `main`), annotated (`tag.annotated`), named `vX.Y.Z` or `X.Y.Z` consistently
+within the repo (`tag.prefix`), one per commit (`tag.dupes`), on the remote and
+local alike and pointing at the same commit both sides (`tag.pushed`,
+`tag.local`, `tag.sha.agrees`), and every version bump commit on `main` carries
+one (`tag.bump.tagged`).
+
+`main` holds nothing unreleased: the newest release tag is the tip of `main`, or
+what lies between is a hotpatch named as such (`main.unreleased`, the one id
+the catalogue did not have, since it never read `main`). The manifest version at a tag
+equals the tag (`man.version.matches`), and the working version is above the
+highest published one and its smallest legal successor at the level given
+(`man.current.forward`, `man.current.smallest`).
+
+The registry: published versions ascend in publish order (`order.ascends`),
+skip no number (`semver.gaps`), every published version has a tag and every tag
+a published version (`reg.orphan`, `reg.unpublished`), and where a package ships
+on both jsr and npm the two hold the same set (`both.sameset`).
+
+The tree: clean, on a branch, nothing unpushed, no untracked file
+(`tree.clean`, `tree.attached`, `tree.pushed`, `tree.untracked`), and no
+workflow file anywhere in the tree (`hist.workflow.tree`).
+
+The rest of the catalogue, the bundle contents, the history scans, the branch
+hygiene and the reader-facing checks, is reported at `warn` and does not block,
+and each carries the same id it had before.
+
+## The run
+
+`homma release run <repo> --level <patch|minor|major>` is the release, and the
+level is required: a run without one refuses, and the tool never reads a level
+off the commits. What it does, in order, stopping at the first refusal:
+
+1. Runs the check and refuses on any blocking finding.
+2. Finds the newest green `gate-run` for the tip of `dev` and refuses without it.
+3. Prints the plan: the commits since the last release tag with their prefixes,
+   the version the level makes of the current one, the changelog block those
+   commits become, and what publishes where, in dependency order. With
+   `--dry-run` it stops here.
+4. Bumps the manifest on `dev`, prepends the block to `CHANGELOG.md`, commits
+   both as one commit, and pushes `dev`.
+5. Merges `dev` into `main` with a merge commit, never a squash, never a
+   fast-forward, so the tag has a commit of its own and `main` keeps every
+   constituent commit.
+6. Creates the annotated tag on the merge commit and pushes it.
+7. Creates the GitHub release on the tag with the changelog block as its body.
+8. Publishes to every registry the manifest names, in dependency order across
+   the repos the plan named, waiting for each registry to serve a version before
+   the next package that depends on it publishes.
+9. Writes the badge json to the `badges` branch.
+
+A cargo workspace publishes its members in dependency order, one `cargo publish`
+per member. A deno package publishes with `deno publish`, and where it also ships
+on npm, builds the npm package and publishes that too. The registry tokens come
+from the same credential tool the forge token does.
+
+`homma release run` without a repo releases every repo the workspace names that
+has something unreleased, in dependency order, with one `--level` for all of
+them, which is the shape a docs pass across the estate takes.
+
+## The changelog
+
+`CHANGELOG.md` lives on `main` in every released repo, newest first, one block
+per release, kept forever. A block opens with the version and the date and
+carries the commits since the previous tag grouped by their conventional prefix,
+`feat`, `fix`, `docs`, `refactor`, `chore`, `test`, in that order, one line each
+in the commit's own words with its short sha, and the pull request number where
+the merge commit carries one. Commits with no prefix land under `other`. The
+same block, verbatim, is the GitHub release body. There is no summary paragraph
+and no prose the tool writes on its own.
+
+## Badges
+
+Each repo carries an orphan branch named `badges` holding one json file per
+measured thing, in the shape shields' endpoint badge reads: a schema version, a
+label, a message and a colour. The files: `tests.json`, `docs.json`,
+`deny.json` where deny ran, and `gate.json` for the verdict, plus `version.json`
+naming the version that shipped. The release rewrites the branch on every run,
+so a badge shows the number the gate measured for the commit the tag points at.
+
+A readme references one as
+`https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/<owner>/<repo>/badges/<file>`.
+The branch is fetched by every clone, a few kilobytes and never checked out,
+and that is accepted over a ref outside `refs/heads/` that raw file hosting
+cannot resolve.
+
+## Credentials
+
+The forge token comes through the forge's `token_cmd` or `token_env`, as every
+forge call already does. The registry tokens come through the same command with
+the registry as its argument (`crates-io`, `jsr`, `npm`), and the publish steps
+hand them to `cargo publish`, `deno publish --token` and an npm user config
+written for the call, never to the environment of the shell that ran homma.
+
+## The surface
+
+```
+homma release check [<repo>]              the invariants, by id, blocking ones first
+homma release gate [<repo>] [--sha <sha>] run the gate now, record it, post the status
+homma release gate --hook                 what the pre-push hook calls
+homma release gate --post <sha>           post a recorded run's status again
+homma release plan <repo> --level <l>     the plan and nothing else
+homma release run [<repo>] --level <l>    the release, or every unreleased repo
+homma release badges <repo>               rewrite the badges branch from the newest record
+homma release hook install <repo>         write the pre-push hook, or refuse and say why
+```
+
+Every subcommand prints for a human when a terminal is attached and its result
+alone when one is not, the split the root design decides for the whole surface.

@@ -1,0 +1,28 @@
+# homma-core backlog
+
+Designed and deferred. Names are unbackticked on purpose so the design-doc lint
+does not look for them in source.
+
+## The gate through mockspace's own hooks
+
+A repo that uses mockspace routes core.hooksPath at mockspace's durable hooks,
+so homma cannot install its pre-push there. The gate reaches such a repo when
+mockspace's pre-push delegates to homma release gate where homma is on the path,
+which is a change in mockspace rather than here. Until then those repos are gated
+at release time only, and the release refuses a tip without a run record the
+same way, so nothing ships ungated; what is missing is the push being refused.
+
+## The daemon re-running the slow half
+
+The hook runs what a push can wait for. Full feature matrices, coverage and the
+publish dry run are the slow half, and the daemon, which is homma's one
+background actor, could run them on a new dev tip and append a second record
+that the release then prefers. Named so it lands on the daemon rather than on a
+second scheduler.
+
+## Per-lint statuses from mockspace
+
+The commit status mechanism generalises: every mockspace lint can post its own
+status on the sha it judged, and a ruleset can require any subset of them on
+either trunk. That is mockspace's to build and homma's to consume, and the
+context name a lint posts under wants deciding once, together.

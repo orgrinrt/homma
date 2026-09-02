@@ -25,7 +25,11 @@ workspace that renames a repository, clones a new one, or drops one is correct
 the moment the tree is, with nothing left saying otherwise.
 
 **Minimal, and delegating.** Where a member repository has its own tooling, homma
-drives it rather than reimplementing it.
+drives it rather than reimplementing it. Releasing is the case where the tooling
+is the workspace's own: a release is a merge of `dev` onto `main` tagged,
+published and announced as one act, gated by a run on the developer's machine
+that the forge is told about, and homma drives that because it is the one thing
+every workspace has at hand.
 
 ## The four primitives
 
@@ -68,7 +72,11 @@ directory pretending to be a decision.
 `homma-engine` is the command surface, and `homma` is the launcher that finds
 the workspace, reads the version of the engine it pins, and runs that one.
 `homma-core` still holds forge clients and git operations in a pre-adoption
-split that a later round dissolves.
+split that a later round dissolves, and it is where the release lives: the gate
+that measures a commit, the run record and commit status it leaves, and the
+merge, tag, changelog, GitHub release and registry publish that carry `dev`
+onto `main`. `homma release` in `homma-engine` is its surface, and
+`CORE_RELEASE.md` is the whole of it.
 
 ## The command surface
 
@@ -77,6 +85,7 @@ homma org      who exists
 homma work     workspaces and what is in them
 homma sauna    correspondence and work
 homma serve    the daemon and its surfaces
+homma release  the gate, the run record, and dev onto main as a release
 ```
 
 A call with a terminal attached should print for a human, and a call without one
