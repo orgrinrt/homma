@@ -11,10 +11,9 @@ use std::path::Path;
 
 use homma_api::{CheckSeverity, Finding, Level, RepoKind, Version};
 
+pub use super::packages::{Packages, Published, fetch_published, packages, tag_name, tag_version};
 use super::registry::Registry;
 use super::{git, kind, version};
-
-pub use super::packages::{Packages, Published, fetch_published, packages, tag_name, tag_version};
 
 /// What the check needs to know about the repo, beyond the tree itself.
 pub struct Inputs<'a> {
@@ -206,10 +205,7 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                     push(
                         "tag.bump.tagged",
                         CheckSeverity::Error,
-                        format!(
-                            "{} bumps to {here} and no tag points at it",
-                            &sha[.. 7]
-                        ),
+                        format!("{} bumps to {here} and no tag points at it", &sha[.. 7]),
                     );
                 }
             }

@@ -193,7 +193,10 @@ fn a_version_bump_on_main_carries_a_tag_whether_committed_there_or_merged_in() {
     f.git(&["commit", "--quiet", "-m", "chore: release 0.2.0"]);
     f.git(&["push", "--quiet", "origin", "main"]);
     let findings = run(&f, &published(&["0.1.0", "0.2.0"]), None);
-    let bumps: Vec<&Finding> = findings.iter().filter(|x| x.id == "tag.bump.tagged").collect();
+    let bumps: Vec<&Finding> = findings
+        .iter()
+        .filter(|x| x.id == "tag.bump.tagged")
+        .collect();
     assert_eq!(bumps.len(), 1, "{findings:?}");
     assert!(bumps[0].message.contains("0.2.0"));
     assert!(bumps[0].severity.blocks());
@@ -210,7 +213,10 @@ fn a_version_bump_on_main_carries_a_tag_whether_committed_there_or_merged_in() {
     f.git(&["merge", "--quiet", "--no-ff", "-m", "release: 0.3.0", "dev"]);
     f.git(&["push", "--quiet", "origin", "main", "dev"]);
     let findings = run(&f, &published(&["0.1.0", "0.2.0", "0.3.0"]), None);
-    let bumps: Vec<&Finding> = findings.iter().filter(|x| x.id == "tag.bump.tagged").collect();
+    let bumps: Vec<&Finding> = findings
+        .iter()
+        .filter(|x| x.id == "tag.bump.tagged")
+        .collect();
     assert_eq!(bumps.len(), 1, "{findings:?}");
     let merge = sh::run(f.root(), "git", &["rev-parse", "main"]).unwrap();
     assert!(bumps[0].message.starts_with(&merge.stdout.trim()[.. 7]));
@@ -218,7 +224,9 @@ fn a_version_bump_on_main_carries_a_tag_whether_committed_there_or_merged_in() {
     let bump_on_dev = sh::run(f.root(), "git", &["rev-parse", "dev"]).unwrap();
     f.git(&["tag", "-a", "v0.3.0", "-m", "v0.3.0", bump_on_dev.stdout.trim()]);
     f.git(&["push", "--quiet", "origin", "refs/tags/v0.3.0"]);
-    assert!(ids(&run(&f, &published(&["0.1.0", "0.2.0", "0.3.0"]), None)).contains(&"tag.bump.tagged"));
+    assert!(
+        ids(&run(&f, &published(&["0.1.0", "0.2.0", "0.3.0"]), None)).contains(&"tag.bump.tagged")
+    );
     f.git(&["tag", "-d", "v0.3.0"]);
     f.git(&["push", "--quiet", "--delete", "origin", "refs/tags/v0.3.0"]);
     f.tag("v0.3.0");

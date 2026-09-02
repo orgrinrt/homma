@@ -43,10 +43,7 @@ pub(super) fn sibling_dependency(root: &Path, siblings: &[String]) -> Option<Str
                         .and_then(|p| p.as_str())
                         .unwrap_or(key.as_str());
                     let git = value.get("git").and_then(|g| g.as_str()).unwrap_or("");
-                    if let Some(s) = siblings
-                        .iter()
-                        .find(|s| *s == package || names_git(git, s))
-                    {
+                    if let Some(s) = siblings.iter().find(|s| *s == package || names_git(git, s)) {
                         return Some(s.clone());
                     }
                 }

@@ -428,4 +428,3 @@ fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
         Err(e) => Err(e.into()),
     }
 }
-
