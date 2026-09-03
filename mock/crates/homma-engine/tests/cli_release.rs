@@ -194,6 +194,44 @@ fn a_worktree_beside_the_clones_resolves_to_its_clone_with_no_repo_named() {
         .stderr(predicate::str::contains(
             "not inside a workspace repository",
         ));
+    // the hook's own invocation, git's two arguments and the refs on stdin,
+    // from the worktree: with no ref pushed there is nothing to gate, which
+    // is reached only after the repo resolved and the arguments parsed
+    bin()
+        .current_dir(&seat)
+        .args([
+            "-c",
+            cfg.to_str().unwrap(),
+            "release",
+            "gate",
+            "--hook",
+            "origin",
+            "git@github.com:orgrinrt/x.git",
+        ])
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nothing to gate"));
+    // and under the hook the positional is git's remote name, not a repo:
+    // `x` is a real repo here, and from a stray directory it is still not
+    // read as one
+    bin()
+        .current_dir(&stray)
+        .args([
+            "-c",
+            cfg.to_str().unwrap(),
+            "release",
+            "gate",
+            "--hook",
+            "x",
+            "git@github.com:orgrinrt/x.git",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "not inside a workspace repository",
+        ));
 }
 
 #[test]
