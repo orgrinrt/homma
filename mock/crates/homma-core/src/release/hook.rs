@@ -143,14 +143,25 @@ pub fn install(root: &Path) -> Result<Installed, HookError> {
         &relative.to_string_lossy(),
     ])
     .map_err(GitError::from)?;
-    if tracked.ok() && !tracked.stdout.trim().is_empty() {
+    if !tracked.ok() {
+        return Err(GitError::Failed {
+            command: tracked.command_line(),
+            stderr:  tracked.stderr,
+        }
+        .into());
+    }
+    if !tracked.stdout.trim().is_empty() {
         return Err(HookError::HooksPathTracked(dir));
     }
+    // anything at the path that is not this tool's text is somebody's hook,
+    // a compiled one or one this user cannot read included; only an absent
+    // file falls through to the write
     let path = dir.join("pre-push");
-    if let Ok(existing) = std::fs::read_to_string(&path) {
-        if existing != SCRIPT {
-            return Err(HookError::HookExists(path));
-        }
+    match std::fs::read(&path) {
+        Ok(bytes) if bytes == SCRIPT.as_bytes() => {},
+        Ok(_) => return Err(HookError::HookExists(path)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+        Err(_) => return Err(HookError::HookExists(path)),
     }
     std::fs::create_dir_all(&dir)?;
     std::fs::write(&path, SCRIPT)?;
@@ -256,6 +267,38 @@ mod tests {
         // and the tool's own is rewritten, which is the control
         std::fs::write(&own, SCRIPT).unwrap();
         assert!(install(d.path()).is_ok());
+    }
+
+    #[test]
+    fn a_hook_that_does_not_read_as_text_or_cannot_be_read_is_still_refused() {
+        // a compiled hook: bytes that are not text
+        let d = repo();
+        let own = d.path().join(".git/hooks/pre-push");
+        std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+        let binary = [0x7Fu8, b'E', b'L', b'F', 0xFF, 0xFE, 0x00, 0x01];
+        std::fs::write(&own, binary).unwrap();
+        assert!(
+            matches!(install(d.path()), Err(HookError::HookExists(_))),
+            "a binary hook is somebody's hook"
+        );
+        assert_eq!(std::fs::read(&own).unwrap(), binary, "and it is untouched");
+        // a hook this user cannot read
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::write(&own, "#!/bin/sh\necho theirs\n").unwrap();
+            std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o000)).unwrap();
+            let result = install(d.path());
+            std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(
+                matches!(result, Err(HookError::HookExists(_))),
+                "an unreadable hook is somebody's hook: {result:?}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&own).unwrap(),
+                "#!/bin/sh\necho theirs\n"
+            );
+        }
     }
 
     #[test]
