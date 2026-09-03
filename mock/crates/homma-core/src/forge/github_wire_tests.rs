@@ -209,3 +209,53 @@ fn a_release_is_posted_to_the_releases_endpoint_with_its_tag_name_and_body() {
         "nothing beyond the three fields: {body}"
     );
 }
+
+/// A stub answering each request with the status of the first route whose
+/// path fragment the request line carries, `404` where none does, for a
+/// fixed number of requests.
+fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for _ in 0 .. requests {
+            let Ok((mut sock, _)) = listener.accept() else {
+                return;
+            };
+            let mut reader = BufReader::new(sock.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            loop {
+                let mut header = String::new();
+                if reader.read_line(&mut header).unwrap() == 0 || header.trim().is_empty() {
+                    break;
+                }
+            }
+            let status = routes
+                .iter()
+                .find(|(path, _)| request_line.contains(path))
+                .map_or(404, |(_, status)| *status);
+            let response = format!("HTTP/1.1 {status} X\r\nContent-Length: 2\r\n\r\n{{}}");
+            let _ = sock.write_all(response.as_bytes());
+            let _ = sock.flush();
+        }
+    });
+    url
+}
+
+#[test]
+fn a_sha_github_has_not_received_is_unknown_and_a_repo_it_has_not_is_an_error() {
+    // 422 is what GitHub answers for a sha it does not have, and is the
+    // only status that means the commit is still on its way
+    let url = status_by_path(
+        &[("/repos/o/r/commits/aaa", 200), ("/repos/o/r/commits/bbb", 422)],
+        3,
+    );
+    let client = GitHubClient::anonymous(&url);
+    assert!(client.commit_known("o", "r", "aaa").unwrap());
+    assert!(!client.commit_known("o", "r", "bbb").unwrap());
+    // 404 is the repository, and a poster waiting on it would wait for nothing
+    assert!(matches!(
+        client.commit_known("o", "gone", "aaa"),
+        Err(ForgeError::RepoNotFound { .. })
+    ));
+}

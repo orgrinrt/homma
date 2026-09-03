@@ -345,6 +345,11 @@ pub enum ReleaseOp {
         /// without running anything.
         #[arg(long, conflicts_with = "sha")]
         post:     Option<String>,
+        /// With `--post`: wait until the forge knows the commit before
+        /// posting, up to ten minutes. What the pre-push hook leaves behind,
+        /// since it measures a commit the push has not sent yet.
+        #[arg(long = "await", requires = "post")]
+        wait:     bool,
         /// What git hands a pre-push hook after its own arguments: the
         /// remote's name and url. Read by nothing here; the refs come on
         /// stdin. Hidden, since only the hook passes them.

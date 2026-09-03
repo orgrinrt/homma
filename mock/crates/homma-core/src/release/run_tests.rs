@@ -76,6 +76,10 @@ impl Forge for Recorder {
         Ok(())
     }
 
+    fn commit_known(&self, _: &str, _: &str, _: &str) -> Result<bool, ForgeError> {
+        Ok(true)
+    }
+
     fn create_release(&self, _: &str, _: &str, tag: &str, body: &str) -> Result<(), ForgeError> {
         self.releases.borrow_mut().push((tag.into(), body.into()));
         Ok(())

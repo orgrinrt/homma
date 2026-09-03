@@ -192,12 +192,21 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
             sha,
             hook,
             post,
+            wait,
             git_args: _,
         } => {
             // under the hook the first positional is git's remote name, not
             // a repo; the repo is the one the working directory is in
             let repo = if *hook { None } else { repo.as_deref() };
-            gate_cmd(cli, &cfg, repo, sha.as_deref(), *hook, post.as_deref())
+            gate_cmd(
+                cli,
+                &cfg,
+                repo,
+                sha.as_deref(),
+                *hook,
+                post.as_deref(),
+                *wait,
+            )
         },
         ReleaseOp::Plan {
             repo,
