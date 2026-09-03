@@ -10,15 +10,18 @@
 //! - [`GixRepo`]: the canonical `gix`-backed impl.
 //! - [`Status`], [`Branch`], [`Remote`], [`TrackingStatus`], [`MirrorOpts`]: value types.
 //! - [`RepoError`]: concrete error type returned by every op.
+//! - [`hooks_path_at`], [`hooks_are_wired`]: whether per-repo git hooks fire at all.
 //!
 //! Design rationale lives in the `project-homma-repo-ops-design` memory note.
 
 pub mod error;
 pub mod git_impl;
 pub mod gix_impl;
+pub mod hooks;
 pub mod ops;
 
 pub use error::RepoError;
 pub use git_impl::GixGit;
 pub use gix_impl::GixRepo;
+pub use hooks::{hooks_are_wired, hooks_path_at};
 pub use ops::{Branch, MirrorOpts, Remote, RepoOps, Status, TrackingStatus, canonical_refspecs};

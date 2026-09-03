@@ -1,0 +1,50 @@
+da0d842 docs: lock the source changelist
+d3ecf0f test: assert the exit code the file is named for, and the two case
+7d96b0d docs: plan the arm that reads the code the file is named for
+4314bc7 docs: open the round on the test that never read an exit code
+e3efad8 Merge remote-tracking branch 'origin/dev' into feat/the-config-gate
+213e4d7 docs: close the round on the check that could not run
+4d86bfb docs: lock the source changelist
+249ca68 fix: separate a homma that could not run from one that reported
+85e8027 docs: replace the src changelist that was locked before its work
+34e2a88 docs: lock the source changelist
+b8128a9 docs: plan the exit-code split and the gate arm that reads it
+759845d docs: state the three exit codes and what the gate does with them
+58c59bf docs: open the round on a check that could not run
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
+3e5f7c2 docs: close the round on the config check's exit code
+9a05b15 docs: lock the source changelist
+e78e0fc test: pin the exit code the commit gate reads
+646e081 docs: plan the exit-code test
+9de44c2 docs: lock the doc changelist
+85be152 docs: plan no document changes for the exit-code round
+bc181fb docs: open the round on pinning the config check's exit code
+6a7e5d5 docs: close the design round on the config gate and the status fold
+ba09c48 docs: lock the source changelist
+ff26751 refactor: split the shared-config tests by what they answer
+8852a15 feat: refuse a commit in a repo missing a shared tool config
+760379a docs: plan the source changes for the config gate and the status fold
+bcb7199 docs: lock the doc changelist
+9268af5 docs: state the shared tool configs, the config gate and what a status answers
+246930d docs: open the round on the shared config gate and one status command
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml
+9695777 fix: the launcher can reach its own engine
+f2b0c4e feat!: detect workspace members rather than declaring them
+4abf397 docs: rewrite the readme, and fix what checking it turned up
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round
+de1d474 chore: lock the src changelist

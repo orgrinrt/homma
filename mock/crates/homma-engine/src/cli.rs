@@ -64,9 +64,25 @@ pub enum OutputFormat {
 /// Top-level subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Show workspace state: parsed `homma.toml`, repos and their configured
-    /// forges, default-branch resolution.
-    Status,
+    /// What state the workspace is in.
+    ///
+    /// Covers every population homma can report offline: the manifest and its
+    /// forges, the agent surfaces including whether each repo's git hooks are
+    /// wired, the shared tool configs, and the working tree. By default it
+    /// shows only what is not in the state it should be in, because that is
+    /// what the question is usually asking.
+    ///
+    /// The narrower verbs stay the place to see one population entirely,
+    /// healthy entries included.
+    Status {
+        /// Print every population whole rather than only what is wrong.
+        ///
+        /// Human output only. The JSON document always carries every
+        /// population in full, because a machine reading one with the healthy
+        /// members dropped would be reading a lie about the population.
+        #[arg(long)]
+        full: bool,
+    },
 
     /// The registry: who exists, and standing them up.
     ///
@@ -193,6 +209,39 @@ pub enum RepoOp {
         /// Repo name from `homma.toml`.
         repo: String,
     },
+
+    /// The shared tool configs a repo is meant to have.
+    Config {
+        #[command(subcommand)]
+        op: ConfigOp,
+    },
+}
+
+/// `repo config` subcommands.
+///
+/// Two verbs rather than one because the commit path needs a check that
+/// cannot write. Placing a config turns a check on, and a check that was not
+/// running has not been passing, so the consequences land wherever that tool
+/// looks. That is somebody's to face deliberately rather than something a gate
+/// does to them mid-commit.
+#[derive(Debug, Subcommand)]
+pub enum ConfigOp {
+    /// Compare a repo against the shared configs and report. Writes nothing.
+    ///
+    /// Exits non-zero when a repo is missing a config that is required of it,
+    /// which is what the commit path reads.
+    Check {
+        /// Single repo from `homma.toml`. Default: all.
+        #[arg(long)]
+        repo: Option<String>,
+    },
+
+    /// Place the shared configs a repo is missing.
+    Init {
+        /// Single repo from `homma.toml`. Default: all.
+        #[arg(long)]
+        repo: Option<String>,
+    },
 }
 
 /// `agent` subcommands.
@@ -201,8 +250,8 @@ pub enum AgentOp {
     /// Discover per-repo mockspace agent-template state.
     ///
     /// For each member repo (or one when `--repo` is set), reports whether
-    /// `mock/`, `.claude/`, `.github/`, and the `cargo mock` alias are
-    /// present.
+    /// `mock/`, `.claude/`, `.github/`, the `cargo mock` alias and the git
+    /// hooks wiring are present.
     Status {
         /// Single repo from `homma.toml`. Default: all.
         #[arg(long)]
@@ -488,9 +537,21 @@ mod tests {
     #[test]
     fn cli_parses_basic_invocation() {
         let cli = Cli::try_parse_from(["homma", "status"]).unwrap();
-        assert!(matches!(cli.command, Command::Status));
+        assert!(matches!(cli.command, Command::Status {
+            full: false,
+        }));
         assert_eq!(cli.output, OutputFormat::Human);
         assert_eq!(cli.verbosity, 0);
+    }
+
+    #[test]
+    fn status_full_is_off_unless_asked_for() {
+        // The default is what nearly every invocation gets, and the whole
+        // point of the default is that a healthy workspace stays short.
+        let cli = Cli::try_parse_from(["homma", "status", "--full"]).unwrap();
+        assert!(matches!(cli.command, Command::Status {
+            full: true,
+        }));
     }
 
     #[test]
@@ -526,6 +587,70 @@ mod tests {
             },
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    #[test]
+    fn cli_parses_repo_config_check_over_every_repo() {
+        let cli = Cli::try_parse_from(["homma", "repo", "config", "check"]).unwrap();
+        match cli.command {
+            Command::Repo {
+                op:
+                    RepoOp::Config {
+                        op:
+                            ConfigOp::Check {
+                                repo,
+                            },
+                    },
+            } => assert_eq!(repo, None, "no --repo must mean every member, not none"),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_repo_config_check_for_one_repo() {
+        // The form the commit gate runs, so it is worth pinning by name.
+        let cli =
+            Cli::try_parse_from(["homma", "repo", "config", "check", "--repo", "arvo"]).unwrap();
+        match cli.command {
+            Command::Repo {
+                op:
+                    RepoOp::Config {
+                        op:
+                            ConfigOp::Check {
+                                repo,
+                            },
+                    },
+            } => assert_eq!(repo.as_deref(), Some("arvo")),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_repo_config_init() {
+        // The form a refusal names as the fix. If this stops parsing, the
+        // message tells somebody to run something that does not work.
+        let cli =
+            Cli::try_parse_from(["homma", "repo", "config", "init", "--repo", "arvo"]).unwrap();
+        match cli.command {
+            Command::Repo {
+                op:
+                    RepoOp::Config {
+                        op:
+                            ConfigOp::Init {
+                                repo,
+                            },
+                    },
+            } => assert_eq!(repo.as_deref(), Some("arvo")),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_rejects_a_config_verb_that_does_not_exist() {
+        // The control on the two above: a pass there could otherwise be clap
+        // accepting anything after `config`.
+        assert!(Cli::try_parse_from(["homma", "repo", "config", "place"]).is_err());
+        assert!(Cli::try_parse_from(["homma", "repo", "config"]).is_err());
     }
 
     #[test]
