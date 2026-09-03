@@ -524,5 +524,5 @@ fn deno_has_task(root: &Path, task: &str) -> Result<bool, GateError> {
 }
 
 #[cfg(test)]
-#[path = "gate_tests.rs"]
+#[path = "gate_tests/mod.rs"]
 mod tests;
