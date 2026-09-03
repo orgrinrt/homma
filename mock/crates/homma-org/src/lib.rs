@@ -13,6 +13,7 @@ pub mod configs;
 pub mod generate;
 pub mod provision;
 pub mod remote;
+pub mod rules;
 pub mod workspace;
 
 pub use generate::{Form, Generated, definition, write_definitions};
