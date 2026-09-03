@@ -126,6 +126,17 @@ pub enum Command {
         op: DocsOp,
     },
 
+    /// The workspace's own rule corpus: what governs a subject, and the cards.
+    ///
+    /// Rules are injected into every session the workspace runs, sub-agents
+    /// included, so their size is paid before any work starts. They are
+    /// authored under `.shared/rules/` as a full template carrying the meta and
+    /// a card template beside it, and the card a session loads is generated.
+    Rules {
+        #[command(subcommand)]
+        op: RulesOp,
+    },
+
     /// Migrate a repo from one configured forge to another.
     ///
     /// Reads source metadata, creates the destination repo (with description,
@@ -248,6 +259,28 @@ pub enum DocsOp {
         #[arg(long)]
         repo: Option<String>,
     },
+}
+
+/// `rules` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum RulesOp {
+    /// Which rules govern a subject.
+    ///
+    /// For a caller who does not know the filename and would not think to look
+    /// for it: ask the subject, get the governing set. Matches the topics a
+    /// rule declares, not its body, which is what `find` is for.
+    ///
+    /// `homma rules about "writing, readme, public"`
+    About {
+        /// Subjects, separated by commas or spaces.
+        query: String,
+    },
+
+    /// Generate the cards a session loads, from the authored templates.
+    ///
+    /// Writes `.claude/rules/<name>.md` per rule. Those are generated output
+    /// and editing one by hand loses the edit on the next run.
+    Render {},
 }
 
 /// `forge` subcommands.
