@@ -122,3 +122,50 @@ fn a_declared_content_marker_runs_a_gate_of_skipped_steps_and_passes() {
             .all(|s| s.step == Step::Notices)
     );
 }
+
+#[test]
+#[ignore = "catalogue: the gate lints the workspace at the root and never the engine workspace the root excludes under mock/; tracked the-gate-lints-the-engine-workspace-under-mock"]
+fn a_root_that_excludes_a_workspace_under_mock_has_that_workspace_linted_too() {
+    // The failure this catalogues: homma's root manifest is the launcher
+    // workspace with `exclude = ["mock"]`, so the lint step's one clippy call
+    // never reaches the engine, and thirteen findings sat there while the
+    // gate stayed green on every tip. A second call, from the excluded
+    // workspace's own root, is what would have caught them.
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"launcher\"]\nexclude = [\"mock\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(d.path().join("launcher/src")).unwrap();
+    std::fs::write(
+        d.path().join("launcher/Cargo.toml"),
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(d.path().join("mock/crates/x-engine/src")).unwrap();
+    std::fs::write(
+        d.path().join("mock/Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/x-engine\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("mock/crates/x-engine/Cargo.toml"),
+        "[package]\nname = \"x-engine\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Lint).unwrap();
+    let clippy: Vec<String> = fake
+        .seen
+        .borrow()
+        .iter()
+        .filter(|l| l.starts_with("cargo clippy"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        clippy.len(),
+        2,
+        "one clippy for the root and one for the workspace it excludes: {clippy:?}"
+    );
+}
