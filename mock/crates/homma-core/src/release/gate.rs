@@ -10,7 +10,7 @@ use std::fmt;
 use std::path::Path;
 use std::time::Instant;
 
-use homma_api::{GateRun, RepoKind, Step, StepOutcome};
+use homma_api::{GateRun, Markers, RepoKind, Step, StepOutcome};
 
 use super::{git, kind, numbers, sh};
 
@@ -92,12 +92,13 @@ impl From<sh::Spawn> for GateError {
 pub fn run_gate_at(
     runner: &dyn Runner,
     root: &Path,
+    markers: &Markers,
     sha: &str,
     repo: &str,
     ran_at: &str,
 ) -> Result<GateRun, GateError> {
     if git::head(root)? == sha {
-        return run_gate(runner, root, repo, ran_at);
+        return run_gate(runner, root, markers, repo, ran_at);
     }
     let dir = std::env::temp_dir().join(format!(
         "homma-gate-{}-{}-{}",
@@ -109,7 +110,7 @@ pub fn run_gate_at(
             .unwrap_or_default()
     ));
     git::worktree_add_detached(root, &dir, sha)?;
-    let run = run_gate(runner, &dir, repo, ran_at);
+    let run = run_gate(runner, &dir, markers, repo, ran_at);
     let removed = git::worktree_remove(root, &dir);
     let run = run?;
     removed?;
@@ -121,6 +122,7 @@ pub fn run_gate_at(
 pub fn run_gate(
     runner: &dyn Runner,
     root: &Path,
+    markers: &Markers,
     repo: &str,
     ran_at: &str,
 ) -> Result<GateRun, GateError> {
@@ -128,7 +130,7 @@ pub fn run_gate(
         return Err(GateError::Dirty);
     }
     let sha = git::head(root)?;
-    let repo_kind = kind::detect(root).map_err(GateError::NoManifest)?;
+    let repo_kind = kind::detect(root, markers).map_err(GateError::NoManifest)?;
     let started = Instant::now();
     let mut steps = Vec::with_capacity(Step::ALL.len());
     for step in Step::ALL {

@@ -9,7 +9,7 @@
 use std::fmt;
 use std::path::Path;
 
-use homma_api::{Level, RepoKind, Version};
+use homma_api::{Level, Markers, RepoKind, Version};
 
 use super::check::{self, Packages};
 use super::git::{self, GitError, Subject};
@@ -150,8 +150,14 @@ pub fn last_tag(root: &Path) -> Result<Option<(String, Version)>, GitError> {
 }
 
 /// The plan for releasing `head` at `level`, dated `date`.
-pub fn plan(root: &Path, head: &str, level: Level, date: &str) -> Result<Plan, PlanError> {
-    let repo_kind = kind::detect(root).map_err(PlanError::NoManifest)?;
+pub fn plan(
+    root: &Path,
+    markers: &Markers,
+    head: &str,
+    level: Level,
+    date: &str,
+) -> Result<Plan, PlanError> {
+    let repo_kind = kind::detect(root, markers).map_err(PlanError::NoManifest)?;
     let current = version::read(root, repo_kind)?;
     let last = last_tag(root)?;
     let commits = match &last {
@@ -251,7 +257,14 @@ mod tests {
     fn a_first_release_carries_the_whole_history_and_bumps_from_the_manifest() {
         let d = repo("0.1.0");
         commit(d.path(), "fix: two");
-        let p = plan(d.path(), "HEAD", Level::Patch, "2026-09-02").unwrap();
+        let p = plan(
+            d.path(),
+            &Markers::default(),
+            "HEAD",
+            Level::Patch,
+            "2026-09-02",
+        )
+        .unwrap();
         assert_eq!(p.last_tag, None);
         assert_eq!(p.commits.len(), 2);
         assert_eq!(p.commits[0].subject, "fix: two");
@@ -275,7 +288,7 @@ mod tests {
                 .ok()
         );
         commit(d.path(), "feat: later");
-        let p = plan(d.path(), "HEAD", Level::Minor, "d").unwrap();
+        let p = plan(d.path(), &Markers::default(), "HEAD", Level::Minor, "d").unwrap();
         assert_eq!(p.last_tag.as_deref(), Some("0.1.0"));
         assert_eq!(p.commits.len(), 1);
         assert_eq!(p.next, Version::new(0, 2, 0));
@@ -307,7 +320,7 @@ mod tests {
             .ok()
         );
         // 0.1.1 is what a patch makes of v0.1.0, and not what a major makes
-        let err = plan(d.path(), "HEAD", Level::Major, "d").unwrap_err();
+        let err = plan(d.path(), &Markers::default(), "HEAD", Level::Major, "d").unwrap_err();
         assert!(
             matches!(&err, PlanError::OffLevel(o)
                 if o.manifest == Version::new(0, 1, 1) && o.next == Version::new(0, 2, 0)),
@@ -326,7 +339,7 @@ mod tests {
         )
         .unwrap();
         commit(d.path(), "chore: back too far");
-        let err = plan(d.path(), "HEAD", Level::Patch, "d").unwrap_err();
+        let err = plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d").unwrap_err();
         assert!(matches!(&err, PlanError::OffLevel(_)), "{err}");
         assert!(
             err.to_string().contains("behind the last tag 0.1.0"),
@@ -340,7 +353,7 @@ mod tests {
         )
         .unwrap();
         commit(d.path(), "chore: at the level");
-        let p = plan(d.path(), "HEAD", Level::Patch, "d").unwrap();
+        let p = plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d").unwrap();
         assert_eq!(
             p.next,
             Version::new(0, 1, 1),
@@ -361,7 +374,7 @@ mod tests {
             .unwrap()
             .ok()
         );
-        let p = plan(d.path(), "HEAD", Level::Major, "d").unwrap();
+        let p = plan(d.path(), &Markers::default(), "HEAD", Level::Major, "d").unwrap();
         assert_eq!(p.next, Version::new(0, 2, 0), "a major on 0.x is a minor");
     }
 
@@ -370,7 +383,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         assert!(sh::run(d.path(), "git", &["init", "--quiet"]).unwrap().ok());
         assert!(matches!(
-            plan(d.path(), "HEAD", Level::Patch, "d"),
+            plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d"),
             Err(PlanError::NoManifest(_))
         ));
     }

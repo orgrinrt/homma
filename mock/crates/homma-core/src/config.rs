@@ -71,6 +71,13 @@ pub struct Config {
     #[serde(default)]
     pub auth: AuthConfig,
 
+    /// `[markers]`: the files that mark a repository root and what each
+    /// signals, `cargo`, `deno` or `content`. The gate reads a repo's kind off
+    /// these. `Cargo.toml` and `deno.json` are present whether or not the table
+    /// is written; see `homma_api::Markers`.
+    #[serde(default)]
+    pub markers: homma_api::Markers,
+
     /// `[registries.<key>]`: the package registries a release publishes to,
     /// keyed `crates-io`, `jsr` and `npm`, each with the same two credential
     /// fields a forge has. The three exist whether or not the manifest names
