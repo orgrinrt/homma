@@ -85,6 +85,15 @@ pub trait Forge {
         status: &CommitStatus,
     ) -> Result<(), ForgeError>;
 
+    /// Whether the forge knows `sha`, which is what a poster left behind by
+    /// a pre-push hook waits on before it can post: git sends nothing until
+    /// the hook returns, so the commit a hook measured is unknown to the
+    /// forge for as long as the push takes. `GET
+    /// /repos/{owner}/{name}/commits/{sha}` on both forges; a 404 or a 422 is
+    /// `Ok(false)`, and anything else that leaves the question unanswered is
+    /// an error.
+    fn commit_known(&self, owner: &str, name: &str, sha: &str) -> Result<bool, ForgeError>;
+
     /// Create a release on `tag` with `body` as its notes, which is the
     /// changelog block verbatim. Both forges take
     /// `POST /repos/{owner}/{name}/releases`.

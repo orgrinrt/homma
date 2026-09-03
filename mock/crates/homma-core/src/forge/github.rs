@@ -272,6 +272,17 @@ impl Forge for GitHubClient {
         }
     }
 
+    /// `GET {api}/repos/{owner}/{name}/commits/{sha}`. GitHub answers a sha it
+    /// has not received with 422 rather than 404, so both read as unknown.
+    fn commit_known(&self, owner: &str, name: &str, sha: &str) -> Result<bool, ForgeError> {
+        let url = format!("{}/commits/{sha}", self.repo_path(owner, name));
+        match self.get(&url) {
+            Ok(_) => Ok(true),
+            Err(ureq::Error::Status(404 | 422, _)) => Ok(false),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
+        }
+    }
+
     /// `POST {api}/repos/{owner}/{name}/releases`, named after the tag.
     fn create_release(
         &self,

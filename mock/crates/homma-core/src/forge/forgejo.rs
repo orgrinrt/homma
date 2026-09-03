@@ -219,6 +219,17 @@ impl Forge for ForgejoClient {
         }
     }
 
+    /// `GET {api}/repos/{owner}/{name}/git/commits/{sha}`, which Forgejo
+    /// answers 404 for a sha it has not received; 422 is read the same way.
+    fn commit_known(&self, owner: &str, name: &str, sha: &str) -> Result<bool, ForgeError> {
+        let url = format!("{}/git/commits/{sha}", self.repo_path(owner, name));
+        match self.get(&url) {
+            Ok(_) => Ok(true),
+            Err(ureq::Error::Status(404 | 422, _)) => Ok(false),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
+        }
+    }
+
     /// `POST {api}/repos/{owner}/{name}/releases`, the same body GitHub takes.
     fn create_release(
         &self,
