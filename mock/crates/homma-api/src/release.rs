@@ -167,6 +167,58 @@ impl RepoKind {
 }
 
 #[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    fn run(steps: Vec<StepOutcome>) -> GateRun {
+        GateRun {
+            repo: "x".into(),
+            sha: "0".repeat(40),
+            ran_at: "t".into(),
+            verdict: GateRun::verdict_of(&steps),
+            steps,
+        }
+    }
+
+    fn ran(step: Step, passed: bool) -> StepOutcome {
+        StepOutcome {
+            step,
+            passed,
+            skipped: false,
+            numbers: Default::default(),
+            log: String::new(),
+        }
+    }
+
+    #[test]
+    fn every_step_skipped_says_nothing_ran_and_why() {
+        let r = run(Step::ALL.iter().map(|s| StepOutcome::skipped(*s)).collect());
+        assert_eq!(r.verdict, Verdict::Green);
+        assert_eq!(
+            r.summary(),
+            "nothing to run: every step skipped, the repository's markers say only content"
+        );
+    }
+
+    #[test]
+    fn a_step_that_ran_keeps_the_summary_it_had_and_skipped_ones_stay_out() {
+        let mut steps: Vec<StepOutcome> =
+            Step::ALL.iter().map(|s| StepOutcome::skipped(*s)).collect();
+        steps[5] = ran(Step::Notices, false);
+        let r = run(steps);
+        assert_eq!(r.verdict, Verdict::Red);
+        assert_eq!(r.summary(), "notices failed");
+        let r = run(vec![
+            ran(Step::Format, true),
+            StepOutcome::skipped(Step::Deny),
+        ]);
+        assert_eq!(r.summary(), "format");
+        // the control: no steps at all is not "every step skipped"
+        assert_eq!(run(vec![]).summary(), "");
+    }
+}
+
+#[cfg(test)]
 mod kind_tests {
     use super::*;
 
@@ -420,7 +472,15 @@ impl GateRun {
 
     /// The numbers, in step order, the way the status description carries
     /// them: `tests 41/41, docs 97%, deny 0`.
+    /// One line naming the steps that ran and how each went. A run in which
+    /// every step was skipped, which is what a repository whose markers say
+    /// only content produces, says so rather than saying nothing, so a green
+    /// status on such a repository never reads as a check that happened.
     pub fn summary(&self) -> String {
+        if !self.steps.is_empty() && self.steps.iter().all(|s| s.skipped) {
+            return "nothing to run: every step skipped, the repository's markers say only content"
+                .into();
+        }
         let mut parts = Vec::new();
         for step in &self.steps {
             if step.skipped {
