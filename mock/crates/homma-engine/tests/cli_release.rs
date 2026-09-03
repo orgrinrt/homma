@@ -140,23 +140,74 @@ fn a_workspace_wide_run_refuses_a_manifest_off_the_level_like_a_single_run() {
 }
 
 #[test]
-fn release_hook_install_writes_the_pre_push_and_check_reports_by_id() {
+fn hook_install_writes_one_entrypoint_per_event_and_says_how_git_reaches_them() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("homma.toml");
-    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    std::fs::write(
+        &cfg,
+        format!(
+            "{}\n[[hooks.pre-commit]]\nrun = \"echo checked {{paths}}\"\npaths = [\"*.md\"]\n",
+            minimal_config_toml()
+        ),
+    )
+    .unwrap();
     committed_crate(dir.path(), "x");
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "release", "hook", "install", "x"])
+        .args(["-c", cfg.to_str().unwrap(), "hook", "install", "x"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("hooks/pre-push"));
+        .stdout(predicate::str::contains("hooks/pre-push"))
+        .stdout(predicate::str::contains("hooks/pre-commit"))
+        .stdout(predicate::str::contains(
+            "reads the hooks directory directly",
+        ));
     let script = std::fs::read_to_string(dir.path().join("x/.git/hooks/pre-push")).unwrap();
-    assert!(script.contains("homma release gate --hook"));
+    assert!(script.contains("homma hook run pre-push \"$@\""));
+    let script = std::fs::read_to_string(dir.path().join("x/.git/hooks/pre-commit")).unwrap();
+    assert!(script.contains("homma hook run pre-commit \"$@\""));
+    assert!(
+        !dir.path().join("x/.git/hooks/commit-msg").exists(),
+        "no entries, no entrypoint"
+    );
+    // and the entrypoint's verb runs the table: nothing staged, so the
+    // markdown entry is skipped and the event passes
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "release", "hook", "install", "nope"])
+        .args(["-c", cfg.to_str().unwrap(), "hook", "run", "pre-commit"])
+        .current_dir(dir.path().join("x"))
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skipped"))
+        .stdout(predicate::str::contains("no path matches"));
+    // an event with no entries passes and says so
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "hook", "run", "commit-msg", "MSG"])
+        .current_dir(dir.path().join("x"))
+        .write_stdin("")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no entries"));
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "hook", "install", "nope"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("`nope` is not a repository"));
+    // a table naming an event git has no hook for refuses the manifest
+    std::fs::write(
+        &cfg,
+        format!(
+            "{}\n[[hooks.pre-comit]]\nrun = \"x\"\n",
+            minimal_config_toml()
+        ),
+    )
+    .unwrap();
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "hook", "install", "x"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "`[hooks.pre-comit]` names no git hook",
+        ));
 }
 
 #[test]
@@ -235,7 +286,7 @@ fn a_worktree_beside_the_clones_resolves_to_its_clone_with_no_repo_named() {
 }
 
 #[test]
-fn each_hook_refusal_is_a_line_and_a_non_zero_exit_and_writes_nothing() {
+fn the_install_writes_into_gits_own_directory_and_says_where_the_hooks_path_leads() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("homma.toml");
     std::fs::write(&cfg, minimal_config_toml()).unwrap();
@@ -243,39 +294,55 @@ fn each_hook_refusal_is_a_line_and_a_non_zero_exit_and_writes_nothing() {
     let x = dir.path().join("x");
     let install = || {
         bin()
-            .args(["-c", cfg.to_str().unwrap(), "release", "hook", "install", "x"])
+            .args(["-c", cfg.to_str().unwrap(), "hook", "install", "x"])
             .assert()
-            .failure()
     };
-    // a hooks path outside the repo, which is what mockspace sets
+    // a hooks path that is some other tool's: written, since git's own
+    // directory is where a chain would reach, and reported as not reached,
+    // a line and a non-zero exit so a sweep goes on
     let elsewhere = tempfile::tempdir().unwrap();
     git_in(&x, &[
         "config",
         "core.hooksPath",
         elsewhere.path().to_str().unwrap(),
     ]);
-    install().stdout(predicate::str::contains("outside the repo"));
-    assert!(!elsewhere.path().join("pre-push").exists());
-    // a hooks directory the repo tracks
+    install()
+        .failure()
+        .stdout(predicate::str::contains("hooks/pre-push"))
+        .stdout(predicate::str::contains("not mockspace's"))
+        .stdout(predicate::str::contains("will not run"));
+    assert!(
+        !elsewhere.path().join("pre-push").exists(),
+        "never written where the path points"
+    );
+    assert!(x.join(".git/hooks/pre-push").exists());
+    // mockspace's path: reached through its chain, and said so
+    git_in(&x, &[
+        "config",
+        "core.hooksPath",
+        "/home/x/.config/mockspace/hooks-v3",
+    ]);
+    install()
+        .success()
+        .stdout(predicate::str::contains("mockspace's"))
+        .stdout(predicate::str::contains("after its own checks"));
+    // a hooks directory the repo tracks is not where anything is written,
+    // so it changes nothing about the install
     std::fs::create_dir_all(x.join(".githooks")).unwrap();
     std::fs::write(x.join(".githooks/pre-commit"), "#!/bin/sh\n").unwrap();
     git_in(&x, &["config", "core.hooksPath", ".githooks"]);
     git_in(&x, &["add", ".githooks"]);
     git_in(&x, &["commit", "-qm", "chore: hooks"]);
-    install().stdout(predicate::str::contains("holds tracked files"));
-    assert!(!x.join(".githooks/pre-push").exists());
-    // the repo root itself as the hooks path is the same refusal, and not an
-    // error about an empty pathspec
-    git_in(&x, &["config", "core.hooksPath", "."]);
     install()
-        .stdout(predicate::str::contains("holds tracked files"))
-        .stderr(predicate::str::contains("pathspec").not());
-    assert!(!x.join("pre-push").exists());
-    // a pre-push already there that is not homma's
+        .failure()
+        .stdout(predicate::str::contains("not mockspace's"));
+    assert!(!x.join(".githooks/pre-push").exists());
+    // a pre-push already there that is not homma's is refused whatever the path
     git_in(&x, &["config", "--unset", "core.hooksPath"]);
-    std::fs::create_dir_all(x.join(".git/hooks")).unwrap();
     std::fs::write(x.join(".git/hooks/pre-push"), "#!/bin/sh\necho mine\n").unwrap();
-    install().stdout(predicate::str::contains("not homma's"));
+    install()
+        .failure()
+        .stdout(predicate::str::contains("not homma's"));
     assert_eq!(
         std::fs::read_to_string(x.join(".git/hooks/pre-push")).unwrap(),
         "#!/bin/sh\necho mine\n"

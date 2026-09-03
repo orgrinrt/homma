@@ -15,12 +15,12 @@ use homma_core::forge::token;
 use homma_core::release::gate::Real;
 use homma_core::release::registry::Registry;
 use homma_core::release::run::Setup;
-use homma_core::release::{badges, check, hook, plan, publish, run, version};
+use homma_core::release::{badges, check, plan, publish, run, version};
 use homma_core::{Config, Forge, RepoConfig};
 use homma_store::Store;
 use serde::Serialize;
 
-use crate::cli::{Cli, HookOp, ReleaseOp};
+use crate::cli::{Cli, ReleaseOp};
 use crate::cmd::{Outcome, config_path, load_config};
 use crate::output::{HumanRender, emit};
 
@@ -33,11 +33,11 @@ pub mod clock;
 pub mod record;
 
 /// What every subcommand prints: lines for a person, and the same lines with
-/// a verdict for a pipe.
+/// a verdict for a pipe. Shared with the hook verbs, which report the same way.
 #[derive(Debug, Serialize)]
-struct Report {
-    ok:    bool,
-    lines: Vec<String>,
+pub(crate) struct Report {
+    pub(crate) ok:    bool,
+    pub(crate) lines: Vec<String>,
 }
 
 impl HumanRender for Report {
@@ -46,7 +46,7 @@ impl HumanRender for Report {
     }
 }
 
-fn finish(cli: &Cli, report: Report) -> Result<Outcome> {
+pub(crate) fn finish(cli: &Cli, report: Report) -> Result<Outcome> {
     let ok = report.ok;
     emit(&report, cli.output)?;
     Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
@@ -66,7 +66,7 @@ fn store(cli: &Cli) -> Store {
 
 /// The repo named, or the one the working directory is inside, with its
 /// root made absolute against the workspace.
-fn resolve_repo<'a>(
+pub(crate) fn resolve_repo<'a>(
     cfg: &'a Config,
     name: Option<&str>,
 ) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
@@ -211,11 +211,6 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
         ReleaseOp::Badges {
             repo,
         } => badges_cmd(cli, &cfg, repo),
-        ReleaseOp::Hook {
-            op: HookOp::Install {
-                repo,
-            },
-        } => hook_cmd(cli, &cfg, repo),
     }
 }
 
@@ -408,31 +403,4 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
             &run.sha[.. 7]
         )],
     })
-}
-
-fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
-    let (_, _, root) = resolve_repo(cfg, Some(repo))?;
-    match hook::install(&root) {
-        Ok(i) => {
-            finish(cli, Report {
-                ok:    true,
-                lines: vec![format!("wrote {}", i.path.display())],
-            })
-        },
-        // a refusal is reported, a line and a non-zero exit, so a sweep
-        // across the workspace goes on to the next repo
-        Err(
-            e @ (hook::HookError::HooksPathOutside(_)
-            | hook::HookError::HooksPathTracked(_)
-            | hook::HookError::HookExists(_)),
-        ) => {
-            finish(cli, Report {
-                ok:    false,
-                lines: vec![e.to_string()],
-            })
-        },
-        // named, so a refusal added later has no arm here and does not
-        // compile, rather than aborting a sweep as an error
-        Err(e @ (hook::HookError::Git(_) | hook::HookError::Io(_))) => Err(e.into()),
-    }
 }

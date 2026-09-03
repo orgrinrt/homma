@@ -12,6 +12,8 @@ publish = false
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+# the globs a hook entry names its paths by; already in the tree through cargo
+glob = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
