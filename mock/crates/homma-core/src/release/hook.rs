@@ -28,6 +28,11 @@ pub enum HookError {
     /// `core.hooksPath` resolves outside the repo, which is a repo whose
     /// hooks another tool routes, mockspace in this workspace.
     HooksPathOutside(PathBuf),
+    /// The hooks directory holds tracked files, so a hook written there
+    /// would ship with the repo and ask homma of everyone who clones it.
+    HooksPathTracked(PathBuf),
+    /// A `pre-push` is already there and is not this tool's.
+    HookExists(PathBuf),
     Git(GitError),
     Io(std::io::Error),
 }
@@ -41,6 +46,22 @@ impl fmt::Display for HookError {
                     "core.hooksPath is {}, outside the repo, so another tool owns the hooks here \
                      (mockspace, for a repo it manages); this repo is gated at release time until \
                      that tool's pre-push delegates to homma",
+                    p.display()
+                )
+            },
+            HookError::HooksPathTracked(p) => {
+                write!(
+                    f,
+                    "{} holds tracked files, so a hook written there would ship with the repo; \
+                     this repo keeps its own hooks and is gated at release time",
+                    p.display()
+                )
+            },
+            HookError::HookExists(p) => {
+                write!(
+                    f,
+                    "{} is already there and is not homma's; move the gate into it by hand, or \
+                     remove it, before installing",
                     p.display()
                 )
             },
@@ -112,8 +133,26 @@ pub fn install(root: &Path) -> Result<Installed, HookError> {
     if !inside {
         return Err(HookError::HooksPathOutside(dir));
     }
-    std::fs::create_dir_all(&dir)?;
+    // a hooks directory the repo tracks is the repo's own, and a hook
+    // written there would ship with it; a pre-push already there that is
+    // not this tool's is somebody's work and is not overwritten
+    let relative = dir.strip_prefix(root).unwrap_or(&dir).to_path_buf();
+    let tracked = sh::run(root, "git", &[
+        "ls-files",
+        "--",
+        &relative.to_string_lossy(),
+    ])
+    .map_err(GitError::from)?;
+    if tracked.ok() && !tracked.stdout.trim().is_empty() {
+        return Err(HookError::HooksPathTracked(dir));
+    }
     let path = dir.join("pre-push");
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        if existing != SCRIPT {
+            return Err(HookError::HookExists(path));
+        }
+    }
+    std::fs::create_dir_all(&dir)?;
     std::fs::write(&path, SCRIPT)?;
     #[cfg(unix)]
     {
@@ -166,6 +205,57 @@ mod tests {
         assert!(is_installed(d.path()).unwrap());
         let again = install(d.path()).unwrap();
         assert_eq!(again, i, "a second install is the same file");
+    }
+
+    #[test]
+    fn a_tracked_hooks_dir_and_a_foreign_pre_push_are_refused_and_the_tools_own_is_not() {
+        // a repo that ships its hooks: the directory is tracked, so a hook
+        // written there would go to everyone who clones it
+        let d = repo();
+        std::fs::create_dir_all(d.path().join(".githooks")).unwrap();
+        std::fs::write(d.path().join(".githooks/pre-commit"), "#!/bin/sh\n").unwrap();
+        for args in [
+            vec!["config", "core.hooksPath", ".githooks"],
+            vec!["-c", "user.name=t", "-c", "user.email=t@t", "add", ".githooks"],
+            vec!["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "hooks"],
+        ] {
+            let out = sh::run(d.path(), "git", &args).unwrap();
+            assert!(out.ok(), "{}", out.log());
+        }
+        match install(d.path()) {
+            Err(HookError::HooksPathTracked(p)) => {
+                assert!(p.ends_with(".githooks"), "{}", p.display());
+                assert!(
+                    HookError::HooksPathTracked(p)
+                        .to_string()
+                        .contains("tracked")
+                );
+            },
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            !d.path().join(".githooks/pre-push").exists(),
+            "nothing was written"
+        );
+        // a repo with its own pre-push under .git/hooks keeps it
+        let d = repo();
+        let own = d.path().join(".git/hooks/pre-push");
+        std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+        std::fs::write(&own, "#!/bin/sh\necho mine\n").unwrap();
+        match install(d.path()) {
+            Err(HookError::HookExists(p)) => {
+                assert_eq!(p, own);
+                assert!(HookError::HookExists(p).to_string().contains("not homma's"));
+            },
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            std::fs::read_to_string(&own).unwrap(),
+            "#!/bin/sh\necho mine\n"
+        );
+        // and the tool's own is rewritten, which is the control
+        std::fs::write(&own, SCRIPT).unwrap();
+        assert!(install(d.path()).is_ok());
     }
 
     #[test]
