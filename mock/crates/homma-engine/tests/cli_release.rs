@@ -160,6 +160,43 @@ fn release_hook_install_writes_the_pre_push_and_check_reports_by_id() {
 }
 
 #[test]
+fn a_worktree_beside_the_clones_resolves_to_its_clone_with_no_repo_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    // a worktree under `.worktrees/`, which is where every agent's seat
+    // lives and where a pre-push hook runs from
+    let seat = dir.path().join(".worktrees/seat");
+    std::fs::create_dir_all(dir.path().join(".worktrees")).unwrap();
+    git_in(&dir.path().join("x"), &[
+        "worktree",
+        "add",
+        "-q",
+        seat.to_str().unwrap(),
+        "-b",
+        "topic",
+    ]);
+    bin()
+        .current_dir(&seat)
+        .args(["-c", cfg.to_str().unwrap(), "release", "plan", "--level", "patch"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("version 0.1.0 becomes 0.1.1"));
+    // the control: a directory that is no worktree is still refused
+    let stray = dir.path().join("stray");
+    std::fs::create_dir_all(&stray).unwrap();
+    bin()
+        .current_dir(&stray)
+        .args(["-c", cfg.to_str().unwrap(), "release", "plan", "--level", "patch"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "not inside a workspace repository",
+        ));
+}
+
+#[test]
 fn each_hook_refusal_is_a_line_and_a_non_zero_exit_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("homma.toml");
