@@ -72,9 +72,8 @@ fn a_renamed_private_repo_is_still_found_across_the_redirect() {
     // an owner or name goes stale, which is the case the check exists for.
     let url = renamed_private_repo(2);
     let client = GitHubClient::with_token(&url, "t");
-    assert_eq!(
+    assert!(
         client.repo_exists("o", "renamed").unwrap(),
-        true,
         "the credential was dropped following the redirect, so a repo that \
          exists was reported absent"
     );
@@ -86,7 +85,7 @@ fn the_stub_answers_absent_without_a_credential() {
     // 200 to everyone, which would prove nothing about the header at all.
     let url = renamed_private_repo(2);
     let client = GitHubClient::anonymous(&url);
-    assert_eq!(client.repo_exists("o", "renamed").unwrap(), false);
+    assert!(!client.repo_exists("o", "renamed").unwrap());
 }
 
 /// A stub that records one request whole and answers `201`, for checking
@@ -210,10 +209,10 @@ fn a_release_is_posted_to_the_releases_endpoint_with_its_tag_name_and_body() {
     );
 }
 
-/// A stub answering each request with the status of the first route whose
-/// path fragment the request line carries, `404` where none does, for a
-/// fixed number of requests.
-fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> String {
+/// A stub answering each request with the status and body of the first route
+/// whose path fragment the request line carries, `404` where none does, for
+/// a fixed number of requests.
+fn status_by_path(routes: &'static [(&'static str, u16, &'static str)], requests: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -230,11 +229,14 @@ fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> St
                     break;
                 }
             }
-            let status = routes
+            let (status, body) = routes
                 .iter()
-                .find(|(path, _)| request_line.contains(path))
-                .map_or(404, |(_, status)| *status);
-            let response = format!("HTTP/1.1 {status} X\r\nContent-Length: 2\r\n\r\n{{}}");
+                .find(|(path, ..)| request_line.contains(path))
+                .map_or((404, "{}"), |(_, status, body)| (*status, *body));
+            let response = format!(
+                "HTTP/1.1 {status} X\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
             let _ = sock.write_all(response.as_bytes());
             let _ = sock.flush();
         }
@@ -243,11 +245,65 @@ fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> St
 }
 
 #[test]
+fn a_422_on_create_is_already_exists_only_when_the_body_says_so() {
+    // the one arm that moves the response out of the boxed error and reads
+    // its body: the same status is two errors depending on what it says
+    let url = status_by_path(
+        &[
+            (
+                "/user/repos",
+                422,
+                r#"{"message":"Repository creation failed.","errors":[{"message":"name already exists on this account"}]}"#,
+            ),
+            ("/orgs/o/repos", 422, r#"{"message":"Validation Failed"}"#),
+        ],
+        2,
+    );
+    let client = GitHubClient::with_token(&url, "t");
+    assert!(matches!(
+        client.create_repo("o", &CreateRepoSpec::new("x")),
+        Err(ForgeError::RepoAlreadyExists { .. })
+    ));
+    assert!(matches!(
+        client.create_repo("o", &CreateRepoSpec::new("x").in_org()),
+        Err(ForgeError::UnexpectedStatus {
+            status: 422,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_credential_is_rejected_on_401_and_recognised_on_403() {
+    let url = status_by_path(&[("/user ", 401, "{}")], 1);
+    assert!(
+        !GitHubClient::with_token(&url, "t")
+            .credential_works()
+            .unwrap()
+    );
+    let url = status_by_path(&[("/user ", 403, "{}")], 1);
+    assert!(
+        GitHubClient::with_token(&url, "t")
+            .credential_works()
+            .unwrap()
+    );
+    // the control: anything else is neither answer
+    let url = status_by_path(&[("/user ", 500, "{}")], 1);
+    assert!(matches!(
+        GitHubClient::with_token(&url, "t").credential_works(),
+        Err(ForgeError::UnexpectedStatus {
+            status: 500,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn a_sha_github_has_not_received_is_unknown_and_a_repo_it_has_not_is_an_error() {
     // 422 is what GitHub answers for a sha it does not have, and is the
     // only status that means the commit is still on its way
     let url = status_by_path(
-        &[("/repos/o/r/commits/aaa", 200), ("/repos/o/r/commits/bbb", 422)],
+        &[("/repos/o/r/commits/aaa", 200, "{}"), ("/repos/o/r/commits/bbb", 422, "{}")],
         3,
     );
     let client = GitHubClient::anonymous(&url);

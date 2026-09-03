@@ -470,20 +470,13 @@ pub(crate) fn merge_settings(
     Ok(())
 }
 
-/// True if `entry` looks like a homma-aggregated hook entry. Two
-/// patterns count:
-///
-/// - **Current homma shape**: the command path's basename (filename
-///   after the last `/`) starts with `<known-repo>--`. Matches both
-///   relative and absolute paths the current aggregator emits.
-/// - **Legacy bash-aggregator shape**: the command path contains the
-///   segment `imports/<known-repo>/`. The pre-homma bash script
-///   organised its output under per-repo subdirectories; these
-///   entries linger in workspace `settings.json` after the bash
-///   aggregator retired. Detecting them here lets every regen sweep
-///   them out idempotently.
-/// True if a single hook command string looks aggregated. Used by
-/// `merge_settings` to strip individual hooks within an entry.
+/// True if a single hook command string looks aggregated: the command path's
+/// basename, after the last `/`, starts with `<known-repo>--`, which is the
+/// shape the aggregator emits whether the path is relative or absolute. Used
+/// by `merge_settings` to strip individual hooks within an entry, and by
+/// `is_retired_aggregated_command`, which owns the shapes nothing writes any
+/// more: the retired bash aggregator's `imports/<known-repo>/`, and a managed
+/// command naming an absolute path.
 pub(crate) fn is_aggregated_command(cmd: &str, repos: &[&str]) -> bool {
     let basename = cmd.rsplit('/').next().unwrap_or(cmd);
     repos
