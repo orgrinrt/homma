@@ -336,20 +336,74 @@ fn a_missing_directory_is_refused_rather_than_read_as_an_empty_corpus() {
     let _ = fs::remove_dir_all(&d);
 }
 
+/// A dot in a rule's name is part of the name.
+///
+/// The loader used to skip any name containing one, to stop the old
+/// `x.card.md.tmpl` sidecar loading as a rule called `x.card`. That shape is
+/// gone, and the guard outlived it: `no-legacy-shims-pre-1.0` was authored,
+/// answered `about`, and generated no card at all, so it governed nothing while
+/// reading as a live rule. Skipping is what made it invisible.
 #[test]
-fn a_file_with_a_further_extension_is_not_a_rule() {
-    // A rule's name is a slug. Without the guard `x.card.md.tmpl` strips to a
-    // rule named `x.card`, which then fails to parse and refuses the whole
-    // corpus for a file that was never a rule.
+fn a_dot_in_a_rule_name_is_part_of_the_name() {
     let d = fixture();
     let src = d.join("rules");
     fs::write(
-        src.join("writing-style.card.md.tmpl"),
-        "not a rule at all\n",
+        src.join("no-legacy-shims-pre-1.0.md.tmpl"),
+        "---\ntopics: [shims]\nfires: \"when removing a shape\"\nkind: reflex\n---\n\n\
+         # No legacy shims\n\nDelete it.\n",
     )
     .unwrap();
-    let c = Corpus::load(&src).expect("a neighbouring file must not refuse the load");
-    assert_eq!(c.rules.len(), 3);
-    assert!(!c.rules.iter().any(|r| r.name.contains('.')));
+
+    let c = Corpus::load(&src).expect("a version number in a name is still a name");
+    assert!(
+        c.rules.iter().any(|r| r.name == "no-legacy-shims-pre-1.0"),
+        "loaded: {:?}",
+        c.rules.iter().map(|r| &r.name).collect::<Vec<_>>()
+    );
+
+    // And it reaches a session, which is the half that was actually missing:
+    // it loaded fine before too, if the guard had let it.
+    let out = d.join("out");
+    c.render_cards(&out).unwrap();
+    assert!(
+        out.join("no-legacy-shims-pre-1.0.md").is_file(),
+        "an authored rule that generates no card governs nothing"
+    );
+    let _ = fs::remove_dir_all(&d);
+}
+
+/// Every authored template generates exactly one card.
+///
+/// The set difference rather than the counts: a loader that drops one file and
+/// a corpus that is one file smaller produce the same two numbers, and the
+/// names are what say which.
+#[test]
+fn every_authored_rule_generates_a_card() {
+    let d = fixture();
+    let src = d.join("rules");
+    let out = d.join("out");
+    let c = Corpus::load(&src).unwrap();
+    c.render_cards(&out).unwrap();
+
+    let mut authored: Vec<String> = fs::read_dir(&src)
+        .unwrap()
+        .filter_map(|e| {
+            let n = e.ok()?.file_name().to_str()?.to_string();
+            n.strip_suffix(".md.tmpl").map(|s| s.to_string())
+        })
+        .collect();
+    let mut generated: Vec<String> = fs::read_dir(&out)
+        .unwrap()
+        .filter_map(|e| {
+            let n = e.ok()?.file_name().to_str()?.to_string();
+            n.strip_suffix(".md").map(|s| s.to_string())
+        })
+        .collect();
+    authored.sort();
+    generated.sort();
+    assert_eq!(
+        authored, generated,
+        "every authored rule generates a card and nothing else appears"
+    );
     let _ = fs::remove_dir_all(&d);
 }

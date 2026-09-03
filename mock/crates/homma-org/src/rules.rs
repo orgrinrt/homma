@@ -166,13 +166,20 @@ impl Corpus {
                 continue;
             };
             if let Some(name) = file.strip_suffix(RULE_SUFFIX) {
-                // A rule's name is a slug and carries no dot of its own, so
-                // anything with a further extension left over is a different
-                // kind of file that happens to end the same way. Without this,
-                // `x.card.md.tmpl` loads as a rule named `x.card`.
-                if name.contains('.') {
-                    continue;
-                }
+                // **Every `.md.tmpl` here is a rule, dot in its name or not.**
+                //
+                // This guard used to skip a name containing a dot, to stop the
+                // old `x.card.md.tmpl` sidecar loading as a rule called
+                // `x.card`. That shape is gone and the guard outlived it: it
+                // silently dropped `no-legacy-shims-pre-1.0`, whose dot is a
+                // version number. That rule was authored, discoverable through
+                // `about`, and in no session at all, which is precisely the
+                // failure the single-file shape exists to make impossible.
+                //
+                // Skipping is what made it invisible. A file here that cannot
+                // be read is refused by name below rather than passed over, so
+                // a future sidecar announces itself instead of quietly
+                // becoming a rule.
                 files.insert(name.to_string(), path);
             }
         }
