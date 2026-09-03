@@ -160,6 +160,54 @@ fn release_hook_install_writes_the_pre_push_and_check_reports_by_id() {
 }
 
 #[test]
+fn each_hook_refusal_is_a_line_and_a_non_zero_exit_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    let x = dir.path().join("x");
+    let install = || {
+        bin()
+            .args(["-c", cfg.to_str().unwrap(), "release", "hook", "install", "x"])
+            .assert()
+            .failure()
+    };
+    // a hooks path outside the repo, which is what mockspace sets
+    let elsewhere = tempfile::tempdir().unwrap();
+    git_in(&x, &[
+        "config",
+        "core.hooksPath",
+        elsewhere.path().to_str().unwrap(),
+    ]);
+    install().stdout(predicate::str::contains("outside the repo"));
+    assert!(!elsewhere.path().join("pre-push").exists());
+    // a hooks directory the repo tracks
+    std::fs::create_dir_all(x.join(".githooks")).unwrap();
+    std::fs::write(x.join(".githooks/pre-commit"), "#!/bin/sh\n").unwrap();
+    git_in(&x, &["config", "core.hooksPath", ".githooks"]);
+    git_in(&x, &["add", ".githooks"]);
+    git_in(&x, &["commit", "-qm", "chore: hooks"]);
+    install().stdout(predicate::str::contains("holds tracked files"));
+    assert!(!x.join(".githooks/pre-push").exists());
+    // the repo root itself as the hooks path is the same refusal, and not an
+    // error about an empty pathspec
+    git_in(&x, &["config", "core.hooksPath", "."]);
+    install()
+        .stdout(predicate::str::contains("holds tracked files"))
+        .stderr(predicate::str::contains("pathspec").not());
+    assert!(!x.join("pre-push").exists());
+    // a pre-push already there that is not homma's
+    git_in(&x, &["config", "--unset", "core.hooksPath"]);
+    std::fs::create_dir_all(x.join(".git/hooks")).unwrap();
+    std::fs::write(x.join(".git/hooks/pre-push"), "#!/bin/sh\necho mine\n").unwrap();
+    install().stdout(predicate::str::contains("not homma's"));
+    assert_eq!(
+        std::fs::read_to_string(x.join(".git/hooks/pre-push")).unwrap(),
+        "#!/bin/sh\necho mine\n"
+    );
+}
+
+#[test]
 fn release_badges_reads_the_newest_run_whichever_branch_it_measured() {
     use homma_api::{GateRun, Step, StepOutcome, Verdict};
     let dir = tempfile::tempdir().unwrap();
