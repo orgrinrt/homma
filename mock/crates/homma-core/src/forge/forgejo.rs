@@ -90,36 +90,44 @@ impl ForgejoClient {
             .map(|t| ("Authorization", format!("token {t}")))
     }
 
-    fn get(&self, url: &str) -> Result<ureq::Response, ureq::Error> {
+    fn get(&self, url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
         let mut req = self.agent.get(url);
         if let Some((k, v)) = self.auth_header() {
             req = req.set(k, &v);
         }
-        req.call()
+        req.call().map_err(Box::new)
     }
 
-    fn post_json<T: Serialize>(&self, url: &str, body: &T) -> Result<ureq::Response, ureq::Error> {
+    fn post_json<T: Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<ureq::Response, Box<ureq::Error>> {
         let mut req = self.agent.post(url);
         if let Some((k, v)) = self.auth_header() {
             req = req.set(k, &v);
         }
-        req.send_json(body)
+        req.send_json(body).map_err(Box::new)
     }
 
-    fn patch_json<T: Serialize>(&self, url: &str, body: &T) -> Result<ureq::Response, ureq::Error> {
+    fn patch_json<T: Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<ureq::Response, Box<ureq::Error>> {
         let mut req = self.agent.request("PATCH", url);
         if let Some((k, v)) = self.auth_header() {
             req = req.set(k, &v);
         }
-        req.send_json(body)
+        req.send_json(body).map_err(Box::new)
     }
 
-    fn delete(&self, url: &str) -> Result<ureq::Response, ureq::Error> {
+    fn delete(&self, url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
         let mut req = self.agent.delete(url);
         if let Some((k, v)) = self.auth_header() {
             req = req.set(k, &v);
         }
-        req.call()
+        req.call().map_err(Box::new)
     }
 }
 
@@ -131,7 +139,7 @@ impl Forge for ForgejoClient {
                 let wire: ForgejoRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
             },
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -139,8 +147,12 @@ impl Forge for ForgejoClient {
         let url = self.repo_path(owner, name);
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(404, _)) => Ok(false),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(404, _) => Ok(false),
+                    e => Err(map_ureq_error(e, owner, name)),
+                }
+            },
         }
     }
 
@@ -160,13 +172,17 @@ impl Forge for ForgejoClient {
                 let wire: ForgejoRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
             },
-            Err(ureq::Error::Status(409, _)) => {
-                Err(ForgeError::RepoAlreadyExists {
-                    owner: owner.into(),
-                    name:  spec.name.clone(),
-                })
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(409, _) => {
+                        Err(ForgeError::RepoAlreadyExists {
+                            owner: owner.into(),
+                            name:  spec.name.clone(),
+                        })
+                    },
+                    e => Err(map_ureq_error(e, owner, &spec.name)),
+                }
             },
-            Err(e) => Err(map_ureq_error(e, owner, &spec.name)),
         }
     }
 
@@ -177,7 +193,7 @@ impl Forge for ForgejoClient {
         };
         match self.patch_json(&url, &body) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -185,7 +201,7 @@ impl Forge for ForgejoClient {
         let url = self.repo_path(owner, name);
         match self.delete(&url) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -197,9 +213,13 @@ impl Forge for ForgejoClient {
         let url = format!("{}/user", self.api_url);
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(401, _)) => Ok(false),
-            Err(ureq::Error::Status(403, _)) => Ok(true),
-            Err(e) => Err(map_ureq_error(e, "", "user")),
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(401, _) => Ok(false),
+                    ureq::Error::Status(403, _) => Ok(true),
+                    e => Err(map_ureq_error(e, "", "user")),
+                }
+            },
         }
     }
 
@@ -215,7 +235,7 @@ impl Forge for ForgejoClient {
         let url = format!("{}/statuses/{sha}", self.repo_path(owner, name));
         match self.post_json(&url, status) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -227,17 +247,21 @@ impl Forge for ForgejoClient {
         let url = format!("{}/git/commits/{sha}", self.repo_path(owner, name));
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(404, _)) => {
-                if self.repo_exists(owner, name)? {
-                    Ok(false)
-                } else {
-                    Err(ForgeError::RepoNotFound {
-                        owner: owner.into(),
-                        name:  name.into(),
-                    })
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(404, _) => {
+                        if self.repo_exists(owner, name)? {
+                            Ok(false)
+                        } else {
+                            Err(ForgeError::RepoNotFound {
+                                owner: owner.into(),
+                                name:  name.into(),
+                            })
+                        }
+                    },
+                    e => Err(map_ureq_error(e, owner, name)),
                 }
             },
-            Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }
 
@@ -257,7 +281,7 @@ impl Forge for ForgejoClient {
         };
         match self.post_json(&url, &payload) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 }

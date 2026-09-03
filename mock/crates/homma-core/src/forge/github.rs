@@ -137,24 +137,32 @@ impl GitHubClient {
         req
     }
 
-    fn get(&self, url: &str) -> Result<ureq::Response, ureq::Error> {
+    fn get(&self, url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
         let req = self.apply_common_headers(self.agent.get(url));
-        req.call()
+        req.call().map_err(Box::new)
     }
 
-    fn post_json<T: Serialize>(&self, url: &str, body: &T) -> Result<ureq::Response, ureq::Error> {
+    fn post_json<T: Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<ureq::Response, Box<ureq::Error>> {
         let req = self.apply_common_headers(self.agent.post(url));
-        req.send_json(body)
+        req.send_json(body).map_err(Box::new)
     }
 
-    fn patch_json<T: Serialize>(&self, url: &str, body: &T) -> Result<ureq::Response, ureq::Error> {
+    fn patch_json<T: Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<ureq::Response, Box<ureq::Error>> {
         let req = self.apply_common_headers(self.agent.request("PATCH", url));
-        req.send_json(body)
+        req.send_json(body).map_err(Box::new)
     }
 
-    fn delete(&self, url: &str) -> Result<ureq::Response, ureq::Error> {
+    fn delete(&self, url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
         let req = self.apply_common_headers(self.agent.delete(url));
-        req.call()
+        req.call().map_err(Box::new)
     }
 }
 
@@ -166,7 +174,7 @@ impl Forge for GitHubClient {
                 let wire: GitHubRepo = resp.into_json().map_err(box_backend)?;
                 Ok(wire.into_metadata())
             },
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -174,8 +182,12 @@ impl Forge for GitHubClient {
         let url = self.repo_path(owner, name);
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(404, _)) => Ok(false),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(404, _) => Ok(false),
+                    e => Err(map_ureq_error(e, owner, name)),
+                }
+            },
         }
     }
 
@@ -201,23 +213,27 @@ impl Forge for GitHubClient {
             },
             // GitHub uses 422 Unprocessable Entity for "name already exists";
             // Forgejo uses 409. Both map to RepoAlreadyExists here.
-            Err(ureq::Error::Status(422, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                if body.contains("name already exists")
-                    || body.to_ascii_lowercase().contains("already exists")
-                {
-                    Err(ForgeError::RepoAlreadyExists {
-                        owner: owner.into(),
-                        name:  spec.name.clone(),
-                    })
-                } else {
-                    Err(ForgeError::UnexpectedStatus {
-                        status: 422,
-                        body:   truncate(body, 512),
-                    })
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(422, resp) => {
+                        let body = resp.into_string().unwrap_or_default();
+                        if body.contains("name already exists")
+                            || body.to_ascii_lowercase().contains("already exists")
+                        {
+                            Err(ForgeError::RepoAlreadyExists {
+                                owner: owner.into(),
+                                name:  spec.name.clone(),
+                            })
+                        } else {
+                            Err(ForgeError::UnexpectedStatus {
+                                status: 422,
+                                body:   truncate(body, 512),
+                            })
+                        }
+                    },
+                    e => Err(map_ureq_error(e, owner, &spec.name)),
                 }
             },
-            Err(e) => Err(map_ureq_error(e, owner, &spec.name)),
         }
     }
 
@@ -229,7 +245,7 @@ impl Forge for GitHubClient {
         };
         match self.patch_json(&url, &body) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -237,7 +253,7 @@ impl Forge for GitHubClient {
         let url = self.repo_path(owner, name);
         match self.delete(&url) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -249,9 +265,13 @@ impl Forge for GitHubClient {
         let url = format!("{}/user", self.api_url);
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(401, _)) => Ok(false),
-            Err(ureq::Error::Status(403, _)) => Ok(true),
-            Err(e) => Err(map_ureq_error(e, "", "user")),
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(401, _) => Ok(false),
+                    ureq::Error::Status(403, _) => Ok(true),
+                    e => Err(map_ureq_error(e, "", "user")),
+                }
+            },
         }
     }
 
@@ -268,7 +288,7 @@ impl Forge for GitHubClient {
         let url = format!("{}/statuses/{sha}", self.repo_path(owner, name));
         match self.post_json(&url, status) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 
@@ -280,8 +300,12 @@ impl Forge for GitHubClient {
         let url = format!("{}/commits/{sha}", self.repo_path(owner, name));
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(422, _)) => Ok(false),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => {
+                match *e {
+                    ureq::Error::Status(422, _) => Ok(false),
+                    e => Err(map_ureq_error(e, owner, name)),
+                }
+            },
         }
     }
 
@@ -301,7 +325,7 @@ impl Forge for GitHubClient {
         };
         match self.post_json(&url, &payload) {
             Ok(_) => Ok(()),
-            Err(e) => Err(map_ureq_error(e, owner, name)),
+            Err(e) => Err(map_ureq_error(*e, owner, name)),
         }
     }
 }

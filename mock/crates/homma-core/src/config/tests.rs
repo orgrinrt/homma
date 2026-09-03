@@ -219,7 +219,7 @@ token_env = "SOMETHING"
 }
 
 #[cfg(test)]
-mod tests {
+mod workspace_path_tests {
     use crate::config::*;
 
     #[test]

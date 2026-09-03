@@ -72,9 +72,8 @@ fn a_renamed_private_repo_is_still_found_across_the_redirect() {
     // an owner or name goes stale, which is the case the check exists for.
     let url = renamed_private_repo(2);
     let client = GitHubClient::with_token(&url, "t");
-    assert_eq!(
+    assert!(
         client.repo_exists("o", "renamed").unwrap(),
-        true,
         "the credential was dropped following the redirect, so a repo that \
          exists was reported absent"
     );
@@ -86,7 +85,7 @@ fn the_stub_answers_absent_without_a_credential() {
     // 200 to everyone, which would prove nothing about the header at all.
     let url = renamed_private_repo(2);
     let client = GitHubClient::anonymous(&url);
-    assert_eq!(client.repo_exists("o", "renamed").unwrap(), false);
+    assert!(!client.repo_exists("o", "renamed").unwrap());
 }
 
 /// A stub that records one request whole and answers `201`, for checking
