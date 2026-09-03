@@ -220,12 +220,23 @@ impl Forge for ForgejoClient {
     }
 
     /// `GET {api}/repos/{owner}/{name}/git/commits/{sha}`, which Forgejo
-    /// answers 404 for a sha it has not received; 422 is read the same way.
+    /// answers 404 for a sha it has not received and 404 for a repository it
+    /// does not have, so a 404 is the commit only when the repository itself
+    /// answers; otherwise it is reported as the repository being absent.
     fn commit_known(&self, owner: &str, name: &str, sha: &str) -> Result<bool, ForgeError> {
         let url = format!("{}/git/commits/{sha}", self.repo_path(owner, name));
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(404 | 422, _)) => Ok(false),
+            Err(ureq::Error::Status(404, _)) => {
+                if self.repo_exists(owner, name)? {
+                    Ok(false)
+                } else {
+                    Err(ForgeError::RepoNotFound {
+                        owner: owner.into(),
+                        name:  name.into(),
+                    })
+                }
+            },
             Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }

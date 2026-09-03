@@ -7,10 +7,11 @@
 //! the hook, posted by a poster left behind, since the forge has not
 //! received the commit while the hook runs.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use homma_api::Verdict;
+use homma_api::{PosterGaveUp, Verdict};
 use homma_core::Config;
 use homma_core::forge::ForgeError;
 use homma_core::release::gate::{self, Real};
@@ -18,10 +19,13 @@ use homma_core::release::{git, status};
 
 use super::{Outcome, Report, clock, finish, forge_for, record, resolve_repo, store};
 use crate::cli::Cli;
+use crate::cmd::config_path;
 
 /// How long a poster asks after the commit before giving up, and how often.
+/// The wait pauses after every miss, so the bound is the whole of `AWAIT`.
 const AWAIT: Duration = Duration::from_secs(600);
 const PAUSE: Duration = Duration::from_secs(5);
+const TRIES: usize = (AWAIT.as_secs() / PAUSE.as_secs()) as usize;
 
 pub(super) fn gate_cmd(
     cli: &Cli,
@@ -44,13 +48,22 @@ pub(super) fn gate_cmd(
         let run = record::newest_for(&store, name, sha)?
             .ok_or_else(|| anyhow!("no gate run recorded on {sha}"))?;
         if wait {
-            let tries = (AWAIT.as_secs() / PAUSE.as_secs()) as usize;
-            let known = await_known(|| forge.commit_known(&owner, name, sha), tries, PAUSE)?;
+            let known = await_known(|| forge.commit_known(&owner, name, sha), TRIES, PAUSE)?;
             if !known {
+                // a poster has no streams, so the store is where it says so
+                let gave_up = PosterGaveUp {
+                    repo:        name.to_string(),
+                    sha:         sha.clone(),
+                    gave_up_at:  clock::now(),
+                    waited_secs: AWAIT.as_secs(),
+                };
+                store
+                    .append(&PosterGaveUp::kind(), &gave_up.to_record())
+                    .context("recording that the poster gave up")?;
                 return finish(cli, Report {
                     ok:    false,
                     lines: vec![format!(
-                        "the forge still does not know {sha} after {} seconds; the record is kept and `homma release gate --post {}` posts it",
+                        "the forge still does not know {sha} after {} seconds; recorded, and `homma release gate --post {}` posts the run once it does",
                         AWAIT.as_secs(),
                         &sha[.. 7]
                     )],
@@ -96,28 +109,14 @@ pub(super) fn gate_cmd(
     };
     let mut lines = Vec::new();
     let mut ok = true;
+    let mut runs = Vec::new();
     for tip in &tips {
         let run = gate::run_gate_at(&Real, root, &cfg.markers, tip, name, &clock::now())?;
         record::append(&store, &run).context("recording the run")?;
         lines.push(run.summary());
         ok &= run.verdict == Verdict::Green;
         if hook {
-            // the forge has not received this commit yet, and will not until
-            // the hook returns; a red run refuses the push and there is
-            // nothing to tell the forge about
-            if run.verdict == Verdict::Green {
-                match leave_poster(name, &run.sha) {
-                    Ok(()) => lines.push(format!(
-                        "a poster will put {} on {} once the push has landed",
-                        status::CONTEXT,
-                        &run.sha[.. 7]
-                    )),
-                    Err(e) => lines.push(format!(
-                        "no poster could be left ({e}); the record is kept and `homma release gate --post {}` posts it",
-                        &run.sha[.. 7]
-                    )),
-                }
-            }
+            runs.push(run);
             continue;
         }
         match status::post(forge.as_ref(), &owner, name, &run) {
@@ -130,10 +129,41 @@ pub(super) fn gate_cmd(
             },
         }
     }
+    // the forge has not received any of these commits yet, and will not
+    // until the hook returns; one red tip refuses the whole push, so a
+    // poster is left only once every tip is known to be green
+    if hook && ok {
+        let manifest = absolute(&config_path(cli));
+        for run in &runs {
+            match leave_poster(&manifest, name, &run.sha) {
+                Ok(()) => lines.push(format!(
+                    "a poster will put {} on {} once the push has landed",
+                    status::CONTEXT,
+                    &run.sha[.. 7]
+                )),
+                Err(e) => lines.push(format!(
+                    "no poster could be left ({e}); the record is kept and `homma release gate --post {}` posts it",
+                    &run.sha[.. 7]
+                )),
+            }
+        }
+    }
     finish(cli, Report {
         ok,
         lines,
     })
+}
+
+/// `path` made absolute against the working directory, since the poster
+/// inherits nothing else from the hook and a relative manifest would be
+/// read from wherever the poster happens to start.
+fn absolute(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// The tips as commits, once each: an annotated tag's line carries the tag
@@ -151,29 +181,33 @@ fn peeled(root: &std::path::Path, tips: &[String]) -> Result<Vec<String>> {
     Ok(out)
 }
 
-/// Ask `known` until it answers yes, `tries` times with `pause` between, and
-/// say whether it ever did. An error from the forge ends the wait, since it
-/// is not evidence either way.
+/// Ask `known` until it answers yes, `tries` times pausing `pause` after
+/// every miss, and say whether it ever did. An error from the forge ends
+/// the wait, since it is not evidence either way, and a repository the forge
+/// cannot find is one.
 fn await_known(
     mut known: impl FnMut() -> Result<bool, ForgeError>,
     tries: usize,
     pause: Duration,
 ) -> Result<bool> {
-    for i in 0 .. tries {
+    for _ in 0 .. tries {
         if known().context("asking the forge after the commit")? {
             return Ok(true);
         }
-        if i + 1 < tries {
-            std::thread::sleep(pause);
-        }
+        std::thread::sleep(pause);
     }
     Ok(false)
 }
 
-/// The command a poster runs: this binary, on the repository by name, posting
-/// the recorded run once the forge knows the commit.
-fn poster_args(name: &str, sha: &str) -> Vec<String> {
+/// The command a poster runs: this binary, on the manifest the hook ran
+/// under, on the repository by name, posting the recorded run once the
+/// forge knows the commit. The manifest is passed because the poster
+/// inherits the hook's working directory, a member repository's root, and
+/// nothing else; the store it has to read is derived from the manifest.
+fn poster_args(manifest: &Path, name: &str, sha: &str) -> Vec<String> {
     vec![
+        "--config".into(),
+        manifest.to_string_lossy().into_owned(),
         "release".into(),
         "gate".into(),
         name.into(),
@@ -186,11 +220,11 @@ fn poster_args(name: &str, sha: &str) -> Vec<String> {
 /// Leave a poster behind: this binary again, detached from the hook and from
 /// git, with nothing on its streams, so git's own wait on the hook ends and
 /// the push goes ahead while the poster asks after the commit.
-fn leave_poster(name: &str, sha: &str) -> std::io::Result<()> {
+fn leave_poster(manifest: &Path, name: &str, sha: &str) -> std::io::Result<()> {
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe()?;
     let mut cmd = Command::new(exe);
-    cmd.args(poster_args(name, sha))
+    cmd.args(poster_args(manifest, name, sha))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -290,10 +324,68 @@ mod tests {
     }
 
     #[test]
-    fn the_poster_is_this_binary_posting_the_run_by_repository_name_once_known() {
-        assert_eq!(poster_args("notko", "abc123"), vec![
-            "release", "gate", "notko", "--post", "abc123", "--await"
-        ]);
+    fn the_bound_is_the_ten_minutes_every_document_names() {
+        // the wait pauses after every miss, so the tries times the pause is
+        // the whole bound and nothing is skipped off the end
+        assert_eq!(AWAIT, Duration::from_secs(600));
+        assert_eq!(PAUSE * TRIES as u32, AWAIT);
+        let asked = Cell::new(0usize);
+        let miss = || {
+            asked.set(asked.get() + 1);
+            Ok(false)
+        };
+        let started = std::time::Instant::now();
+        assert!(!await_known(miss, 3, Duration::from_millis(20)).unwrap());
+        assert!(
+            started.elapsed() >= Duration::from_millis(60),
+            "three misses paused three times, not two"
+        );
+    }
+
+    #[test]
+    fn the_poster_parses_back_as_a_waiting_post_on_the_manifest_it_was_handed() {
+        use clap::Parser;
+
+        use crate::cli::{Command, ReleaseOp};
+        let manifest = Path::new("/somewhere/homma.toml");
+        let args = poster_args(manifest, "notko", "abc123");
+        let argv: Vec<&str> = std::iter::once("homma")
+            .chain(args.iter().map(String::as_str))
+            .collect();
+        let cli = Cli::try_parse_from(argv).expect("the poster's argv is a homma invocation");
+        assert_eq!(
+            cli.config.as_deref(),
+            Some(manifest),
+            "the poster inherits the hook's cwd and nothing else, so the manifest has to travel"
+        );
+        match cli.command {
+            Command::Release {
+                op:
+                    ReleaseOp::Gate {
+                        repo,
+                        post,
+                        wait,
+                        hook,
+                        sha,
+                        ..
+                    },
+            } => {
+                assert_eq!(repo.as_deref(), Some("notko"));
+                assert_eq!(post.as_deref(), Some("abc123"));
+                assert!(wait, "a poster waits for the forge");
+                assert!(!hook && sha.is_none());
+            },
+            other => panic!("not a gate: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_relative_manifest_is_made_absolute_and_an_absolute_one_is_kept() {
+        let kept = Path::new("/a/homma.toml");
+        assert_eq!(absolute(kept), kept);
+        let made = absolute(Path::new("homma.toml"));
+        assert!(made.is_absolute());
+        assert_eq!(made.file_name().unwrap(), "homma.toml");
     }
 
     #[test]

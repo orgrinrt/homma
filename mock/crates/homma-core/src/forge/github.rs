@@ -273,12 +273,14 @@ impl Forge for GitHubClient {
     }
 
     /// `GET {api}/repos/{owner}/{name}/commits/{sha}`. GitHub answers a sha it
-    /// has not received with 422 rather than 404, so both read as unknown.
+    /// has not received with 422; its 404 is the repository, absent or
+    /// invisible to the token, which `map_ureq_error` reports as such rather
+    /// than as a commit still on its way.
     fn commit_known(&self, owner: &str, name: &str, sha: &str) -> Result<bool, ForgeError> {
         let url = format!("{}/commits/{sha}", self.repo_path(owner, name));
         match self.get(&url) {
             Ok(_) => Ok(true),
-            Err(ureq::Error::Status(404 | 422, _)) => Ok(false),
+            Err(ureq::Error::Status(422, _)) => Ok(false),
             Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }

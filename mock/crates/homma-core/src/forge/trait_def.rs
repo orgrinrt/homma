@@ -89,8 +89,13 @@ pub trait Forge {
     /// a pre-push hook waits on before it can post: git sends nothing until
     /// the hook returns, so the commit a hook measured is unknown to the
     /// forge for as long as the push takes. `GET
-    /// /repos/{owner}/{name}/commits/{sha}` on both forges; a 404 or a 422 is
-    /// `Ok(false)`, and anything else that leaves the question unanswered is
+    /// /repos/{owner}/{name}/commits/{sha}` on GitHub, which answers 422 for
+    /// a sha it has not received, and `GET
+    /// /repos/{owner}/{name}/git/commits/{sha}` on Forgejo, which answers
+    /// 404. A sha not received is `Ok(false)`. A 404 that is the repository
+    /// rather than the commit, absent or invisible to the token, is
+    /// [`ForgeError::RepoNotFound`], since a poster waiting on it would wait
+    /// for nothing; and anything else that leaves the question unanswered is
     /// an error.
     fn commit_known(&self, owner: &str, name: &str, sha: &str) -> Result<bool, ForgeError>;
 

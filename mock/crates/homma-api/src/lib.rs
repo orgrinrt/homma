@@ -16,6 +16,7 @@ pub mod deny_entry;
 pub mod git;
 pub mod hooks;
 pub mod path;
+pub mod poster;
 pub mod record;
 pub mod reference;
 pub mod release;
@@ -28,6 +29,7 @@ pub use deny_entry::DenyEntry;
 pub use git::{CommitIdentity, EmptyPart, Git, Part};
 pub use hooks::{HookEntry, Hooks, InvalidHooks};
 pub use path::{AbsPath, NotAbsolute};
+pub use poster::{NotAGiveUp, POSTER_GAVE_UP_KIND, PosterGaveUp};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
 pub use reference::{Namespace, NotAReference, Reference, Rung};
 pub use release::{
