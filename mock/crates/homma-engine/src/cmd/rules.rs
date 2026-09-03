@@ -18,6 +18,7 @@ use homma_org::rules::Corpus;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
+use crate::cmd::skills;
 use crate::output::{HumanRender, emit};
 
 /// Where the corpus is authored, relative to the workspace root.
@@ -50,6 +51,11 @@ pub mod about {
         pub fires:   String,
         pub topics:  Vec<String>,
         pub matched: usize,
+        /// The skills citing this rule, so a session already in the domain is
+        /// told what to read next rather than having to know it exists.
+        /// Derived, never declared: a `skills` field on a rule is a second copy
+        /// of what the skill already says and would go stale on its own.
+        pub skills:  Vec<String>,
     }
 
     impl HumanRender for AboutReport {
@@ -72,7 +78,12 @@ pub mod about {
                 writeln!(out)?;
                 writeln!(out, "  {}", h.name)?;
                 writeln!(out, "    fires {}", h.fires)?;
-                write!(out, "    topics: {}", h.topics.join(", "))?;
+                writeln!(out, "    topics: {}", h.topics.join(", "))?;
+                if h.skills.is_empty() {
+                    write!(out, "    no skill bears on it")?;
+                } else {
+                    write!(out, "    skills: {}", h.skills.join(", "))?;
+                }
             }
             Ok(())
         }
@@ -80,18 +91,26 @@ pub mod about {
 
     pub fn run(cfg: &Config, query: &str, format: OutputFormat) -> Result<()> {
         let corpus = load(&authored_dir(cfg))?;
+        // The skill corpus is optional here rather than required. A workspace
+        // may have rules and no skills, and refusing to answer what governs a
+        // subject because nothing elaborates it would be the wrong refusal.
+        let skills = skills::load(&skills::authored_dir(cfg)).ok();
         let hits = corpus
             .about(query)
             .into_iter()
             .map(|(r, matched)| {
-                Hit {
+                Ok(Hit {
                     name: r.name.clone(),
                     fires: r.meta.fires.clone(),
                     topics: r.meta.topics.clone(),
                     matched,
-                }
+                    skills: match &skills {
+                        Some(s) => s.bearing_on(&r.name)?,
+                        None => Vec::new(),
+                    },
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         emit(
             &AboutReport {
                 query: query.to_string(),

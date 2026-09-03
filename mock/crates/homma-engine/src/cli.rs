@@ -129,12 +129,24 @@ pub enum Command {
     /// The workspace's own rule corpus: what governs a subject, and the cards.
     ///
     /// Rules are injected into every session the workspace runs, sub-agents
-    /// included, so their size is paid before any work starts. They are
-    /// authored under `.shared/rules/` as a full template carrying the meta and
-    /// a card template beside it, and the card a session loads is generated.
+    /// included, so their size is paid before any work starts. Each is authored
+    /// under `.shared/rules/` as one template: the meta as frontmatter, then the
+    /// card, then a marker, then the elaboration. The card a session loads is
+    /// that prefix, generated.
     Rules {
         #[command(subcommand)]
         op: RulesOp,
+    },
+
+    /// The workspace's skills: what is authored, and the tree a session finds.
+    ///
+    /// A skill's body is fetched on demand and costs a session nothing until it
+    /// is. Its description is different: the listing carries every one of them
+    /// on every session, so that is the field with a budget on it. Authored
+    /// under `.shared/skills/`, generated into `.claude/skills/`.
+    Skills {
+        #[command(subcommand)]
+        op: SkillsOp,
     },
 
     /// Migrate a repo from one configured forge to another.
@@ -280,6 +292,21 @@ pub enum RulesOp {
     ///
     /// Writes `.claude/rules/<name>.md` per rule. Those are generated output
     /// and editing one by hand loses the edit on the next run.
+    Render {},
+}
+
+/// `skills` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum SkillsOp {
+    /// Every skill, and the sentence saying when to reach for it.
+    List {},
+
+    /// Generate the tree a session finds, from the authored templates.
+    ///
+    /// A `.md.tmpl` is rendered and loses that suffix; everything else is
+    /// copied with its mode, since a skill's scripts are not prose. Each
+    /// skill's generated directory is rewritten whole, so editing one by hand
+    /// loses the edit on the next run.
     Render {},
 }
 

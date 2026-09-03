@@ -18,24 +18,16 @@
 //! The prefix ordering is what a rule already owes its reader, per
 //! `writing-for-agents`: operative content first, complete without the rest.
 //!
-//! # Why the reader is strict rather than a YAML parser
-//!
-//! The meta is `key: scalar` and `key: [a, b, c]`, and nothing else. A full
-//! parser would accept nested maps, anchors, block scalars and multi-document
-//! streams, none of which the generation pass can render or round-trip, so
-//! every one of them is a file that parses and then produces something nobody
-//! asked for. This refuses what it does not understand and names the line.
-//!
-//! It also keeps a YAML dependency out of the graph for a subset this size,
-//! which is a licence and advisory surface `deny.toml` would have to carry.
+//! The frontmatter syntax and why it is not YAML are in [`crate::frontmatter`].
 
-use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::Serialize;
 
-/// The delimiter opening and closing a frontmatter block.
-const FENCE: &str = "---";
+use crate::frontmatter::{self, FrontmatterError};
+
+/// Every field a rule may declare.
+const KNOWN: &[&str] = &["topics", "fires", "kind", "paths"];
 
 /// What a rule declares about itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -86,85 +78,10 @@ impl fmt::Display for RuleKind {
 
 /// Why a meta block could not be read.
 ///
-/// Each names the line, because a refusal a author cannot locate is one they
-/// will work around by deleting the block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MetaError {
-    /// The file does not open with a frontmatter fence.
-    NoFrontmatter,
-    /// The block opened and never closed.
-    Unterminated,
-    /// A line inside the block is not `key: value`.
-    NotAKeyValue {
-        line:      usize,
-        challenge: String,
-    },
-    /// A key appeared twice, which silently keeps one of two intents.
-    DuplicateKey {
-        line: usize,
-        key:  String,
-    },
-    /// A key the generation pass does not know, which is nearly always a typo
-    /// for one it does and would otherwise be dropped without a word.
-    UnknownKey {
-        line: usize,
-        key:  String,
-    },
-    /// A required key is absent.
-    Missing {
-        key: &'static str,
-    },
-    /// A key carried a value of the wrong shape.
-    BadValue {
-        key:    String,
-        reason: String,
-    },
-}
-
-impl fmt::Display for MetaError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoFrontmatter => write!(f, "no `---` frontmatter block at the top of the file"),
-            Self::Unterminated => write!(f, "the frontmatter block opened and never closed"),
-            Self::NotAKeyValue {
-                line,
-                challenge,
-            } => {
-                write!(
-                    f,
-                    "line {line}: not `key: value`, and this reader takes nothing else: {challenge}"
-                )
-            },
-            Self::DuplicateKey {
-                line,
-                key,
-            } => {
-                write!(
-                    f,
-                    "line {line}: `{key}` appears twice, so one of the two intents would be dropped"
-                )
-            },
-            Self::UnknownKey {
-                line,
-                key,
-            } => {
-                write!(
-                    f,
-                    "line {line}: `{key}` is not a field the generation pass reads"
-                )
-            },
-            Self::Missing {
-                key,
-            } => write!(f, "`{key}` is required and absent"),
-            Self::BadValue {
-                key,
-                reason,
-            } => write!(f, "`{key}`: {reason}"),
-        }
-    }
-}
-
-impl std::error::Error for MetaError {}
+/// The frontmatter errors, under the name the rule reader has always used for
+/// them, so a caller matching on this does not have to know which layer the
+/// refusal came from.
+pub type MetaError = FrontmatterError;
 
 /// The line separating the card from the elaboration.
 ///
@@ -173,9 +90,6 @@ impl std::error::Error for MetaError {}
 pub const ELABORATION_MARKER: &str = "<!-- elaboration -->";
 
 /// The frontmatter block and the body after it.
-///
-/// Returned together because every caller wants both and splitting the file
-/// twice is how the two come to disagree about where the body starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parsed {
     pub meta: RuleMeta,
@@ -227,64 +141,11 @@ impl Parsed {
     }
 }
 
-/// Read a rule's meta and body off the text of its full template.
+/// Read a rule's meta and body off the text of its template.
 pub fn parse(source: &str) -> Result<Parsed, MetaError> {
-    let mut lines = source.lines().enumerate();
+    let block = frontmatter::split(source, KNOWN)?;
 
-    match lines.next() {
-        Some((_, first)) if first.trim_end() == FENCE => {},
-        _ => return Err(MetaError::NoFrontmatter),
-    }
-
-    let mut fields: BTreeMap<String, (usize, String)> = BTreeMap::new();
-    let mut closed_at = None;
-    for (idx, line) in lines.by_ref() {
-        let n = idx + 1;
-        if line.trim_end() == FENCE {
-            closed_at = Some(n);
-            break;
-        }
-        // A blank line or a comment inside the block is allowed and carries
-        // nothing, which keeps an author from having to pack the fields up.
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let Some((key, value)) = trimmed.split_once(':') else {
-            return Err(MetaError::NotAKeyValue {
-                line:      n,
-                challenge: trimmed.to_string(),
-            });
-        };
-        let key = key.trim().to_string();
-        if let Some((first, _)) = fields.get(&key) {
-            let _ = first;
-            return Err(MetaError::DuplicateKey {
-                line: n,
-                key,
-            });
-        }
-        if !matches!(key.as_str(), "topics" | "fires" | "kind" | "paths") {
-            return Err(MetaError::UnknownKey {
-                line: n,
-                key,
-            });
-        }
-        fields.insert(key, (n, value.trim().to_string()));
-    }
-
-    if closed_at.is_none() {
-        return Err(MetaError::Unterminated);
-    }
-
-    let topics = match fields.get("topics") {
-        Some((_, raw)) => parse_list("topics", raw)?,
-        None => {
-            return Err(MetaError::Missing {
-                key: "topics",
-            });
-        },
-    };
+    let topics = block.required_list("topics")?;
     if topics.is_empty() {
         return Err(MetaError::BadValue {
             key:    "topics".into(),
@@ -292,49 +153,30 @@ pub fn parse(source: &str) -> Result<Parsed, MetaError> {
         });
     }
 
-    let fires = match fields.get("fires") {
-        Some((_, raw)) => unquote(raw),
-        None => {
-            return Err(MetaError::Missing {
-                key: "fires",
-            });
-        },
-    };
-    if fires.is_empty() {
-        return Err(MetaError::BadValue {
-            key:    "fires".into(),
-            reason: "empty, and a card without a trigger never connects to the work".into(),
-        });
-    }
-
-    let kind = match fields.get("kind") {
-        Some((_, raw)) => {
-            RuleKind::parse(&unquote(raw)).ok_or_else(|| {
+    let fires = block.scalar("fires").map_err(|e| {
+        match e {
+            MetaError::BadValue {
+                key,
+                ..
+            } => {
                 MetaError::BadValue {
-                    key:    "kind".into(),
-                    reason: format!("`{}` is neither `reflex` nor `discipline`", unquote(raw)),
+                    key,
+                    reason: "empty, and a card without a trigger never connects to the work".into(),
                 }
-            })?
-        },
-        None => {
-            return Err(MetaError::Missing {
-                key: "kind",
-            });
-        },
-    };
+            },
+            other => other,
+        }
+    })?;
 
-    let paths = match fields.get("paths") {
-        Some((_, raw)) => parse_list("paths", raw)?,
-        None => Vec::new(),
-    };
+    let raw_kind = block.scalar("kind")?;
+    let kind = RuleKind::parse(&raw_kind).ok_or_else(|| {
+        MetaError::BadValue {
+            key:    "kind".into(),
+            reason: format!("`{raw_kind}` is neither `reflex` nor `discipline`"),
+        }
+    })?;
 
-    // The body starts after the closing fence. Counted from the same walk the
-    // fields came from, so it cannot disagree about where that was.
-    let body = source
-        .lines()
-        .skip(closed_at.unwrap_or(0) + 1)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let paths = block.list("paths")?;
 
     Ok(Parsed {
         meta: RuleMeta {
@@ -343,41 +185,8 @@ pub fn parse(source: &str) -> Result<Parsed, MetaError> {
             kind,
             paths,
         },
-        body: body.trim_start_matches('\n').to_string(),
+        body: block.body,
     })
-}
-
-/// `[a, b, c]`, and nothing else.
-///
-/// The block form YAML also allows is refused rather than supported, because
-/// supporting one of two spellings quietly is how a corpus ends up with both.
-fn parse_list(key: &str, raw: &str) -> Result<Vec<String>, MetaError> {
-    let raw = raw.trim();
-    let inner = raw
-        .strip_prefix('[')
-        .and_then(|r| r.strip_suffix(']'))
-        .ok_or_else(|| {
-            MetaError::BadValue {
-                key:    key.into(),
-                reason: format!("expected an inline list like `[a, b]`, found `{raw}`"),
-            }
-        })?;
-    Ok(inner
-        .split(',')
-        .map(unquote)
-        .filter(|s| !s.is_empty())
-        .collect())
-}
-
-/// Strip matching surrounding quotes and surrounding space.
-fn unquote(s: &str) -> String {
-    let s = s.trim();
-    for q in ['"', '\''] {
-        if s.len() >= 2 && s.starts_with(q) && s.ends_with(q) {
-            return s[1 .. s.len() - 1].to_string();
-        }
-    }
-    s.to_string()
 }
 
 /// How well a rule's topics answer a query, as the count of query terms it

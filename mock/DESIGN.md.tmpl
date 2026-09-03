@@ -76,16 +76,37 @@ A workspace's rules are injected into every session it runs, sub-agents
 included, so their size is paid before any work starts. They are authored as
 templates and generated, like everything else the generation pass owns.
 
-**Three artifacts per rule, one of them generated.** A full template carrying the
-meta as frontmatter and the reasoning as its body; a card template beside it; and
-the always-loaded card, written by the pass and never by hand. **The meta lives
-once, in the full template**, and both render against it, so a trigger typed once
-appears in both.
+**One file per rule, and the card is its opening.** The meta as frontmatter, then
+the card, then a marker, then the elaboration; the always-loaded card is that
+prefix, written by the pass and never by hand. **The card is a prefix of the full
+rule rather than a second document**, so nothing is written twice and the two
+cannot drift.
+
+Two files were tried first. Frontmatter on one of a pair governs the other
+silently, so opening the card template showed none of the meta shaping it, and an
+elaboration could lose the card beside it and be authored, findable and absent
+from every session at once. **That error class is gone rather than guarded.**
 
 **The meta is what makes a rule findable without its name.** Topics stated in the
 words a reader arrives with, and the moment the rule fires. A session about to
 write a README asks the subject and gets the governing set; asking by filename
 only works for somebody who already knows the answer.
+
+## The skill corpus
+
+The same split, one tier over. A skill is authored as a directory rather than a
+file, and what it holds beside its manifest is reference prose, scripts and
+sometimes a command-line tool of its own.
+
+**A template is rendered and everything else is copied with its mode.** A shell
+script is not prose, and templating one would mean it could not carry a brace
+without escaping it.
+
+**The bound is on the description, not on the body.** A body is fetched when a
+session reaches for the skill and costs nothing until then; every description is
+carried on every session, because the listing is how a session tells which skill
+to reach for. An over-budget description is dropped rather than refused, which
+leaves the skill named and silent about when it applies.
 
 **Which skills bear on a rule is derived rather than declared**, from citations
 in both directions, because a hand-kept list goes wrong the first time a skill is
@@ -97,6 +118,7 @@ renamed and nothing reports it.
 homma org      who exists
 homma work     workspaces and what is in them
 homma rules    the corpus: what governs a subject, and generating the cards
+homma skills   what is authored, and generating the tree a session finds
 homma sauna    correspondence and work
 homma serve    the daemon and its surfaces
 ```

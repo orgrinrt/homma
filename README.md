@@ -47,6 +47,8 @@ into anything that has to keep running unattended just yet.
 | `homma org <op>` | The registry of who works here, and standing an entry up with its directories and its own clone |
 | `homma agent <op>` | Reports which member repos carry their own template scaffolding, and drives each one's regeneration |
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
+| `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored |
+| `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |
 
 `--output json` sits on the root and applies to all of them, one document per
 command, which is there mostly so you can pipe it into `jq` and stop parsing our
