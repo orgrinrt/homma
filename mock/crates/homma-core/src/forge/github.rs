@@ -465,3 +465,7 @@ fn truncate(mut s: String, max: usize) -> String {
 #[cfg(test)]
 #[path = "github_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "github_wire_tests.rs"]
+mod wire_tests;

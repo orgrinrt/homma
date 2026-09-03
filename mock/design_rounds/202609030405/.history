@@ -1,0 +1,50 @@
+3593be2 chore: lock the source changelist on the release errors
+fe79e96 fix: the off-level error is boxed, and ls-remote is bounded on ssh too
+a84f0c2 chore: open the source changelist on the release errors
+d631f2a chore: lock the doc changelist on the release errors
+501469f chore: open a round on the release errors fitting the gate
+8f61508 chore: close the round on a failed push
+6ad0252 chore: lock the source changelist on a failed push
+ae7c3ac fix: a refused push of main resets it, and ls-remote gives up
+5a5d136 chore: open the source changelist on a failed push
+b54c15c chore: lock the doc changelist on a failed push
+3f70893 chore: open a round on a failed push leaving no merge behind
+1fbde9c docs: render the release deep dive
+09789e5 chore: close the round on a fresh clone merging
+88a7be3 chore: lock the source changelist on a fresh clone merging
+a453def fix: a clone with only origin/dev is told to switch, not released alone
+fa73480 chore: open the source changelist on a fresh clone merging
+875f109 chore: lock the doc changelist on a fresh clone merging
+b028648 docs: the plan names the branches it carries
+ea25b54 chore: open a round on a fresh clone merging dev onto main
+bd69b6d docs: render the release deep dive
+0544929 chore: close the round on testing the sweep
+c5e9668 chore: lock the source changelist on testing the sweep
+93708ea fix: both.sameset pairs packages by name, and the sweep is tested
+964b40f chore: open the source changelist on testing the sweep
+c11e451 chore: lock the doc changelist on testing the sweep
+659c9c9 docs: the check section names its ids and not where they came from
+10a12c6 chore: open a round on testing the sweep and both.sameset per package
+6062598 chore: close the round on the sweep's refusals
+ee9ed9e chore: lock the source changelist on the sweep's refusals
+3d9848b fix: sweep refusals: a manifest off the level, and a repo naming itself
+48d02ea chore: open the source changelist on the sweep's refusals
+b5476e0 chore: lock the doc changelist on the sweep's refusals
+8358c35 chore: open a round on the sweep's refusals and the api file size
+fa52cf1 test: the opt-out the readme names is the one the launcher reads
+493f53a chore: close the round on check severities and the level
+f62788d chore: lock the source changelist on check severities
+c916de1 docs: render the release deep dive
+99d328e fix: a half-published tag blocks, a manifest off the level refuses
+da683b5 chore: open the source changelist on check severities
+cab8fd3 chore: lock the doc changelist on check severities
+0be35cb docs: say which check ids warn and that a manifest off the level refuses
+5c45df2 chore: open a round on check severities and the plan's level
+007f9e4 chore: rustfmt on the sweep, the check and the git tests
+b0d9cc1 chore: close design round 202609022332
+dd256ae chore: lock the source changelist of 202609022332
+d62c360 fix: the sweep names what it passes over, the refusal walks members
+cd7fa52 chore: open the source changelist of 202609022332
+a078426 chore: lock the doc changelist of 202609022332
+10a594b docs: point at CORE_RELEASE.md, and say a manifest under mock/ is unread
+ccfb865 chore: open round 202609022332, the sweep names what it skips

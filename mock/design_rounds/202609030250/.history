@@ -1,0 +1,50 @@
+3390878 chore: lock the source changelist on the sweep's refusals
+c65828d fix: the sweep refuses a manifest off the level and a repo is not its own sibling
+e0c02b1 chore: open the source changelist on the sweep's refusals
+b5476e0 chore: lock the doc changelist on the sweep's refusals
+8358c35 chore: open a round on the sweep's refusals and the api file size
+fa52cf1 test: the opt-out the readme names is the one the launcher reads
+493f53a chore: close the round on check severities and the level
+f62788d chore: lock the source changelist on check severities
+c916de1 docs: render the release deep dive
+99d328e fix: a half-published tag blocks, a manifest off the level refuses
+da683b5 chore: open the source changelist on check severities
+cab8fd3 chore: lock the doc changelist on check severities
+0be35cb docs: say which check ids warn and that a manifest off the level refuses
+5c45df2 chore: open a round on check severities and the plan's level
+007f9e4 chore: rustfmt on the sweep, the check and the git tests
+b0d9cc1 chore: close design round 202609022332
+dd256ae chore: lock the source changelist of 202609022332
+d62c360 fix: the sweep names what it passes over, the refusal walks members
+cd7fa52 chore: open the source changelist of 202609022332
+a078426 chore: lock the doc changelist of 202609022332
+10a594b docs: point at CORE_RELEASE.md, and say a manifest under mock/ is unread
+ccfb865 chore: open round 202609022332, the sweep names what it skips
+3386c47 chore: close design round 202609022310
+2e3e7fb chore: lock the source changelist of 202609022310
+ed11a01 chore: rustfmt on the check, its tests and the release ordering
+c016c64 fix: a bump on main wants a tag, a workspace run refuses a sibling edge
+34cd80b chore: open the source changelist of 202609022310
+b9e0ab0 chore: lock the doc changelist of 202609022310
+741728c docs: name main.unreleased as the one check id the catalogue lacked
+11b59b6 chore: open round 202609022310, bump tags, sibling order, npmrc path
+00ca01b chore: close design round 202609022254
+4286ebe chore: lock the source changelist of 202609022254
+66b692b chore: rustfmt on publish, the release command and the smoke tests
+558cb09 fix: npmrc at an unplantable path, badges read the newest run
+f8c67fd chore: open the source changelist of 202609022254
+4d7157b chore: lock the doc changelist of 202609022254
+b124d10 chore: open round 202609022254, npmrc path, badges source, run order
+551e53d chore: close design round 202609022245
+fd8e4e8 chore: rustfmt on publish and run
+92eb2ba fix: redact the jsr token, hand the tree back on a failed merge
+46cb8e6 docs: the src changelist of round 202609022245
+1eb658a chore: lock doc changelist 202609022245
+fd0ac81 docs: open round 202609022245, jsr redaction, allow-dirty, hand-back
+1249320 docs: render the release design
+eb5033b chore: close design round 202609022140, the release
+0322d43 docs: the src changelist matches what landed
+630ff34 chore: rustfmt on the release command
+7f4a811 feat: `homma release` on the command line
+469c23b chore: rustfmt on the registry auth change
+6dea603 feat: registries take their tokens the way forges do, from `homma.toml`

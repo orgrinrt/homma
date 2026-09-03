@@ -23,6 +23,9 @@ pub enum GitError {
     Spawn(sh::Spawn),
     /// A ref or an object that was asked for is not there.
     Missing(String),
+    /// A scratch file a read needed could not be written, a planted path
+    /// included.
+    Scratch(std::io::Error),
 }
 
 impl fmt::Display for GitError {
@@ -34,6 +37,7 @@ impl fmt::Display for GitError {
             } => write!(f, "`{command}` failed: {}", stderr.trim()),
             GitError::Spawn(s) => write!(f, "{s}"),
             GitError::Missing(what) => write!(f, "{what} is not there"),
+            GitError::Scratch(e) => write!(f, "a scratch file could not be written: {e}"),
         }
     }
 }
@@ -225,6 +229,26 @@ pub fn merge_no_ff(cwd: &Path, from: &str, message: &str) -> Result<String, GitE
     head(cwd)
 }
 
+/// A detached worktree of `sha` at `path`, for measuring a commit that is
+/// not the checkout's head without moving the checkout.
+pub fn worktree_add_detached(cwd: &Path, path: &Path, sha: &str) -> Result<(), GitError> {
+    let p = path.to_string_lossy();
+    git(cwd, &["worktree", "add", "--quiet", "--detach", &p, sha]).map(|_| ())
+}
+
+/// Remove a worktree this tool added, and prune the registration.
+pub fn worktree_remove(cwd: &Path, path: &Path) -> Result<(), GitError> {
+    let p = path.to_string_lossy();
+    git(cwd, &["worktree", "remove", "--force", &p])?;
+    git(cwd, &["worktree", "prune"]).map(|_| ())
+}
+
+/// Move the checked-out branch back to `rev`, discarding what sits past it.
+/// Only ever run on a branch this tool moved itself, to undo that move.
+pub fn reset_hard(cwd: &Path, rev: &str) -> Result<(), GitError> {
+    git(cwd, &["reset", "--quiet", "--hard", rev]).map(|_| ())
+}
+
 /// Abort a merge in progress. Fails where none is, which a caller cleaning up
 /// after a failed step ignores.
 pub fn abort_merge(cwd: &Path) -> Result<(), GitError> {
@@ -316,7 +340,27 @@ pub fn parent_count(cwd: &Path, rev: &str) -> Result<usize, GitError> {
 /// tag object, so an annotated tag reports its commit the way `tag_target`
 /// does locally.
 pub fn remote_tags(cwd: &Path, remote: &str) -> Result<Vec<(String, String)>, GitError> {
-    let out = trimmed(cwd, &["ls-remote", "--tags", remote])?;
+    // a remote that stops answering is given up on in the same order of time
+    // the registry client allows, rather than for as long as the network
+    // takes. git has no wall bound of its own, so each transport gets the
+    // bound it does have: the low-speed pair covers http, and the ssh command
+    // covers ssh, which is what every remote in this workspace speaks. a
+    // caller that already names an ssh command keeps it
+    let ssh = std::env::var("GIT_SSH_COMMAND").unwrap_or_else(|_| {
+        "ssh -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3".into()
+    });
+    let out = sh::run_with_env(cwd, "git", &["ls-remote", "--tags", remote], &[
+        ("GIT_HTTP_LOW_SPEED_LIMIT", "1000"),
+        ("GIT_HTTP_LOW_SPEED_TIME", "15"),
+        ("GIT_SSH_COMMAND", ssh.as_str()),
+    ])?;
+    if !out.ok() {
+        return Err(GitError::Failed {
+            command: out.command_line(),
+            stderr:  out.stderr,
+        });
+    }
+    let out = out.stdout.trim().to_string();
     let mut peeled: Vec<(String, String)> = Vec::new();
     let mut plain: Vec<(String, String)> = Vec::new();
     for line in out.lines() {

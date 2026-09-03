@@ -67,7 +67,12 @@ pub fn description(run: &GateRun) -> String {
     }
     let mut text = parts.join(", ");
     if text.len() > 140 {
-        text.truncate(137);
+        // cut on a character boundary, since a byte count can land inside one
+        let mut cut = 137;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
         text.push_str("...");
     }
     text
@@ -149,6 +154,16 @@ mod tests {
         let d = description(&run(steps));
         assert!(d.len() <= 140, "{}", d.len());
         assert!(d.ends_with("..."));
+        // and a cut that lands inside a multibyte character moves back to
+        // the boundary rather than panicking: a coverage cell of one wide
+        // character repeated past the limit
+        let wide = "ä".repeat(90);
+        let steps = vec![outcome(Step::Docs, true, &[("documented_percent", &wide)])];
+        let d = description(&run(steps));
+        assert!(d.len() <= 140, "{}", d.len());
+        assert!(d.ends_with("..."));
+        assert!(d.contains('ä'), "the wide cell survives the cut: {d}");
+        assert!(!d.contains('\u{FFFD}'), "no character was split: {d}");
     }
 
     struct Recorder(RefCell<Vec<(String, String, String, CommitStatus)>>);

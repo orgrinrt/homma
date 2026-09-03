@@ -92,15 +92,127 @@ fn a_crate_without_feature_sets_is_tested_with_all_and_with_none() {
 }
 
 #[test]
+fn feature_sets_declared_by_a_workspace_member_are_read_off_a_virtual_root() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
+    )
+    .unwrap();
+    assert_eq!(feature_sets(d.path()).unwrap(), vec![(
+        Some("inner".to_string()),
+        vec![vec!["a".to_string()]]
+    )]);
+    // and a member declaring none leaves the root's answer, which is none
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    assert!(feature_sets(d.path()).unwrap().is_empty());
+}
+
+#[test]
+fn each_member_s_feature_sets_run_against_that_member_and_none_is_inherited() {
+    let d = tempfile::tempdir().unwrap();
+    for (name, sets) in [("alpha", "[[\"a\"]]"), ("zeta", "[[\"z\"], []]")] {
+        std::fs::create_dir_all(d.path().join("crates").join(name)).unwrap();
+        std::fs::write(
+            d.path().join("crates").join(name).join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = {sets}\n"
+            ),
+        )
+        .unwrap();
+    }
+    std::fs::create_dir_all(d.path().join("crates/plain")).unwrap();
+    std::fs::write(
+        d.path().join("crates/plain/Cargo.toml"),
+        "[package]\nname = \"plain\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    // the workspace-wide runs every member gets, then each member's own sets
+    // against itself; `plain` declares none and inherits none, and `zeta`'s
+    // empty set is its own no-features run
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo test --all-features",
+        "cargo test --no-default-features",
+        "cargo test -p alpha --no-default-features --features a",
+        "cargo test -p zeta --no-default-features --features z",
+        "cargo test -p zeta --no-default-features",
+    ]);
+}
+
+#[test]
+fn a_commit_that_is_not_the_head_is_gated_in_a_worktree_that_is_gone_after() {
+    let d = git_repo_with(&[(
+        "Cargo.toml",
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+    )]);
+    let first = git::head(d.path()).unwrap();
+    std::fs::write(d.path().join("f"), "x").unwrap();
+    let g = |args: &[&str]| {
+        let out = sh::run(d.path(), "git", args).unwrap();
+        assert!(out.ok(), "{}", out.log());
+    };
+    g(&["-c", "user.name=t", "-c", "user.email=t@t", "add", "."]);
+    g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "two"]);
+    let head = git::head(d.path()).unwrap();
+    assert_ne!(first, head, "the control: two commits");
+    let fake = Fake::new(vec![]);
+    let run = run_gate_at(&fake, d.path(), &first, "x", "t").unwrap();
+    assert_eq!(run.sha, first, "the run measures the commit asked for");
+    assert_eq!(
+        git::head(d.path()).unwrap(),
+        head,
+        "the checkout did not move"
+    );
+    let out = sh::run(d.path(), "git", &["worktree", "list"]).unwrap();
+    assert_eq!(
+        out.stdout.lines().count(),
+        1,
+        "only the checkout remains: {}",
+        out.stdout
+    );
+    // the head itself runs in place
+    let run = run_gate_at(&fake, d.path(), &head, "x", "t").unwrap();
+    assert_eq!(run.sha, head);
+    // and a sha that is not there is refused rather than gated as nothing
+    assert!(
+        run_gate_at(
+            &fake,
+            d.path(),
+            "0000000000000000000000000000000000000000",
+            "x",
+            "t"
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn feature_sets_from_the_manifest_each_get_a_run() {
     let d = crate_root(
         "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[], [\"a\"], [\"a\", \"b\"]]\n",
     );
-    assert_eq!(feature_sets(d.path()).unwrap(), vec![
+    assert_eq!(feature_sets(d.path()).unwrap(), vec![(None, vec![
         vec![],
         vec!["a".to_string()],
         vec!["a".to_string(), "b".to_string()]
-    ]);
+    ])]);
     let fake = Fake::new(vec![]);
     run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
     assert_eq!(fake.seen.borrow().as_slice(), &[
@@ -239,12 +351,20 @@ fn the_whole_gate_refuses_a_dirty_tree_and_runs_every_step_on_a_clean_one() {
     assert_eq!(run.verdict, Verdict::Green);
     assert_eq!(run.steps.len(), Step::ALL.len());
     assert_eq!(run.sha, git::head(d.path()).unwrap());
+    // the wall time sits on the last step that ran, not on a skipped one
+    let carrier = run
+        .steps
+        .iter()
+        .find(|s| s.numbers.contains_key("wall_seconds"))
+        .expect("some step carries the wall time");
+    assert!(!carrier.skipped, "{carrier:?}");
     assert!(
         run.steps
-            .last()
-            .unwrap()
-            .numbers
-            .contains_key("wall_seconds")
+            .iter()
+            .rev()
+            .find(|s| !s.skipped)
+            .is_some_and(|s| s.step == carrier.step),
+        "it is the last step that ran"
     );
     assert!(run.steps.iter().any(|s| s.step == Step::Deny && s.skipped));
     std::fs::write(d.path().join("Cargo.toml"), "changed").unwrap();

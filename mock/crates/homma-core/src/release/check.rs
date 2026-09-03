@@ -280,47 +280,40 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         }
         for (t, tv) in &versioned {
             if !versions.contains(tv) {
+                // the newest tag with nothing published for it is a release
+                // half done; an older one is history
+                let newest = versioned.last().is_some_and(|(n, _)| n == t);
                 push(
                     "reg.unpublished",
-                    CheckSeverity::Warn,
+                    if newest { CheckSeverity::Error } else { CheckSeverity::Warn },
                     format!("`{t}` is not on {reg} as {name}"),
                 );
             }
         }
     }
-    let jsr: Vec<_> = inputs
-        .published
-        .versions
-        .iter()
-        .filter(|((r, _), _)| *r == Registry::Jsr)
-        .map(|(_, v)| v.clone())
-        .collect();
-    let npm: Vec<_> = inputs
-        .published
-        .versions
-        .iter()
-        .filter(|((r, _), _)| *r == Registry::Npm)
-        .map(|(_, v)| v.clone())
-        .collect();
-    if let (Some(j), Some(n)) = (jsr.first(), npm.first()) {
-        let mut js = j.clone();
-        let mut ns = n.clone();
-        js.sort();
-        ns.sort();
-        if js != ns {
+    // a package shipping on both jsr and npm holds the same set on each; the
+    // pair is what the repo's own manifests declare, so the two names need
+    // share nothing
+    let shipped = repo_kind.map(|k| packages(root, k)).unwrap_or_default();
+    if let (Some(jsr_name), Some(npm_name)) = (&shipped.jsr, &shipped.npm) {
+        let on = |r: Registry, n: &str| {
+            let mut v = inputs.published.get(r, n).cloned().unwrap_or_default();
+            v.sort();
+            v
+        };
+        if on(Registry::Jsr, jsr_name) != on(Registry::Npm, npm_name) {
             push(
                 "both.sameset",
-                CheckSeverity::Warn,
-                "jsr and npm hold different version sets".into(),
+                CheckSeverity::Error,
+                format!("{jsr_name} on jsr and {npm_name} on npm hold different version sets"),
             );
         }
     }
 
-    out.sort_by(|a, b| b.severity.cmp(&a.severity));
+    out.sort_by_key(|f| std::cmp::Reverse(f.severity));
     Ok(out)
 }
 
-/// Whether `b` is one legal step above `a` at some level.
 /// A subject names a hotpatch where `hotpatch` stands as a word of its own,
 /// in any case, and neither of the two words before it is a negation; "this
 /// is not a hotpatch" and "no hotpatch here" name nothing.
@@ -338,6 +331,8 @@ fn names_hotpatch(subject: &str) -> bool {
     })
 }
 
+/// Whether `b` is one legal step above `a` at some level, or the step off
+/// `0.x` onto `1.0.0`.
 fn is_adjacent(a: &Version, b: &Version) -> bool {
     [Level::Patch, Level::Minor, Level::Major]
         .iter()
@@ -354,8 +349,13 @@ fn manifest_version_at(
     let Some(text) = git::show(root, rev, file)? else {
         return Ok(None);
     };
+    // the scratch manifest is written the way the npmrc is: a path already
+    // there is refused, so a planted file is an error and never the answer
     let dir = tempfile_dir();
-    std::fs::write(dir.join(file), text).ok();
+    if let Err(e) = super::publish::write_private(&dir.join(file), &text) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(git::GitError::Scratch(e));
+    }
     let k = if k.has_crate() { RepoKind::Crate } else { RepoKind::Deno };
     let v = version::read(&dir, k).ok();
     let _ = std::fs::remove_dir_all(&dir);

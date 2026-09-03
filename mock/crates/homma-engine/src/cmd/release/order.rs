@@ -214,6 +214,38 @@ mod tests {
     }
 
     #[test]
+    fn a_repo_matches_its_own_member_crate_unless_its_name_is_left_out() {
+        let dir = tempfile::tempdir().unwrap();
+        // the repo `notko` is a workspace whose members include a crate
+        // called `notko`, which `notko-hlist` depends on
+        let w = dir.path().join("notko");
+        std::fs::create_dir_all(w.join("crates/notko")).unwrap();
+        std::fs::create_dir_all(w.join("crates/notko-hlist")).unwrap();
+        std::fs::write(
+            w.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            w.join("crates/notko/Cargo.toml"),
+            "[package]\nname = \"notko\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            w.join("crates/notko-hlist/Cargo.toml"),
+            "[package]\nname = \"notko-hlist\"\nversion = \"0.1.0\"\n[dependencies]\nnotko = { path = \"../notko\" }\n",
+        )
+        .unwrap();
+        // with its own name in the slice it matches itself, which is why the
+        // caller takes the name out first
+        assert_eq!(
+            sibling_dependency(&w, &["notko".to_string(), "zed".to_string()]),
+            Some("notko".into())
+        );
+        assert_eq!(sibling_dependency(&w, &["zed".to_string()]), None);
+    }
+
+    #[test]
     fn independent_repos_release_in_name_order() {
         let dir = tempfile::tempdir().unwrap();
         member(dir.path(), "zed", &[]);
