@@ -335,3 +335,45 @@ fn the_two_halves_do_not_overlap() {
     assert!(!p.card().is_empty());
     assert!(!p.elaboration().is_empty());
 }
+
+#[test]
+fn a_rule_may_mention_the_marker_without_splitting_itself() {
+    // The rule that documents this format has to name the marker in a sentence.
+    // Matching it as a substring truncated exactly that rule's card at the
+    // mention, mid-sentence, and the generated card looked like a rule that
+    // simply stopped. A structural marker is a line of its own.
+    let src = [
+        "---",
+        "topics: [a]",
+        "fires: \"x\"",
+        "kind: reflex",
+        "---",
+        "",
+        "# Title",
+        "",
+        "The card, which explains that `<!-- elaboration -->` separates the halves.",
+        "",
+        "<!-- elaboration -->",
+        "",
+        "The depth.",
+    ]
+    .join("\n");
+    let p = rule::parse(&src).unwrap();
+    assert!(
+        p.card().contains("separates the halves"),
+        "an inline mention truncated the card: {:?}",
+        p.card()
+    );
+    assert!(p.elaboration().contains("The depth."));
+    assert!(!p.elaboration().contains("separates the halves"));
+}
+
+#[test]
+fn an_indented_marker_still_separates() {
+    // Leading whitespace is invisible in a diff and would otherwise turn the
+    // split off with nothing reporting it.
+    let src = "---\ntopics: [a]\nfires: \"x\"\nkind: reflex\n---\n\ncard\n\n   <!-- elaboration -->   \n\ndepth\n";
+    let p = rule::parse(src).unwrap();
+    assert!(p.has_elaboration());
+    assert_eq!(p.elaboration(), "depth");
+}

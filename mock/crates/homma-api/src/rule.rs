@@ -183,29 +183,47 @@ pub struct Parsed {
 }
 
 impl Parsed {
+    /// Where the marker sits, as the byte range of its own line.
+    ///
+    /// **A line that is exactly the marker, not the marker anywhere.** A rule
+    /// documenting this format has to be able to mention the marker in a
+    /// sentence, and the substring form truncated that rule's card at the
+    /// mention, silently and in the middle of a word. A structural marker is a
+    /// line.
+    fn split_at(&self) -> Option<(usize, usize)> {
+        let mut offset = 0;
+        for line in self.body.split_inclusive('\n') {
+            if line.trim() == ELABORATION_MARKER {
+                return Some((offset, offset + line.len()));
+            }
+            offset += line.len();
+        }
+        None
+    }
+
     /// The card: everything before the elaboration marker.
     ///
-    /// A rule short enough to have no marker is entirely a card, which is the
-    /// case for the ones whose whole statement fits. That is not a defect and
-    /// is not reported as one.
+    /// A rule with no marker is entirely a card, which is the case for the ones
+    /// whose whole statement fits. That is not a defect and is not reported as
+    /// one.
     pub fn card(&self) -> &str {
-        match self.body.split_once(ELABORATION_MARKER) {
-            Some((card, _)) => card.trim_end(),
+        match self.split_at() {
+            Some((start, _)) => self.body[.. start].trim_end(),
             None => self.body.trim_end(),
         }
     }
 
     /// The elaboration: everything after the marker, empty when there is none.
     pub fn elaboration(&self) -> &str {
-        match self.body.split_once(ELABORATION_MARKER) {
-            Some((_, rest)) => rest.trim_start_matches('\n').trim_end(),
+        match self.split_at() {
+            Some((_, end)) => self.body[end ..].trim_start_matches('\n').trim_end(),
             None => "",
         }
     }
 
     /// Whether the rule carries an elaboration at all.
     pub fn has_elaboration(&self) -> bool {
-        self.body.contains(ELABORATION_MARKER)
+        self.split_at().is_some()
     }
 }
 
