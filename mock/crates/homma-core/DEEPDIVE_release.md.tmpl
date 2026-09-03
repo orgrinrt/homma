@@ -106,9 +106,7 @@ until mockspace's pre-push delegates to homma, and the refusal says so.
 ## The check
 
 Before anything moves, `homma release check <repo>` establishes the invariants
-and prints every one it cannot, by id. The ids are those of the check catalogue
-the workspace's earlier Python runner carried, so the port is checkable against
-it, and the set a release needs green is this:
+and prints every one it cannot, by id. The set a release needs green is this:
 
 The tags: every release tag is reachable from `main` (`tag.reachable`, tightened
 to `main`), on the remote and pointing at the same commit both sides
