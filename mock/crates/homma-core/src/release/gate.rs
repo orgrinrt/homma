@@ -265,14 +265,13 @@ fn calls_for(
         },
         Step::Lint => {
             if crate_ {
-                calls.push(Call::new("cargo", &[
-                    "clippy",
-                    "--all-targets",
-                    "--all-features",
-                    "--",
-                    "-D",
-                    "warnings",
-                ]));
+                let declared = feature_sets(root)?;
+                calls.extend(cargo_runs(
+                    &declared,
+                    &["clippy", "--all-targets"],
+                    &["--", "-D", "warnings"],
+                    false,
+                ));
             }
             if deno {
                 calls.push(Call::new("deno", &["lint"]));
@@ -285,37 +284,8 @@ fn calls_for(
         },
         Step::Tests => {
             if crate_ {
-                calls.push(Call::new("cargo", &["test", "--all-features"]));
-                // the root package's sets stand in for the plain no-features
-                // run; a member's sets run against that member, `-p`, beside
-                // the workspace-wide runs every member gets
                 let declared = feature_sets(root)?;
-                let root_sets = declared.iter().find(|(n, _)| n.is_none());
-                match root_sets {
-                    None => calls.push(Call::new("cargo", &["test", "--no-default-features"])),
-                    Some((_, sets)) => {
-                        for set in sets {
-                            let mut c = Call::new("cargo", &["test", "--no-default-features"]);
-                            if !set.is_empty() {
-                                c.args.push("--features".into());
-                                c.args.push(set.join(","));
-                            }
-                            calls.push(c);
-                        }
-                    },
-                }
-                for (name, sets) in declared.iter().filter(|(n, _)| n.is_some()) {
-                    for set in sets {
-                        let mut c = Call::new("cargo", &["test", "-p"]);
-                        c.args.push(name.clone().unwrap_or_default());
-                        c.args.push("--no-default-features".into());
-                        if !set.is_empty() {
-                            c.args.push("--features".into());
-                            c.args.push(set.join(","));
-                        }
-                        calls.push(c);
-                    }
-                }
+                calls.extend(cargo_runs(&declared, &["test"], &[], true));
             }
             if deno {
                 if deno_has_task(root, "test")? {
@@ -332,9 +302,11 @@ fn calls_for(
         },
         Step::Docs => {
             if crate_ {
-                calls.push(
-                    Call::new("cargo", &["doc", "--no-deps", "--all-features"])
-                        .with_env("RUSTDOCFLAGS", "-Z unstable-options --show-coverage"),
+                let declared = feature_sets(root)?;
+                calls.extend(
+                    cargo_runs(&declared, &["doc", "--no-deps"], &[], false)
+                        .into_iter()
+                        .map(|c| c.with_env("RUSTDOCFLAGS", "-Z unstable-options --show-coverage")),
                 );
             }
             if deno {
@@ -348,6 +320,73 @@ fn calls_for(
         },
     }
     Ok(calls)
+}
+
+/// The cargo calls one building step makes, shaped by what the tree declares.
+/// `head` is the subcommand and its own flags, `tail` what follows `--`.
+///
+/// A root package declaring sets is built once per set and never with all
+/// features, since a crate whose features exclude each other has said which
+/// builds are legal. A root declaring none is built with all features, and
+/// with none too where `with_none` asks for it; those workspace-wide runs
+/// exclude every member that declares sets. A member's sets run against that
+/// member alone, `-p`.
+fn cargo_runs(
+    declared: &FeatureSets,
+    head: &[&str],
+    tail: &[&str],
+    with_none: bool,
+) -> Vec<Call<'static>> {
+    let mut calls = Vec::new();
+    let tail: Vec<String> = tail.iter().map(|a| a.to_string()).collect();
+    let with_set = |extra: &[String], set: &[String]| {
+        let mut c = Call::new("cargo", head);
+        c.args.extend(extra.iter().cloned());
+        c.args.push("--no-default-features".into());
+        if !set.is_empty() {
+            c.args.push("--features".into());
+            c.args.push(set.join(","));
+        }
+        c.args.extend(tail.iter().cloned());
+        c
+    };
+    let members: Vec<&str> = declared.iter().filter_map(|(n, _)| n.as_deref()).collect();
+    match declared.iter().find(|(n, _)| n.is_none()) {
+        Some((_, sets)) => {
+            for set in sets {
+                calls.push(with_set(&[], set));
+            }
+        },
+        None => {
+            let mut excludes: Vec<String> = Vec::new();
+            if !members.is_empty() {
+                excludes.push("--workspace".into());
+                for m in &members {
+                    excludes.push("--exclude".into());
+                    excludes.push(m.to_string());
+                }
+            }
+            let mut all = Call::new("cargo", head);
+            all.args.push("--all-features".into());
+            all.args.extend(excludes.iter().cloned());
+            all.args.extend(tail.iter().cloned());
+            calls.push(all);
+            if with_none {
+                let mut none = Call::new("cargo", head);
+                none.args.push("--no-default-features".into());
+                none.args.extend(excludes.iter().cloned());
+                none.args.extend(tail.iter().cloned());
+                calls.push(none);
+            }
+        },
+    }
+    for (name, sets) in declared.iter().filter(|(n, _)| n.is_some()) {
+        let extra = ["-p".to_string(), name.clone().unwrap_or_default()];
+        for set in sets {
+            calls.push(with_set(&extra, set));
+        }
+    }
+    calls
 }
 
 /// Every declared feature set with the member it belongs to: the root
