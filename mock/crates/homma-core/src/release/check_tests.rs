@@ -340,49 +340,41 @@ fn an_older_tag_with_nothing_published_warns_and_the_newest_blocks() {
 }
 
 #[test]
-fn jsr_and_npm_disagreeing_is_both_sameset() {
+fn both_sameset_pairs_the_jsr_and_npm_names_the_manifests_declare() {
     let f = Fixture::crate_at("0.1.0");
+    // the two names share no segment, which a guess by name would miss
+    std::fs::write(f.root().join("deno.json"), r#"{"name": "@h/x"}"#).unwrap();
+    std::fs::write(f.root().join("package.json"), r#"{"name": "x-npm"}"#).unwrap();
+    f.git(&["add", "."]);
+    f.git(&["commit", "--quiet", "-m", "chore: ship on both"]);
+    f.git(&["push", "--quiet", "origin", "main"]);
     f.tag("v0.1.0");
     let mut p = published(&["0.1.0"]);
     p.versions
         .insert((Registry::Jsr, "@h/x".into()), vec![Version::new(0, 1, 0)]);
-    p.versions.insert((Registry::Npm, "x".into()), vec![]);
-    let findings = run(&f, &p, None);
-    assert!(ids(&findings).contains(&"both.sameset"));
-    assert!(
-        blocked(&findings),
-        "a package on one registry and not the other is a publish half done"
-    );
-}
-
-#[test]
-fn both_sameset_pairs_a_jsr_package_with_the_npm_package_of_the_same_bare_name() {
-    let f = Fixture::crate_at("0.1.0");
-    f.tag("v0.1.0");
-    let mut p = published(&["0.1.0"]);
-    // two jsr packages; only `y` ships on npm, and only `y` disagrees
-    p.versions
-        .insert((Registry::Jsr, "@h/x".into()), vec![Version::new(0, 1, 0)]);
-    p.versions
-        .insert((Registry::Jsr, "@h/y".into()), vec![Version::new(0, 1, 0)]);
-    p.versions.insert((Registry::Npm, "y".into()), vec![]);
+    p.versions.insert((Registry::Npm, "x-npm".into()), vec![]);
     let findings = run(&f, &p, None);
     let sameset: Vec<_> = findings.iter().filter(|x| x.id == "both.sameset").collect();
     assert_eq!(sameset.len(), 1, "{findings:?}");
     assert!(
-        sameset[0].message.contains("@h/y"),
+        sameset[0].message.contains("@h/x"),
         "{}",
         sameset[0].message
     );
     assert!(
-        sameset[0].message.contains("y on npm"),
+        sameset[0].message.contains("x-npm"),
         "{}",
         sameset[0].message
     );
-    // the same npm name under a scope pairs too, and agreeing sets are quiet
-    p.versions.remove(&(Registry::Npm, "y".into()));
+    assert!(
+        blocked(&findings),
+        "a package on one registry and not the other is a publish half done"
+    );
+    // agreeing sets are quiet, and a name the manifests do not declare is
+    // not paired with anything
     p.versions
-        .insert((Registry::Npm, "@h/y".into()), vec![Version::new(0, 1, 0)]);
+        .insert((Registry::Npm, "x-npm".into()), vec![Version::new(0, 1, 0)]);
+    p.versions.insert((Registry::Npm, "stray".into()), vec![]);
     let findings = run(&f, &p, None);
     assert!(!ids(&findings).contains(&"both.sameset"), "{findings:?}");
 }

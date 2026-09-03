@@ -103,8 +103,10 @@ pub fn run_gate(
     for step in Step::ALL {
         steps.push(run_step(runner, root, repo_kind, step)?);
     }
+    // the wall time is the whole gate's; it rides on the last step that ran,
+    // since a skipped step's numbers never reach the status line
     let wall = started.elapsed().as_secs_f64();
-    if let Some(last) = steps.last_mut() {
+    if let Some(last) = steps.iter_mut().rev().find(|s| !s.skipped) {
         last.numbers
             .insert("wall_seconds".into(), format!("{wall:.1}"));
     }

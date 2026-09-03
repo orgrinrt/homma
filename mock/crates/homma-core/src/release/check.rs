@@ -292,26 +292,16 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         }
     }
     // a package shipping on both jsr and npm holds the same set on each; the
-    // two are paired by bare name, the segment after the last `/`, since a
-    // jsr name carries a scope and an npm name may not
-    let bare = |name: &str| name.rsplit('/').next().unwrap_or(name).to_string();
-    for ((reg, jsr_name), jsr_versions) in &inputs.published.versions {
-        if *reg != Registry::Jsr {
-            continue;
-        }
-        let npm = inputs
-            .published
-            .versions
-            .iter()
-            .find(|((r, n), _)| *r == Registry::Npm && bare(n) == bare(jsr_name));
-        let Some(((_, npm_name), npm_versions)) = npm else {
-            continue;
+    // pair is what the repo's own manifests declare, so the two names need
+    // share nothing
+    let shipped = repo_kind.map(|k| packages(root, k)).unwrap_or_default();
+    if let (Some(jsr_name), Some(npm_name)) = (&shipped.jsr, &shipped.npm) {
+        let on = |r: Registry, n: &str| {
+            let mut v = inputs.published.get(r, n).cloned().unwrap_or_default();
+            v.sort();
+            v
         };
-        let mut js = jsr_versions.clone();
-        let mut ns = npm_versions.clone();
-        js.sort();
-        ns.sort();
-        if js != ns {
+        if on(Registry::Jsr, jsr_name) != on(Registry::Npm, npm_name) {
             push(
                 "both.sameset",
                 CheckSeverity::Error,

@@ -98,10 +98,34 @@ fn resolve_repo<'a>(
 fn branches_for<'a>(cfg: &'a Config, root: &Path) -> (&'a str, &'a str) {
     let public = cfg.defaults.public_branch.as_str();
     let working = cfg.defaults.working_branch.as_str();
-    if homma_core::release::git::sha(root, working).is_ok() {
-        (working, public)
+    // a fresh clone holds `origin/dev` and no local `dev`, and it still
+    // releases by merging, so the remote ref counts as the branch being there
+    let here = homma_core::release::git::sha(root, working).is_ok();
+    let there = homma_core::release::git::sha(root, &format!("origin/{working}")).is_ok();
+    if here || there { (working, public) } else { (public, public) }
+}
+
+/// The branches, refusing where the working branch is on origin and not
+/// here: the plan reads it and the run commits on it, so a clone that has
+/// not checked it out is told to, rather than quietly released off `main`.
+fn branches_checked<'a>(cfg: &'a Config, root: &Path) -> Result<(&'a str, &'a str)> {
+    let (trunk, release) = branches_for(cfg, root);
+    if trunk != release && homma_core::release::git::sha(root, trunk).is_err() {
+        return Err(anyhow!(
+            "`{trunk}` is on origin and not checked out here; run `git switch {trunk}` in the \
+             clone first"
+        ));
+    }
+    Ok((trunk, release))
+}
+
+/// One line saying which branches a release of `root` carries.
+fn branches_line(cfg: &Config, root: &Path) -> String {
+    let (trunk, release) = branches_for(cfg, root);
+    if trunk == release {
+        format!("`{release}` alone, no working branch here or on origin")
     } else {
-        (public, public)
+        format!("`{trunk}` onto `{release}`")
     }
 }
 
@@ -186,8 +210,8 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     let findings = check::check(&check::Inputs {
         root,
         remote: "origin",
-        trunk: branches_for(cfg, root).0,
-        release: branches_for(cfg, root).1,
+        trunk: branches_checked(cfg, root)?.0,
+        release: branches_checked(cfg, root)?.1,
         level: None,
         published: &published,
     })?;
@@ -286,10 +310,15 @@ fn pushing_head(head: &str) -> Result<bool> {
 
 fn plan_cmd(cli: &Cli, cfg: &Config, repo: &str, level: Level) -> Result<Outcome> {
     let (_, _, root) = resolve_repo(cfg, Some(repo))?;
-    let p = plan::plan(&root, branches_for(cfg, &root).0, level, &clock::today())?;
+    let p = plan::plan(
+        &root,
+        branches_checked(cfg, &root)?.0,
+        level,
+        &clock::today(),
+    )?;
     finish(cli, Report {
         ok:    true,
-        lines: vec![p.to_string()],
+        lines: vec![branches_line(cfg, &root), p.to_string()],
     })
 }
 
@@ -314,7 +343,7 @@ fn run_cmd(
         let mut active = Vec::new();
         for name in &names {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
-            let (trunk, _) = branches_for(cfg, &root);
+            let (trunk, _) = branches_checked(cfg, &root)?;
             match plan::plan(&root, trunk, level, &clock::today()) {
                 Ok(p) if p.commits.is_empty() => {
                     lines.push(format!("{name}: nothing unreleased, passed over"));
@@ -355,7 +384,7 @@ fn run_cmd(
     for name in &names {
         let (name, r, root) = resolve_repo(cfg, Some(name))?;
         let root = &root;
-        let (trunk, release_line) = branches_for(cfg, root);
+        let (trunk, release_line) = branches_checked(cfg, root)?;
         let (forge, owner) = forge_for(cfg, r)?;
         let published = published_for(root)?;
         let tip = homma_core::release::git::sha(root, trunk)?;

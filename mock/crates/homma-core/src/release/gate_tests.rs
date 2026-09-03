@@ -239,12 +239,20 @@ fn the_whole_gate_refuses_a_dirty_tree_and_runs_every_step_on_a_clean_one() {
     assert_eq!(run.verdict, Verdict::Green);
     assert_eq!(run.steps.len(), Step::ALL.len());
     assert_eq!(run.sha, git::head(d.path()).unwrap());
+    // the wall time sits on the last step that ran, not on a skipped one
+    let carrier = run
+        .steps
+        .iter()
+        .find(|s| s.numbers.contains_key("wall_seconds"))
+        .expect("some step carries the wall time");
+    assert!(!carrier.skipped, "{carrier:?}");
     assert!(
         run.steps
-            .last()
-            .unwrap()
-            .numbers
-            .contains_key("wall_seconds")
+            .iter()
+            .rev()
+            .find(|s| !s.skipped)
+            .is_some_and(|s| s.step == carrier.step),
+        "it is the last step that ran"
     );
     assert!(run.steps.iter().any(|s| s.step == Step::Deny && s.skipped));
     std::fs::write(d.path().join("Cargo.toml"), "changed").unwrap();
