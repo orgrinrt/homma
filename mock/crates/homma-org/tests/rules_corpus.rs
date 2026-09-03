@@ -50,6 +50,44 @@ fn fixture() -> PathBuf {
     dir
 }
 
+/// A generated card carries its rule's path gating.
+///
+/// The host reads `paths:` off the generated file to decide whether a rule is
+/// injected always or only against matching files. A pass that renders the body
+/// alone promotes every gated rule to always-loaded, and the only sign is a
+/// count going up somewhere nobody was looking.
+#[test]
+fn a_gated_rule_keeps_its_gating_through_generation() {
+    let dir = fixture();
+    let src = dir.join("rules");
+    fs::write(
+        src.join("rust-only.md.tmpl"),
+        "---\ntopics: [rust]\nfires: \"in rust\"\nkind: reflex\npaths: [\"**/*.rs\", \"build.rs\"]\n\
+         ---\n\n# Rust only\n\nThe move.\n",
+    )
+    .unwrap();
+
+    let out = dir.join("out");
+    Corpus::load(&src).unwrap().render_cards(&out).unwrap();
+
+    let card = fs::read_to_string(out.join("rust-only.md")).unwrap();
+    assert!(
+        card.starts_with("---\npaths:\n"),
+        "the gating opens the generated card: {card}"
+    );
+    assert!(card.contains("  - \"**/*.rs\"\n"), "{card}");
+    assert!(card.contains("  - \"build.rs\"\n"), "{card}");
+    assert!(card.contains("# Rust only"), "and the body follows: {card}");
+
+    // The control: a rule with no paths gets no block, else every card would
+    // open with an empty one and the host would read that as gated on nothing.
+    let plain = fs::read_to_string(out.join("writing-style.md")).unwrap();
+    assert!(
+        !plain.starts_with("---"),
+        "an ungated rule opens with its heading: {plain}"
+    );
+}
+
 /// One rule file: meta, card, marker, elaboration.
 fn write(dir: &Path, name: &str, topics: &[&str], fires: &str) {
     let topics = topics.join(", ");

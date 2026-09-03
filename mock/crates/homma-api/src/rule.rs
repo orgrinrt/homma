@@ -47,7 +47,7 @@ pub struct RuleMeta {
     pub paths:  Vec<String>,
 }
 
-/// Whether a rule is one move or a practice.
+/// Whether a rule is one move, a practice, or a table to look something up in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuleKind {
@@ -55,6 +55,11 @@ pub enum RuleKind {
     Reflex,
     /// A practice whose parts interact, keeping its sections.
     Discipline,
+    /// Facts to look up rather than a move to make: a cheat-sheet, an API's
+    /// current shape, a table of what exists. It has a trigger like the others,
+    /// but the body is a lookup and shrinking it to an absolute would destroy
+    /// what it is for.
+    Reference,
 }
 
 impl RuleKind {
@@ -62,6 +67,7 @@ impl RuleKind {
         match s {
             "reflex" => Some(Self::Reflex),
             "discipline" => Some(Self::Discipline),
+            "reference" => Some(Self::Reference),
             _ => None,
         }
     }
@@ -72,6 +78,7 @@ impl fmt::Display for RuleKind {
         f.write_str(match self {
             Self::Reflex => "reflex",
             Self::Discipline => "discipline",
+            Self::Reference => "reference",
         })
     }
 }
@@ -172,7 +179,7 @@ pub fn parse(source: &str) -> Result<Parsed, MetaError> {
     let kind = RuleKind::parse(&raw_kind).ok_or_else(|| {
         MetaError::BadValue {
             key:    "kind".into(),
-            reason: format!("`{raw_kind}` is neither `reflex` nor `discipline`"),
+            reason: format!("`{raw_kind}` is not `reflex`, `discipline` or `reference`"),
         }
     })?;
 

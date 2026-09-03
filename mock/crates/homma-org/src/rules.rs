@@ -98,6 +98,29 @@ impl std::fmt::Display for CorpusError {
 
 impl std::error::Error for CorpusError {}
 
+/// The `paths:` block a generated card opens with, empty for a rule with none.
+///
+/// **A rule's path gating is part of the card, not only of the meta.** The host
+/// reads this frontmatter to decide whether the rule is injected always or only
+/// against matching files, so a generation pass that renders the body alone
+/// silently promotes every gated rule to always-loaded. Measured on the first
+/// two gated rules that moved into the authored corpus: both became
+/// always-loaded, and the only sign was the always-loaded count rising by two.
+///
+/// The block form rather than the inline one, because that is what the host and
+/// the workspace's own budget tool already read.
+fn paths_frontmatter(r: &Rule) -> String {
+    if r.meta.paths.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("---\npaths:\n");
+    for p in &r.meta.paths {
+        out.push_str(&format!("  - \"{p}\"\n"));
+    }
+    out.push_str("---\n\n");
+    out
+}
+
 /// What a template renders against.
 ///
 /// `variant` is what lets the few lines that differ between the two forms say
@@ -215,7 +238,8 @@ impl Corpus {
             let path = dst.join(format!("{}.md", r.name));
             // A trailing newline, because a file without one concatenates with
             // whatever is injected after it.
-            fs::write(&path, format!("{}\n", out.trim_end())).map_err(|cause| {
+            let body = format!("{}{}\n", paths_frontmatter(r), out.trim_end());
+            fs::write(&path, body).map_err(|cause| {
                 CorpusError::Write {
                     path: path.clone(),
                     cause,
