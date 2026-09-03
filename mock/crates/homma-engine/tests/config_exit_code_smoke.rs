@@ -68,25 +68,36 @@ fn git_init(at: &Path) {
     assert!(ok.success(), "git init failed in {}", at.display());
 }
 
-/// Run `repo config <verb>` for `arvo` and return the exit success plus stdout.
-fn run(ws: &Path, verb: &str) -> (bool, String) {
+/// Run `repo config <verb>` for `arvo` and return the exit code plus stdout.
+///
+/// The code, not `success()`. A boolean cannot tell `1` from `2`, and those are
+/// two different things the gate does two different things about, so a helper
+/// returning one leaves the whole split unpinned while reading as though the
+/// file asserts it.
+///
+/// `None` is a signal death. Nothing here kills the child, so it never arrives,
+/// and an arm asserting against it fails rather than passing on an absence.
+fn run(ws: &Path, verb: &str) -> (Option<i32>, String) {
     let out = bin()
         .args(["--dir", ws.to_str().unwrap(), "repo", "config", verb, "--repo", "arvo"])
         .output()
         .expect("the binary runs");
     (
-        out.status.success(),
+        out.status.code(),
         String::from_utf8_lossy(&out.stdout).into_owned(),
     )
 }
 
 #[test]
-fn a_repo_missing_a_required_config_exits_non_zero() {
+fn a_repo_missing_a_required_config_exits_one() {
     let (_dir, ws) = workspace("rust_required");
-    let (ok, text) = run(&ws, "check");
-    assert!(
-        !ok,
-        "a repo missing a required config exited zero, so the gate would allow the commit: {text}"
+    let (code, text) = run(&ws, "check");
+    assert_eq!(
+        code,
+        Some(1),
+        "the check ran and found the repo owing a config, which is exit 1 and \
+         nothing else: zero would let the commit through, and two would tell the \
+         gate the check never ran: {text}"
     );
     // The refusal a person sees has to say which repo and which config, or the
     // gate quotes an empty reason and stops them with no way to act.
@@ -101,15 +112,40 @@ fn a_workspace_whose_configs_are_in_order_exits_zero() {
     // repo and look exactly like the gate working.
     let (_dir, ws) = workspace("rust_required");
     std::fs::write(ws.join("arvo").join("deny.toml"), DENY).unwrap();
-    let (ok, text) = run(&ws, "check");
-    assert!(ok, "a repo owing nothing was refused: {text}");
+    let (code, text) = run(&ws, "check");
+    assert_eq!(code, Some(0), "a repo owing nothing was refused: {text}");
+}
+
+#[test]
+fn a_manifest_that_does_not_parse_exits_two_rather_than_one() {
+    // The arm the split exists for. A workspace manifest that does not parse is
+    // the commonest way this command cannot run at all, and it is nothing the
+    // repo being committed to can fix. One would put it in the same bucket as a
+    // repo owing a config, and the gate would answer by naming
+    // `homma repo config init`, which reads the same manifest through the same
+    // function and fails identically.
+    let (_dir, ws) = workspace("rust_required");
+    // No `[workspace]` table, which is what the previous round found the parse
+    // refusing, reported at line 1 column 1 rather than at the missing table.
+    std::fs::write(
+        ws.join("homma.toml"),
+        "content_repo = \"git@example.invalid:orgrinrt/clause-dev.git\"\n",
+    )
+    .unwrap();
+    let (code, text) = run(&ws, "check");
+    assert_eq!(
+        code,
+        Some(2),
+        "a command that could not run reported itself as one that ran and found \
+         something, so the gate blames a repo for a fault in the workspace: {text}"
+    );
 }
 
 #[test]
 fn init_places_it_and_the_check_then_passes() {
     let (_dir, ws) = workspace("rust_required");
-    let (ok, text) = run(&ws, "init");
-    assert!(ok, "placing what was missing failed: {text}");
+    let (code, text) = run(&ws, "init");
+    assert_eq!(code, Some(0), "placing what was missing failed: {text}");
 
     // Read back rather than trusting the report: a placement stage that
     // reported success and wrote nothing would satisfy an assertion about its
@@ -121,9 +157,10 @@ fn init_places_it_and_the_check_then_passes() {
         "the placed file is not the shared copy"
     );
 
-    let (ok, text) = run(&ws, "check");
-    assert!(
-        ok,
+    let (code, text) = run(&ws, "check");
+    assert_eq!(
+        code,
+        Some(0),
         "the check still refuses after the config was placed: {text}"
     );
 }
@@ -136,8 +173,12 @@ fn an_untagged_template_does_not_block() {
     // blocking would refuse every commit everywhere for something no repo can
     // fix.
     let (_dir, ws) = workspace("");
-    let (ok, text) = run(&ws, "check");
-    assert!(ok, "an untagged template stopped a commit: {text}");
+    let (code, text) = run(&ws, "check");
+    assert_eq!(
+        code,
+        Some(0),
+        "an untagged template stopped a commit: {text}"
+    );
     // Reported rather than passed over, because somebody still has to place it.
     assert!(text.contains("deny.toml"), "{text}");
 }
