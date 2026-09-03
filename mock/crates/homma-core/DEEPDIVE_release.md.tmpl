@@ -145,12 +145,25 @@ which is the whole of how a locally run gate governs a remotely merged branch.
 A run made by the `pre-push` hook measures a commit the forge has not heard
 of yet, since git sends nothing until the hook returns, so its status cannot be
 posted by the hook itself. The hook leaves a poster behind instead: a detached
-process, `homma release gate --post <sha> --await`, that asks the forge for the
-commit until the forge has it and then posts the recorded status, giving up
-after ten minutes and saying so. The forge trait grows the one read that
-needs, whether a commit is known, `GET /repos/{owner}/{name}/commits/{sha}` on
-both forges. A red run refuses the push and leaves no poster, since there is
-nothing for the forge to be told about.
+process, `homma release gate <repo> --post <sha> --await --config <path>`,
+handed the manifest the hook ran under as an absolute path, since it inherits
+the hook's working directory and nothing else, and the store it has to read
+is derived from that path. It asks the forge for the commit, pausing after
+every miss, until the forge has it and then posts the recorded status. After
+ten minutes of asking it gives up and says so in the record: a
+`poster-gave-up` record beside the runs, carrying the repository, the sha,
+when it gave up and how long it waited, which is the only surface a process
+with no streams has. The forge trait grows the one read that needs, whether a
+commit is known: `GET /repos/{owner}/{name}/commits/{sha}` on GitHub, which
+answers 422 for a sha it has not received, and `GET
+/repos/{owner}/{name}/git/commits/{sha}` on Forgejo, which answers 404. A 404
+that is the repository rather than the commit, absent or invisible to the
+token, ends the wait as an error rather than as ten minutes of asking:
+GitHub's 404 is that outright, and Forgejo's is read as the commit unknown
+when the repository answers and as the error when it does not. Posters are
+left once every tip has been gated, and only when every tip is green, since a
+red tip refuses the whole push and leaves nothing for the forge to be told
+about.
 
 A status write that fails because the network is down, or a poster that gave
 up, does not turn the run red. The record is kept and the status is posted by
@@ -346,7 +359,7 @@ homma release check [<repo>]              the invariants, by id, blocking ones f
 homma release gate [<repo>] [--sha <sha>] run the gate now, record it, post the status
 homma release gate --hook                 what the pre-push entry runs
 homma release gate --post <sha>           post a recorded run's status again
-homma release gate --post <sha> --await   the same, once the forge knows the commit; the hook's poster
+homma release gate --post <sha> --await   the same, once the forge knows the commit; the hook's poster, with `--config`
 homma release plan [<repo>] --level <l>   the plan and nothing else
 homma release run [<repo>] --level <l>    the release, or every unreleased repo
 homma release badges <repo>               rewrite the badges branch from the newest record
