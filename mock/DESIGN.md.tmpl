@@ -91,11 +91,20 @@ it exits non-zero when something is missing that the repository is meant to have
 than one because the check runs on a path that must not write, and placing a
 config is a deliberate act.
 
+Which non-zero it is carries the rest of the answer, and the split belongs to
+the binary rather than to these two commands. Zero is a command that ran with
+nothing to say, `1` is one that ran and reported, and `2` is one that could not
+run at all, which is what any error reaching the entry point returns. A caller
+has no other way to ask, and the commonest thing behind a `2` here is the
+workspace manifest failing to parse, which is nobody's repository's fault.
+
 That path is the gate. A workspace-level hook already stands in front of
 `git commit` and `git push` from inside any member repository, works out which
 repository the call came from, and refuses when that repository's mockspace
 bootstrap is incomplete. It gains the config check, and refuses the same way,
-naming the command that fixes it.
+naming the command that fixes it where there is one. Where the check could not
+run it says that instead, and names the workspace manifest, because sending
+somebody to a command that fails the same way is worse than saying nothing.
 
 It lives there rather than in a per-repository git hook because mockspace owns
 `core.hooksPath` in every repository it manages, and a second owner of one hook
