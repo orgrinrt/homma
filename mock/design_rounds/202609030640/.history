@@ -1,0 +1,50 @@
+1a2e1b1 chore: lock the source changelist on a hooks path at the root
+0435234 fix: a hooks path at the repo root is refused as tracked, not as an error
+99cca9d chore: open the source changelist on a hooks path at the root
+bc46df9 chore: lock the doc changelist on a hooks path at the root
+79ad6ed chore: open a round on a hooks path at the repo root
+90074dc chore: close the round on asserting the refusals
+1636cd9 chore: lock the source changelist on asserting the refusals
+9bd47ca test: each hook refusal through the binary, and the error arms named
+42616ba chore: open the source changelist on asserting the refusals
+577d4dc chore: lock the doc changelist on asserting the refusals
+c830851 chore: open a round on asserting the refusals through the binary
+1c928b8 docs: render the release deep dive
+9e11ca7 chore: close the round on hook refusals being reported
+b3b049b chore: lock the source changelist on hook refusals being reported
+502a8ca fix: every hook refusal is reported alike, with a negative control
+a4f5ceb chore: open the source changelist on hook refusals being reported
+df36941 chore: lock the doc changelist on hook refusals being reported
+75fecff docs: the hook's three refusals as sentences, reported alike
+0f9f827 chore: open a round on every hook refusal being reported
+ba15899 docs: render the release deep dive
+6308637 chore: close the round on a hook that cannot be read
+1f1b46e chore: lock the source changelist on a hook that cannot be read
+1d12967 fix: an unreadable hook is still somebody's hook and is not overwritten
+61288dd chore: open the source changelist on a hook that cannot be read
+cbb61a6 chore: lock the doc changelist on a hook that cannot be read
+5c697b0 docs: the hook install names its three refusals
+9f0726f chore: open a round on a hook that cannot be read
+b7ce2cb chore: close the round on the hook install refusing
+d5b89f5 chore: lock the source changelist on the hook install refusing
+f566006 fix: hook install refuses a tracked hooks dir and a hook not its own
+6ec5f35 chore: open the source changelist on the hook install refusing
+0ab4b6c chore: lock the doc changelist on the hook install refusing
+366cc40 chore: open a round on the hook install refusing a foreign hook
+d9615ab fix: the release's gate, plan, sweep and hook after the first merge
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml
+9695777 fix: the launcher can reach its own engine
+f2b0c4e feat!: detect workspace members rather than declaring them
+4abf397 docs: rewrite the readme, and fix what checking it turned up
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
