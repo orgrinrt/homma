@@ -26,7 +26,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::url::api_root;
-use super::{CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
+use super::{CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
 use crate::config::ForgeConfig;
 
 /// A [`Forge`] backed by the Forgejo / Gitea REST API.
@@ -200,6 +200,42 @@ impl Forge for ForgejoClient {
             Err(ureq::Error::Status(401, _)) => Ok(false),
             Err(ureq::Error::Status(403, _)) => Ok(true),
             Err(e) => Err(map_ureq_error(e, "", "user")),
+        }
+    }
+
+    /// `POST {api}/repos/{owner}/{name}/statuses/{sha}`, the same body shape
+    /// GitHub takes; Forgejo also accepts `warning`, which nothing here sends.
+    fn set_commit_status(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+        status: &CommitStatus,
+    ) -> Result<(), ForgeError> {
+        let url = format!("{}/statuses/{sha}", self.repo_path(owner, name));
+        match self.post_json(&url, status) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
+        }
+    }
+
+    /// `POST {api}/repos/{owner}/{name}/releases`, the same body GitHub takes.
+    fn create_release(
+        &self,
+        owner: &str,
+        name: &str,
+        tag: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let url = format!("{}/releases", self.repo_path(owner, name));
+        let payload = super::trait_def::ReleaseBody {
+            tag_name: tag.into(),
+            name:     tag.into(),
+            body:     body.into(),
+        };
+        match self.post_json(&url, &payload) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
         }
     }
 }

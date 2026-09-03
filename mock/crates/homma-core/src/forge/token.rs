@@ -15,7 +15,7 @@
 
 use std::process::Command;
 
-use crate::config::ForgeConfig;
+use crate::config::{ForgeConfig, RegistryConfig};
 
 /// The token for this forge, from whichever source has one.
 ///
@@ -24,6 +24,17 @@ use crate::config::ForgeConfig;
 /// the caller that reports its absence.
 pub fn resolve(forge: &ForgeConfig) -> Option<String> {
     from_env(forge).or_else(|| from_command(forge.token_cmd.as_deref()))
+}
+
+/// A registry's token, by the same two steps a forge's takes: the variable
+/// where it names one and holds something, else the command.
+pub fn resolve_registry(registry: &RegistryConfig) -> Option<String> {
+    registry
+        .token_env
+        .as_ref()
+        .and_then(|var| std::env::var(var).ok())
+        .filter(|v| !v.is_empty())
+        .or_else(|| from_command(registry.token_cmd.as_deref()))
 }
 
 /// The variable's value, when it names one and that one is not empty.

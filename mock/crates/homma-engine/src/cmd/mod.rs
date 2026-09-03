@@ -28,6 +28,7 @@ pub mod gates;
 pub mod migrate;
 pub mod org;
 pub mod registry;
+pub mod release;
 pub mod repo;
 pub mod stand;
 pub mod status;
@@ -282,6 +283,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 },
             }
         },
+        Command::Release {
+            op,
+        } => release::run(&cli, op),
         Command::Docs {
             op,
         } => {

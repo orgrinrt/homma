@@ -398,7 +398,7 @@ fn github_repo_deserializes_realistic_payload() {
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 
-use crate::forge::Forge;
+use crate::forge::{Forge, StatusState};
 
 /// A stub of the one GitHub behaviour that matters here: a renamed repo
 /// answers `301` to a new path, and that path is private, so it answers
@@ -476,4 +476,92 @@ fn the_stub_answers_absent_without_a_credential() {
     let url = renamed_private_repo(2);
     let client = GitHubClient::anonymous(&url);
     assert_eq!(client.repo_exists("o", "renamed").unwrap(), false);
+}
+
+/// A stub that records one request whole and answers `201`, for checking
+/// what a status post actually sends. Returns the base url and the slot the
+/// request lands in.
+fn recording_server() -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let seen = slot.clone();
+    std::thread::spawn(move || {
+        let Ok((mut sock, _)) = listener.accept() else {
+            return;
+        };
+        let mut reader = BufReader::new(sock.try_clone().unwrap());
+        let mut text = String::new();
+        let mut length = 0usize;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                break;
+            }
+            if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                length = v.trim().parse().unwrap_or(0);
+            }
+            let blank = line.trim().is_empty();
+            text.push_str(&line);
+            if blank {
+                break;
+            }
+        }
+        let mut body = vec![0u8; length];
+        std::io::Read::read_exact(&mut reader, &mut body).unwrap();
+        text.push_str(&String::from_utf8_lossy(&body));
+        *seen.lock().unwrap() = text;
+        let _ = sock.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}");
+        let _ = sock.flush();
+    });
+    (url, slot)
+}
+
+#[test]
+fn a_commit_status_is_posted_to_the_statuses_endpoint_with_its_context_and_state() {
+    let (url, seen) = recording_server();
+    let client = GitHubClient::with_token(&url, "t");
+    let status = CommitStatus {
+        context:     "homma/gate".into(),
+        state:       StatusState::Success,
+        description: "green, 12 tests".into(),
+        target_url:  None,
+    };
+    client
+        .set_commit_status("o", "r", "abc123", &status)
+        .unwrap();
+    let text = seen.lock().unwrap().clone();
+    assert!(
+        text.starts_with("POST /repos/o/r/statuses/abc123 "),
+        "{text}"
+    );
+    assert!(
+        text.to_ascii_lowercase().contains("authorization:"),
+        "{text}"
+    );
+    let body = text.rsplit("\r\n\r\n").next().unwrap();
+    let json: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(json["context"], "homma/gate");
+    assert_eq!(json["state"], "success");
+    assert_eq!(json["description"], "green, 12 tests");
+    assert!(
+        json.get("target_url").is_none(),
+        "an absent url is not sent as null"
+    );
+}
+
+#[test]
+fn a_status_on_a_repo_the_forge_does_not_know_is_repo_not_found() {
+    let url = renamed_private_repo(1);
+    let client = GitHubClient::anonymous(&url);
+    let status = CommitStatus {
+        context:     "homma/gate".into(),
+        state:       StatusState::Pending,
+        description: String::new(),
+        target_url:  None,
+    };
+    assert!(matches!(
+        client.set_commit_status("o", "nope", "abc", &status),
+        Err(ForgeError::RepoNotFound { .. })
+    ));
 }

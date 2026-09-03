@@ -16,6 +16,7 @@ mockspace-config = { git = "https://github.com/hiisi-digital/mockspace.git", bra
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+toml_edit = "0.22"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 gix = { version = "0.87", default-features = false, features = [
     # The object hash, explicit since gix made it a feature rather than a
