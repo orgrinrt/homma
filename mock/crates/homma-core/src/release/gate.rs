@@ -265,14 +265,14 @@ fn calls_for(
         },
         Step::Lint => {
             if crate_ {
-                calls.push(Call::new("cargo", &[
-                    "clippy",
-                    "--all-targets",
-                    "--all-features",
-                    "--",
-                    "-D",
-                    "warnings",
-                ]));
+                let declared = feature_sets(root)?;
+                calls.extend(cargo_runs(
+                    &declared,
+                    virtual_root(root)?,
+                    &["clippy", "--all-targets"],
+                    &["--", "-D", "warnings"],
+                    false,
+                ));
             }
             if deno {
                 calls.push(Call::new("deno", &["lint"]));
@@ -285,37 +285,14 @@ fn calls_for(
         },
         Step::Tests => {
             if crate_ {
-                calls.push(Call::new("cargo", &["test", "--all-features"]));
-                // the root package's sets stand in for the plain no-features
-                // run; a member's sets run against that member, `-p`, beside
-                // the workspace-wide runs every member gets
                 let declared = feature_sets(root)?;
-                let root_sets = declared.iter().find(|(n, _)| n.is_none());
-                match root_sets {
-                    None => calls.push(Call::new("cargo", &["test", "--no-default-features"])),
-                    Some((_, sets)) => {
-                        for set in sets {
-                            let mut c = Call::new("cargo", &["test", "--no-default-features"]);
-                            if !set.is_empty() {
-                                c.args.push("--features".into());
-                                c.args.push(set.join(","));
-                            }
-                            calls.push(c);
-                        }
-                    },
-                }
-                for (name, sets) in declared.iter().filter(|(n, _)| n.is_some()) {
-                    for set in sets {
-                        let mut c = Call::new("cargo", &["test", "-p"]);
-                        c.args.push(name.clone().unwrap_or_default());
-                        c.args.push("--no-default-features".into());
-                        if !set.is_empty() {
-                            c.args.push("--features".into());
-                            c.args.push(set.join(","));
-                        }
-                        calls.push(c);
-                    }
-                }
+                calls.extend(cargo_runs(
+                    &declared,
+                    virtual_root(root)?,
+                    &["test"],
+                    &[],
+                    true,
+                ));
             }
             if deno {
                 if deno_has_task(root, "test")? {
@@ -332,9 +309,17 @@ fn calls_for(
         },
         Step::Docs => {
             if crate_ {
-                calls.push(
-                    Call::new("cargo", &["doc", "--no-deps", "--all-features"])
-                        .with_env("RUSTDOCFLAGS", "-Z unstable-options --show-coverage"),
+                let declared = feature_sets(root)?;
+                calls.extend(
+                    cargo_runs(
+                        &declared,
+                        virtual_root(root)?,
+                        &["doc", "--no-deps"],
+                        &[],
+                        false,
+                    )
+                    .into_iter()
+                    .map(|c| c.with_env("RUSTDOCFLAGS", "-Z unstable-options --show-coverage")),
                 );
             }
             if deno {
@@ -348,6 +333,82 @@ fn calls_for(
         },
     }
     Ok(calls)
+}
+
+/// The cargo calls one building step makes, shaped by what the tree declares.
+/// `head` is the subcommand and its own flags, `tail` what follows `--`.
+///
+/// A root package declaring sets is built once per set and never with all
+/// features, since a crate whose features exclude each other has said which
+/// builds are legal. A root declaring none is built with all features, and
+/// with none too where `with_none` asks for it; on a virtual root those runs
+/// are workspace-wide and exclude every member that declares sets, while a
+/// root that is itself a package builds alone as it always did. A member's
+/// sets run against that member alone, `-p`.
+fn cargo_runs(
+    declared: &FeatureSets,
+    virtual_root: bool,
+    head: &[&str],
+    tail: &[&str],
+    with_none: bool,
+) -> Vec<Call<'static>> {
+    let mut calls = Vec::new();
+    let tail: Vec<String> = tail.iter().map(|a| a.to_string()).collect();
+    let with_set = |extra: &[String], set: &[String]| {
+        let mut c = Call::new("cargo", head);
+        c.args.extend(extra.iter().cloned());
+        c.args.push("--no-default-features".into());
+        if !set.is_empty() {
+            c.args.push("--features".into());
+            c.args.push(set.join(","));
+        }
+        c.args.extend(tail.iter().cloned());
+        c
+    };
+    let members: Vec<&str> = declared.iter().filter_map(|(n, _)| n.as_deref()).collect();
+    match declared.iter().find(|(n, _)| n.is_none()) {
+        // FIXME: this arm reaches the root and no member. `members` is computed
+        // above and never read here, so a root package declaring sets with
+        // members under it builds only itself, where the arm below excludes
+        // declaring members from a workspace-wide run and reaches the rest.
+        // Whether a declaring root should speak for the whole tree is open;
+        // `a_root_declaring_sets_still_builds_its_members` is the ignored arm
+        // holding the case, and design round 202609030600 is the reasoning.
+        Some((_, sets)) => {
+            for set in sets {
+                calls.push(with_set(&[], set));
+            }
+        },
+        None => {
+            let mut excludes: Vec<String> = Vec::new();
+            if virtual_root && !members.is_empty() {
+                excludes.push("--workspace".into());
+                for m in &members {
+                    excludes.push("--exclude".into());
+                    excludes.push(m.to_string());
+                }
+            }
+            let mut all = Call::new("cargo", head);
+            all.args.push("--all-features".into());
+            all.args.extend(excludes.iter().cloned());
+            all.args.extend(tail.iter().cloned());
+            calls.push(all);
+            if with_none {
+                let mut none = Call::new("cargo", head);
+                none.args.push("--no-default-features".into());
+                none.args.extend(excludes.iter().cloned());
+                none.args.extend(tail.iter().cloned());
+                calls.push(none);
+            }
+        },
+    }
+    for (name, sets) in declared.iter().filter(|(n, _)| n.is_some()) {
+        let extra = ["-p".to_string(), name.clone().unwrap_or_default()];
+        for set in sets {
+            calls.push(with_set(&extra, set));
+        }
+    }
+    calls
 }
 
 /// Every declared feature set with the member it belongs to: the root
@@ -375,6 +436,12 @@ pub fn feature_sets(root: &Path) -> Result<FeatureSets, GateError> {
     Ok(found)
 }
 
+/// Whether the root manifest is a virtual workspace, one with no `[package]`
+/// of its own, where a bare cargo run is already workspace-wide.
+fn virtual_root(root: &Path) -> Result<bool, GateError> {
+    Ok(manifest(&root.join("Cargo.toml"))?.get("package").is_none())
+}
+
 fn manifest(path: &Path) -> Result<toml::Value, GateError> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| GateError::Manifest(format!("{}: {e}", path.display())))?;
@@ -390,6 +457,13 @@ fn declared(doc: &toml::Value) -> Option<&Vec<toml::Value>> {
 }
 
 fn parse_sets(sets: &[toml::Value]) -> Result<Vec<Vec<String>>, GateError> {
+    // an empty declaration would gate nothing and pass, so it is refused
+    // rather than read as a crate with no builds
+    if sets.is_empty() {
+        return Err(GateError::Manifest(
+            "feature_sets: an empty list declares no build; drop the key or name a set".into(),
+        ));
+    }
     let mut out = Vec::new();
     for set in sets {
         let Some(items) = set.as_array() else {

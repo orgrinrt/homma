@@ -35,10 +35,10 @@ shape is owed. What a step runs per kind:
 | step | crate | deno package | blocks |
 |---|---|---|---|
 | format | `cargo fmt --check` | `deno fmt --check` | yes |
-| lint | `cargo clippy --all-targets --all-features -- -D warnings` | `deno lint` then `deno check` on every export | yes |
-| tests | `cargo test --all-features`, then once per feature set the manifest metadata names | `deno test` with the permissions `deno.json` declares | yes |
+| lint | `cargo clippy --all-targets -- -D warnings`, with all features, or once per declared feature set | `deno lint` then `deno check` on every export | yes |
+| tests | `cargo test` with all features and with none, or once per declared feature set | `deno test` with the permissions `deno.json` declares | yes |
 | deny | `cargo deny check`, only when `deny.toml` exists | nothing | yes |
-| docs | rustdoc coverage on nightly, the documented fraction of public items | `deno doc --lint` | reports |
+| docs | rustdoc coverage on nightly, the documented fraction of public items, with all features or on the declared sets | `deno doc --lint` | reports |
 | notices | `ante check`, only when `ante.toml` exists | the same | yes |
 
 A step that blocks turns the verdict red on failure. A step that reports puts its
@@ -47,12 +47,22 @@ test count and how many passed, the documented fraction, the deny advisory count
 where it ran, and the wall time of the whole gate; anything a step prints is kept
 in the record as its log rather than summarised.
 
-The feature sets a crate wants tested beyond `--all-features` come from
+A crate declares the feature combinations it builds under as
 `[package.metadata.homma] feature_sets = [["a"], ["a", "b"]]` in its manifest,
-and a crate without that entry is tested with all features and with none. A
-gate never edits a tree; it runs in the checkout it is given and fails if that
-checkout is dirty, because a number measured on a tree with unstaged changes
-describes no commit.
+and where it does, those sets are the whole of what the gate builds for it:
+lint, tests and docs each run once per set, `--no-default-features` with that
+set enabled, and `--all-features` is never run for it, since a crate whose
+features exclude each other has said which builds are legal and the gate does
+not build an illegal one. An empty declaration is refused as a manifest error,
+since it would gate nothing and pass. A crate without the entry is built with
+all features and with none. On a virtual workspace root, the workspace-wide
+runs exclude every member declaring sets, so a plain member keeps its two runs
+and a declaring member gets its own against itself; a root that is itself a
+package builds alone as it always did, and a declaring member under it gets
+its own runs beside that. The docs number is read off the first set's coverage
+table. A gate never edits a tree; it runs in the checkout it is given and
+fails if that checkout is dirty, because a number measured on a tree with
+unstaged changes describes no commit.
 
 ## The run record
 

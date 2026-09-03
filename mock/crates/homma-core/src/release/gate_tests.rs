@@ -144,12 +144,13 @@ fn each_member_s_feature_sets_run_against_that_member_and_none_is_inherited() {
     .unwrap();
     let fake = Fake::new(vec![]);
     run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
-    // the workspace-wide runs every member gets, then each member's own sets
-    // against itself; `plain` declares none and inherits none, and `zeta`'s
-    // empty set is its own no-features run
+    // the workspace-wide runs, which leave out every member that declared its
+    // own builds, then each such member's sets against itself; `plain`
+    // declares none and inherits none, and `zeta`'s empty set is its own
+    // no-features run
     assert_eq!(fake.seen.borrow().as_slice(), &[
-        "cargo test --all-features",
-        "cargo test --no-default-features",
+        "cargo test --all-features --workspace --exclude alpha --exclude zeta",
+        "cargo test --no-default-features --workspace --exclude alpha --exclude zeta",
         "cargo test -p alpha --no-default-features --features a",
         "cargo test -p zeta --no-default-features --features z",
         "cargo test -p zeta --no-default-features",
@@ -215,11 +216,215 @@ fn feature_sets_from_the_manifest_each_get_a_run() {
     ])]);
     let fake = Fake::new(vec![]);
     run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    // the sets are the whole of it: no all-features run beside them
     assert_eq!(fake.seen.borrow().as_slice(), &[
-        "cargo test --all-features",
         "cargo test --no-default-features",
         "cargo test --no-default-features --features a",
         "cargo test --no-default-features --features a,b"
+    ]);
+}
+
+#[test]
+fn a_root_declaring_sets_is_linted_and_documented_per_set_and_never_with_all() {
+    let d = crate_root(
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"u8\"], [\"u16\", \"strict\"]]\n",
+    );
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Lint).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo clippy --all-targets --no-default-features --features u8 -- -D warnings",
+        "cargo clippy --all-targets --no-default-features --features u16,strict -- -D warnings",
+    ]);
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Docs).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo doc --no-deps --no-default-features --features u8",
+        "cargo doc --no-deps --no-default-features --features u16,strict",
+    ]);
+    // and on the tests step too, two features the crate declared apart are
+    // never enabled together, which is what `--all-features` would have done
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    assert!(!fake.seen.borrow().is_empty());
+    for line in fake.seen.borrow().iter() {
+        assert!(!line.contains("--all-features"), "{line}");
+        assert!(!(line.contains("u8") && line.contains("u16")), "{line}");
+    }
+}
+
+#[test]
+fn an_empty_declaration_is_a_manifest_error_and_no_step_runs() {
+    let d = crate_root(
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = []\n",
+    );
+    assert!(matches!(
+        feature_sets(d.path()),
+        Err(GateError::Manifest(_))
+    ));
+    let fake = Fake::new(vec![]);
+    for step in [Step::Lint, Step::Tests, Step::Docs] {
+        assert!(matches!(
+            run_step(&fake, d.path(), RepoKind::Crate, step),
+            Err(GateError::Manifest(_))
+        ));
+    }
+    assert!(fake.seen.borrow().is_empty(), "nothing ran, nothing passed");
+    // the control: one named set is read, and the same steps run
+    let d = crate_root(
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
+    );
+    assert!(feature_sets(d.path()).is_ok());
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    assert_eq!(fake.seen.borrow().len(), 1);
+}
+
+#[test]
+fn a_member_with_an_empty_declaration_is_refused_rather_than_excluded() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = []\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        feature_sets(d.path()),
+        Err(GateError::Manifest(_))
+    ));
+    let fake = Fake::new(vec![]);
+    assert!(run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).is_err());
+    assert!(fake.seen.borrow().is_empty());
+}
+
+/// Currently red, and deliberately left so.
+///
+/// A root package that declares sets is built once per set and the members
+/// under it are built by nothing. The mirror case below, a root declaring
+/// nothing beside a member that declares, handles its members carefully, so the
+/// asymmetry is in the code rather than in either fixture.
+///
+/// Which behaviour is wanted is open. Either the members are reached, on the
+/// reasoning the other branch already uses, or a root declaring sets has said
+/// which builds are legal for the whole tree and a workspace-wide run would
+/// perform one it excluded. This asserts the first, which is the intended
+/// behaviour if the case is meant to work at all; it turns green if that is
+/// chosen and is deleted with a sentence if the other is.
+///
+/// It cannot happen in this estate today, because a `None` entry needs the root
+/// to be a package and every workspace here has a virtual root. It goes live
+/// the first time one does not, and it fails by reporting green having built
+/// less.
+#[test]
+#[ignore = "catalogue: a root package declaring feature sets builds no member at all; \
+            which of the two readings is right is undecided, see design round 202609030600"]
+fn a_root_declaring_sets_still_builds_its_members() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"outer\"\nversion = \
+         \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"u8\"], \
+         [\"u16\"]]\n[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo test --no-default-features --features u8",
+        "cargo test --no-default-features --features u16",
+        "cargo test --workspace --exclude outer --all-features",
+    ]);
+}
+
+#[test]
+fn a_root_package_keeps_its_bare_runs_beside_a_declaring_member() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"outer\"\nversion = \"0.1.0\"\n[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    // no `--workspace`, so the root builds alone as before; the member's set
+    // runs against the member
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo test --all-features",
+        "cargo test --no-default-features",
+        "cargo test -p inner --no-default-features --features a",
+    ]);
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Lint).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo clippy --all-targets --all-features -- -D warnings",
+        "cargo clippy --all-targets -p inner --no-default-features --features a -- -D warnings",
+    ]);
+}
+
+#[test]
+fn a_declaring_member_is_left_out_of_the_workspace_runs_on_every_step() {
+    let d = tempfile::tempdir().unwrap();
+    for (name, meta) in [
+        (
+            "alpha",
+            "[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
+        ),
+        ("plain", ""),
+    ] {
+        std::fs::create_dir_all(d.path().join("crates").join(name)).unwrap();
+        std::fs::write(
+            d.path().join("crates").join(name).join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n{meta}"),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Lint).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo clippy --all-targets --all-features --workspace --exclude alpha -- -D warnings",
+        "cargo clippy --all-targets -p alpha --no-default-features --features a -- -D warnings",
+    ]);
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Docs).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo doc --no-deps --all-features --workspace --exclude alpha",
+        "cargo doc --no-deps -p alpha --no-default-features --features a",
+    ]);
+}
+
+#[test]
+fn a_crate_declaring_no_sets_is_linted_and_documented_with_all_features_alone() {
+    let d = crate_root("[package]\nname = \"x\"\nversion = \"0.1.0\"\n");
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Lint).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo clippy --all-targets --all-features -- -D warnings"
+    ]);
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Docs).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo doc --no-deps --all-features"
     ]);
 }
 
