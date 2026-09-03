@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 //! What an entrypoint calls: work out what the event touched, run the entries
-//! whose globs match in order with git's arguments appended and stdin replayed,
-//! and stop at the first refusal, which becomes the hook's own.
+//! whose globs match in order, git's arguments reaching the ones that ask for
+//! them by placeholder and stdin replayed to each, and stop at the first
+//! refusal, which becomes the hook's own.
 
 use std::io::Write;
 use std::path::Path;

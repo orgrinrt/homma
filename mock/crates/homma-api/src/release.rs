@@ -290,7 +290,8 @@ mod kind_tests {
     }
 }
 
-/// The six gate steps, in the order they run.
+/// The seven gate steps, in the order they run. The last runs no program: it
+/// reads the manifest's description against the readme's tagline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
@@ -300,11 +301,19 @@ pub enum Step {
     Deny,
     Docs,
     Notices,
+    Description,
 }
 
 impl Step {
-    pub const ALL: [Step; 6] =
-        [Step::Format, Step::Lint, Step::Tests, Step::Deny, Step::Docs, Step::Notices];
+    pub const ALL: [Step; 7] = [
+        Step::Format,
+        Step::Lint,
+        Step::Tests,
+        Step::Deny,
+        Step::Docs,
+        Step::Notices,
+        Step::Description,
+    ];
 
     /// Whether a failure of this step turns the verdict red. Docs only
     /// reports its number.
@@ -320,6 +329,7 @@ impl Step {
             Step::Deny => "deny",
             Step::Docs => "docs",
             Step::Notices => "notices",
+            Step::Description => "description",
         }
     }
 }
