@@ -473,8 +473,10 @@ pub(crate) fn merge_settings(
 /// True if a single hook command string looks aggregated: the command path's
 /// basename, after the last `/`, starts with `<known-repo>--`, which is the
 /// shape the aggregator emits whether the path is relative or absolute. Used
-/// by `merge_settings` to strip individual hooks within an entry. The retired
-/// bash aggregator's `imports/<known-repo>/` shape is `is_retired_aggregated_command`'s.
+/// by `merge_settings` to strip individual hooks within an entry, and by
+/// `is_retired_aggregated_command`, which owns the shapes nothing writes any
+/// more: the retired bash aggregator's `imports/<known-repo>/`, and a managed
+/// command naming an absolute path.
 pub(crate) fn is_aggregated_command(cmd: &str, repos: &[&str]) -> bool {
     let basename = cmd.rsplit('/').next().unwrap_or(cmd);
     repos
