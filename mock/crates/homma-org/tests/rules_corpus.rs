@@ -4,6 +4,11 @@
 //--------------------------------------------------------------------------------------------------
 
 //! Loading a rule corpus, finding a rule by subject, and generating its card.
+//!
+//! A rule is one file: meta, then the card, then a marker, then the
+//! elaboration. The card is a prefix of the full rule, so most of what is worth
+//! testing is that the split lands in the right place and that nothing from one
+//! side leaks into the other.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,12 +16,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use homma_org::rules::{Corpus, CorpusError};
 
-/// A corpus of three rules on disjoint subjects, each with a card.
+/// A corpus of three rules on disjoint subjects.
 ///
 /// The directory is unique per call, not per process. The tests in one binary
 /// are threads sharing a process id, so keying on that gave every test the same
-/// directory and each one's setup deleted the others' out from under them: nine
-/// of eleven failed, on races rather than on anything they were testing.
+/// directory and each one's setup deleted the others' out from under them.
 fn fixture() -> PathBuf {
     static NTH: AtomicUsize = AtomicUsize::new(0);
     let nth = NTH.fetch_add(1, Ordering::Relaxed);
@@ -46,29 +50,60 @@ fn fixture() -> PathBuf {
     dir
 }
 
+/// One rule file: meta, card, marker, elaboration.
 fn write(dir: &Path, name: &str, topics: &[&str], fires: &str) {
     let topics = topics.join(", ");
     fs::write(
-        dir.join(format!("{name}.full.md.tmpl")),
-        format!("---\ntopics: [{topics}]\nfires: \"{fires}\"\nkind: reflex\n---\n\nThe whole reasoning for {name}.\n"),
-    )
-    .unwrap();
-    fs::write(
-        dir.join(format!("{name}.card.md.tmpl")),
-        "# {{ name }}\n\nFires when {{ fires }}.\n\n`rules show {{ name }}` for the rest.\n",
+        dir.join(format!("{name}.md.tmpl")),
+        format!(
+            "---\ntopics: [{topics}]\nfires: \"{fires}\"\nkind: reflex\n---\n\n\
+             # {name}\n\nThe absolute, stated once.\n\nFires {{{{ fires }}}}.\n\n\
+             <!-- elaboration -->\n\nThe whole reasoning for {name}.\n"
+        ),
     )
     .unwrap();
 }
 
 #[test]
-fn loads_every_rule_with_its_meta_and_body() {
+fn loads_every_rule_and_splits_it_at_the_marker() {
     let d = fixture();
     let c = Corpus::load(&d.join("rules")).unwrap();
     assert_eq!(c.rules.len(), 3);
     let w = c.rules.iter().find(|r| r.name == "writing-style").unwrap();
     assert_eq!(w.meta.topics, vec!["writing", "prose", "readme"]);
-    assert!(w.body.contains("The whole reasoning"));
-    assert!(w.card.is_some(), "the card beside it must be picked up");
+    assert!(w.card.contains("The absolute, stated once"));
+    assert!(w.elaboration.contains("The whole reasoning"));
+    // Neither half carries the other, which is the whole point of the split.
+    assert!(
+        !w.card.contains("The whole reasoning"),
+        "card ran past the marker"
+    );
+    assert!(
+        !w.elaboration.contains("The absolute"),
+        "elaboration ran back before it"
+    );
+    assert!(
+        !w.card.contains("<!-- elaboration -->"),
+        "the marker leaked into the card"
+    );
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_rule_with_no_marker_is_all_card_and_is_not_a_defect() {
+    // The shape of a rule whose whole statement fits. Reporting it would refuse
+    // most of the corpus for being short enough not to need a second half.
+    let d = fixture();
+    let src = d.join("rules");
+    fs::write(
+        src.join("short.md.tmpl"),
+        "---\ntopics: [brief]\nfires: \"always\"\nkind: reflex\n---\n\n# Short\n\nAll of it.\n",
+    )
+    .unwrap();
+    let c = Corpus::load(&src).unwrap();
+    let r = c.rules.iter().find(|r| r.name == "short").unwrap();
+    assert!(r.card.contains("All of it."));
+    assert!(r.elaboration.is_empty());
     let _ = fs::remove_dir_all(&d);
 }
 
@@ -77,7 +112,7 @@ fn about_returns_only_the_rules_that_answer() {
     let d = fixture();
     let c = Corpus::load(&d.join("rules")).unwrap();
     let hits = c.about("writing, readme");
-    assert_eq!(hits.len(), 1, "only one rule is about writing");
+    assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].0.name, "writing-style");
     let _ = fs::remove_dir_all(&d);
 }
@@ -96,8 +131,6 @@ fn about_returns_nothing_for_a_subject_the_corpus_does_not_cover() {
 fn about_ranks_the_rule_answering_more_of_the_query_first() {
     let d = fixture();
     let src = d.join("rules");
-    // A second rule sharing one term with the first, so the ordering is decided
-    // by how much of the query each answers rather than by filename.
     write(
         &src,
         "readme-format",
@@ -121,37 +154,38 @@ fn about_is_stable_between_runs_when_scores_tie() {
     write(&src, "aaa-rule", &["shared"], "x");
     write(&src, "zzz-rule", &["shared"], "x");
     let c = Corpus::load(&src).unwrap();
-    let first: Vec<_> = c
-        .about("shared")
-        .iter()
-        .map(|(r, _)| r.name.clone())
-        .collect();
-    let second: Vec<_> = c
-        .about("shared")
-        .iter()
-        .map(|(r, _)| r.name.clone())
-        .collect();
-    assert_eq!(first, second);
-    assert_eq!(first, vec!["aaa-rule".to_string(), "zzz-rule".to_string()]);
+    let names = |c: &Corpus| -> Vec<String> {
+        c.about("shared")
+            .iter()
+            .map(|(r, _)| r.name.clone())
+            .collect()
+    };
+    assert_eq!(names(&c), names(&c));
+    assert_eq!(names(&c), vec![
+        "aaa-rule".to_string(),
+        "zzz-rule".to_string()
+    ]);
     let _ = fs::remove_dir_all(&d);
 }
 
 #[test]
-fn renders_a_card_per_rule_against_its_own_meta() {
+fn renders_the_card_and_not_the_elaboration() {
     let d = fixture();
     let c = Corpus::load(&d.join("rules")).unwrap();
     let out = d.join("cards");
-    let written = c.render_cards(&out).unwrap();
-    assert_eq!(written.len(), 3);
+    assert_eq!(c.render_cards(&out).unwrap().len(), 3);
 
     let card = fs::read_to_string(out.join("writing-style.md")).unwrap();
     assert!(card.contains("# writing-style"));
     assert!(
         card.contains("before writing prose a human reads"),
-        "the trigger is written once in the meta and appears in the card: {card}"
+        "the trigger is written once in the meta and rendered into the card: {card}"
     );
-    assert!(card.contains("rules show writing-style"));
-    // The other rule's trigger must not leak in through a shared environment.
+    assert!(
+        !card.contains("The whole reasoning"),
+        "the elaboration must not reach the always-loaded card: {card}"
+    );
+    // Another rule's meta must not leak in through a shared environment.
     assert!(
         !card.contains("pull request"),
         "card carried another rule's meta: {card}"
@@ -160,23 +194,55 @@ fn renders_a_card_per_rule_against_its_own_meta() {
 }
 
 #[test]
-fn an_elaboration_with_no_card_is_refused_rather_than_skipped() {
-    // Skipping leaves a rule authored, findable by `about`, and absent from
-    // every session that was supposed to load it, with nothing reporting so.
+fn a_generated_card_ends_with_exactly_one_newline() {
+    // It is injected into a session next to others, so a missing trailing
+    // newline runs two rules together and a pile of them adds blank lines.
+    let d = fixture();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let out = d.join("cards");
+    c.render_cards(&out).unwrap();
+    let card = fs::read_to_string(out.join("writing-style.md")).unwrap();
+    assert!(card.ends_with('\n'));
+    assert!(!card.ends_with("\n\n"));
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn the_full_rule_carries_both_halves_in_order() {
+    let d = fixture();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let r = c.rules.iter().find(|r| r.name == "writing-style").unwrap();
+    let full = c.render_full(r).unwrap();
+    let card_at = full
+        .find("The absolute, stated once")
+        .expect("card is present");
+    let elab_at = full
+        .find("The whole reasoning")
+        .expect("elaboration is present");
+    assert!(card_at < elab_at, "the card is the prefix, not the suffix");
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_template_can_say_which_variant_it_is_being_rendered_as() {
+    // The few lines that differ: a card ends by naming the fetch, and that
+    // sentence is noise in the full rule where the reader is already past it.
     let d = fixture();
     let src = d.join("rules");
     fs::write(
-        src.join("orphan.full.md.tmpl"),
-        "---\ntopics: [a]\nfires: \"x\"\nkind: reflex\n---\n\nbody\n",
+        src.join("writing-style.md.tmpl"),
+        "---\ntopics: [writing]\nfires: \"x\"\nkind: reflex\n---\n\n# W\n\nBody.\n\
+         {% if variant == \"card\" %}\nFetch the rest.\n{% endif %}\n\
+         <!-- elaboration -->\n\nDepth.\n",
     )
     .unwrap();
     let c = Corpus::load(&src).unwrap();
-    match c.render_cards(&d.join("cards")) {
-        Err(CorpusError::NoCard {
-            name,
-        }) => assert_eq!(name, "orphan"),
-        other => panic!("expected a refusal naming the rule, got {other:?}"),
-    }
+    let r = c.rules.iter().find(|r| r.name == "writing-style").unwrap();
+    let out = d.join("cards");
+    c.render_cards(&out).unwrap();
+    let card = fs::read_to_string(out.join("writing-style.md")).unwrap();
+    assert!(card.contains("Fetch the rest"));
+    assert!(!c.render_full(r).unwrap().contains("Fetch the rest"));
     let _ = fs::remove_dir_all(&d);
 }
 
@@ -186,7 +252,7 @@ fn a_rule_whose_meta_will_not_parse_refuses_the_whole_load_and_names_the_file() 
     // on disk, which passes every check and governs less than it claims.
     let d = fixture();
     let src = d.join("rules");
-    fs::write(src.join("broken.full.md.tmpl"), "no frontmatter here\n").unwrap();
+    fs::write(src.join("broken.md.tmpl"), "no frontmatter here\n").unwrap();
     match Corpus::load(&src) {
         Err(CorpusError::Meta {
             path,
@@ -198,15 +264,14 @@ fn a_rule_whose_meta_will_not_parse_refuses_the_whole_load_and_names_the_file() 
 }
 
 #[test]
-fn a_card_naming_something_the_meta_does_not_have_is_refused() {
-    // Strict undefined handling is the reason the engine is configured that
-    // way: a typo in a card would otherwise render an empty string into every
-    // session, silently.
+fn a_template_naming_something_the_meta_does_not_have_is_refused() {
+    // Strict undefined handling is why the engine is configured that way: a
+    // typo would otherwise render an empty string into every session, silently.
     let d = fixture();
     let src = d.join("rules");
     fs::write(
-        src.join("writing-style.card.md.tmpl"),
-        "# {{ name }}\n\n{{ nonexistent_field }}\n",
+        src.join("writing-style.md.tmpl"),
+        "---\ntopics: [a]\nfires: \"x\"\nkind: reflex\n---\n\n{{ nonexistent_field }}\n",
     )
     .unwrap();
     let c = Corpus::load(&src).unwrap();
@@ -216,25 +281,6 @@ fn a_card_naming_something_the_meta_does_not_have_is_refused() {
         }) => {},
         other => panic!("expected a render refusal, got {other:?}"),
     }
-    let _ = fs::remove_dir_all(&d);
-}
-
-#[test]
-fn a_card_may_carry_the_whole_body() {
-    // Some rules are broken by people who have read them, and a card that only
-    // points at the reasoning stops nothing. Those carry it, so `body` is in
-    // the context on purpose.
-    let d = fixture();
-    let src = d.join("rules");
-    fs::write(
-        src.join("writing-style.card.md.tmpl"),
-        "# {{ name }}\n\n{{ body }}\n",
-    )
-    .unwrap();
-    let c = Corpus::load(&src).unwrap();
-    c.render_cards(&d.join("cards")).unwrap();
-    let card = fs::read_to_string(d.join("cards").join("writing-style.md")).unwrap();
-    assert!(card.contains("The whole reasoning for writing-style"));
     let _ = fs::remove_dir_all(&d);
 }
 

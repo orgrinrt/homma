@@ -262,3 +262,76 @@ fn a_query_splits_on_commas_or_spaces_or_both() {
     assert_eq!(rule::query_terms("writing readme public"), expect);
     assert_eq!(rule::query_terms("  writing ,readme,  public "), expect);
 }
+
+// -------------------------------------------------------------------------
+// the card is a prefix of the full rule
+// -------------------------------------------------------------------------
+
+/// A rule with both halves.
+fn split() -> String {
+    [
+        "---",
+        "topics: [a]",
+        "fires: \"x\"",
+        "kind: reflex",
+        "---",
+        "",
+        "# Title",
+        "",
+        "The card.",
+        "",
+        "<!-- elaboration -->",
+        "",
+        "The depth.",
+    ]
+    .join("\n")
+}
+
+#[test]
+fn the_card_is_everything_before_the_marker() {
+    let p = rule::parse(&split()).unwrap();
+    assert!(p.card().contains("The card."));
+    assert!(p.card().contains("# Title"));
+    assert!(
+        !p.card().contains("The depth."),
+        "the card ran past the marker: {:?}",
+        p.card()
+    );
+    assert!(
+        !p.card().contains(rule::ELABORATION_MARKER),
+        "the marker leaked into the card: {:?}",
+        p.card()
+    );
+}
+
+#[test]
+fn the_elaboration_is_everything_after_it() {
+    let p = rule::parse(&split()).unwrap();
+    assert!(p.elaboration().contains("The depth."));
+    assert!(
+        !p.elaboration().contains("The card."),
+        "the elaboration ran back before the marker: {:?}",
+        p.elaboration()
+    );
+    assert!(p.has_elaboration());
+}
+
+#[test]
+fn a_rule_with_no_marker_is_all_card() {
+    // The shape of a rule whose whole statement fits. Treating a missing marker
+    // as a defect would refuse most of the corpus for being short.
+    let p = rule::parse(&sound()).unwrap();
+    assert_eq!(p.card(), p.body.trim_end());
+    assert_eq!(p.elaboration(), "");
+    assert!(!p.has_elaboration());
+}
+
+#[test]
+fn the_two_halves_do_not_overlap() {
+    // The control for both cases above: a split that returned the whole body on
+    // each side would satisfy every `contains` assertion written so far.
+    let p = rule::parse(&split()).unwrap();
+    assert_ne!(p.card(), p.elaboration());
+    assert!(!p.card().is_empty());
+    assert!(!p.elaboration().is_empty());
+}

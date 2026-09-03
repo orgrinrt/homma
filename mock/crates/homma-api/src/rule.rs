@@ -3,12 +3,20 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! What a rule declares about itself, and reading it off a template.
+//! What a rule declares about itself, and reading it off its template.
 //!
-//! A rule is authored as `<name>.full.md.tmpl` carrying this meta as
-//! frontmatter, with `<name>.card.md.tmpl` beside it. The card that a session
-//! actually loads is generated from the second against the first's meta, so a
-//! trigger written once appears in both.
+//! A rule is one file, `<name>.md.tmpl`: this meta as frontmatter, then the
+//! card, then a marker, then the elaboration. **The card is a prefix of the
+//! full rule** rather than a separate document, so nothing is written twice and
+//! the two cannot drift.
+//!
+//! One file rather than two because frontmatter on one of a pair governs the
+//! other silently: opening the card template showed none of the meta shaping
+//! it, and an elaboration could lose the card beside it and be authored,
+//! findable and absent from every session at once.
+//!
+//! The prefix ordering is what a rule already owes its reader, per
+//! `writing-for-agents`: operative content first, complete without the rest.
 //!
 //! # Why the reader is strict rather than a YAML parser
 //!
@@ -158,6 +166,12 @@ impl fmt::Display for MetaError {
 
 impl std::error::Error for MetaError {}
 
+/// The line separating the card from the elaboration.
+///
+/// An HTML comment, so the file still reads as markdown anywhere that renders
+/// it and the marker does not appear to a human reading the rendered rule.
+pub const ELABORATION_MARKER: &str = "<!-- elaboration -->";
+
 /// The frontmatter block and the body after it.
 ///
 /// Returned together because every caller wants both and splitting the file
@@ -166,6 +180,33 @@ impl std::error::Error for MetaError {}
 pub struct Parsed {
     pub meta: RuleMeta,
     pub body: String,
+}
+
+impl Parsed {
+    /// The card: everything before the elaboration marker.
+    ///
+    /// A rule short enough to have no marker is entirely a card, which is the
+    /// case for the ones whose whole statement fits. That is not a defect and
+    /// is not reported as one.
+    pub fn card(&self) -> &str {
+        match self.body.split_once(ELABORATION_MARKER) {
+            Some((card, _)) => card.trim_end(),
+            None => self.body.trim_end(),
+        }
+    }
+
+    /// The elaboration: everything after the marker, empty when there is none.
+    pub fn elaboration(&self) -> &str {
+        match self.body.split_once(ELABORATION_MARKER) {
+            Some((_, rest)) => rest.trim_start_matches('\n').trim_end(),
+            None => "",
+        }
+    }
+
+    /// Whether the rule carries an elaboration at all.
+    pub fn has_elaboration(&self) -> bool {
+        self.body.contains(ELABORATION_MARKER)
+    }
 }
 
 /// Read a rule's meta and body off the text of its full template.
