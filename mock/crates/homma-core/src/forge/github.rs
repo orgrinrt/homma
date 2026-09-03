@@ -45,7 +45,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::url::api_root;
-use super::{CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
+use super::{CommitStatus, CreateRepoSpec, Forge, ForgeError, OwnerKind, RepoMetadata, Visibility};
 use crate::config::ForgeConfig;
 
 const ACCEPT: &str = "application/vnd.github+json";
@@ -254,6 +254,43 @@ impl Forge for GitHubClient {
             Err(e) => Err(map_ureq_error(e, "", "user")),
         }
     }
+
+    /// `POST {api}/repos/{owner}/{name}/statuses/{sha}`. GitHub creates a new
+    /// status per call and shows the newest one per context, so posting
+    /// `pending` and then `success` on the same context is the normal shape.
+    fn set_commit_status(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+        status: &CommitStatus,
+    ) -> Result<(), ForgeError> {
+        let url = format!("{}/statuses/{sha}", self.repo_path(owner, name));
+        match self.post_json(&url, status) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
+        }
+    }
+
+    /// `POST {api}/repos/{owner}/{name}/releases`, named after the tag.
+    fn create_release(
+        &self,
+        owner: &str,
+        name: &str,
+        tag: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let url = format!("{}/releases", self.repo_path(owner, name));
+        let payload = super::trait_def::ReleaseBody {
+            tag_name: tag.into(),
+            name:     tag.into(),
+            body:     body.into(),
+        };
+        match self.post_json(&url, &payload) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(map_ureq_error(e, owner, name)),
+        }
+    }
 }
 
 /// Wire shape of `GET /repos/{owner}/{name}` (and create / patch responses).
@@ -428,3 +465,7 @@ fn truncate(mut s: String, max: usize) -> String {
 #[cfg(test)]
 #[path = "github_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "github_wire_tests.rs"]
+mod wire_tests;

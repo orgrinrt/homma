@@ -64,9 +64,25 @@ pub enum OutputFormat {
 /// Top-level subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Show workspace state: parsed `homma.toml`, repos and their configured
-    /// forges, default-branch resolution.
-    Status,
+    /// What state the workspace is in.
+    ///
+    /// Covers every population homma can report offline: the manifest and its
+    /// forges, the agent surfaces including whether each repo's git hooks are
+    /// wired, the shared tool configs, and the working tree. By default it
+    /// shows only what is not in the state it should be in, because that is
+    /// what the question is usually asking.
+    ///
+    /// The narrower verbs stay the place to see one population entirely,
+    /// healthy entries included.
+    Status {
+        /// Print every population whole rather than only what is wrong.
+        ///
+        /// Human output only. The JSON document always carries every
+        /// population in full, because a machine reading one with the healthy
+        /// members dropped would be reading a lie about the population.
+        #[arg(long)]
+        full: bool,
+    },
 
     /// The registry: who exists, and standing them up.
     ///
@@ -149,6 +165,14 @@ pub enum Command {
         op: SkillsOp,
     },
 
+    /// The release: a gate run on the pushing machine, its record and commit
+    /// status, and the merge, tag, changelog, forge release and registry
+    /// publish that carry the working trunk onto the release line.
+    Release {
+        #[command(subcommand)]
+        op: ReleaseOp,
+    },
+
     /// Migrate a repo from one configured forge to another.
     ///
     /// Reads source metadata, creates the destination repo (with description,
@@ -208,6 +232,39 @@ pub enum RepoOp {
         /// Repo name from `homma.toml`.
         repo: String,
     },
+
+    /// The shared tool configs a repo is meant to have.
+    Config {
+        #[command(subcommand)]
+        op: ConfigOp,
+    },
+}
+
+/// `repo config` subcommands.
+///
+/// Two verbs rather than one because the commit path needs a check that
+/// cannot write. Placing a config turns a check on, and a check that was not
+/// running has not been passing, so the consequences land wherever that tool
+/// looks. That is somebody's to face deliberately rather than something a gate
+/// does to them mid-commit.
+#[derive(Debug, Subcommand)]
+pub enum ConfigOp {
+    /// Compare a repo against the shared configs and report. Writes nothing.
+    ///
+    /// Exits non-zero when a repo is missing a config that is required of it,
+    /// which is what the commit path reads.
+    Check {
+        /// Single repo from `homma.toml`. Default: all.
+        #[arg(long)]
+        repo: Option<String>,
+    },
+
+    /// Place the shared configs a repo is missing.
+    Init {
+        /// Single repo from `homma.toml`. Default: all.
+        #[arg(long)]
+        repo: Option<String>,
+    },
 }
 
 /// `agent` subcommands.
@@ -216,8 +273,8 @@ pub enum AgentOp {
     /// Discover per-repo mockspace agent-template state.
     ///
     /// For each member repo (or one when `--repo` is set), reports whether
-    /// `mock/`, `.claude/`, `.github/`, and the `cargo mock` alias are
-    /// present.
+    /// `mock/`, `.claude/`, `.github/`, the `cargo mock` alias and the git
+    /// hooks wiring are present.
     Status {
         /// Single repo from `homma.toml`. Default: all.
         #[arg(long)]
@@ -308,6 +365,83 @@ pub enum SkillsOp {
     /// skill's generated directory is rewritten whole, so editing one by hand
     /// loses the edit on the next run.
     Render {},
+}
+
+/// `release` subcommands: the gate, the record it leaves, and the merge, tag,
+/// changelog, forge release and registry publish that carry `dev` onto
+/// `main`.
+#[derive(Debug, Subcommand)]
+pub enum ReleaseOp {
+    /// The invariants a release rests on, by id, blocking ones first. Exits
+    /// non-zero when any blocks.
+    Check {
+        /// The repository's directory name under the workspace root; the one
+        /// the working directory is in when omitted.
+        repo: Option<String>,
+    },
+    /// Run the gate on the checkout now, record the run, post its status.
+    Gate {
+        /// The repository's directory name; the working directory's when omitted.
+        repo:     Option<String>,
+        /// Refuse unless the checkout is at this sha, since the gate measures
+        /// the tree it is given and nothing else.
+        #[arg(long)]
+        sha:      Option<String>,
+        /// What the pre-push hook calls: reads the refs being pushed on stdin,
+        /// gates the tip when it is among them, and exits non-zero on red so
+        /// the push stops.
+        #[arg(long, conflicts_with_all = ["sha", "post"])]
+        hook:     bool,
+        /// Post the status of an already recorded run on this sha again,
+        /// without running anything.
+        #[arg(long, conflicts_with = "sha")]
+        post:     Option<String>,
+        /// What git hands a pre-push hook after its own arguments: the
+        /// remote's name and url. Read by nothing here; the refs come on
+        /// stdin. Hidden, since only the hook passes them.
+        #[arg(trailing_var_arg = true, hide = true)]
+        git_args: Vec<String>,
+    },
+    /// Print what a release at this level would do, and do nothing.
+    Plan {
+        /// The repository's directory name; the working directory's when omitted.
+        repo:  Option<String>,
+        /// `patch`, `minor` or `major`; never inferred.
+        #[arg(long)]
+        level: homma_api::Level,
+    },
+    /// The release: check, the recorded green run, the plan, then the bump,
+    /// the merge and tag, the forge release, the publishes and the badges.
+    Run {
+        /// One repository, or every repository with something unreleased
+        /// when omitted.
+        repo:    Option<String>,
+        /// `patch`, `minor` or `major`; never inferred.
+        #[arg(long)]
+        level:   homma_api::Level,
+        /// Stop after printing the plan.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Rewrite the `badges` branch from the newest recorded run and the
+    /// current version.
+    Badges {
+        repo: String,
+    },
+    /// The pre-push hook.
+    Hook {
+        #[command(subcommand)]
+        op: HookOp,
+    },
+}
+
+/// `release hook` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum HookOp {
+    /// Write the pre-push hook into the repository, or refuse and say why.
+    Install {
+        repo: String,
+    },
 }
 
 /// `forge` subcommands.
@@ -420,11 +554,64 @@ mod tests {
     }
 
     #[test]
+    fn the_gate_under_the_hook_takes_gits_remote_name_and_url_as_trailing_arguments() {
+        // git runs `pre-push <remote name> <remote url>`, and the hook passes
+        // both on; neither is a repo and neither is an error
+        let cli = Cli::try_parse_from([
+            "homma",
+            "release",
+            "gate",
+            "--hook",
+            "origin",
+            "git@github.com:orgrinrt/notko.git",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Release {
+                op:
+                    ReleaseOp::Gate {
+                        repo,
+                        hook,
+                        git_args,
+                        ..
+                    },
+            } => {
+                assert!(hook);
+                assert_eq!(repo.as_deref(), Some("origin"));
+                assert_eq!(git_args, vec![
+                    "git@github.com:orgrinrt/notko.git".to_string()
+                ]);
+            },
+            other => panic!("{other:?}"),
+        }
+        // and without the hook a bare name is still the repo
+        let cli = Cli::try_parse_from(["homma", "release", "gate", "x"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Release {
+                op: ReleaseOp::Gate { repo: Some(ref r), hook: false, .. }
+            } if r == "x"
+        ));
+    }
+
+    #[test]
     fn cli_parses_basic_invocation() {
         let cli = Cli::try_parse_from(["homma", "status"]).unwrap();
-        assert!(matches!(cli.command, Command::Status));
+        assert!(matches!(cli.command, Command::Status {
+            full: false,
+        }));
         assert_eq!(cli.output, OutputFormat::Human);
         assert_eq!(cli.verbosity, 0);
+    }
+
+    #[test]
+    fn status_full_is_off_unless_asked_for() {
+        // The default is what nearly every invocation gets, and the whole
+        // point of the default is that a healthy workspace stays short.
+        let cli = Cli::try_parse_from(["homma", "status", "--full"]).unwrap();
+        assert!(matches!(cli.command, Command::Status {
+            full: true,
+        }));
     }
 
     #[test]
@@ -460,6 +647,70 @@ mod tests {
             },
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    #[test]
+    fn cli_parses_repo_config_check_over_every_repo() {
+        let cli = Cli::try_parse_from(["homma", "repo", "config", "check"]).unwrap();
+        match cli.command {
+            Command::Repo {
+                op:
+                    RepoOp::Config {
+                        op:
+                            ConfigOp::Check {
+                                repo,
+                            },
+                    },
+            } => assert_eq!(repo, None, "no --repo must mean every member, not none"),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_repo_config_check_for_one_repo() {
+        // The form the commit gate runs, so it is worth pinning by name.
+        let cli =
+            Cli::try_parse_from(["homma", "repo", "config", "check", "--repo", "arvo"]).unwrap();
+        match cli.command {
+            Command::Repo {
+                op:
+                    RepoOp::Config {
+                        op:
+                            ConfigOp::Check {
+                                repo,
+                            },
+                    },
+            } => assert_eq!(repo.as_deref(), Some("arvo")),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_repo_config_init() {
+        // The form a refusal names as the fix. If this stops parsing, the
+        // message tells somebody to run something that does not work.
+        let cli =
+            Cli::try_parse_from(["homma", "repo", "config", "init", "--repo", "arvo"]).unwrap();
+        match cli.command {
+            Command::Repo {
+                op:
+                    RepoOp::Config {
+                        op:
+                            ConfigOp::Init {
+                                repo,
+                            },
+                    },
+            } => assert_eq!(repo.as_deref(), Some("arvo")),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_rejects_a_config_verb_that_does_not_exist() {
+        // The control on the two above: a pass there could otherwise be clap
+        // accepting anything after `config`.
+        assert!(Cli::try_parse_from(["homma", "repo", "config", "place"]).is_err());
+        assert!(Cli::try_parse_from(["homma", "repo", "config"]).is_err());
     }
 
     #[test]

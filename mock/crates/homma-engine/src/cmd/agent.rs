@@ -67,6 +67,14 @@ pub mod status {
         pub claude_dir:          bool,
         pub github_instructions: bool,
         pub cargo_mock_alias:    bool,
+        /// Whether `core.hooksPath` is set, which is whether any per-repo git
+        /// hook fires at all.
+        ///
+        /// A repo with every other surface present and this one absent has the
+        /// hooks on disk and git never invokes them. Nothing about the tree
+        /// looks different, so without this probe that repo reported as
+        /// configured while every gate it carries was inert.
+        pub git_hooks_path:      bool,
     }
 
     pub fn run(cfg: &Config, repo: Option<&str>, format: OutputFormat) -> Result<()> {
@@ -77,7 +85,11 @@ pub mod status {
         Ok(())
     }
 
-    fn collect(cfg: &Config, repo: Option<&str>) -> Result<Vec<RepoAgentState>> {
+    /// The agent surfaces of every member, or one.
+    ///
+    /// Public because `homma status` covers this population too, and reading it
+    /// twice from two probes is how the two answers start disagreeing.
+    pub fn collect(cfg: &Config, repo: Option<&str>) -> Result<Vec<RepoAgentState>> {
         let mut out = Vec::new();
         for (name, repo_cfg) in &cfg.repos {
             if let Some(filter) = repo {
@@ -103,6 +115,7 @@ pub mod status {
             claude_dir:          local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
             cargo_mock_alias:    has_cargo_mock_alias(local),
+            git_hooks_path:      homma_core::repo::hooks_are_wired(local),
         };
         let state = roll_up(local, &surfaces);
         RepoAgentState {
@@ -120,7 +133,11 @@ pub mod status {
         if !s.mock_dir {
             return AgentState::NotConfigured;
         }
-        let core = s.mock_agent_dir && s.claude_dir && s.github_instructions && s.cargo_mock_alias;
+        let core = s.mock_agent_dir
+            && s.claude_dir
+            && s.github_instructions
+            && s.cargo_mock_alias
+            && s.git_hooks_path;
         if core { AgentState::Configured } else { AgentState::Partial }
     }
 
@@ -143,12 +160,14 @@ pub mod status {
                 writeln!(out, "  path: {}", r.local_path)?;
                 writeln!(
                     out,
-                    "  mock={} mock/agent={} .claude={} .github/instructions={} cargo-mock-alias={}",
+                    "  mock={} mock/agent={} .claude={} .github/instructions={} \
+                     cargo-mock-alias={} git-hooks={}",
                     yn(r.surfaces.mock_dir),
                     yn(r.surfaces.mock_agent_dir),
                     yn(r.surfaces.claude_dir),
                     yn(r.surfaces.github_instructions),
                     yn(r.surfaces.cargo_mock_alias),
+                    yn(r.surfaces.git_hooks_path),
                 )?;
             }
             Ok(())
@@ -174,10 +193,12 @@ pub mod status {
 
         use super::*;
 
-        #[test]
-        fn configured_when_all_surfaces_present() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
+        /// A repo with every surface but the hooks wiring.
+        ///
+        /// The wiring cannot be faked by writing files, because it is a git
+        /// config setting, so a test wanting it present makes a real
+        /// repository and sets it.
+        fn every_surface_but_hooks(repo: &Path) {
             fs::create_dir_all(repo.join("mock/agent")).unwrap();
             fs::create_dir_all(repo.join(".claude")).unwrap();
             fs::create_dir_all(repo.join(".github/instructions")).unwrap();
@@ -187,8 +208,41 @@ pub mod status {
                 b"[alias]\nmock = \"run\"\n",
             )
             .unwrap();
+        }
+
+        fn wire_the_hooks(repo: &Path) {
+            homma_core::testing::init_repo(repo);
+            homma_core::testing::set_hooks_path(repo, "mock/target/hooks");
+        }
+
+        #[test]
+        fn configured_when_all_surfaces_present_including_the_hooks_wiring() {
+            let dir = tempfile::tempdir().unwrap();
+            let repo = dir.path().join("r");
+            fs::create_dir_all(&repo).unwrap();
+            every_surface_but_hooks(&repo);
+            wire_the_hooks(&repo);
             let state = probe("r", &repo);
             assert!(matches!(state.state, AgentState::Configured));
+            assert!(state.surfaces.git_hooks_path);
+        }
+
+        #[test]
+        fn a_repo_with_every_surface_but_no_hooks_wiring_is_partial() {
+            // The state that went unreported: the files are all there, so the
+            // tree looks adopted, and git invokes none of the hooks. It read as
+            // configured until the wiring became a surface.
+            let dir = tempfile::tempdir().unwrap();
+            let repo = dir.path().join("r");
+            fs::create_dir_all(&repo).unwrap();
+            every_surface_but_hooks(&repo);
+            let state = probe("r", &repo);
+            assert!(!state.surfaces.git_hooks_path);
+            assert!(
+                matches!(state.state, AgentState::Partial),
+                "a repo whose hooks never fire reported as {:?}",
+                state.state
+            );
         }
 
         #[test]
@@ -716,7 +770,7 @@ pub mod regen {
 /// The registry is optional in this configuration, and its absence means the
 /// list is the home-derived pair alone. That is a real state rather than a gap:
 /// a workspace with no participants has no participant workspaces to protect.
-fn denied_for_aggregating(
+pub(crate) fn denied_for_aggregating(
     cfg: &Config,
     workspace: &homma_api::AbsPath,
 ) -> Result<homma_api::Denied> {

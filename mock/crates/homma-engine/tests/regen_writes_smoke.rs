@@ -317,9 +317,10 @@ workspace = "{}"
 /// A workspace with one Rust repo declared and one shared config to hand out.
 fn workspace_with_a_repo_and_a_config(dir: &std::path::Path) -> (std::path::PathBuf, String) {
     let ws = dir.join("workspace");
-    std::fs::create_dir_all(ws.join(".shared").join("configs")).unwrap();
+    let tagged = ws.join(".shared").join("configs").join("rust_required");
+    std::fs::create_dir_all(&tagged).unwrap();
     std::fs::write(
-        ws.join(".shared").join("configs").join("deny.toml"),
+        tagged.join("deny.toml"),
         "[bans]\nmultiple-versions = \"deny\"\n",
     )
     .unwrap();
@@ -376,12 +377,12 @@ fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_o
     std::fs::create_dir_all(home.join(".claude")).unwrap();
 
     let ws = dir.path().join("workspace");
-    std::fs::create_dir_all(ws.join(".shared").join("configs")).unwrap();
-    std::fs::write(
-        ws.join(".shared").join("configs").join("rustfmt.toml"),
-        "wrap_comments = true\n",
-    )
-    .unwrap();
+    let tagged = ws
+        .join(".shared")
+        .join("configs")
+        .join("rust_nightly_required");
+    std::fs::create_dir_all(&tagged).unwrap();
+    std::fs::write(tagged.join("rustfmt.toml"), "wrap_comments = true\n").unwrap();
 
     let body = config_at(&ws);
     for (name, pinned) in [("arvo", true), ("renki", false)] {

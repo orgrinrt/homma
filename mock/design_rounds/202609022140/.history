@@ -1,0 +1,50 @@
+81113b8 docs: the src changelist matches what landed
+2422a4d chore: rustfmt on the release command
+6d14512 feat: `homma release` on the command line
+955384f chore: rustfmt on the registry auth change
+ca3a12b feat: registries take their tokens the way forges do, from `homma.toml`
+01d9281 chore: rustfmt on run and check
+27866d9 feat: `release::run`, the nine steps against a real repository
+069613e chore: rustfmt on hook, plan, publish and the forge release
+d5fa532 feat: the hook, the plan, the publish, and a forge release
+1b25e3c chore: rustfmt on check, registry and git
+2522eb5 feat: the release check, the registry reads, and the git it needs
+8e6b288 chore: rustfmt on the four release modules
+b4e7633 feat: the status, changelog, badges and version halves of the release
+b1e4a4f docs: the src changelist says where record.rs lives and names numbers.rs
+d63e54d chore: rustfmt on the forge status change
+920c4eb feat: `Forge::set_commit_status` posts a status on a sha, on both forges
+3f441d8 chore: rustfmt on the gate modules and split its tests into gate_tests.rs
+8ddef12 feat: the gate runs the six steps against a clean checkout and reads its numbers
+3349bcb chore: rustfmt on the release modules
+90a7193 feat: the shell runner, repo kind and git operations of the release
+b97347c chore: rustfmt on the release vocabulary
+af7f8ce feat: the release vocabulary in homma-api
+8e04a2d design: source changelist for the release round
+27850b2 chore: lock doc changelist for the release round
+4db97a6 docs: the release design, gate, record, status, hook, check, run, changelog, badges
+88eeea1 design: doc changelist for the release round
+fc9190f design: the three calls on the release shape
+303e496 design: open the release round, a release is a gated merge off main
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml
+9695777 fix: the launcher can reach its own engine
+f2b0c4e feat!: detect workspace members rather than declaring them
+4abf397 docs: rewrite the readme, and fix what checking it turned up
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round
+de1d474 chore: lock the src changelist
+ad13abe fix: permit the workspace being aggregated into, which was denied

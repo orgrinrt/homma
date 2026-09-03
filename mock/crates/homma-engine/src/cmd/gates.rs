@@ -259,31 +259,73 @@ if [ "$has_alias" -eq 1 ] || [ "$has_pin" -eq 1 ]; then has_config=1; else has_c
 
 adoption=$((has_mock_dir + has_config + has_hooks_path))
 
-# Zero adoption: silent allow. The repo never opted in.
-if [ "$adoption" -eq 0 ]; then
-    exit 0
-fi
-
-# Full adoption: silent allow.
-if [ "$adoption" -eq 3 ]; then
-    exit 0
-fi
-
-# Partial adoption: drift detected; build a problems list.
 problems=()
-[ "$has_mock_dir" -eq 0 ] && \
-    problems+=("$match_path/mock/ is missing but other mockspace surfaces are present")
-[ "$has_config" -eq 0 ] && \
-    problems+=("$match_path: no launcher pin (mockspace_* in mockspace.toml) and no legacy [alias] mock entry")
-[ "$has_hooks_path" -eq 0 ] && \
-    problems+=("$match_path: git config core.hooksPath is not set; per-repo git hooks will not fire")
+fix=""
+
+# Zero adoption is a repo that never opted in and full adoption is one with
+# nothing to say. Anything between the two is drift.
+if [ "$adoption" -ne 0 ] && [ "$adoption" -ne 3 ]; then
+    [ "$has_mock_dir" -eq 0 ] && \
+        problems+=("$match_path/mock/ is missing but other mockspace surfaces are present")
+    [ "$has_config" -eq 0 ] && \
+        problems+=("$match_path: no launcher pin (mockspace_* in mockspace.toml) and no legacy [alias] mock entry")
+    [ "$has_hooks_path" -eq 0 ] && \
+        problems+=("$match_path: git config core.hooksPath is not set; per-repo git hooks will not fire")
+    fix="Run \`homma agent regen --repo $match_name\` to fix."
+fi
+
+# The shared tool configs, where there is a workspace to ask about.
+#
+# No manifest means no workspace: the repo table this script carries came from
+# one, and without it there is nothing for homma to resolve `$match_name`
+# against. Skipping is the honest answer rather than refusing, because a
+# refusal would be this gate reporting the absence of its own input as a fault
+# in somebody's repo.
+#
+# Asked of homma rather than decided here, so the rule
+# saying what a repo owes exists once. The templates directory decides which
+# repos want which config, and a second copy of that decision in bash would
+# start disagreeing with the first the day somebody adds a template, which is
+# the exact thing the directory exists to prevent.
+#
+# It refuses when it cannot ask at all, which is what this script already does
+# for a missing `jq`, for the reason argued there: a check that could not run
+# must never be indistinguishable from one that ran and found nothing.
+if [ ! -f "$WS/homma.toml" ]; then
+    :
+elif ! command -v homma >/dev/null 2>&1; then
+    problems+=("homma is not on PATH, so the shared tool configs could not be checked")
+else
+    config_out=$(homma --dir "$WS" repo config check --repo "$match_name" 2>&1)
+    config_rc=$?
+    # `1` is the check having run and found the repo owing something, which is
+    # what the advice below is for. Anything else non-zero is the check not
+    # having run at all, and the commonest one is this workspace's own manifest
+    # failing to parse. Sending somebody to `init` for that is sending them to a
+    # command that reads the same manifest and fails the same way, so the two
+    # cases say different things.
+    if [ "$config_rc" -eq 1 ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && problems+=("$line")
+        done <<<"$config_out"
+        fix="Run \`homma repo config init --repo $match_name\` to place what is missing."
+    elif [ "$config_rc" -ne 0 ]; then
+        problems+=("the shared tool configs could not be checked: $config_out")
+        fix="Read \`$WS/homma.toml\`; homma could not run against it, so this says nothing about repo \`$match_name\`."
+    fi
+fi
+
+# Nothing wrong on either count, which is nearly every call.
+if [ "${{#problems[@]}}" -eq 0 ]; then
+    exit 0
+fi
 
 # Build a multi-line reason for the deny payload.
-reason="mockspace bootstrap incomplete for repo \`$match_name\` ($match_path):"
+reason="repo \`$match_name\` ($match_path) is not ready to commit:"
 for p in "${{problems[@]}}"; do
     reason+=$'\n  - '"$p"
 done
-reason+=$'\n'"Run \`homma agent regen --repo $match_name\` to fix."
+[ -n "$fix" ] && reason+=$'\n'"$fix"
 
 # Emit a structured deny so Claude Code surfaces it cleanly.
 # `jq -Rs .` JSON-encodes stdin as a quoted string; trim the outer
@@ -778,6 +820,245 @@ pub(crate) mod tests {
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "non-git command should be silent allow; got: {out}",
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // The shared-config arm.
+    //
+    // Every case below puts the repo at zero mockspace adoption, so the
+    // bootstrap arm contributes nothing and whatever the gate says comes from
+    // the config check alone. Without that isolation a pass could be the
+    // bootstrap arm firing and the config arm never running at all.
+    // -------------------------------------------------------------------
+
+    /// A PATH holding what the script shells out to, plus a `homma` behaving
+    /// as `homma_body` says.
+    ///
+    /// `None` leaves `homma` off the PATH entirely, which is the case where
+    /// the gate cannot ask at all.
+    fn a_path_with_homma(dir: &Path, homma_body: Option<&str>) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::Command;
+
+        let bin = dir.join("bin-with-homma");
+        fs::create_dir_all(&bin).unwrap();
+        // Everything the generated script shells out to, not only the pieces
+        // this case is about. A PATH missing one of them fails somewhere
+        // unrelated and quietly: without `sed` the deny payload is built and
+        // then emitted with an empty reason, which still looks like a refusal
+        // and tells the reader nothing.
+        for program in ["bash", "dirname", "cat", "jq", "sed", "grep", "awk", "git"] {
+            let found = Command::new("sh")
+                .args(["-c", &format!("command -v {program}")])
+                .output()
+                .expect("no shell");
+            let found = String::from_utf8_lossy(&found.stdout).trim().to_string();
+            assert!(!found.is_empty(), "{program} is not on PATH");
+            std::os::unix::fs::symlink(&found, bin.join(program)).unwrap();
+        }
+        if let Some(body) = homma_body {
+            let at = bin.join("homma");
+            fs::write(&at, format!("#!/usr/bin/env bash\n{body}\n")).unwrap();
+            fs::set_permissions(&at, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = bin.to_string_lossy().into_owned();
+        // That the stub is reachable, or absent, as the case intends. Assuming
+        // either is how a test ends up covering the other branch in silence.
+        let reachable = Command::new(bin.join("bash"))
+            .args(["-c", "command -v homma"])
+            .env("PATH", &path)
+            .status()
+            .unwrap()
+            .success();
+        assert_eq!(
+            reachable,
+            homma_body.is_some(),
+            "the restricted PATH does not have the homma this case wants"
+        );
+        path
+    }
+
+    /// Run the gate from inside a real-shaped workspace.
+    ///
+    /// The script goes where the generated one goes, `<ws>/.claude/hooks/`,
+    /// because it finds its workspace from its own location and a script
+    /// anywhere else resolves to the wrong one. A `homma.toml` is written
+    /// unless `with_manifest` is false, since that file is what tells the
+    /// script there is a workspace to ask about at all.
+    fn run_gate_in_a_workspace(homma_body: Option<&str>, with_manifest: bool) -> String {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("workspace");
+        let hooks = ws.join(".claude").join("hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        if with_manifest {
+            fs::write(ws.join("homma.toml"), "content_repo = \"x\"\n").unwrap();
+        }
+        // Zero adoption on purpose: no mock/, no alias, no hooksPath.
+        let repo = fake_repo(&ws, "arvo", false, AliasShape::None, false);
+
+        let script = hooks.join("gate.sh");
+        fs::write(
+            &script,
+            gate_script(&[("arvo".to_string(), "arvo".to_string())]),
+        )
+        .unwrap();
+
+        let input = input_json("git commit -m x", &repo.to_string_lossy());
+        let path = a_path_with_homma(dir.path(), homma_body);
+        let mut child = Command::new("bash")
+            .arg(&script)
+            .env("PATH", path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("bash would not start");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().expect("bash would not finish");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    #[test]
+    fn gate_allows_when_the_shared_configs_are_in_order() {
+        // `exit 0` is what `repo config check` does when nothing blocks.
+        let out = run_gate_in_a_workspace(Some("exit 0"), true);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "a repo owing nothing was refused: {out}"
+        );
+    }
+
+    #[test]
+    fn gate_denies_when_a_required_config_is_missing_and_names_the_fix() {
+        // Non-zero is what it does when something blocks, and what it printed
+        // is what the person needs to see.
+        let out = run_gate_in_a_workspace(
+            Some("echo 'arvo'; echo '  deny.toml is missing, and is required here'; exit 1"),
+            true,
+        );
+        assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
+        assert!(out.contains("deny.toml is missing"), "{out}");
+        assert!(
+            out.contains("homma repo config init --repo arvo"),
+            "the refusal did not name the command that fixes it: {out}"
+        );
+    }
+
+    #[test]
+    fn gate_denies_when_the_check_could_not_run_and_does_not_send_you_to_init() {
+        // Exit 2 is homma saying it could not run, and the commonest reason on
+        // this path is this workspace's own manifest failing to parse, which is
+        // nothing the repo being committed to can fix. It still denies, for the
+        // reason the arms around it deny. What it must not do is name `init`,
+        // which reads the same manifest through the same function and fails
+        // identically.
+        let out = run_gate_in_a_workspace(
+            Some("echo 'error: loading config from /w/homma.toml'; exit 2"),
+            true,
+        );
+        assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
+        assert!(
+            out.contains("could not be checked"),
+            "the refusal did not say the check never ran: {out}"
+        );
+        assert!(
+            out.contains("loading config from"),
+            "and did not carry what homma printed, which is the only clue: {out}"
+        );
+        assert!(
+            out.contains("homma.toml"),
+            "and did not name the manifest to read: {out}"
+        );
+        assert!(
+            !out.contains("repo config init"),
+            "it sent somebody to a command that fails on the same manifest: {out}"
+        );
+    }
+
+    #[test]
+    fn gate_denies_when_it_cannot_ask_at_all() {
+        // The same reasoning as the missing-`jq` case: a check that could not
+        // run must never be indistinguishable from one that ran and found
+        // nothing. Allowing here would mean a workspace with no homma installed
+        // silently stops enforcing anything.
+        let out = run_gate_in_a_workspace(None, true);
+        assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
+        assert!(out.contains("homma is not on PATH"), "{out}");
+    }
+
+    #[test]
+    fn gate_skips_the_config_check_where_there_is_no_workspace_to_ask_about() {
+        // No manifest means no workspace, so there is nothing to resolve the
+        // repo against. Refusing would be the gate reporting the absence of its
+        // own input as a fault in somebody's repo.
+        let out = run_gate_in_a_workspace(None, false);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "a repo was refused over the gate's own missing input: {out}"
+        );
+    }
+
+    #[test]
+    fn the_two_arms_are_reported_together_rather_than_one_hiding_the_other() {
+        // A repo can be wrong on both counts and should hear about both. The
+        // bootstrap arm needs partial adoption to fire, which is what this one
+        // builds instead of the zero-adoption tree the others use.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("workspace");
+        let hooks = ws.join(".claude").join("hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        fs::write(ws.join("homma.toml"), "content_repo = \"x\"\n").unwrap();
+        // Partial adoption: mock/ present, no alias, no hooksPath.
+        let repo = fake_repo(&ws, "arvo", true, AliasShape::None, false);
+
+        let script = hooks.join("gate.sh");
+        fs::write(
+            &script,
+            gate_script(&[("arvo".to_string(), "arvo".to_string())]),
+        )
+        .unwrap();
+        let path = a_path_with_homma(
+            dir.path(),
+            Some("echo '  deny.toml is missing, and is required here'; exit 1"),
+        );
+        let input = input_json("git commit -m x", &repo.to_string_lossy());
+        let mut child = Command::new("bash")
+            .arg(&script)
+            .env("PATH", path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("bash would not start");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().expect("bash would not finish");
+        let out = String::from_utf8_lossy(&out.stdout).into_owned();
+
+        assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
+        assert!(
+            out.contains("core.hooksPath is not set"),
+            "the bootstrap arm is missing: {out}"
+        );
+        assert!(
+            out.contains("deny.toml is missing"),
+            "the config arm is missing: {out}"
         );
     }
 }

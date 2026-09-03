@@ -25,9 +25,16 @@ fn main() -> ExitCode {
     match cmd::run(cli) {
         Ok(cmd::Outcome::Ok) => ExitCode::SUCCESS,
         Ok(cmd::Outcome::ReportedFailure) => ExitCode::FAILURE,
+        // `2`, not `FAILURE`, and the distinction is the whole contract a
+        // caller has with this binary: `1` is a command that ran and reported,
+        // `2` is one that could not run. Both were `1` while the commit gate
+        // read the code to decide what to tell somebody, so an unparseable
+        // workspace manifest arrived looking exactly like a repository owing a
+        // config, and the advice that followed was to run a command that fails
+        // on the same manifest.
         Err(e) => {
             eprintln!("error: {e:#}");
-            ExitCode::FAILURE
+            ExitCode::from(2)
         },
     }
 }

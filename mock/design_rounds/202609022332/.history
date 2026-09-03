@@ -1,0 +1,50 @@
+3d1d3cc design: lock the source changelist of 202609022332
+5c29502 fix: the sweep names what it passes over, the sibling refusal walks members
+3b0cc5e design: open the source changelist of 202609022332
+a594a36 design: lock the doc changelist of 202609022332
+5ca62c4 docs: point at CORE_RELEASE.md, and say a manifest under mock/ is unread
+f73001c design: open round 202609022332, the sweep names what it skips
+96eb4e3 chore: close design round 202609022310
+cf13015 design: lock the source changelist of 202609022310
+2da9f46 chore: rustfmt on the check, its tests and the release ordering
+06948ed fix: a bump on main wants a tag, a workspace run refuses a sibling edge
+2739da4 design: open the source changelist of 202609022310
+5b38f29 design: lock the doc changelist of 202609022310
+ea4f3f7 docs: name main.unreleased as the one check id the catalogue lacked
+b13eb29 design: open round 202609022310, bump tags, sibling order, npmrc path
+01dd76d chore: close design round 202609022254
+6b27111 design: lock the source changelist of 202609022254
+e55cf48 chore: rustfmt on publish, the release command and the smoke tests
+10ce470 fix: npmrc at an unplantable path, badges read the newest run
+685df38 design: open the source changelist of 202609022254
+0a98485 design: lock the doc changelist of 202609022254
+f4e4630 design: open round 202609022254, npmrc path, badges source, run order
+6402355 chore: close design round 202609022245
+c1935a1 chore: rustfmt on publish and run
+ff318b8 fix: redact the jsr token, hand the tree back on a failed merge
+1feb8b0 docs: the src changelist of round 202609022245
+e80e72f chore: lock doc changelist 202609022245
+7e31714 docs: open round 202609022245, jsr redaction, allow-dirty, hand-back
+e3b7822 docs: render the release design
+184c1b4 chore: close design round 202609022140, the release
+b0a74b9 docs: the src changelist matches what landed
+2472f76 chore: rustfmt on the release command
+8f59fd7 feat: `homma release` on the command line
+cf9c5d0 chore: rustfmt on the registry auth change
+65611ec feat: registries take their tokens the way forges do, from `homma.toml`
+5d73d58 chore: rustfmt on run and check
+d133c88 feat: `release::run`, the nine steps against a real repository
+07e5edc chore: rustfmt on hook, plan, publish and the forge release
+6f87030 feat: the hook, the plan, the publish, and a forge release
+f73823b chore: rustfmt on check, registry and git
+c7ef29f feat: the release check, the registry reads, and the git it needs
+fca0c21 chore: rustfmt on the four release modules
+d4f8429 feat: the status, changelog, badges and version halves of the release
+482e03d docs: the src changelist says where record.rs lives and names numbers.rs
+de2a893 chore: rustfmt on the forge status change
+004fff7 feat: `Forge::set_commit_status` posts a status on a sha, on both forges
+8d090df chore: rustfmt on the gate modules, split its tests into gate_tests.rs
+5865021 feat: the gate runs six steps on a clean checkout and reads its numbers
+d424829 chore: rustfmt on the release modules
+1afb412 feat: the shell runner, repo kind and git operations of the release
+23eb08e chore: rustfmt on the release vocabulary

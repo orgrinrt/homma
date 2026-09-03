@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 homma-core = { path = "../homma-core" }
 homma-api = { path = "../homma-api" }
+homma-store = { path = "../homma-store" }
 homma-org = { path = "../homma-org" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

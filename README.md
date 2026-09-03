@@ -38,9 +38,9 @@ into anything that has to keep running unattended just yet.
 
 | Command | What it's for |
 |---|---|
-| `homma status` | The whole workspace at a glance: every repo it found, and the forge and owner off its remote |
+| `homma status` | What state the workspace is in: every repo it found, its forge and owner, whether each one's template scaffolding and git hooks are wired, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full` |
 | `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--forge` also asks each forge whether the repo is really there |
-| `homma repo <op>` | Per-repo work against the local tree, without the `cd` |
+| `homma repo <op>` | Per-repo work against the local tree, without the `cd`. `repo config check` compares a repo against the shared tool configs and `repo config init` places the ones it is missing |
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
 | `homma migrate` | Mirror-clones a repo to another forge and pushes it, replicating description, visibility and default branch |
 | `homma archive` | Marks the source archived, deliberately as a second step rather than folded into the migration |
@@ -49,6 +49,7 @@ into anything that has to keep running unattended just yet.
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
 | `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored |
 | `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |
+| `homma release <op>` | The gate that runs on the pushing machine and posts its status, and the release that merges the trunk onto `main`, tags it, writes the changelog, publishes to the registries and rewrites the badges |
 
 `--output json` sits on the root and applies to all of them, one document per
 command, which is there mostly so you can pipe it into `jq` and stop parsing our

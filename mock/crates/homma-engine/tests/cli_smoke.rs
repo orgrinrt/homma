@@ -16,64 +16,10 @@
 //! read off the tree, so a test about a member needs one on disk; a table of
 //! names in the manifest is not a thing that parses any more.
 
-use std::path::{Path, PathBuf};
+mod support;
 
-use assert_cmd::Command;
 use predicates::prelude::*;
-
-fn bin() -> Command {
-    Command::cargo_bin("homma-engine").expect("binary built")
-}
-
-fn minimal_config_toml() -> String {
-    r#"
-[workspace]
-name = "test-ws"
-path = "."
-
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-"#
-    .to_string()
-}
-
-/// A manifest beside one clone, which is the smallest workspace that has a
-/// member at all.
-fn write_tmp_config(dir: &tempfile::TempDir) -> PathBuf {
-    let path = dir.path().join("homma.toml");
-    std::fs::write(&path, minimal_config_toml()).unwrap();
-    clone_at(
-        dir.path(),
-        "notko",
-        Some("https://github.com/orgrinrt/notko.git"),
-    );
-    path
-}
-
-/// A real repository at `root/name`, with `origin` set to `url` when one is
-/// given.
-///
-/// A real `git init` rather than a hand-made `.git` directory, because the
-/// origin is read through git and a fake would answer nothing.
-fn clone_at(root: &Path, name: &str, url: Option<&str>) {
-    let path = root.join(name);
-    std::fs::create_dir_all(&path).unwrap();
-    let run = |args: &[&str]| {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&path)
-            .args(args)
-            .output()
-            .expect("git runs");
-        assert!(out.status.success(), "git {args:?}: {out:?}");
-    };
-    run(&["init", "-q"]);
-    if let Some(url) = url {
-        run(&["remote", "add", "origin", url]);
-    }
-}
+use support::{bin, clone_at, minimal_config_toml, write_tmp_config};
 
 #[test]
 fn version_flag_prints_version() {

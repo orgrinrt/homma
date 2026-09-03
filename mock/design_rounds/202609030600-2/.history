@@ -1,0 +1,50 @@
+6d89259 docs: lock the source changelist
+f04706d test: catalogue the members a set-declaring root never builds
+bca1dbe docs: plan the red arm over the members a root drops
+06fe19b docs: lock the doc changelist
+899cbc6 docs: open the round on the members a set-declaring root drops
+0b31a88 chore: close the round
+98e4b4f chore: lock the source changelist
+66c9467 fix: refuse an empty feature set and keep a root package building alone
+6db7e3b chore: lock the doc changelist
+1e5f36b docs: refuse an empty feature set declaration
+4a84051 chore: close the round
+0f7488f chore: lock the source changelist
+0e85723 feat: a declared feature set is the whole of what the gate builds
+e66e2a4 chore: lock the doc changelist
+ad3c48b docs: a declared feature set is the whole of what the gate builds
+da84833 fix: the hook takes git's two arguments, and a worktree finds its clone
+c6ab612 fix: hook install refuses a tracked hooks dir and a hook not its own
+d9615ab fix: the release's gate, plan, sweep and hook after the first merge
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml
+9695777 fix: the launcher can reach its own engine
+f2b0c4e feat!: detect workspace members rather than declaring them
+4abf397 docs: rewrite the readme, and fix what checking it turned up
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round
+de1d474 chore: lock the src changelist
+ad13abe fix: permit the workspace being aggregated into, which was denied
+c661a1c chore: open the src changelist
+6308d25 chore: lock the doc changelist
+97eafe3 docs: open an empty doc window, the change is source-only
+6f0bcd6 topic: the aggregation pass is denied its own workspace
+3408176 Merge remote-tracking branch 'origin/dev' into fix/the-root-is-not-the-cwd
+0e53261 Merge pull request #27 from orgrinrt/chore/patch-pass-2026-08
+113b828 docs: drop workspace-internal vocabulary and point license at main
+0aac773 chore: remove github actions workflows
+93b4109 docs: describe the shipped command set and drop the unbuilt claims
