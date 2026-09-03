@@ -142,10 +142,21 @@ applicator carries that requirement. Nothing runs on the remote. The remote is
 told that something ran here, and it refuses a merge until it has been told,
 which is the whole of how a locally run gate governs a remotely merged branch.
 
-A status write that fails because the network is down does not turn the run red.
-The record is kept and the status is posted by the next run or by
-`homma release gate --post <sha>`, and until then the forge holds the merge,
-which is the correct state for a commit the forge has not heard about.
+A run made by the `pre-push` hook measures a commit the forge has not heard
+of yet, since git sends nothing until the hook returns, so its status cannot be
+posted by the hook itself. The hook leaves a poster behind instead: a detached
+process, `homma release gate --post <sha> --await`, that asks the forge for the
+commit until the forge has it and then posts the recorded status, giving up
+after ten minutes and saying so. The forge trait grows the one read that
+needs, whether a commit is known, `GET /repos/{owner}/{name}/commits/{sha}` on
+both forges. A red run refuses the push and leaves no poster, since there is
+nothing for the forge to be told about.
+
+A status write that fails because the network is down, or a poster that gave
+up, does not turn the run red. The record is kept and the status is posted by
+the next run or by `homma release gate --post <sha>`, and until then the forge
+holds the merge, which is the correct state for a commit the forge has not
+heard about.
 
 ## Hooks
 
@@ -187,9 +198,12 @@ to every command they would land on a checker that takes files as a file, and
 on a command that takes none as an error. Each entry gets one line naming it
 and how it went, and an event with no entries is a pass that says so.
 
-The gate entry gates every tip being pushed and refuses the push when the
-verdict is red. A green run writes its record and posts its status before the
-push proceeds, so a branch never reaches the remote without its status.
+The gate entry gates every tip being pushed, peeled to commits and taken once
+each, so a branch and an annotated tag on the same commit are one run, and
+refuses the push when the verdict is red. A green run writes its record before
+the push proceeds and leaves the poster behind that gives the commit its
+status once it has landed, so a branch never sits on the remote without its
+status for longer than the push takes.
 
 The install writes into git's own hooks directory, `.git/hooks` or the
 worktree's equivalent, whatever `core.hooksPath` says, because that is the one
@@ -332,6 +346,7 @@ homma release check [<repo>]              the invariants, by id, blocking ones f
 homma release gate [<repo>] [--sha <sha>] run the gate now, record it, post the status
 homma release gate --hook                 what the pre-push entry runs
 homma release gate --post <sha>           post a recorded run's status again
+homma release gate --post <sha> --await   the same, once the forge knows the commit; the hook's poster
 homma release plan [<repo>] --level <l>   the plan and nothing else
 homma release run [<repo>] --level <l>    the release, or every unreleased repo
 homma release badges <repo>               rewrite the badges branch from the newest record
