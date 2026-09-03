@@ -12,7 +12,6 @@ pub mod changelog;
 pub mod check;
 pub mod gate;
 pub mod git;
-pub mod hook;
 pub mod kind;
 pub mod numbers;
 pub mod packages;

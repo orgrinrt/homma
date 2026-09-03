@@ -78,6 +78,12 @@ pub struct Config {
     #[serde(default)]
     pub markers: homma_api::Markers,
 
+    /// `[hooks]`: one array of entries per git event, what each entrypoint
+    /// homma installs runs. The release gate on `pre-push` is present whether
+    /// or not the table is written; see `homma_api::Hooks`.
+    #[serde(default)]
+    pub hooks: homma_api::Hooks,
+
     /// `[registries.<key>]`: the package registries a release publishes to,
     /// keyed `crates-io`, `jsr` and `npm`, each with the same two credential
     /// fields a forge has. The three exist whether or not the manifest names

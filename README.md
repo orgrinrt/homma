@@ -38,7 +38,7 @@ into anything that has to keep running unattended just yet.
 
 | Command | What it's for |
 |---|---|
-| `homma status` | What state the workspace is in: every repo it found, its forge and owner, whether each one's template scaffolding and git hooks are wired, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full` |
+| `homma status` | What state the workspace is in: every repo it found, its forge and owner, whether each one's template scaffolding is in place and its `core.hooksPath` is set, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full`. Whether homma's own hook entrypoints are installed is `homma hook install`'s to report, not this one's |
 | `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--forge` also asks each forge whether the repo is really there |
 | `homma repo <op>` | Per-repo work against the local tree, without the `cd`. `repo config check` compares a repo against the shared tool configs and `repo config init` places the ones it is missing |
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
@@ -48,6 +48,7 @@ into anything that has to keep running unattended just yet.
 | `homma agent <op>` | Reports which member repos carry their own template scaffolding, and drives each one's regeneration |
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
 | `homma release <op>` | The gate that runs on the pushing machine and posts its status, and the release that merges the trunk onto `main`, tags it, writes the changelog, publishes to the registries and rewrites the badges |
+| `homma hook <op>` | The git hooks: one entrypoint per event in a repo's own hooks directory, running what `[hooks]` in `homma.toml` names for it, the release gate on `pre-push` among them. `install` writes them and says how git reaches each; `run` is what an entrypoint calls |
 
 `--output json` sits on the root and applies to all of them, one document per
 command, which is there mostly so you can pipe it into `jq` and stop parsing our
