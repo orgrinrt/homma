@@ -136,13 +136,12 @@ pub fn install(root: &Path) -> Result<Installed, HookError> {
     // a hooks directory the repo tracks is the repo's own, and a hook
     // written there would ship with it; a pre-push already there that is
     // not this tool's is somebody's work and is not overwritten
+    // a hooks path at the root itself leaves nothing after the root, and git
+    // refuses an empty pathspec, so that case is asked about as `.`
     let relative = dir.strip_prefix(root).unwrap_or(&dir).to_path_buf();
-    let tracked = sh::run(root, "git", &[
-        "ls-files",
-        "--",
-        &relative.to_string_lossy(),
-    ])
-    .map_err(GitError::from)?;
+    let spec = relative.to_string_lossy();
+    let spec = if spec.is_empty() { ".".to_string() } else { spec.into_owned() };
+    let tracked = sh::run(root, "git", &["ls-files", "--", &spec]).map_err(GitError::from)?;
     if !tracked.ok() {
         return Err(GitError::Failed {
             command: tracked.command_line(),

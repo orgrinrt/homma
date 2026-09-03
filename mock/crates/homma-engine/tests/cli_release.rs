@@ -189,6 +189,13 @@ fn each_hook_refusal_is_a_line_and_a_non_zero_exit_and_writes_nothing() {
     git_in(&x, &["commit", "-qm", "chore: hooks"]);
     install().stdout(predicate::str::contains("holds tracked files"));
     assert!(!x.join(".githooks/pre-push").exists());
+    // the repo root itself as the hooks path is the same refusal, and not an
+    // error about an empty pathspec
+    git_in(&x, &["config", "core.hooksPath", "."]);
+    install()
+        .stdout(predicate::str::contains("holds tracked files"))
+        .stderr(predicate::str::contains("pathspec").not());
+    assert!(!x.join("pre-push").exists());
     // a pre-push already there that is not homma's
     git_in(&x, &["config", "--unset", "core.hooksPath"]);
     std::fs::create_dir_all(x.join(".git/hooks")).unwrap();
