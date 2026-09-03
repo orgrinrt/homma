@@ -219,8 +219,8 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
     }
 }
 
-fn published_for(root: &Path) -> Result<check::Published> {
-    let kind = homma_core::release::kind::detect(root)?;
+fn published_for(cfg: &Config, root: &Path) -> Result<check::Published> {
+    let kind = homma_core::release::kind::detect(root, &cfg.markers)?;
     let packages = check::packages(root, kind);
     Ok(check::fetch_published(&packages)?)
 }
@@ -228,7 +228,7 @@ fn published_for(root: &Path) -> Result<check::Published> {
 fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     let (_, _, root) = resolve_repo(cfg, repo)?;
     let root = &root;
-    let published = published_for(root)?;
+    let published = published_for(cfg, root)?;
     let findings = check::check(&check::Inputs {
         root,
         remote: "origin",
@@ -236,6 +236,7 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
         release: branches_checked(cfg, root)?.1,
         level: None,
         published: &published,
+        markers: &cfg.markers,
     })?;
     let lines: Vec<String> = if findings.is_empty() {
         vec!["nothing to report".into()]
@@ -262,6 +263,7 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result
     let (_, _, root) = resolve_repo(cfg, repo)?;
     let p = plan::plan(
         &root,
+        &cfg.markers,
         branches_checked(cfg, &root)?.0,
         level,
         &clock::today(),
@@ -294,7 +296,7 @@ fn run_cmd(
         for name in &names {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
             let (trunk, _) = branches_checked(cfg, &root)?;
-            match plan::plan(&root, trunk, level, &clock::today()) {
+            match plan::plan(&root, &cfg.markers, trunk, level, &clock::today()) {
                 Ok(p) if p.commits.is_empty() => {
                     lines.push(format!("{name}: nothing unreleased, passed over"));
                 },
@@ -332,7 +334,7 @@ fn run_cmd(
         let root = &root;
         let (trunk, release_line) = branches_checked(cfg, root)?;
         let (forge, owner) = forge_for(cfg, r)?;
-        let published = published_for(root)?;
+        let published = published_for(cfg, root)?;
         let tip = homma_core::release::git::sha(root, trunk)?;
         let newest = record::newest_for(&store, name, &tip)?;
         let date = clock::today();
@@ -348,6 +350,7 @@ fn run_cmd(
             token: &token,
             served: &publish::registry_serves,
             published: &published,
+            markers: &cfg.markers,
         };
         match run::release(&setup, root, level, newest.as_ref(), dry_run) {
             Ok(Ok(done)) => {
@@ -385,7 +388,7 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     let run: GateRun = record::newest(&store, name)?.ok_or_else(|| {
         anyhow!("no gate run recorded for `{name}`; push it through the hook or run `homma release gate`")
     })?;
-    let kind = homma_core::release::kind::detect(root)?;
+    let kind = homma_core::release::kind::detect(root, &cfg.markers)?;
     let v = version::read(root, kind)?;
     let files = badges::files(&run, &v);
     let sha = badges::write(root, &files)?;

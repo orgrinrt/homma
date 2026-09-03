@@ -73,7 +73,7 @@ pub(super) fn gate_cmd(
     let mut lines = Vec::new();
     let mut ok = true;
     for tip in &tips {
-        let run = gate::run_gate_at(&Real, root, tip, name, &clock::now())?;
+        let run = gate::run_gate_at(&Real, root, &cfg.markers, tip, name, &clock::now())?;
         record::append(&store, &run).context("recording the run")?;
         lines.push(run.summary());
         match status::post(forge.as_ref(), &owner, name, &run) {

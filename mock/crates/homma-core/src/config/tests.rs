@@ -49,6 +49,29 @@ api_url = "https://codeberg.org/api/v1"
     }
 
     #[test]
+    fn markers_default_to_the_two_manifests_and_a_table_adds_rows_over_them() {
+        use homma_api::Signal;
+        let c = cfg(TWO_FORGES);
+        assert_eq!(c.markers, homma_api::Markers::default());
+        assert_eq!(c.markers.signal_of("Cargo.toml"), Some(Signal::Cargo));
+        let c = cfg(&format!(
+            "{TWO_FORGES}\n[markers]\n\"polka.toml\" = \"content\"\n\"deno.json\" = \"content\"\n"
+        ));
+        assert_eq!(c.markers.signal_of("polka.toml"), Some(Signal::Content));
+        assert_eq!(c.markers.signal_of("deno.json"), Some(Signal::Content));
+        assert_eq!(c.markers.signal_of("Cargo.toml"), Some(Signal::Cargo));
+        let err = Config::parse(&format!(
+            "{TWO_FORGES}\n[markers]\n\"x.toml\" = \"prose\"\n"
+        ))
+        .unwrap_err();
+        let text = format!(
+            "{err} {:?}",
+            std::error::Error::source(&err).map(|s| s.to_string())
+        );
+        assert!(text.contains("prose"), "{text}");
+    }
+
+    #[test]
     fn the_three_registries_exist_and_take_the_inherited_command_with_their_own_key() {
         let c = cfg(TWO_FORGES);
         for (key, host) in RegistryConfig::KNOWN {

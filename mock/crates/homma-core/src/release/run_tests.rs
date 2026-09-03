@@ -188,6 +188,7 @@ fn setup<'a>(
         token: &token,
         served: &served,
         published,
+        markers: homma_api::Markers::defaults(),
     }
 }
 
@@ -380,7 +381,14 @@ fn the_bump_refuses_off_the_trunk() {
     let runner = Fake(RefCell::new(Vec::new()));
     let forge = Recorder::default();
     let p = published();
-    let plan = plan::plan(f.root(), "dev", Level::Patch, "d").unwrap();
+    let plan = plan::plan(
+        f.root(),
+        homma_api::Markers::defaults(),
+        "dev",
+        Level::Patch,
+        "d",
+    )
+    .unwrap();
     assert!(matches!(
         step_bump(&setup(&runner, &forge, &p, "dev"), f.root(), &plan),
         Err(ReleaseError::NotOnTrunk(Some(b))) if b == "main"
@@ -394,7 +402,14 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     let runner = Fake(RefCell::new(Vec::new()));
     let forge = Recorder::default();
     let p = published();
-    let plan = plan::plan(f.root(), "dev", Level::Patch, "d").unwrap();
+    let plan = plan::plan(
+        f.root(),
+        homma_api::Markers::defaults(),
+        "dev",
+        Level::Patch,
+        "d",
+    )
+    .unwrap();
     let s = setup(&runner, &forge, &p, "dev");
     step_bump(&s, f.root(), &plan).unwrap();
     // the remote refuses the push of main, which is what a ruleset does
@@ -414,7 +429,14 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
         main_before,
         "main is back where it was before the merge"
     );
-    let again = plan::plan(f.root(), "dev", Level::Patch, "d").unwrap();
+    let again = plan::plan(
+        f.root(),
+        homma_api::Markers::defaults(),
+        "dev",
+        Level::Patch,
+        "d",
+    )
+    .unwrap();
     assert_eq!(
         again.commits.len(),
         plan.commits.len() + 1,

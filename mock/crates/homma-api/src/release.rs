@@ -63,23 +63,230 @@ impl fmt::Display for UnknownLevel {
 impl std::error::Error for UnknownLevel {}
 
 pub use crate::version::{NotAVersion, Version};
-/// What a repository is, read off its root: a `Cargo.toml` makes it a crate,
-/// a `deno.json` a deno package, and one carrying both is gated as both.
+/// What a root marker file signals about the repository carrying it: which
+/// toolchain the gate calls for it, or that there is none to call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Signal {
+    Cargo,
+    Deno,
+    Content,
+}
+
+/// The marker files a workspace recognises at a repository root, each with
+/// what it signals. `[markers]` in `homma.toml`; the two rows the binary knew
+/// before the table existed are present whether or not the manifest writes
+/// them, so a workspace declaring nothing keeps the behaviour it had, and a
+/// manifest may override either by naming the same file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Markers(std::collections::BTreeMap<String, Signal>);
+
+impl Markers {
+    pub const DEFAULT: [(&'static str, Signal); 2] =
+        [("Cargo.toml", Signal::Cargo), ("deno.json", Signal::Deno)];
+
+    /// The declared rows over the default ones.
+    pub fn new(declared: impl IntoIterator<Item = (String, Signal)>) -> Self {
+        let mut map: std::collections::BTreeMap<String, Signal> = Self::DEFAULT
+            .iter()
+            .map(|(f, s)| ((*f).to_string(), *s))
+            .collect();
+        map.extend(declared);
+        Self(map)
+    }
+
+    /// The default rows alone, as a borrow that outlives any caller, for a
+    /// setup that holds a reference and has no manifest to read one from.
+    pub fn defaults() -> &'static Markers {
+        static DEFAULTS: std::sync::LazyLock<Markers> = std::sync::LazyLock::new(Markers::default);
+        &DEFAULTS
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, Signal)> {
+        self.0.iter().map(|(f, s)| (f.as_str(), *s))
+    }
+
+    pub fn signal_of(&self, file: &str) -> Option<Signal> {
+        self.0.get(file).copied()
+    }
+}
+
+impl Default for Markers {
+    fn default() -> Self {
+        Self::new([])
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Markers {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let declared = std::collections::BTreeMap::<String, Signal>::deserialize(d)?;
+        Ok(Self::new(declared))
+    }
+}
+
+/// What a repository is: the set of signals the marker files at its root
+/// carry. `content` adds nothing to that set, so a root carrying `Cargo.toml`
+/// beside a content marker is a crate, and only a root whose markers say
+/// nothing but content is `Content`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RepoKind {
     Crate,
     Deno,
     Both,
+    Content,
 }
 
 impl RepoKind {
+    /// The kind a set of signals adds up to, `None` for the empty set.
+    pub fn from_signals(signals: impl IntoIterator<Item = Signal>) -> Option<Self> {
+        let (mut cargo, mut deno, mut content) = (false, false, false);
+        for s in signals {
+            match s {
+                Signal::Cargo => cargo = true,
+                Signal::Deno => deno = true,
+                Signal::Content => content = true,
+            }
+        }
+        match (cargo, deno, content) {
+            (true, true, _) => Some(RepoKind::Both),
+            (true, false, _) => Some(RepoKind::Crate),
+            (false, true, _) => Some(RepoKind::Deno),
+            (false, false, true) => Some(RepoKind::Content),
+            (false, false, false) => None,
+        }
+    }
+
     pub fn has_crate(self) -> bool {
         matches!(self, RepoKind::Crate | RepoKind::Both)
     }
 
     pub fn has_deno(self) -> bool {
         matches!(self, RepoKind::Deno | RepoKind::Both)
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    fn run(steps: Vec<StepOutcome>) -> GateRun {
+        GateRun {
+            repo: "x".into(),
+            sha: "0".repeat(40),
+            ran_at: "t".into(),
+            verdict: GateRun::verdict_of(&steps),
+            steps,
+        }
+    }
+
+    fn ran(step: Step, passed: bool) -> StepOutcome {
+        StepOutcome {
+            step,
+            passed,
+            skipped: false,
+            numbers: Default::default(),
+            log: String::new(),
+        }
+    }
+
+    #[test]
+    fn every_step_skipped_says_nothing_ran_and_why() {
+        let r = run(Step::ALL.iter().map(|s| StepOutcome::skipped(*s)).collect());
+        assert_eq!(r.verdict, Verdict::Green);
+        assert_eq!(
+            r.summary(),
+            "nothing to run: every step skipped, the repository's markers say only content"
+        );
+    }
+
+    #[test]
+    fn a_step_that_ran_keeps_the_summary_it_had_and_skipped_ones_stay_out() {
+        let mut steps: Vec<StepOutcome> =
+            Step::ALL.iter().map(|s| StepOutcome::skipped(*s)).collect();
+        steps[5] = ran(Step::Notices, false);
+        let r = run(steps);
+        assert_eq!(r.verdict, Verdict::Red);
+        assert_eq!(r.summary(), "notices failed");
+        let r = run(vec![
+            ran(Step::Format, true),
+            StepOutcome::skipped(Step::Deny),
+        ]);
+        assert_eq!(r.summary(), "format");
+        // the control: no steps at all is not "every step skipped"
+        assert_eq!(run(vec![]).summary(), "");
+    }
+}
+
+#[cfg(test)]
+mod kind_tests {
+    use super::*;
+
+    #[test]
+    fn the_defaults_are_always_present_and_a_declared_row_overrides_one() {
+        let m = Markers::default();
+        assert_eq!(m.signal_of("Cargo.toml"), Some(Signal::Cargo));
+        assert_eq!(m.signal_of("deno.json"), Some(Signal::Deno));
+        assert_eq!(m.signal_of("polka.toml"), None);
+        let m = Markers::new([
+            ("polka.toml".to_string(), Signal::Content),
+            ("deno.json".to_string(), Signal::Content),
+        ]);
+        assert_eq!(m.signal_of("polka.toml"), Some(Signal::Content));
+        assert_eq!(m.signal_of("deno.json"), Some(Signal::Content));
+        assert_eq!(m.signal_of("Cargo.toml"), Some(Signal::Cargo));
+        assert_eq!(m.iter().count(), 3);
+    }
+
+    #[test]
+    fn a_table_deserialises_over_the_defaults_and_refuses_a_word_outside_the_three() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Doc {
+            markers: Markers,
+        }
+        let d: Doc = toml::from_str("[markers]\n\"polka.toml\" = \"content\"\n").unwrap();
+        assert_eq!(d.markers.signal_of("polka.toml"), Some(Signal::Content));
+        assert_eq!(d.markers.signal_of("Cargo.toml"), Some(Signal::Cargo));
+        let err = toml::from_str::<Doc>("[markers]\n\"polka.toml\" = \"prose\"\n").unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("prose"), "{text}");
+        assert!(text.contains("content"), "{text}");
+        let d: Doc = toml::from_str("").unwrap_or_else(|_| {
+            Doc {
+                markers: Markers::default(),
+            }
+        });
+        assert_eq!(d.markers, Markers::default());
+    }
+
+    #[test]
+    fn signals_add_up_to_a_kind_and_content_adds_nothing() {
+        use Signal::*;
+        assert_eq!(RepoKind::from_signals([]), None);
+        assert_eq!(RepoKind::from_signals([Content]), Some(RepoKind::Content));
+        assert_eq!(
+            RepoKind::from_signals([Content, Content]),
+            Some(RepoKind::Content)
+        );
+        assert_eq!(RepoKind::from_signals([Cargo]), Some(RepoKind::Crate));
+        assert_eq!(
+            RepoKind::from_signals([Cargo, Content]),
+            Some(RepoKind::Crate)
+        );
+        assert_eq!(
+            RepoKind::from_signals([Deno, Content]),
+            Some(RepoKind::Deno)
+        );
+        assert_eq!(RepoKind::from_signals([Deno, Cargo]), Some(RepoKind::Both));
+        assert_eq!(
+            RepoKind::from_signals([Content, Cargo, Deno]),
+            Some(RepoKind::Both)
+        );
+        assert!(!RepoKind::Content.has_crate());
+        assert!(!RepoKind::Content.has_deno());
+        assert!(RepoKind::Both.has_crate() && RepoKind::Both.has_deno());
+        assert!(RepoKind::Crate.has_crate() && !RepoKind::Crate.has_deno());
+        assert!(!RepoKind::Deno.has_crate() && RepoKind::Deno.has_deno());
     }
 }
 
@@ -265,7 +472,15 @@ impl GateRun {
 
     /// The numbers, in step order, the way the status description carries
     /// them: `tests 41/41, docs 97%, deny 0`.
+    /// One line naming the steps that ran and how each went. A run in which
+    /// every step was skipped, which is what a repository whose markers say
+    /// only content produces, says so rather than saying nothing, so a green
+    /// status on such a repository never reads as a check that happened.
     pub fn summary(&self) -> String {
+        if !self.steps.is_empty() && self.steps.iter().all(|s| s.skipped) {
+            return "nothing to run: every step skipped, the repository's markers say only content"
+                .into();
+        }
         let mut parts = Vec::new();
         for step in &self.steps {
             if step.skipped {

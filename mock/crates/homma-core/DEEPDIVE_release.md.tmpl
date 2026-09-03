@@ -25,14 +25,26 @@ it is said to be that when it happens. The next release then carries it.
 
 The gate is a fixed list of steps run against one commit of one repo, on the
 machine of whoever is pushing, and it produces a verdict and a set of numbers.
-It decides what a repo is from its root: a `Cargo.toml` makes it a crate or a
-cargo workspace, a `deno.json` makes it a deno package, and a repo with both is
-gated as both. A repo that keeps its manifests under a subdirectory, `mock/` in
-this workspace, is read as having none today; the workspace-wide run names such
-a repo as passed over rather than skipping it in silence, and reading that
-shape is owed. What a step runs per kind:
+It decides what a repo is from the marker files at its root, and which files
+are markers is the workspace's to say: `[markers]` in `homma.toml` maps a file
+name to what it signals, one of `cargo`, `deno` or `content`. `Cargo.toml`
+signalling `cargo` and `deno.json` signalling `deno` are the two rows every
+workspace has without writing them; a workspace adds rows for the files its
+other repositories carry, `polka.toml` or `mockspace.toml` say, and a signal
+outside those three words is refused when the manifest loads, naming the row.
+A repo's kind is the set of signals its root carries: `cargo` adds the cargo
+calls to a step, `deno` the deno calls, and `content` adds nothing, so a
+repository whose markers say only `content` runs a gate of skipped steps, bar
+notices, and passes. A root carrying no declared marker at all is an error,
+since that is a repository homma has not been told about, which is a different
+thing from one it has been told holds only content. A repo that keeps its
+manifests under a subdirectory, `mock/` in this workspace, is read as whatever
+its root markers say, `content` where that is all `mockspace.toml` is declared
+to mean; the workspace-wide run names such a repo as passed over rather than
+skipping it in silence, and reading the manifest under `mock/` for its real
+kind is owed. What a step runs per signal:
 
-| step | crate | deno package | blocks |
+| step | `cargo` | `deno` | blocks |
 |---|---|---|---|
 | format | `cargo fmt --check` | `deno fmt --check` | yes |
 | lint | `cargo clippy --all-targets -- -D warnings`, with all features, or once per declared feature set | `deno lint` then `deno check` on every export | yes |
@@ -45,7 +57,12 @@ A step that blocks turns the verdict red on failure. A step that reports puts it
 number in the record and the verdict stands. The numbers a run produces are the
 test count and how many passed, the documented fraction, the deny advisory count
 where it ran, and the wall time of the whole gate; anything a step prints is kept
-in the record as its log rather than summarised.
+in the record as its log rather than summarised. The run's one-line summary,
+which is also the description on the commit status, names the steps that ran
+and how each went; a run in which every step was skipped, which is what a
+repository whose markers say only content produces, summarises as nothing to
+run and says why, so a green status on such a repository never reads as a
+check that happened.
 
 A crate declares the feature combinations it builds under as
 `[package.metadata.homma] feature_sets = [["a"], ["a", "b"]]` in its manifest,
