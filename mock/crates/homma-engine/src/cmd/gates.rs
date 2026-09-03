@@ -298,11 +298,20 @@ elif ! command -v homma >/dev/null 2>&1; then
 else
     config_out=$(homma --dir "$WS" repo config check --repo "$match_name" 2>&1)
     config_rc=$?
-    if [ "$config_rc" -ne 0 ]; then
+    # `1` is the check having run and found the repo owing something, which is
+    # what the advice below is for. Anything else non-zero is the check not
+    # having run at all, and the commonest one is this workspace's own manifest
+    # failing to parse. Sending somebody to `init` for that is sending them to a
+    # command that reads the same manifest and fails the same way, so the two
+    # cases say different things.
+    if [ "$config_rc" -eq 1 ]; then
         while IFS= read -r line; do
             [ -n "$line" ] && problems+=("$line")
         done <<<"$config_out"
         fix="Run \`homma repo config init --repo $match_name\` to place what is missing."
+    elif [ "$config_rc" -ne 0 ]; then
+        problems+=("the shared tool configs could not be checked: $config_out")
+        fix="Read \`$WS/homma.toml\`; homma could not run against it, so this says nothing about repo \`$match_name\`."
     fi
 fi
 
@@ -941,6 +950,37 @@ pub(crate) mod tests {
         assert!(
             out.contains("homma repo config init --repo arvo"),
             "the refusal did not name the command that fixes it: {out}"
+        );
+    }
+
+    #[test]
+    fn gate_denies_when_the_check_could_not_run_and_does_not_send_you_to_init() {
+        // Exit 2 is homma saying it could not run, and the commonest reason on
+        // this path is this workspace's own manifest failing to parse, which is
+        // nothing the repo being committed to can fix. It still denies, for the
+        // reason the arms around it deny. What it must not do is name `init`,
+        // which reads the same manifest through the same function and fails
+        // identically.
+        let out = run_gate_in_a_workspace(
+            Some("echo 'error: loading config from /w/homma.toml'; exit 2"),
+            true,
+        );
+        assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
+        assert!(
+            out.contains("could not be checked"),
+            "the refusal did not say the check never ran: {out}"
+        );
+        assert!(
+            out.contains("loading config from"),
+            "and did not carry what homma printed, which is the only clue: {out}"
+        );
+        assert!(
+            out.contains("homma.toml"),
+            "and did not name the manifest to read: {out}"
+        );
+        assert!(
+            !out.contains("repo config init"),
+            "it sent somebody to a command that fails on the same manifest: {out}"
         );
     }
 
