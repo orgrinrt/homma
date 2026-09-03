@@ -136,16 +136,20 @@ it in the order written.
 
 `homma hook run <event> [args...]` captures stdin once, works out what the
 event touches, then runs the entries whose globs match, in order, through the
-shell with git's arguments appended and stdin replayed, and stops at the first
-non-zero exit, which is its own. What an event touches: the staged paths for
-`pre-commit` and `commit-msg`; for `pre-push`, the union over every pushed
-ref of what its local tip adds over its remote, widened to everything the tip
-carries where the remote is a new branch or a commit this clone does not have.
-An entry without `paths` runs on every invocation. An entry with `paths` runs
-when at least one touched path matches one of its globs, and `{paths}` in its
-`run` expands to those matching paths, quoted, so a checker that takes files
-is handed exactly the files that made it run. Each entry gets one line naming
-it and how it went, and an event with no entries is a pass that says so.
+shell with stdin replayed to each, and stops at the first non-zero exit, which
+is its own. What an event touches: the staged paths for `pre-commit` and
+`commit-msg`; for `pre-push`, the union over every pushed ref of what its
+local tip adds over its remote, widened to everything the tip carries where
+the remote is a new branch or a commit this clone does not have. An entry
+without `paths` runs on every invocation. An entry with `paths` runs when at
+least one touched path matches one of its globs, and `{paths}` in its `run`
+expands to those matching paths, quoted, so a checker that takes files is
+handed exactly the files that made it run. What git handed the hook after its
+own name, the message file on `commit-msg`, the remote's name and url on
+`pre-push`, reaches an entry through `{args}` and only through it: appended
+to every command they would land on a checker that takes files as a file, and
+on a command that takes none as an error. Each entry gets one line naming it
+and how it went, and an event with no entries is a pass that says so.
 
 The gate entry gates every tip being pushed and refuses the push when the
 verdict is red. A green run writes its record and posts its status before the
@@ -158,13 +162,14 @@ and mockspace's durable gate runs the repository's own hook there after its
 own checks, with the same arguments and stdin, where the path is mockspace's.
 The install says which of those holds, and where the path is some other
 tool's it says git will not reach the entrypoint until that tool chains to
-it, as a line and a non-zero exit. It refuses two things, reported the same
-way so a sweep across a workspace goes on to the next repo: a hooks directory
-holding files the repo tracks, since a hook written there would ship with the
-repo and ask homma of everyone who clones it; and a hook already there for
-that event that is not homma's, whatever it holds and whether or not it can be
-read, since it is somebody's work. homma's own entrypoints are rewritten in
-place.
+it, as a line and a non-zero exit. It refuses one thing, reported the same
+way so a sweep across a workspace goes on to the next repo: a hook already
+there for that event that is not homma's, whatever it holds and whether or not
+it can be read, since it is somebody's work. Nothing is written where anything
+refuses, and homma's own entrypoints are rewritten in place. A hooks directory
+the repository tracks was a refusal while the install wrote wherever
+`core.hooksPath` pointed; git's own directory is nothing a repository can
+track, so it is not one now.
 
 ## The check
 
