@@ -188,7 +188,7 @@ pub fn run_step(
     // the one step that runs no program: a read of the manifest and the
     // readme, compared in this process
     if step == Step::Description {
-        return Ok(tagline::check(root, repo_kind));
+        return Ok(tagline::check(root));
     }
     let calls = calls_for(root, repo_kind, step)?;
     if calls.is_empty() {
