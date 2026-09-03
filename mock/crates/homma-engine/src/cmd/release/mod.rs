@@ -410,6 +410,8 @@ fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
                 lines: vec![e.to_string()],
             })
         },
-        Err(e) => Err(e.into()),
+        // named, so a refusal added later has no arm here and does not
+        // compile, rather than aborting a sweep as an error
+        Err(e @ (hook::HookError::Git(_) | hook::HookError::Io(_))) => Err(e.into()),
     }
 }
