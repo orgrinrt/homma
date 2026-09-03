@@ -57,7 +57,12 @@ A step that blocks turns the verdict red on failure. A step that reports puts it
 number in the record and the verdict stands. The numbers a run produces are the
 test count and how many passed, the documented fraction, the deny advisory count
 where it ran, and the wall time of the whole gate; anything a step prints is kept
-in the record as its log rather than summarised.
+in the record as its log rather than summarised. The run's one-line summary,
+which is also the description on the commit status, names the steps that ran
+and how each went; a run in which every step was skipped, which is what a
+repository whose markers say only content produces, summarises as nothing to
+run and says why, so a green status on such a repository never reads as a
+check that happened.
 
 A crate declares the feature combinations it builds under as
 `[package.metadata.homma] feature_sets = [["a"], ["a", "b"]]` in its manifest,
