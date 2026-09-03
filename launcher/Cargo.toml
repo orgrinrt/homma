@@ -6,7 +6,7 @@ edition = "2024"
 # (`homma-engine`) stays private: this launcher git-installs whatever engine the
 # workspace pins, so it needs no version relationship to it.
 publish = true
-description = "Launcher for the homma workspace harness: resolves the engine a workspace pins, builds it once per version into a shared cache, and runs it from any working directory."
+description = "One command for a directory of repositories that belong together. Speaks git and the forge apis itself, no shelling out to a provider cli."
 # The repository's own, since this crate is the whole of what an operator
 # installs. Cargo ships whatever `readme` names whether or not `include`
 # mentions it, which is the only way to reach a file above the package.
