@@ -229,6 +229,20 @@ pub fn merge_no_ff(cwd: &Path, from: &str, message: &str) -> Result<String, GitE
     head(cwd)
 }
 
+/// A detached worktree of `sha` at `path`, for measuring a commit that is
+/// not the checkout's head without moving the checkout.
+pub fn worktree_add_detached(cwd: &Path, path: &Path, sha: &str) -> Result<(), GitError> {
+    let p = path.to_string_lossy();
+    git(cwd, &["worktree", "add", "--quiet", "--detach", &p, sha]).map(|_| ())
+}
+
+/// Remove a worktree this tool added, and prune the registration.
+pub fn worktree_remove(cwd: &Path, path: &Path) -> Result<(), GitError> {
+    let p = path.to_string_lossy();
+    git(cwd, &["worktree", "remove", "--force", &p])?;
+    git(cwd, &["worktree", "prune"]).map(|_| ())
+}
+
 /// Move the checked-out branch back to `rev`, discarding what sits past it.
 /// Only ever run on a branch this tool moved itself, to undo that move.
 pub fn reset_hard(cwd: &Path, rev: &str) -> Result<(), GitError> {

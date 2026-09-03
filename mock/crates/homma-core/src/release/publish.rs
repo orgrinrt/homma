@@ -20,6 +20,8 @@ use homma_api::Version;
 use super::gate::Runner;
 use super::registry::{self, Registry};
 
+/// Why a publish did not happen or did not finish, with the registry's own
+/// words where it refused.
 #[derive(Debug)]
 pub enum PublishError {
     /// The tool ran and refused; the command line and its log.

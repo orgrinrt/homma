@@ -42,6 +42,27 @@ fn a_prerelease_is_dropped_by_any_bump_and_sorts_before_its_release() {
     assert_eq!(pre.bumped(Level::Minor), Version::new(1, 3, 0));
     assert_eq!(pre.bumped(Level::Major), Version::new(2, 0, 0));
     assert!(pre < Version::new(1, 2, 0));
+    // and prereleases among themselves compare the semver way, not as text:
+    // numerically per identifier, numeric below alphanumeric, prefix below
+    let v = |s: &str| s.parse::<Version>().unwrap();
+    assert!(v("1.0.0-rc.9") < v("1.0.0-rc.10"), "numeric identifiers");
+    assert!(
+        v("1.0.0-alpha") < v("1.0.0-alpha.1"),
+        "a prefix sorts below"
+    );
+    assert!(
+        v("1.0.0-1") < v("1.0.0-alpha"),
+        "numeric below alphanumeric"
+    );
+    assert!(
+        v("1.0.0-alpha.beta") < v("1.0.0-beta"),
+        "alphanumeric lexically"
+    );
+    assert_eq!(
+        [v("1.0.0-rc.9"), v("1.0.0-rc.10")].iter().max(),
+        Some(&v("1.0.0-rc.10")),
+        "the highest published one is the later candidate"
+    );
     assert!(Version::new(1, 1, 9) < pre);
 }
 

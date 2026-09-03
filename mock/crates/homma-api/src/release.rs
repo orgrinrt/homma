@@ -118,9 +118,36 @@ impl Ord for Version {
                     (None, None) => std::cmp::Ordering::Equal,
                     (Some(_), None) => std::cmp::Ordering::Less,
                     (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (Some(a), Some(b)) => a.cmp(b),
+                    (Some(a), Some(b)) => prerelease_cmp(a, b),
                 }
             })
+    }
+}
+
+/// Prerelease identifiers the semver way: dot-separated, a numeric one
+/// compared as a number and sorting below an alphanumeric one, and a list
+/// sorting below any longer list it is a prefix of.
+fn prerelease_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let mut left = a.split('.');
+    let mut right = b.split('.');
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => {
+                let ord = match (x.parse::<u64>(), y.parse::<u64>()) {
+                    (Ok(m), Ok(n)) => m.cmp(&n),
+                    (Ok(_), Err(_)) => Ordering::Less,
+                    (Err(_), Ok(_)) => Ordering::Greater,
+                    (Err(_), Err(_)) => x.cmp(y),
+                };
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            },
+        }
     }
 }
 

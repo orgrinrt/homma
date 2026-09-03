@@ -85,6 +85,37 @@ impl From<sh::Spawn> for GateError {
     }
 }
 
+/// The gate on `sha`, which need not be the checkout's head: the head runs
+/// in place, any other commit in a detached worktree made beside the
+/// system's scratch for the run and removed after, so a push of a branch
+/// that is not checked out is gated the same as one that is.
+pub fn run_gate_at(
+    runner: &dyn Runner,
+    root: &Path,
+    sha: &str,
+    repo: &str,
+    ran_at: &str,
+) -> Result<GateRun, GateError> {
+    if git::head(root)? == sha {
+        return run_gate(runner, root, repo, ran_at);
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "homma-gate-{}-{}-{}",
+        std::process::id(),
+        &sha[.. 7.min(sha.len())],
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    git::worktree_add_detached(root, &dir, sha)?;
+    let run = run_gate(runner, &dir, repo, ran_at);
+    let removed = git::worktree_remove(root, &dir);
+    let run = run?;
+    removed?;
+    Ok(run)
+}
+
 /// Run the whole gate on `root`, recording it as `repo` at `ran_at`. Refuses
 /// a dirty tree before running anything.
 pub fn run_gate(
@@ -305,19 +336,35 @@ fn calls_for(
 /// `[package.metadata.homma] feature_sets` off the root manifest, or off
 /// the first workspace member that declares one; empty where none does.
 pub fn feature_sets(root: &Path) -> Result<Vec<Vec<String>>, GateError> {
-    let text = std::fs::read_to_string(root.join("Cargo.toml"))
-        .map_err(|e| GateError::Manifest(format!("Cargo.toml: {e}")))?;
-    let doc: toml::Value =
-        toml::from_str(&text).map_err(|e| GateError::Manifest(format!("Cargo.toml: {e}")))?;
-    let sets = doc
-        .get("package")
-        .and_then(|p| p.get("metadata"))
-        .and_then(|m| m.get("homma"))
-        .and_then(|h| h.get("feature_sets"))
-        .and_then(|s| s.as_array());
+    // the root first, then each member the publish walks, so a virtual
+    // manifest whose member declares the sets is read the way a package
+    // root is; the first manifest declaring any wins
+    let mut dirs = vec![root.to_path_buf()];
+    dirs.extend(super::publish::crate_dirs(root).into_values());
+    let mut sets = None;
+    for dir in dirs {
+        let text = std::fs::read_to_string(dir.join("Cargo.toml")).map_err(|e| {
+            GateError::Manifest(format!("{}: {e}", dir.join("Cargo.toml").display()))
+        })?;
+        let doc: toml::Value = toml::from_str(&text).map_err(|e| {
+            GateError::Manifest(format!("{}: {e}", dir.join("Cargo.toml").display()))
+        })?;
+        let declared = doc
+            .get("package")
+            .and_then(|p| p.get("metadata"))
+            .and_then(|m| m.get("homma"))
+            .and_then(|h| h.get("feature_sets"))
+            .and_then(|s| s.as_array())
+            .cloned();
+        if declared.is_some() {
+            sets = declared;
+            break;
+        }
+    }
     let Some(sets) = sets else {
         return Ok(Vec::new());
     };
+    let sets = &sets;
     let mut out = Vec::new();
     for set in sets {
         let Some(items) = set.as_array() else {

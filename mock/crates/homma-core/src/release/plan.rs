@@ -16,6 +16,8 @@ use super::git::{self, GitError, Subject};
 use super::registry::Registry;
 use super::{changelog, kind, publish, version};
 
+/// What one release will do, printed before anything moves and carried
+/// through the steps that then do it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub repo_kind: RepoKind,
@@ -65,6 +67,8 @@ impl fmt::Display for Plan {
     }
 }
 
+/// Why a plan could not be made: the tree, the manifest, the version, the
+/// crate graph, or a manifest that disagrees with the level.
 #[derive(Debug)]
 pub enum PlanError {
     Git(GitError),

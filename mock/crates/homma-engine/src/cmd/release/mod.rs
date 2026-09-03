@@ -265,49 +265,82 @@ fn gate_cmd(
         });
     }
     let head = homma_core::release::git::head(root)?;
-    if hook && !pushing_head(&head)? {
-        return finish(cli, Report {
-            ok:    true,
-            lines: vec![format!(
-                "{} is not among the refs being pushed; nothing to gate",
-                &head[.. 7]
-            )],
-        });
-    }
-    if let Some(want) = sha {
-        if !head.starts_with(want) {
-            return Err(anyhow!(
-                "the checkout is at {head}, not {want}; the gate measures the tree it is given"
-            ));
+    // the hook gates every tip being pushed, the head in place and any other
+    // in a worktree of its own; a plain run gates the checkout
+    let tips: Vec<String> = if hook {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
+        let tips = pushed_tips(&text);
+        if tips.is_empty() {
+            return finish(cli, Report {
+                ok:    true,
+                lines: vec!["no ref is being pushed; nothing to gate".into()],
+            });
         }
-    }
-    let run = gate::run_gate(&Real, root, name, &clock::now())?;
-    record::append(&store, &run).context("recording the run")?;
-    let mut lines = vec![run.summary()];
-    match status::post(forge.as_ref(), &owner, name, &run) {
-        Ok(()) => lines.push(format!("posted {} on {}", status::CONTEXT, &run.sha[.. 7])),
-        Err(e) => {
-            lines.push(format!(
-                "the status was not posted ({e}); the record is kept and `homma release gate --post {}` posts it",
-                &run.sha[.. 7]
-            ))
-        },
+        tips
+    } else {
+        if let Some(want) = sha {
+            if !head.starts_with(want) {
+                return Err(anyhow!(
+                    "the checkout is at {head}, not {want}; the gate measures the tree it is given"
+                ));
+            }
+        }
+        vec![head]
+    };
+    let mut lines = Vec::new();
+    let mut ok = true;
+    for tip in &tips {
+        let run = gate::run_gate_at(&Real, root, tip, name, &clock::now())?;
+        record::append(&store, &run).context("recording the run")?;
+        lines.push(run.summary());
+        match status::post(forge.as_ref(), &owner, name, &run) {
+            Ok(()) => lines.push(format!("posted {} on {}", status::CONTEXT, &run.sha[.. 7])),
+            Err(e) => {
+                lines.push(format!(
+                    "the status was not posted ({e}); the record is kept and `homma release gate --post {}` posts it",
+                    &run.sha[.. 7]
+                ))
+            },
+        }
+        ok &= run.verdict == Verdict::Green;
     }
     finish(cli, Report {
-        ok: run.verdict == Verdict::Green,
+        ok,
         lines,
     })
 }
 
-/// Whether the tip is among the refs a pre-push hook is handed on stdin,
-/// one `<local ref> <local sha> <remote ref> <remote sha>` per line.
-fn pushing_head(head: &str) -> Result<bool> {
-    let mut text = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)?;
-    Ok(text
-        .lines()
-        .filter_map(|l| l.split_whitespace().nth(1))
-        .any(|s| s == head))
+/// The distinct local shas a pre-push hook is handed on stdin, one
+/// `<local ref> <local sha> <remote ref> <remote sha>` per line, skipping a
+/// deletion, whose local sha is all zeros.
+fn pushed_tips(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for sha in text.lines().filter_map(|l| l.split_whitespace().nth(1)) {
+        if sha.chars().all(|c| c == '0') || out.iter().any(|s| s == sha) {
+            continue;
+        }
+        out.push(sha.to_string());
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pushed_tips;
+
+    #[test]
+    fn the_tips_are_the_distinct_local_shas_and_a_deletion_is_not_one() {
+        let text = "refs/heads/dev aaa1 refs/heads/dev bbb1\n\
+                    refs/heads/topic ccc1 refs/heads/topic 0000\n\
+                    refs/heads/again aaa1 refs/heads/again bbb1\n\
+                    refs/heads/gone 0000000000000000000000000000000000000000 refs/heads/gone ddd1\n";
+        assert_eq!(pushed_tips(text), vec![
+            "aaa1".to_string(),
+            "ccc1".to_string()
+        ]);
+        assert!(pushed_tips("").is_empty());
+    }
 }
 
 fn plan_cmd(cli: &Cli, cfg: &Config, repo: &str, level: Level) -> Result<Outcome> {
