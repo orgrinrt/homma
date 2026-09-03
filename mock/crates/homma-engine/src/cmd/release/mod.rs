@@ -398,7 +398,13 @@ fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
                 lines: vec![format!("wrote {}", i.path.display())],
             })
         },
-        Err(e @ hook::HookError::HooksPathOutside(_)) => {
+        // a refusal is reported, a line and a non-zero exit, so a sweep
+        // across the workspace goes on to the next repo
+        Err(
+            e @ (hook::HookError::HooksPathOutside(_)
+            | hook::HookError::HooksPathTracked(_)
+            | hook::HookError::HookExists(_)),
+        ) => {
             finish(cli, Report {
                 ok:    false,
                 lines: vec![e.to_string()],

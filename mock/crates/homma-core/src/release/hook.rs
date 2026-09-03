@@ -270,6 +270,29 @@ mod tests {
     }
 
     #[test]
+    fn an_untracked_hooks_dir_in_a_repo_with_tracked_files_still_takes_the_hook() {
+        // the negative control on the tracked check: a repo with commits
+        // whose hooks directory is not among them is a repo to install in
+        let d = repo();
+        std::fs::write(d.path().join("README.md"), "x\n").unwrap();
+        for args in [
+            vec!["-c", "user.name=t", "-c", "user.email=t@t", "add", "README.md"],
+            vec!["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"],
+            vec!["config", "core.hooksPath", ".githooks"],
+        ] {
+            let out = sh::run(d.path(), "git", &args).unwrap();
+            assert!(out.ok(), "{}", out.log());
+        }
+        let i = install(d.path()).unwrap();
+        assert!(
+            i.path.ends_with(".githooks/pre-push"),
+            "{}",
+            i.path.display()
+        );
+        assert!(is_installed(d.path()).unwrap());
+    }
+
+    #[test]
     fn a_hook_that_does_not_read_as_text_or_cannot_be_read_is_still_refused() {
         // a compiled hook: bytes that are not text
         let d = repo();
