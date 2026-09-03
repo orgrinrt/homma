@@ -268,6 +268,7 @@ fn calls_for(
                 let declared = feature_sets(root)?;
                 calls.extend(cargo_runs(
                     &declared,
+                    virtual_root(root)?,
                     &["clippy", "--all-targets"],
                     &["--", "-D", "warnings"],
                     false,
@@ -285,7 +286,13 @@ fn calls_for(
         Step::Tests => {
             if crate_ {
                 let declared = feature_sets(root)?;
-                calls.extend(cargo_runs(&declared, &["test"], &[], true));
+                calls.extend(cargo_runs(
+                    &declared,
+                    virtual_root(root)?,
+                    &["test"],
+                    &[],
+                    true,
+                ));
             }
             if deno {
                 if deno_has_task(root, "test")? {
@@ -304,9 +311,15 @@ fn calls_for(
             if crate_ {
                 let declared = feature_sets(root)?;
                 calls.extend(
-                    cargo_runs(&declared, &["doc", "--no-deps"], &[], false)
-                        .into_iter()
-                        .map(|c| c.with_env("RUSTDOCFLAGS", "-Z unstable-options --show-coverage")),
+                    cargo_runs(
+                        &declared,
+                        virtual_root(root)?,
+                        &["doc", "--no-deps"],
+                        &[],
+                        false,
+                    )
+                    .into_iter()
+                    .map(|c| c.with_env("RUSTDOCFLAGS", "-Z unstable-options --show-coverage")),
                 );
             }
             if deno {
@@ -328,11 +341,13 @@ fn calls_for(
 /// A root package declaring sets is built once per set and never with all
 /// features, since a crate whose features exclude each other has said which
 /// builds are legal. A root declaring none is built with all features, and
-/// with none too where `with_none` asks for it; those workspace-wide runs
-/// exclude every member that declares sets. A member's sets run against that
-/// member alone, `-p`.
+/// with none too where `with_none` asks for it; on a virtual root those runs
+/// are workspace-wide and exclude every member that declares sets, while a
+/// root that is itself a package builds alone as it always did. A member's
+/// sets run against that member alone, `-p`.
 fn cargo_runs(
     declared: &FeatureSets,
+    virtual_root: bool,
     head: &[&str],
     tail: &[&str],
     with_none: bool,
@@ -359,7 +374,7 @@ fn cargo_runs(
         },
         None => {
             let mut excludes: Vec<String> = Vec::new();
-            if !members.is_empty() {
+            if virtual_root && !members.is_empty() {
                 excludes.push("--workspace".into());
                 for m in &members {
                     excludes.push("--exclude".into());
@@ -414,6 +429,12 @@ pub fn feature_sets(root: &Path) -> Result<FeatureSets, GateError> {
     Ok(found)
 }
 
+/// Whether the root manifest is a virtual workspace, one with no `[package]`
+/// of its own, where a bare cargo run is already workspace-wide.
+fn virtual_root(root: &Path) -> Result<bool, GateError> {
+    Ok(manifest(&root.join("Cargo.toml"))?.get("package").is_none())
+}
+
 fn manifest(path: &Path) -> Result<toml::Value, GateError> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| GateError::Manifest(format!("{}: {e}", path.display())))?;
@@ -429,6 +450,13 @@ fn declared(doc: &toml::Value) -> Option<&Vec<toml::Value>> {
 }
 
 fn parse_sets(sets: &[toml::Value]) -> Result<Vec<Vec<String>>, GateError> {
+    // an empty declaration would gate nothing and pass, so it is refused
+    // rather than read as a crate with no builds
+    if sets.is_empty() {
+        return Err(GateError::Manifest(
+            "feature_sets: an empty list declares no build; drop the key or name a set".into(),
+        ));
+    }
     let mut out = Vec::new();
     for set in sets {
         let Some(items) = set.as_array() else {

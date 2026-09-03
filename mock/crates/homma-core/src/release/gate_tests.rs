@@ -241,16 +241,95 @@ fn a_root_declaring_sets_is_linted_and_documented_per_set_and_never_with_all() {
         "cargo doc --no-deps --no-default-features --features u8",
         "cargo doc --no-deps --no-default-features --features u16,strict",
     ]);
-    // and across every step, two features the crate declared apart are never
-    // enabled together, which is what `--all-features` would have done
-    for step in [Step::Lint, Step::Tests, Step::Docs] {
-        fake.seen.borrow_mut().clear();
-        run_step(&fake, d.path(), RepoKind::Crate, step).unwrap();
-        for line in fake.seen.borrow().iter() {
-            assert!(!line.contains("--all-features"), "{line}");
-            assert!(!(line.contains("u8") && line.contains("u16")), "{line}");
-        }
+    // and on the tests step too, two features the crate declared apart are
+    // never enabled together, which is what `--all-features` would have done
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    assert!(!fake.seen.borrow().is_empty());
+    for line in fake.seen.borrow().iter() {
+        assert!(!line.contains("--all-features"), "{line}");
+        assert!(!(line.contains("u8") && line.contains("u16")), "{line}");
     }
+}
+
+#[test]
+fn an_empty_declaration_is_a_manifest_error_and_no_step_runs() {
+    let d = crate_root(
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = []\n",
+    );
+    assert!(matches!(
+        feature_sets(d.path()),
+        Err(GateError::Manifest(_))
+    ));
+    let fake = Fake::new(vec![]);
+    for step in [Step::Lint, Step::Tests, Step::Docs] {
+        assert!(matches!(
+            run_step(&fake, d.path(), RepoKind::Crate, step),
+            Err(GateError::Manifest(_))
+        ));
+    }
+    assert!(fake.seen.borrow().is_empty(), "nothing ran, nothing passed");
+    // the control: one named set is read, and the same steps run
+    let d = crate_root(
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
+    );
+    assert!(feature_sets(d.path()).is_ok());
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    assert_eq!(fake.seen.borrow().len(), 1);
+}
+
+#[test]
+fn a_member_with_an_empty_declaration_is_refused_rather_than_excluded() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = []\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        feature_sets(d.path()),
+        Err(GateError::Manifest(_))
+    ));
+    let fake = Fake::new(vec![]);
+    assert!(run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).is_err());
+    assert!(fake.seen.borrow().is_empty());
+}
+
+#[test]
+fn a_root_package_keeps_its_bare_runs_beside_a_declaring_member() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"outer\"\nversion = \"0.1.0\"\n[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    // no `--workspace`, so the root builds alone as before; the member's set
+    // runs against the member
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo test --all-features",
+        "cargo test --no-default-features",
+        "cargo test -p inner --no-default-features --features a",
+    ]);
+    fake.seen.borrow_mut().clear();
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Lint).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo clippy --all-targets --all-features -- -D warnings",
+        "cargo clippy --all-targets -p inner --no-default-features --features a -- -D warnings",
+    ]);
 }
 
 #[test]
