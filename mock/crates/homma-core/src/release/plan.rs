@@ -16,6 +16,8 @@ use super::git::{self, GitError, Subject};
 use super::registry::Registry;
 use super::{changelog, kind, publish, version};
 
+/// What one release will do, printed before anything moves and carried
+/// through the steps that then do it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub repo_kind: RepoKind,
@@ -65,6 +67,8 @@ impl fmt::Display for Plan {
     }
 }
 
+/// Why a plan could not be made: the tree, the manifest, the version, the
+/// crate graph, or a manifest that disagrees with the level.
 #[derive(Debug)]
 pub enum PlanError {
     Git(GitError),
@@ -72,6 +76,19 @@ pub enum PlanError {
     Version(version::VersionError),
     /// The publishable crates depend on each other in a cycle.
     Cycle(String),
+    /// The manifest sits at a version that is neither the last tag's nor what
+    /// the level makes of it. Boxed, since three versions inline would make
+    /// every result carrying this error larger than the gate's clippy allows.
+    OffLevel(Box<OffLevel>),
+}
+
+/// What a manifest off the level was measured against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffLevel {
+    pub manifest: Version,
+    pub last:     Version,
+    pub level:    Level,
+    pub next:     Version,
 }
 
 impl fmt::Display for PlanError {
@@ -81,6 +98,29 @@ impl fmt::Display for PlanError {
             PlanError::NoManifest(e) => write!(f, "{e}"),
             PlanError::Version(e) => write!(f, "{e}"),
             PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
+            PlanError::OffLevel(o) => {
+                let OffLevel {
+                    manifest,
+                    last,
+                    level,
+                    next,
+                } = &**o;
+                // below the tag no level makes the manifest's version, so the
+                // only offer is the tag's or the level's
+                if manifest < last {
+                    write!(
+                        f,
+                        "the manifest is at {manifest}, behind the last tag {last}; set it to \
+                         {last} or to {next}, which a {level} release makes"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "the manifest is at {manifest} and a {level} release makes {next}; set it \
+                         to {next} or pick the level that makes {manifest}"
+                    )
+                }
+            },
         }
     }
 }
@@ -118,11 +158,24 @@ pub fn plan(root: &Path, head: &str, level: Level, date: &str) -> Result<Plan, P
         Some((t, _)) => git::subjects(root, t, head)?,
         None => git::subjects_to(root, head)?,
     };
-    // the working version may already sit one step up, in which case that is
-    // the release and nothing bumps
+    // the level makes the version out of the last tag's; a manifest already
+    // there is the release and nothing bumps, and a manifest anywhere else
+    // above the tag disagrees with the level and is refused rather than
+    // silently taken over it
     let next = match &last {
-        Some((_, v)) if &current > v => current.clone(),
-        _ => current.bumped(level),
+        Some((_, v)) => {
+            let next = v.bumped(level);
+            if current != *v && current != next {
+                return Err(PlanError::OffLevel(Box::new(OffLevel {
+                    manifest: current,
+                    last: v.clone(),
+                    level,
+                    next,
+                })));
+            }
+            next
+        },
+        None => current.bumped(level),
     };
     let tags = git::tags(root)?;
     let tag = check::tag_name(&tags, &next);
@@ -231,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_already_bumped_is_the_release_and_a_major_on_zero_is_a_minor() {
+    fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
         let d = repo("0.1.0");
         assert!(
             sh::run(d.path(), "git", &["tag", "-a", "v0.1.0", "-m", "v0.1.0"])
@@ -253,11 +306,45 @@ mod tests {
             .unwrap()
             .ok()
         );
-        let p = plan(d.path(), "HEAD", Level::Major, "d").unwrap();
+        // 0.1.1 is what a patch makes of v0.1.0, and not what a major makes
+        let err = plan(d.path(), "HEAD", Level::Major, "d").unwrap_err();
+        assert!(
+            matches!(&err, PlanError::OffLevel(o)
+                if o.manifest == Version::new(0, 1, 1) && o.next == Version::new(0, 2, 0)),
+            "{err}"
+        );
+        assert!(err.to_string().contains("0.1.1"));
+        assert!(err.to_string().contains("0.2.0"));
+        assert!(
+            err.to_string().contains("pick the level"),
+            "above the tag a level may make the manifest's version: {err}"
+        );
+        // below the tag no level makes it, and the message does not offer one
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.0.9\"\n",
+        )
+        .unwrap();
+        commit(d.path(), "chore: back too far");
+        let err = plan(d.path(), "HEAD", Level::Patch, "d").unwrap_err();
+        assert!(matches!(&err, PlanError::OffLevel(_)), "{err}");
+        assert!(
+            err.to_string().contains("behind the last tag 0.1.0"),
+            "{err}"
+        );
+        assert!(!err.to_string().contains("pick the level"), "{err}");
+        // and back at what a patch makes of the tag
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.1\"\n",
+        )
+        .unwrap();
+        commit(d.path(), "chore: at the level");
+        let p = plan(d.path(), "HEAD", Level::Patch, "d").unwrap();
         assert_eq!(
             p.next,
             Version::new(0, 1, 1),
-            "already one up, so that is it"
+            "already at the level's version, so that is the release"
         );
         std::fs::write(
             d.path().join("Cargo.toml"),

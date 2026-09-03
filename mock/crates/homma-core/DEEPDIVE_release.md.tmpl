@@ -106,16 +106,14 @@ until mockspace's pre-push delegates to homma, and the refusal says so.
 ## The check
 
 Before anything moves, `homma release check <repo>` establishes the invariants
-and prints every one it cannot, by id. The ids are those of the check catalogue
-the workspace's earlier Python runner carried, so the port is checkable against
-it, and the set a release needs green is this:
+and prints every one it cannot, by id. The set a release needs green is this:
 
 The tags: every release tag is reachable from `main` (`tag.reachable`, tightened
-to `main`), annotated (`tag.annotated`), named `vX.Y.Z` or `X.Y.Z` consistently
-within the repo (`tag.prefix`), one per commit (`tag.dupes`), on the remote and
-local alike and pointing at the same commit both sides (`tag.pushed`,
-`tag.local`, `tag.sha.agrees`), and every version bump commit on `main` carries
-one (`tag.bump.tagged`).
+to `main`), on the remote and pointing at the same commit both sides
+(`tag.pushed`, `tag.sha.agrees`), and every version bump commit on `main`
+carries one (`tag.bump.tagged`). That a tag is annotated (`tag.annotated`),
+named `vX.Y.Z` or `X.Y.Z` consistently within the repo (`tag.prefix`), alone on
+its commit (`tag.dupes`) and fetched (`tag.local`) is hygiene, reported at warn.
 
 `main` holds nothing unreleased: the newest release tag is the tip of `main`, or
 what lies between is a hotpatch named as such (`main.unreleased`, the one id
@@ -125,9 +123,12 @@ highest published one and its smallest legal successor at the level given
 (`man.current.forward`, `man.current.smallest`).
 
 The registry: published versions ascend in publish order (`order.ascends`),
-skip no number (`semver.gaps`), every published version has a tag and every tag
-a published version (`reg.orphan`, `reg.unpublished`), and where a package ships
-on both jsr and npm the two hold the same set (`both.sameset`).
+skip no number (`semver.gaps`), every published version has a tag
+(`reg.orphan`), the newest tag has a published version (`reg.unpublished`,
+which blocks on the newest tag and warns on older ones, since a tag from before
+the package was ever published is history and not a release nobody finished),
+and where a package ships on both jsr and npm the two hold the same set
+(`both.sameset`).
 
 The tree: clean, on a branch, nothing unpushed, no untracked file
 (`tree.clean`, `tree.attached`, `tree.pushed`, `tree.untracked`), and no
@@ -145,10 +146,15 @@ off the commits. What it does, in order, stopping at the first refusal:
 
 1. Runs the check and refuses on any blocking finding.
 2. Finds the newest green `gate-run` for the tip of `dev` and refuses without it.
-3. Prints the plan: the commits since the last release tag with their prefixes,
-   the version the level makes of the current one, the changelog block those
-   commits become, and what publishes where, in dependency order. With
-   `--dry-run` it stops here.
+3. Prints the plan: the two branches it carries, `dev` onto `main`, or `main`
+   alone where the repo has no working branch here or on the remote; the
+   commits since the last release tag with their prefixes,
+   the version the level makes of the last tag's, the changelog block those
+   commits become, and what publishes where, in dependency order. A manifest
+   already at that version is the release and nothing bumps; a manifest at any
+   other version above the last tag disagrees with the level, and the plan
+   refuses with both numbers rather than picking one. With `--dry-run` it stops
+   here.
 4. Bumps the manifest on `dev`, prepends the block to `CHANGELOG.md`, commits
    both as one commit, and pushes `dev`.
 5. Merges `dev` into `main` with a merge commit, never a squash, never a
@@ -167,8 +173,13 @@ on npm, builds the npm package and publishes that too. The registry tokens come
 from the same credential tool the forge token does.
 
 `homma release run` without a repo releases every repo the workspace names that
-has something unreleased, in dependency order, with one `--level` for all of
-them, which is the shape a docs pass across the estate takes.
+has something unreleased, with one `--level` for all of them, which is the
+shape a docs pass across the estate takes. The order is by name today, and a
+run whose set carries a dependency edge, one repo it would release naming
+another as a git or registry dependency, is refused with the two names, so the
+dependent is released after its dependency by two runs by name. Dependency
+order across repos is owed, the way the publish already orders the members of
+one workspace.
 
 ## The changelog
 

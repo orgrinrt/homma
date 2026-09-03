@@ -332,6 +332,14 @@ fn the_whole_release_bumps_merges_tags_releases_publishes_and_writes_badges() {
     assert_eq!(releases.len(), 1);
     assert_eq!(releases[0].0, "v0.1.1");
     assert!(releases[0].1.starts_with("## 0.1.1 (2026-09-02)"));
+    // the same block, verbatim, is the release body: what went into the
+    // changelog on the trunk is what the forge got, every commit line included
+    assert!(
+        log.contains(releases[0].1.as_str()),
+        "the release body is not the changelog's block:\n{}\n---\n{log}",
+        releases[0].1
+    );
+    assert!(releases[0].1.contains("feat: the thing"));
     let ran = runner.0.borrow();
     assert!(
         ran.iter().any(|l| l == "cargo publish -p x --locked"),
@@ -390,6 +398,7 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     let s = setup(&runner, &forge, &p, "dev");
     step_bump(&s, f.root(), &plan).unwrap();
     // the remote refuses the push of main, which is what a ruleset does
+    let main_before = f.git(&["rev-parse", "main"]);
     f.git(&["config", "remote.origin.pushurl", "/nonexistent/nowhere.git"]);
     let err = step_merge_and_tag(&s, f.root(), &plan).unwrap_err();
     assert!(matches!(err, ReleaseError::Git(_)), "{err}");
@@ -398,6 +407,19 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
         Some("dev")
     );
     assert!(git::is_clean(f.root()).unwrap());
+    // and main holds nothing the remote does not: the merge that landed
+    // and did not push is gone, so the next plan sees what this one saw
+    assert_eq!(
+        f.git(&["rev-parse", "main"]),
+        main_before,
+        "main is back where it was before the merge"
+    );
+    let again = plan::plan(f.root(), "dev", Level::Patch, "d").unwrap();
+    assert_eq!(
+        again.commits.len(),
+        plan.commits.len() + 1,
+        "the bump on dev, and nothing carried over from main"
+    );
     assert!(
         !f.git(&["tag", "--list"]).contains("v0.1.1"),
         "no tag was made"

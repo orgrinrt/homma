@@ -22,6 +22,8 @@ pub struct Published {
 }
 
 impl Published {
+    /// The versions `package` has on `registry`, in publish order, or none
+    /// where the registry was not asked or has no such package.
     pub fn get(&self, registry: Registry, package: &str) -> Option<&Vec<Version>> {
         self.versions.get(&(registry, package.to_string()))
     }

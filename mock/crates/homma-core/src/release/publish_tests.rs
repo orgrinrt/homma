@@ -10,9 +10,12 @@ use std::cell::RefCell;
 use super::*;
 use crate::release::sh;
 
+/// One command the fake saw: its program and its environment.
+type Seen = (String, Vec<(String, String)>);
+
 struct Fake {
     fail_prefix: Option<&'static str>,
-    seen:        RefCell<Vec<(String, Vec<(String, String)>)>>,
+    seen:        RefCell<Vec<Seen>>,
 }
 
 impl Fake {
@@ -425,7 +428,7 @@ fn a_failed_jsr_publish_reports_its_command_and_log_with_the_token_redacted() {
                 args:    args.iter().map(|a| a.to_string()).collect(),
                 status:  Some(1),
                 stdout:  String::new(),
-                stderr:  format!("error: token tok-jsr was refused\n"),
+                stderr:  "error: token tok-jsr was refused\n".into(),
             })
         }
     }

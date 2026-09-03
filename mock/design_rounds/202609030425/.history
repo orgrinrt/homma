@@ -1,0 +1,50 @@
+7775498 chore: lock the source changelist on the hook gating every tip
+fd69adf fix: the hook gates every pushed tip, and prereleases compare as semver
+683a2d4 chore: open the source changelist on the hook gating every tip
+1c5f30b chore: lock the doc changelist on the hook gating every tip
+d5a25b9 chore: open a round on the hook gating every tip
+9aa256f chore: close the round on the release docs
+05419aa chore: lock the source changelist on the release docs
+1686181 docs: every public release function carries its own doc
+8909bc8 chore: open the source changelist on the release docs
+f26e7e3 chore: lock the doc changelist on the release docs
+d4b6a19 chore: open a round on the release docs sitting on their functions
+7f92302 chore: close the round on the release errors
+3593be2 chore: lock the source changelist on the release errors
+fe79e96 fix: the off-level error is boxed, and ls-remote is bounded on ssh too
+a84f0c2 chore: open the source changelist on the release errors
+d631f2a chore: lock the doc changelist on the release errors
+501469f chore: open a round on the release errors fitting the gate
+8f61508 chore: close the round on a failed push
+6ad0252 chore: lock the source changelist on a failed push
+ae7c3ac fix: a refused push of main resets it, and ls-remote gives up
+5a5d136 chore: open the source changelist on a failed push
+b54c15c chore: lock the doc changelist on a failed push
+3f70893 chore: open a round on a failed push leaving no merge behind
+1fbde9c docs: render the release deep dive
+09789e5 chore: close the round on a fresh clone merging
+88a7be3 chore: lock the source changelist on a fresh clone merging
+a453def fix: a clone with only origin/dev is told to switch, not released alone
+fa73480 chore: open the source changelist on a fresh clone merging
+875f109 chore: lock the doc changelist on a fresh clone merging
+b028648 docs: the plan names the branches it carries
+ea25b54 chore: open a round on a fresh clone merging dev onto main
+bd69b6d docs: render the release deep dive
+0544929 chore: close the round on testing the sweep
+c5e9668 chore: lock the source changelist on testing the sweep
+93708ea fix: both.sameset pairs packages by name, and the sweep is tested
+964b40f chore: open the source changelist on testing the sweep
+c11e451 chore: lock the doc changelist on testing the sweep
+659c9c9 docs: the check section names its ids and not where they came from
+10a12c6 chore: open a round on testing the sweep and both.sameset per package
+6062598 chore: close the round on the sweep's refusals
+ee9ed9e chore: lock the source changelist on the sweep's refusals
+3d9848b fix: sweep refusals: a manifest off the level, and a repo naming itself
+48d02ea chore: open the source changelist on the sweep's refusals
+b5476e0 chore: lock the doc changelist on the sweep's refusals
+8358c35 chore: open a round on the sweep's refusals and the api file size
+fa52cf1 test: the opt-out the readme names is the one the launcher reads
+493f53a chore: close the round on check severities and the level
+f62788d chore: lock the source changelist on check severities
+c916de1 docs: render the release deep dive
+99d328e fix: a half-published tag blocks, a manifest off the level refuses

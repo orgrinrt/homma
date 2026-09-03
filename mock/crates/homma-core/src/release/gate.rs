@@ -85,6 +85,37 @@ impl From<sh::Spawn> for GateError {
     }
 }
 
+/// The gate on `sha`, which need not be the checkout's head: the head runs
+/// in place, any other commit in a detached worktree made beside the
+/// system's scratch for the run and removed after, so a push of a branch
+/// that is not checked out is gated the same as one that is.
+pub fn run_gate_at(
+    runner: &dyn Runner,
+    root: &Path,
+    sha: &str,
+    repo: &str,
+    ran_at: &str,
+) -> Result<GateRun, GateError> {
+    if git::head(root)? == sha {
+        return run_gate(runner, root, repo, ran_at);
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "homma-gate-{}-{}-{}",
+        std::process::id(),
+        &sha[.. 7.min(sha.len())],
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    git::worktree_add_detached(root, &dir, sha)?;
+    let run = run_gate(runner, &dir, repo, ran_at);
+    let removed = git::worktree_remove(root, &dir);
+    let run = run?;
+    removed?;
+    Ok(run)
+}
+
 /// Run the whole gate on `root`, recording it as `repo` at `ran_at`. Refuses
 /// a dirty tree before running anything.
 pub fn run_gate(
@@ -103,8 +134,10 @@ pub fn run_gate(
     for step in Step::ALL {
         steps.push(run_step(runner, root, repo_kind, step)?);
     }
+    // the wall time is the whole gate's; it rides on the last step that ran,
+    // since a skipped step's numbers never reach the status line
     let wall = started.elapsed().as_secs_f64();
-    if let Some(last) = steps.last_mut() {
+    if let Some(last) = steps.iter_mut().rev().find(|s| !s.skipped) {
         last.numbers
             .insert("wall_seconds".into(), format!("{wall:.1}"));
     }
@@ -253,12 +286,29 @@ fn calls_for(
         Step::Tests => {
             if crate_ {
                 calls.push(Call::new("cargo", &["test", "--all-features"]));
-                let sets = feature_sets(root)?;
-                if sets.is_empty() {
-                    calls.push(Call::new("cargo", &["test", "--no-default-features"]));
-                } else {
+                // the root package's sets stand in for the plain no-features
+                // run; a member's sets run against that member, `-p`, beside
+                // the workspace-wide runs every member gets
+                let declared = feature_sets(root)?;
+                let root_sets = declared.iter().find(|(n, _)| n.is_none());
+                match root_sets {
+                    None => calls.push(Call::new("cargo", &["test", "--no-default-features"])),
+                    Some((_, sets)) => {
+                        for set in sets {
+                            let mut c = Call::new("cargo", &["test", "--no-default-features"]);
+                            if !set.is_empty() {
+                                c.args.push("--features".into());
+                                c.args.push(set.join(","));
+                            }
+                            calls.push(c);
+                        }
+                    },
+                }
+                for (name, sets) in declared.iter().filter(|(n, _)| n.is_some()) {
                     for set in sets {
-                        let mut c = Call::new("cargo", &["test", "--no-default-features"]);
+                        let mut c = Call::new("cargo", &["test", "-p"]);
+                        c.args.push(name.clone().unwrap_or_default());
+                        c.args.push("--no-default-features".into());
                         if !set.is_empty() {
                             c.args.push("--features".into());
                             c.args.push(set.join(","));
@@ -300,22 +350,46 @@ fn calls_for(
     Ok(calls)
 }
 
-/// `[package.metadata.homma] feature_sets` off the root manifest, or off
-/// the first workspace member that declares one; empty where none does.
-pub fn feature_sets(root: &Path) -> Result<Vec<Vec<String>>, GateError> {
-    let text = std::fs::read_to_string(root.join("Cargo.toml"))
-        .map_err(|e| GateError::Manifest(format!("Cargo.toml: {e}")))?;
-    let doc: toml::Value =
-        toml::from_str(&text).map_err(|e| GateError::Manifest(format!("Cargo.toml: {e}")))?;
-    let sets = doc
-        .get("package")
-        .and_then(|p| p.get("metadata"))
-        .and_then(|m| m.get("homma"))
-        .and_then(|h| h.get("feature_sets"))
-        .and_then(|s| s.as_array());
-    let Some(sets) = sets else {
-        return Ok(Vec::new());
-    };
+/// Every declared feature set with the member it belongs to: the root
+/// package's with no name, each workspace member's with its package name,
+/// so a member's sets run against that member and none is inherited.
+pub type FeatureSets = Vec<(Option<String>, Vec<Vec<String>>)>;
+
+/// Every `[package.metadata.homma] feature_sets` the tree declares; see
+/// `FeatureSets`. Empty where nothing declares any.
+pub fn feature_sets(root: &Path) -> Result<FeatureSets, GateError> {
+    let mut found = Vec::new();
+    let root_doc = manifest(&root.join("Cargo.toml"))?;
+    if let Some(sets) = declared(&root_doc) {
+        found.push((None, parse_sets(sets)?));
+    }
+    for (name, dir) in super::publish::crate_dirs(root) {
+        if dir == root {
+            continue;
+        }
+        let doc = manifest(&dir.join("Cargo.toml"))?;
+        if let Some(sets) = declared(&doc) {
+            found.push((Some(name), parse_sets(sets)?));
+        }
+    }
+    Ok(found)
+}
+
+fn manifest(path: &Path) -> Result<toml::Value, GateError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| GateError::Manifest(format!("{}: {e}", path.display())))?;
+    toml::from_str(&text).map_err(|e| GateError::Manifest(format!("{}: {e}", path.display())))
+}
+
+fn declared(doc: &toml::Value) -> Option<&Vec<toml::Value>> {
+    doc.get("package")?
+        .get("metadata")?
+        .get("homma")?
+        .get("feature_sets")?
+        .as_array()
+}
+
+fn parse_sets(sets: &[toml::Value]) -> Result<Vec<Vec<String>>, GateError> {
     let mut out = Vec::new();
     for set in sets {
         let Some(items) = set.as_array() else {
