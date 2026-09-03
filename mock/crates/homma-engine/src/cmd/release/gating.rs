@@ -26,7 +26,11 @@ pub(super) fn gate_cmd(
     let root = &root;
     let store = store(cli);
     let (forge, owner) = forge_for(cfg, r)?;
-    if let Some(sha) = post {
+    if let Some(want) = post {
+        // records carry the full sha, so what was typed is resolved first,
+        // the same way `--sha` is
+        let sha = &homma_core::release::git::sha(root, want)
+            .map_err(|_| anyhow!("`{want}` is not a commit in this repository"))?;
         let run = record::newest_for(&store, name, sha)?
             .ok_or_else(|| anyhow!("no gate run recorded on {sha}"))?;
         status::post(forge.as_ref(), &owner, name, &run)

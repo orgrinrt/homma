@@ -59,6 +59,34 @@ fn a_gate_on_a_commit_the_repo_does_not_have_is_refused_before_anything_runs() {
 }
 
 #[test]
+fn a_post_names_its_commit_in_full_whatever_was_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    let out = std::process::Command::new("git")
+        .args(["-C", dir.path().join("x").to_str().unwrap(), "rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let full = String::from_utf8(out.stdout).unwrap().trim().to_string();
+    // a string that is no commit is refused as one, ahead of the store
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "gate", "x", "--post", "deadbeef"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("`deadbeef` is not a commit"));
+    // a short sha of a real commit is looked up under its full one, which
+    // is what the not-found line carries
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "gate", "x", "--post", &full[.. 7]])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "no gate run recorded on {full}"
+        )));
+}
+
+#[test]
 fn a_workspace_wide_run_names_each_repo_it_passes_over_and_why() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("homma.toml");
