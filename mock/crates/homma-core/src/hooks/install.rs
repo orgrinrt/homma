@@ -10,9 +10,10 @@
 //! directory's `hooks/`, whatever `core.hooksPath` says, because that is the
 //! one place every chain reaches: git reads it directly where the path is
 //! unset, and mockspace's durable gate runs the repository's own hook there
-//! after its own checks where the path is mockspace's. Which of those holds is
-//! reported with the install, and a path that is some other tool's is
-//! reported as one git will not reach.
+//! after its own checks where the hook git will run for that event is
+//! mockspace's. Which of those holds is decided per event, off the file under
+//! the hooks path rather than off the path's spelling, and reported with the
+//! install; an event nothing reaches is reported as one git will not run.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -29,22 +30,31 @@ pub fn script(event: &str) -> String {
     )
 }
 
-/// How git reaches the entrypoints, read off `core.hooksPath`.
+/// What mockspace writes into the first lines of every hook it manages, and
+/// what decides that a hook under `core.hooksPath` chains to the repository's
+/// own. Spelled here rather than read from mockspace, since homma knows
+/// mockspace's files and not its crates.
+pub const MOCKSPACE_MARKER: &str = "# mockspace-managed";
+
+/// How git reaches one entrypoint, read off `core.hooksPath` and, where one
+/// is set, the file git will run under it for that event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reach {
     /// No hooks path: git reads the directory itself.
     Direct,
-    /// The path is mockspace's, whose gate runs the repository's own hook
-    /// after its own checks.
-    Chained(String),
-    /// The path is some other tool's, and nothing runs the entrypoints until
-    /// that tool chains to them.
-    Unreached(String),
+    /// The hook under the path is mockspace's, whose gate runs the
+    /// repository's own hook after its own checks.
+    Chained(PathBuf),
+    /// Nothing under the path for this event, so git runs nothing for it.
+    Missing(PathBuf),
+    /// A hook under the path that is some other tool's, and nothing runs the
+    /// entrypoint until that tool chains to it.
+    Foreign(PathBuf),
 }
 
 impl Reach {
     pub fn reached(&self) -> bool {
-        !matches!(self, Reach::Unreached(_))
+        matches!(self, Reach::Direct | Reach::Chained(_))
     }
 }
 
@@ -55,33 +65,54 @@ impl fmt::Display for Reach {
             Reach::Chained(p) => {
                 write!(
                     f,
-                    "core.hooksPath is {p}, mockspace's, whose gate runs these after its own checks"
+                    "chains through {}, mockspace's, after its own checks",
+                    p.display()
                 )
             },
-            Reach::Unreached(p) => {
+            Reach::Missing(p) => {
                 write!(
                     f,
-                    "core.hooksPath is {p}, which is not mockspace's; git will not run these until that \
-                     tool chains to the repository's own hooks"
+                    "nothing at {}, so git will not run this until whatever owns core.hooksPath \
+                     chains to the repository's own hooks",
+                    p.display()
+                )
+            },
+            Reach::Foreign(p) => {
+                write!(
+                    f,
+                    "{} is not mockspace's; git will not run this until that tool chains to the \
+                     repository's own hooks",
+                    p.display()
                 )
             },
         }
     }
 }
 
-/// What an install wrote and how git gets to it.
+/// One entrypoint the install wrote, and how git gets to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    pub event: String,
+    pub path:  PathBuf,
+    pub reach: Reach,
+}
+
+/// What an install wrote.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Installed {
-    pub paths: Vec<PathBuf>,
-    pub reach: Reach,
+    pub written: Vec<Written>,
+}
+
+impl Installed {
+    /// Whether git reaches every entrypoint written.
+    pub fn reached(&self) -> bool {
+        self.written.iter().all(|w| w.reach.reached())
+    }
 }
 
 /// Why nothing was written.
 #[derive(Debug)]
 pub enum HookError {
-    /// The hooks directory holds tracked files, so a hook written there would
-    /// ship with the repo and ask homma of everyone who clones it.
-    HooksPathTracked(PathBuf),
     /// A hook for that event is already there and is not this tool's.
     HookExists(PathBuf),
     Git(GitError),
@@ -91,14 +122,6 @@ pub enum HookError {
 impl fmt::Display for HookError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HookError::HooksPathTracked(p) => {
-                write!(
-                    f,
-                    "{} holds tracked files, so a hook written there would ship with the repo; \
-                     this repo keeps its own hooks",
-                    p.display()
-                )
-            },
             HookError::HookExists(p) => {
                 write!(
                     f,
@@ -151,42 +174,48 @@ pub fn hooks_dir(root: &Path) -> Result<PathBuf, HookError> {
     Ok(PathBuf::from(out.stdout.trim()).join("hooks"))
 }
 
-/// How git reaches `root`'s own hooks directory.
-pub fn reach(root: &Path) -> Result<Reach, HookError> {
+/// The `core.hooksPath` in effect at `root`, made absolute against it, or
+/// `None` where git reads its own directory.
+pub fn hooks_path(root: &Path) -> Result<Option<PathBuf>, HookError> {
     let out =
         sh::run(root, "git", &["config", "--get", "core.hooksPath"]).map_err(GitError::from)?;
     let configured = out.stdout.trim();
     if !out.ok() || configured.is_empty() {
-        return Ok(Reach::Direct);
+        return Ok(None);
     }
-    // the same predicate mockspace uses for its own path: it names mockspace,
-    // or it ends the way mockspace's generated directory does
-    let p = configured.trim_end_matches('/');
-    if p.contains("mockspace") || p.ends_with("target/hooks") {
-        Ok(Reach::Chained(configured.to_string()))
-    } else {
-        Ok(Reach::Unreached(configured.to_string()))
+    let p = PathBuf::from(configured);
+    Ok(Some(if p.is_absolute() { p } else { root.join(p) }))
+}
+
+/// How git reaches `root`'s own entrypoint for `event`: directly with no
+/// hooks path, else through whatever sits at `<hooksPath>/<event>`, which is
+/// mockspace's and chains where its first lines say so.
+pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
+    let Some(dir) = hooks_path(root)? else {
+        return Ok(Reach::Direct);
+    };
+    let file = dir.join(event);
+    match std::fs::read(&file) {
+        Ok(bytes) => {
+            let head: String =
+                String::from_utf8_lossy(&bytes[.. bytes.len().min(512)]).into_owned();
+            if head.lines().take(4).any(|l| l.contains(MOCKSPACE_MARKER)) {
+                Ok(Reach::Chained(file))
+            } else {
+                Ok(Reach::Foreign(file))
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Reach::Missing(file)),
+        // a file this user cannot read is somebody's and not mockspace's
+        Err(_) => Ok(Reach::Foreign(file)),
     }
 }
 
 /// Write one entrypoint per event the table names, or refuse and say why.
-/// Nothing is written where anything refuses, so a partial install is not a
-/// state a repository can be left in.
+/// Every event is checked before any is written, so no refusal leaves a
+/// partial install.
 pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
     let dir = hooks_dir(root)?;
-    // a hooks directory the repo tracks is the repo's own, and a hook written
-    // there would ship with it; asked about relative to the root, and as `.`
-    // where the directory is the root itself, since git refuses an empty
-    // pathspec. A directory outside the root, a linked worktree's common
-    // directory, is nothing the repo could track.
-    if let Ok(relative) = dir.strip_prefix(root) {
-        let spec = relative.to_string_lossy();
-        let spec = if spec.is_empty() { ".".to_string() } else { spec.into_owned() };
-        let tracked = git(root, &["ls-files", "--", &spec])?;
-        if !tracked.stdout.trim().is_empty() {
-            return Err(HookError::HooksPathTracked(dir));
-        }
-    }
     let events: Vec<&str> = hooks.events().collect();
     // anything at a path that is not this tool's text is somebody's hook, a
     // compiled one or one this user cannot read included; only an absent file
@@ -201,7 +230,7 @@ pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
         }
     }
     std::fs::create_dir_all(&dir)?;
-    let mut paths = Vec::new();
+    let mut written = Vec::new();
     for event in &events {
         let path = dir.join(event);
         std::fs::write(&path, script(event))?;
@@ -210,11 +239,14 @@ pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
         }
-        paths.push(path);
+        written.push(Written {
+            event: (*event).to_string(),
+            path,
+            reach: reach(root, event)?,
+        });
     }
     Ok(Installed {
-        paths,
-        reach: reach(root)?,
+        written,
     })
 }
 
@@ -244,12 +276,36 @@ mod tests {
     fn table(events: &[&str]) -> Hooks {
         let mut declared = BTreeMap::new();
         for e in events {
-            declared.insert(e.to_string(), vec![HookEntry {
-                run:   "true".into(),
-                paths: Vec::new(),
-            }]);
+            declared.insert(e.to_string(), vec![
+                HookEntry::new("true", Vec::new()).unwrap(),
+            ]);
         }
         Hooks::new(declared).unwrap()
+    }
+
+    fn set_hooks_path(d: &Path, value: &str) {
+        assert!(
+            sh::run(d, "git", &["config", "core.hooksPath", value])
+                .unwrap()
+                .ok()
+        );
+    }
+
+    /// A directory standing in for mockspace's durable one: a managed hook
+    /// for each event in `managed`, and a foreign one for each in `foreign`.
+    fn hooks_path_dir(managed: &[&str], foreign: &[&str]) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for e in managed {
+            std::fs::write(
+                d.path().join(e),
+                format!("#!/usr/bin/env bash\n{MOCKSPACE_MARKER} v3 fp:0000\n# mockspace durable gate ({e})\nexit 0\n"),
+            )
+            .unwrap();
+        }
+        for e in foreign {
+            std::fs::write(d.path().join(e), "#!/bin/sh\necho theirs\n").unwrap();
+        }
+        d
     }
 
     #[test]
@@ -257,31 +313,27 @@ mod tests {
         let d = repo();
         assert!(!is_installed(d.path(), "pre-push").unwrap());
         let i = install(d.path(), &table(&["pre-commit"])).unwrap();
-        let names: Vec<String> = i
-            .paths
-            .iter()
-            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
-            .collect();
+        let events: Vec<&str> = i.written.iter().map(|w| w.event.as_str()).collect();
         assert_eq!(
-            names,
+            events,
             vec!["pre-commit", "pre-push"],
             "the declared event and the gate's"
         );
         let hooks = d.path().canonicalize().unwrap().join(".git/hooks");
-        for p in &i.paths {
-            assert!(p.starts_with(&hooks), "{}", p.display());
-            let event = p.file_name().unwrap().to_string_lossy();
-            assert_eq!(std::fs::read_to_string(p).unwrap(), script(&event));
+        for w in &i.written {
+            assert_eq!(w.path, hooks.join(&w.event));
+            assert_eq!(std::fs::read_to_string(&w.path).unwrap(), script(&w.event));
+            assert_eq!(w.reach, Reach::Direct);
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 assert_ne!(
-                    std::fs::metadata(p).unwrap().permissions().mode() & 0o111,
+                    std::fs::metadata(&w.path).unwrap().permissions().mode() & 0o111,
                     0
                 );
             }
         }
-        assert_eq!(i.reach, Reach::Direct);
+        assert!(i.reached());
         assert!(is_installed(d.path(), "pre-push").unwrap());
         assert!(is_installed(d.path(), "pre-commit").unwrap());
         assert!(
@@ -306,13 +358,19 @@ mod tests {
         // pointing elsewhere does not move where homma writes
         let d = repo();
         std::fs::write(d.path().join("f"), "x").unwrap();
-        for args in [
-            vec!["-c", "user.name=t", "-c", "user.email=t@t", "add", "f"],
-            vec!["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"],
-            vec!["config", "core.hooksPath", "/somewhere/mockspace/hooks-v3"],
-        ] {
+        for args in [vec!["-c", "user.name=t", "-c", "user.email=t@t", "add", "f"], vec![
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            "one",
+        ]] {
             assert!(sh::run(d.path(), "git", &args).unwrap().ok());
         }
+        let ms = hooks_path_dir(&["pre-commit", "pre-push", "commit-msg"], &[]);
+        set_hooks_path(d.path(), ms.path().to_str().unwrap());
         let expect = d.path().canonicalize().unwrap().join(".git/hooks");
         assert_eq!(hooks_dir(d.path()).unwrap(), expect);
         let wt = tempfile::tempdir().unwrap();
@@ -332,48 +390,87 @@ mod tests {
             "the worktree shares the clone's hooks"
         );
         let i = install(wt.path(), &table(&[])).unwrap();
-        assert_eq!(i.paths, vec![expect.join("pre-push")]);
+        assert_eq!(i.written.len(), 1);
+        assert_eq!(i.written[0].path, expect.join("pre-push"));
         assert_eq!(
-            i.reach,
-            Reach::Chained("/somewhere/mockspace/hooks-v3".into())
+            i.written[0].reach,
+            Reach::Chained(ms.path().join("pre-push"))
         );
-        assert!(i.reach.reached());
+        assert!(i.reached());
     }
 
     #[test]
-    fn the_reach_says_how_git_gets_there() {
+    fn the_reach_is_per_event_and_read_off_the_hook_under_the_path() {
         let d = repo();
-        assert_eq!(reach(d.path()).unwrap(), Reach::Direct);
-        for (path, chained) in [
-            ("/home/x/.config/mockspace/hooks-v3", true),
-            ("mock/target/hooks", true),
-            (".husky", false),
-            ("/opt/lefthook/hooks", false),
-        ] {
-            assert!(
-                sh::run(d.path(), "git", &["config", "core.hooksPath", path])
-                    .unwrap()
-                    .ok()
-            );
-            let r = reach(d.path()).unwrap();
-            assert_eq!(r.reached(), chained, "{path}: {r}");
-            assert!(r.to_string().contains(path));
-            if !chained {
-                assert!(r.to_string().contains("will not run"));
-            }
-        }
-        // and an install under a foreign path still writes, and says so
-        let i = install(d.path(), &table(&[])).unwrap();
-        assert_eq!(i.reach, Reach::Unreached("/opt/lefthook/hooks".into()));
-        assert!(i.paths[0].exists());
+        assert_eq!(reach(d.path(), "pre-push").unwrap(), Reach::Direct);
+        assert_eq!(hooks_path(d.path()).unwrap(), None);
+        // mockspace's three, and nothing for a fourth event
+        let ms = hooks_path_dir(&["pre-commit", "pre-push", "commit-msg"], &[]);
+        set_hooks_path(d.path(), ms.path().to_str().unwrap());
+        assert_eq!(
+            reach(d.path(), "pre-push").unwrap(),
+            Reach::Chained(ms.path().join("pre-push"))
+        );
+        assert_eq!(
+            reach(d.path(), "post-merge").unwrap(),
+            Reach::Missing(ms.path().join("post-merge"))
+        );
+        assert!(!reach(d.path(), "post-merge").unwrap().reached());
+        assert!(
+            reach(d.path(), "post-merge")
+                .unwrap()
+                .to_string()
+                .contains("nothing at")
+        );
+        // a path spelled like mockspace's with nothing in it reaches nothing;
+        // the spelling was what the first version read, and it was wrong
+        let empty = tempfile::tempdir().unwrap();
+        let spelled = empty.path().join("mockspace").join("hooks-v3");
+        std::fs::create_dir_all(&spelled).unwrap();
+        set_hooks_path(d.path(), spelled.to_str().unwrap());
+        assert!(matches!(
+            reach(d.path(), "pre-push").unwrap(),
+            Reach::Missing(_)
+        ));
+        // another tool's hook under the path is foreign, and says so
+        let other = hooks_path_dir(&[], &["pre-push"]);
+        set_hooks_path(d.path(), other.path().to_str().unwrap());
+        let r = reach(d.path(), "pre-push").unwrap();
+        assert_eq!(r, Reach::Foreign(other.path().join("pre-push")));
+        assert!(r.to_string().contains("not mockspace's"));
+        // a relative path is against the root
+        std::fs::create_dir_all(d.path().join(".githooks")).unwrap();
+        std::fs::write(
+            d.path().join(".githooks/pre-push"),
+            format!("#!/bin/sh\n{MOCKSPACE_MARKER}\n"),
+        )
+        .unwrap();
+        set_hooks_path(d.path(), ".githooks");
+        assert_eq!(
+            hooks_path(d.path()).unwrap(),
+            Some(d.path().join(".githooks"))
+        );
+        assert!(matches!(
+            reach(d.path(), "pre-push").unwrap(),
+            Reach::Chained(_)
+        ));
+        // an install under a foreign path still writes, and the install says
+        // it is not reached
+        set_hooks_path(d.path(), other.path().to_str().unwrap());
+        let i = install(d.path(), &table(&["pre-commit"])).unwrap();
+        assert!(!i.reached());
+        assert!(i.written.iter().all(|w| w.path.exists()));
+        let by_event: BTreeMap<&str, &Reach> = i
+            .written
+            .iter()
+            .map(|w| (w.event.as_str(), &w.reach))
+            .collect();
+        assert!(matches!(by_event["pre-push"], Reach::Foreign(_)));
+        assert!(matches!(by_event["pre-commit"], Reach::Missing(_)));
     }
 
     #[test]
-    fn a_tracked_hooks_dir_and_a_foreign_hook_are_refused_and_nothing_is_written() {
-        // a repo that tracks its `.git`-adjacent hooks directory is contrived,
-        // since git never tracks `.git`; the check is exercised by pointing the
-        // common dir's hooks at tracked content through a repo whose git dir
-        // is the root, a bare-shaped layout, which is what `.` covers
+    fn a_foreign_hook_is_refused_and_nothing_is_written() {
         let d = repo();
         let own = d
             .path()
@@ -394,7 +491,7 @@ mod tests {
             "#!/bin/sh\necho mine\n"
         );
         assert!(
-            !d.path().join(".git/hooks/pre-push").exists(),
+            !own.parent().unwrap().join("pre-push").exists(),
             "nothing else was written either"
         );
         // the tool's own is rewritten, which is the control

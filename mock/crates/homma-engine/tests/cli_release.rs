@@ -297,9 +297,9 @@ fn the_install_writes_into_gits_own_directory_and_says_where_the_hooks_path_lead
             .args(["-c", cfg.to_str().unwrap(), "hook", "install", "x"])
             .assert()
     };
-    // a hooks path that is some other tool's: written, since git's own
-    // directory is where a chain would reach, and reported as not reached,
-    // a line and a non-zero exit so a sweep goes on
+    // a hooks path with nothing under it for the event: written, since git's
+    // own directory is where a chain would reach, and reported as not
+    // reached, a line and a non-zero exit so a sweep goes on
     let elsewhere = tempfile::tempdir().unwrap();
     git_in(&x, &[
         "config",
@@ -309,22 +309,32 @@ fn the_install_writes_into_gits_own_directory_and_says_where_the_hooks_path_lead
     install()
         .failure()
         .stdout(predicate::str::contains("hooks/pre-push"))
-        .stdout(predicate::str::contains("not mockspace's"))
+        .stdout(predicate::str::contains("nothing at"))
         .stdout(predicate::str::contains("will not run"));
     assert!(
         !elsewhere.path().join("pre-push").exists(),
         "never written where the path points"
     );
     assert!(x.join(".git/hooks/pre-push").exists());
-    // mockspace's path: reached through its chain, and said so
-    git_in(&x, &[
-        "config",
-        "core.hooksPath",
-        "/home/x/.config/mockspace/hooks-v3",
-    ]);
+    // another tool's hook under the path: written, and said not to be reached
+    std::fs::write(
+        elsewhere.path().join("pre-push"),
+        "#!/bin/sh\necho theirs\n",
+    )
+    .unwrap();
+    install()
+        .failure()
+        .stdout(predicate::str::contains("not mockspace's"));
+    // mockspace's hook under the path, read off its own first lines: reached
+    // through its chain, and said so; the path's spelling says nothing
+    std::fs::write(
+        elsewhere.path().join("pre-push"),
+        "#!/usr/bin/env bash\n# mockspace-managed v3 fp:0\n# mockspace durable gate (pre-push)\nexit 0\n",
+    )
+    .unwrap();
     install()
         .success()
-        .stdout(predicate::str::contains("mockspace's"))
+        .stdout(predicate::str::contains("chains through"))
         .stdout(predicate::str::contains("after its own checks"));
     // a hooks directory the repo tracks is not where anything is written,
     // so it changes nothing about the install
@@ -335,7 +345,7 @@ fn the_install_writes_into_gits_own_directory_and_says_where_the_hooks_path_lead
     git_in(&x, &["commit", "-qm", "chore: hooks"]);
     install()
         .failure()
-        .stdout(predicate::str::contains("not mockspace's"));
+        .stdout(predicate::str::contains("nothing at"));
     assert!(!x.join(".githooks/pre-push").exists());
     // a pre-push already there that is not homma's is refused whatever the path
     git_in(&x, &["config", "--unset", "core.hooksPath"]);

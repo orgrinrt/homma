@@ -42,6 +42,18 @@ pub const EVENTS: &[&str] = &[
     "post-index-change",
 ];
 
+/// The events git hands input on stdin, per `githooks(5)`. A hook for any
+/// other event reads none, since whatever wraps git may hand it an open pipe
+/// and a read would wait on it.
+pub const STDIN_EVENTS: &[&str] = &[
+    "pre-push",
+    "pre-receive",
+    "post-receive",
+    "post-rewrite",
+    "reference-transaction",
+    "proc-receive",
+];
+
 /// The command the release gate runs under, the one row every workspace has.
 pub const GATE: &str = "homma release gate --hook";
 
@@ -58,16 +70,52 @@ pub const PATHS: &str = "{paths}";
 pub const ARGS: &str = "{args}";
 
 /// One row of the table: what to run, and for which paths. No `paths` means
-/// every invocation of the event.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+/// every invocation of the event. Built through [`HookEntry::new`] and
+/// nowhere else, so an entry with a glob that does not parse, or nothing to
+/// run, does not exist.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct HookEntry {
-    pub run:   String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub paths: Vec<String>,
+    run:      String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    paths:    Vec<String>,
+    #[serde(skip)]
+    patterns: Vec<glob::Pattern>,
 }
 
 impl HookEntry {
+    /// An entry, or why it cannot be one: a glob that does not parse, or a
+    /// command that is blank.
+    pub fn new(run: impl Into<String>, paths: Vec<String>) -> Result<Self, InvalidHooks> {
+        let run = run.into();
+        if run.trim().is_empty() {
+            return Err(InvalidHooks::Empty);
+        }
+        let mut patterns = Vec::with_capacity(paths.len());
+        for p in &paths {
+            patterns.push(glob::Pattern::new(p).map_err(|err| {
+                InvalidHooks::Glob {
+                    pattern: p.clone(),
+                    reason:  err.msg.to_string(),
+                }
+            })?);
+        }
+        Ok(Self {
+            run,
+            paths,
+            patterns,
+        })
+    }
+
+    /// The command, with its placeholders still in it.
+    pub fn run(&self) -> &str {
+        &self.run
+    }
+
+    /// The globs as written.
+    pub fn paths(&self) -> &[String] {
+        &self.paths
+    }
+
     /// Whether this entry runs whatever the event touched.
     pub fn always(&self) -> bool {
         self.paths.is_empty()
@@ -80,15 +128,10 @@ impl HookEntry {
         if self.always() {
             return touched.iter().map(String::as_str).collect();
         }
-        let patterns: Vec<glob::Pattern> = self
-            .paths
-            .iter()
-            .filter_map(|p| glob::Pattern::new(p).ok())
-            .collect();
         touched
             .iter()
             .map(String::as_str)
-            .filter(|path| patterns.iter().any(|g| g.matches_with(path, MATCH)))
+            .filter(|path| self.patterns.iter().any(|g| g.matches_with(path, MATCH)))
             .collect()
     }
 
@@ -106,6 +149,22 @@ impl HookEntry {
         self.run
             .replace(PATHS, &paths.join(" "))
             .replace(ARGS, &args.join(" "))
+    }
+}
+
+/// The shape a manifest writes an entry in.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawEntry {
+    run:   String,
+    #[serde(default)]
+    paths: Vec<String>,
+}
+
+impl<'de> serde::Deserialize<'de> for HookEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = RawEntry::deserialize(d)?;
+        Self::new(raw.run, raw.paths).map_err(serde::de::Error::custom)
     }
 }
 
@@ -132,35 +191,18 @@ pub struct Hooks(BTreeMap<String, Vec<HookEntry>>);
 impl Hooks {
     /// The row every workspace has: the release gate on `pre-push`.
     pub fn gate() -> HookEntry {
-        HookEntry {
-            run:   GATE.to_string(),
-            paths: Vec::new(),
-        }
+        HookEntry::new(GATE, Vec::new()).expect("the gate is a command with no globs")
     }
 
     /// The declared entries under the default row, or the reason the
-    /// declaration is refused: an event git has no hook for, or a glob that
-    /// does not parse.
+    /// declaration is refused: an event git has no hook for. The entries
+    /// themselves were checked when they were made.
     pub fn new(declared: BTreeMap<String, Vec<HookEntry>>) -> Result<Self, InvalidHooks> {
         let mut map: BTreeMap<String, Vec<HookEntry>> = BTreeMap::new();
         map.insert(GATE_EVENT.to_string(), vec![Self::gate()]);
         for (event, entries) in declared {
             if !EVENTS.contains(&event.as_str()) {
                 return Err(InvalidHooks::Event(event));
-            }
-            for e in &entries {
-                for p in &e.paths {
-                    if let Err(err) = glob::Pattern::new(p) {
-                        return Err(InvalidHooks::Glob {
-                            event:   event.clone(),
-                            pattern: p.clone(),
-                            reason:  err.msg.to_string(),
-                        });
-                    }
-                }
-                if e.run.trim().is_empty() {
-                    return Err(InvalidHooks::Empty(event));
-                }
             }
             // the gate written out, as a serialised table carries it, is the
             // row already in front and not a second one
@@ -206,19 +248,18 @@ impl<'de> serde::Deserialize<'de> for Hooks {
     }
 }
 
-/// Why a `[hooks]` table is refused.
+/// Why a `[hooks]` table, or one entry of it, is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InvalidHooks {
     /// A key that is not the name of a git hook.
     Event(String),
-    /// A glob under an event that does not parse.
+    /// A glob that does not parse.
     Glob {
-        event:   String,
         pattern: String,
         reason:  String,
     },
     /// An entry with nothing to run.
-    Empty(String),
+    Empty,
 }
 
 impl fmt::Display for InvalidHooks {
@@ -232,16 +273,15 @@ impl fmt::Display for InvalidHooks {
                 )
             },
             InvalidHooks::Glob {
-                event,
                 pattern,
                 reason,
             } => {
                 write!(
                     f,
-                    "`[hooks.{event}]` has a glob that does not parse, `{pattern}`: {reason}"
+                    "a hook entry has a glob that does not parse, `{pattern}`: {reason}"
                 )
             },
-            InvalidHooks::Empty(e) => write!(f, "`[hooks.{e}]` has an entry with nothing to run"),
+            InvalidHooks::Empty => write!(f, "a hook entry has nothing to run"),
         }
     }
 }
@@ -254,6 +294,10 @@ mod tests {
 
     fn parse(text: &str) -> Result<Hooks, String> {
         toml::from_str::<Hooks>(text).map_err(|e| e.to_string())
+    }
+
+    fn entry(run: &str, paths: &[&str]) -> HookEntry {
+        HookEntry::new(run, paths.iter().map(|s| s.to_string()).collect()).unwrap()
     }
 
     #[test]
@@ -281,17 +325,13 @@ mod tests {
             "pre-commit",
             "pre-push"
         ]);
-        let push: Vec<&str> = h
-            .entries("pre-push")
-            .iter()
-            .map(|e| e.run.as_str())
-            .collect();
+        let push: Vec<&str> = h.entries("pre-push").iter().map(|e| e.run()).collect();
         assert_eq!(
             push,
             vec![GATE, "a", "b"],
             "the gate first, then as written"
         );
-        assert_eq!(h.entries("pre-commit")[0].paths, vec!["*.md", "docs/*"]);
+        assert_eq!(h.entries("pre-commit")[0].paths(), &["*.md", "docs/*"]);
         // and it round-trips through serialisation with the gate in place
         let text = toml::to_string(&h).unwrap();
         assert_eq!(parse(&text).unwrap(), h);
@@ -325,10 +365,12 @@ mod tests {
     }
 
     #[test]
-    fn a_glob_that_does_not_parse_and_an_empty_run_are_refused() {
+    fn a_glob_that_does_not_parse_and_an_empty_run_are_refused_at_the_entry() {
+        // by the manifest, which names the row it happened in
         let err = parse("[[pre-commit]]\nrun = \"x\"\npaths = [\"[\"]\n").unwrap_err();
         assert!(err.contains("glob that does not parse"), "{err}");
         assert!(err.contains("`[`"), "{err}");
+        assert!(err.contains("pre-commit"), "the row is named: {err}");
         let err = parse("[[pre-commit]]\nrun = \"  \"\n").unwrap_err();
         assert!(err.contains("nothing to run"), "{err}");
         let err = parse("[[pre-commit]]\nrun = \"x\"\nwhen = \"always\"\n").unwrap_err();
@@ -336,6 +378,12 @@ mod tests {
             err.contains("unknown field"),
             "an entry takes run and paths only: {err}"
         );
+        // and by the constructor, so no entry exists that would match nothing
+        assert!(matches!(
+            HookEntry::new("x", vec!["[".into()]),
+            Err(InvalidHooks::Glob { .. })
+        ));
+        assert_eq!(HookEntry::new(" ", Vec::new()), Err(InvalidHooks::Empty));
     }
 
     #[test]
@@ -344,10 +392,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let md = HookEntry {
-            run:   "vibecheck check {paths}".into(),
-            paths: vec!["*.md".into()],
-        };
+        let md = entry("vibecheck check {paths}", &["*.md"]);
         assert!(md.runs_for(&touched));
         assert_eq!(md.matching(&touched), vec![
             "README.md",
@@ -360,10 +405,7 @@ mod tests {
             "vibecheck check 'README.md' 'docs/a.md' 'it'\\''s.md'",
             "git's arguments reach an entry only through their placeholder"
         );
-        let rs = HookEntry {
-            run:   "cargo fmt --check".into(),
-            paths: vec!["*.toml".into()],
-        };
+        let rs = entry("cargo fmt --check", &["*.toml"]);
         assert!(!rs.runs_for(&touched), "no toml was touched");
         assert_eq!(
             rs.command(&[], &git_args),
@@ -381,10 +423,7 @@ mod tests {
         // a placeholder with nothing matched expands to nothing
         assert_eq!(md.command(&[], &[]), "vibecheck check ");
         // and git's arguments, quoted, where an entry asks for them
-        let msg = HookEntry {
-            run:   "lint-message {args}".into(),
-            paths: Vec::new(),
-        };
+        let msg = entry("lint-message {args}", &[]);
         assert_eq!(
             msg.command(&[], &["it's.txt".to_string()]),
             "lint-message 'it'\\''s.txt'"
@@ -394,10 +433,17 @@ mod tests {
             "lint-message 'origin' 'git@x:y.git'"
         );
         // a glob with a directory component holds the component
-        let deep = HookEntry {
-            run:   "x".into(),
-            paths: vec!["docs/*".into()],
-        };
+        let deep = entry("x", &["docs/*"]);
         assert_eq!(deep.matching(&touched), vec!["docs/a.md"]);
+    }
+
+    #[test]
+    fn the_events_git_hands_stdin_to_are_the_documented_ones() {
+        for e in STDIN_EVENTS {
+            assert!(EVENTS.contains(e), "{e} is an event at all");
+        }
+        assert!(STDIN_EVENTS.contains(&"pre-push"));
+        assert!(!STDIN_EVENTS.contains(&"pre-commit"));
+        assert!(!STDIN_EVENTS.contains(&"commit-msg"));
     }
 }

@@ -9,5 +9,17 @@
 pub mod install;
 pub mod run;
 
-pub use install::{HookError, Installed, Reach, hooks_dir, install, is_installed, script};
+pub use install::{
+    HookError,
+    Installed,
+    MOCKSPACE_MARKER,
+    Reach,
+    Written,
+    hooks_dir,
+    hooks_path,
+    install,
+    is_installed,
+    reach,
+    script,
+};
 pub use run::{Ran, run, touched};

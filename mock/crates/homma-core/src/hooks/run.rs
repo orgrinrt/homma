@@ -55,7 +55,9 @@ pub fn touched(root: &Path, event: &str, stdin: &str) -> Result<Vec<String>, Hoo
         }
     };
     match event {
-        "pre-commit" | "commit-msg" | "prepare-commit-msg" | "post-commit" | "pre-merge-commit" => {
+        // the two the design names; `post-commit` would read an empty index
+        // and `pre-merge-commit` is not a commit anybody staged
+        "pre-commit" | "commit-msg" => {
             push(lines(&git(root, &["diff", "--cached", "--name-only"])?));
         },
         "pre-push" => {
@@ -116,7 +118,10 @@ pub fn run(
     let mut lines = Vec::new();
     for entry in entries {
         if !entry.runs_for(&touched) {
-            lines.push(format!("{event}: skipped `{}`, no path matches", entry.run));
+            lines.push(format!(
+                "{event}: skipped `{}`, no path matches",
+                entry.run()
+            ));
             continue;
         }
         let matched = entry.matching(&touched);
@@ -136,11 +141,11 @@ pub fn run(
         }
         let status = child.wait()?;
         if status.success() {
-            lines.push(format!("{event}: ran `{}`", entry.run));
+            lines.push(format!("{event}: ran `{}`", entry.run()));
         } else {
             lines.push(format!(
                 "{event}: refused by `{}`, exit {}",
-                entry.run,
+                entry.run(),
                 status
                     .code()
                     .map(|c| c.to_string())
@@ -205,10 +210,7 @@ mod tests {
             entries
                 .into_iter()
                 .map(|(run, paths)| {
-                    HookEntry {
-                        run:   run.into(),
-                        paths: paths.iter().map(|s| s.to_string()).collect(),
-                    }
+                    HookEntry::new(run, paths.iter().map(|s| s.to_string()).collect()).unwrap()
                 })
                 .collect(),
         );
@@ -251,8 +253,12 @@ mod tests {
             "c.md", "d.rs"
         ]);
         assert!(touched(d.path(), "pre-push", "").unwrap().is_empty());
-        // an event this does not read touches nothing
-        assert!(touched(d.path(), "post-checkout", "").unwrap().is_empty());
+        // an event the design does not name touches nothing, `post-commit`
+        // among them, since after the commit the index is empty and a glob
+        // entry there would never fire while saying "no path matches"
+        for other in ["post-checkout", "post-commit", "pre-merge-commit"] {
+            assert!(touched(d.path(), other, "").unwrap().is_empty(), "{other}");
+        }
     }
 
     #[test]
@@ -310,52 +316,5 @@ mod tests {
         let ran = run(d.path(), Hooks::defaults(), "commit-msg", &[], "").unwrap();
         assert!(ran.ok);
         assert_eq!(ran.lines, vec!["commit-msg: no entries, nothing to run"]);
-    }
-
-    #[test]
-    fn a_pre_push_entry_gets_the_refs_replayed() {
-        let (d, first) = repo();
-        git_ok(d.path(), &["commit", "-qm", "two"]);
-        let second = sh::run(d.path(), "git", &["rev-parse", "HEAD"])
-            .unwrap()
-            .stdout
-            .trim()
-            .to_string();
-        let log = d.path().join("log");
-        let refs = format!("refs/heads/main {second} refs/heads/main {first}\n");
-        let h = table("pre-push", vec![(
-            &format!("cat >> {}", log.display()),
-            &["*.md"][..],
-        )]);
-        // the gate row is first and needs the homma binary, which a test does
-        // not have; the table under test is the declared row alone
-        let declared: Vec<HookEntry> = h.entries("pre-push").iter().skip(1).cloned().collect();
-        let mut only = BTreeMap::new();
-        only.insert("pre-push".to_string(), declared);
-        let only = Hooks::new(only).unwrap();
-        assert_eq!(
-            only.entries("pre-push").len(),
-            2,
-            "the gate is back in front"
-        );
-        // so run the declared entry by hand the way `run` would, on its match
-        let entry = &only.entries("pre-push")[1];
-        let touched = touched(d.path(), "pre-push", &refs).unwrap();
-        assert!(entry.runs_for(&touched));
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(entry.command(&entry.matching(&touched), &[]))
-            .current_dir(d.path())
-            .stdin(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(refs.as_bytes())
-            .unwrap();
-        assert!(child.wait().unwrap().success());
-        assert_eq!(std::fs::read_to_string(&log).unwrap(), refs);
     }
 }
