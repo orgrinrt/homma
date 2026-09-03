@@ -156,6 +156,8 @@ fn token_source(cfg: &Config) -> impl Fn(Registry) -> std::result::Result<String
     }
 }
 
+/// The `homma release` entry: loads the workspace and dispatches one
+/// subcommand, so every path below it starts from the same manifest.
 pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
     let cfg = load_config(cli)?;
     match op {

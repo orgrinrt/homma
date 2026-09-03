@@ -314,7 +314,6 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     Ok(out)
 }
 
-/// Whether `b` is one legal step above `a` at some level.
 /// A subject names a hotpatch where `hotpatch` stands as a word of its own,
 /// in any case, and neither of the two words before it is a negation; "this
 /// is not a hotpatch" and "no hotpatch here" name nothing.
@@ -332,6 +331,8 @@ fn names_hotpatch(subject: &str) -> bool {
     })
 }
 
+/// Whether `b` is one legal step above `a` at some level, or the step off
+/// `0.x` onto `1.0.0`.
 fn is_adjacent(a: &Version, b: &Version) -> bool {
     [Level::Patch, Level::Minor, Level::Major]
         .iter()
