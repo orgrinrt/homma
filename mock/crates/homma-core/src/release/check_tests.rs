@@ -356,6 +356,38 @@ fn jsr_and_npm_disagreeing_is_both_sameset() {
 }
 
 #[test]
+fn both_sameset_pairs_a_jsr_package_with_the_npm_package_of_the_same_bare_name() {
+    let f = Fixture::crate_at("0.1.0");
+    f.tag("v0.1.0");
+    let mut p = published(&["0.1.0"]);
+    // two jsr packages; only `y` ships on npm, and only `y` disagrees
+    p.versions
+        .insert((Registry::Jsr, "@h/x".into()), vec![Version::new(0, 1, 0)]);
+    p.versions
+        .insert((Registry::Jsr, "@h/y".into()), vec![Version::new(0, 1, 0)]);
+    p.versions.insert((Registry::Npm, "y".into()), vec![]);
+    let findings = run(&f, &p, None);
+    let sameset: Vec<_> = findings.iter().filter(|x| x.id == "both.sameset").collect();
+    assert_eq!(sameset.len(), 1, "{findings:?}");
+    assert!(
+        sameset[0].message.contains("@h/y"),
+        "{}",
+        sameset[0].message
+    );
+    assert!(
+        sameset[0].message.contains("y on npm"),
+        "{}",
+        sameset[0].message
+    );
+    // the same npm name under a scope pairs too, and agreeing sets are quiet
+    p.versions.remove(&(Registry::Npm, "y".into()));
+    p.versions
+        .insert((Registry::Npm, "@h/y".into()), vec![Version::new(0, 1, 0)]);
+    let findings = run(&f, &p, None);
+    assert!(!ids(&findings).contains(&"both.sameset"), "{findings:?}");
+}
+
+#[test]
 fn packages_are_read_off_a_workspace_and_a_private_member_is_skipped() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(

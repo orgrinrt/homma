@@ -591,6 +591,70 @@ fn release_is_listed_and_plan_prints_the_next_version_without_moving_anything() 
     assert!(!dir.path().join("x/CHANGELOG.md").exists());
 }
 
+/// `git` in `root`, asserting it succeeded.
+fn git_in(root: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+}
+
+#[test]
+fn a_workspace_wide_run_names_each_repo_it_passes_over_and_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    // `x` is released at its tip, `y` has no manifest at all; neither is
+    // released and both are named, so the sweep never reaches a registry
+    committed_crate(dir.path(), "x");
+    git_in(&dir.path().join("x"), &["config", "tag.gpgsign", "false"]);
+    git_in(&dir.path().join("x"), &[
+        "tag", "-a", "v0.1.0", "-m", "v0.1.0",
+    ]);
+    clone_at(dir.path(), "y", Some("https://github.com/orgrinrt/y.git"));
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "run", "--level", "patch", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "x: nothing unreleased, passed over",
+        ))
+        .stdout(predicate::str::contains("y: passed over"));
+    assert!(!dir.path().join("x/CHANGELOG.md").exists());
+}
+
+#[test]
+fn a_workspace_wide_run_refuses_a_manifest_off_the_level_like_a_single_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    // tagged at 0.1.0, manifest bumped to 0.2.0, asked for a patch
+    committed_crate(dir.path(), "z");
+    let z = dir.path().join("z");
+    git_in(&z, &["config", "tag.gpgsign", "false"]);
+    git_in(&z, &["tag", "-a", "v0.1.0", "-m", "v0.1.0"]);
+    std::fs::write(
+        z.join("Cargo.toml"),
+        "[package]\nname = \"x\"\nversion = \"0.2.0\"\n",
+    )
+    .unwrap();
+    git_in(&z, &["commit", "-qam", "chore: bump"]);
+    // the sweep refuses in its pre-pass, before any registry is asked; the
+    // single-repo run asks the registries first and its refusal is covered
+    // where `plan` is tested, off the network
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "run", "--level", "patch", "--dry-run"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("z:"))
+        .stderr(predicate::str::contains("0.2.0"))
+        .stderr(predicate::str::contains("0.1.1"));
+    assert!(!z.join("CHANGELOG.md").exists());
+}
+
 #[test]
 fn release_hook_install_writes_the_pre_push_and_check_reports_by_id() {
     let dir = tempfile::tempdir().unwrap();

@@ -291,30 +291,31 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
             }
         }
     }
-    let jsr: Vec<_> = inputs
-        .published
-        .versions
-        .iter()
-        .filter(|((r, _), _)| *r == Registry::Jsr)
-        .map(|(_, v)| v.clone())
-        .collect();
-    let npm: Vec<_> = inputs
-        .published
-        .versions
-        .iter()
-        .filter(|((r, _), _)| *r == Registry::Npm)
-        .map(|(_, v)| v.clone())
-        .collect();
-    if let (Some(j), Some(n)) = (jsr.first(), npm.first()) {
-        let mut js = j.clone();
-        let mut ns = n.clone();
+    // a package shipping on both jsr and npm holds the same set on each; the
+    // two are paired by bare name, the segment after the last `/`, since a
+    // jsr name carries a scope and an npm name may not
+    let bare = |name: &str| name.rsplit('/').next().unwrap_or(name).to_string();
+    for ((reg, jsr_name), jsr_versions) in &inputs.published.versions {
+        if *reg != Registry::Jsr {
+            continue;
+        }
+        let npm = inputs
+            .published
+            .versions
+            .iter()
+            .find(|((r, n), _)| *r == Registry::Npm && bare(n) == bare(jsr_name));
+        let Some(((_, npm_name), npm_versions)) = npm else {
+            continue;
+        };
+        let mut js = jsr_versions.clone();
+        let mut ns = npm_versions.clone();
         js.sort();
         ns.sort();
         if js != ns {
             push(
                 "both.sameset",
                 CheckSeverity::Error,
-                "jsr and npm hold different version sets".into(),
+                format!("{jsr_name} on jsr and {npm_name} on npm hold different version sets"),
             );
         }
     }
@@ -357,8 +358,13 @@ fn manifest_version_at(
     let Some(text) = git::show(root, rev, file)? else {
         return Ok(None);
     };
+    // the scratch manifest is written the way the npmrc is: a path already
+    // there is refused, so a planted file is an error and never the answer
     let dir = tempfile_dir();
-    std::fs::write(dir.join(file), text).ok();
+    if let Err(e) = super::publish::write_private(&dir.join(file), &text) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(git::GitError::Scratch(e));
+    }
     let k = if k.has_crate() { RepoKind::Crate } else { RepoKind::Deno };
     let v = version::read(&dir, k).ok();
     let _ = std::fs::remove_dir_all(&dir);

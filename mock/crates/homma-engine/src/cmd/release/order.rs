@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn a_member_crate_named_for_its_own_repo_is_not_a_sibling_edge() {
+    fn a_repo_matches_its_own_member_crate_unless_its_name_is_left_out() {
         let dir = tempfile::tempdir().unwrap();
         // the repo `notko` is a workspace whose members include a crate
         // called `notko`, which `notko-hlist` depends on

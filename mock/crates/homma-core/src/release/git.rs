@@ -23,6 +23,9 @@ pub enum GitError {
     Spawn(sh::Spawn),
     /// A ref or an object that was asked for is not there.
     Missing(String),
+    /// A scratch file a read needed could not be written, a planted path
+    /// included.
+    Scratch(std::io::Error),
 }
 
 impl fmt::Display for GitError {
@@ -34,6 +37,7 @@ impl fmt::Display for GitError {
             } => write!(f, "`{command}` failed: {}", stderr.trim()),
             GitError::Spawn(s) => write!(f, "{s}"),
             GitError::Missing(what) => write!(f, "{what} is not there"),
+            GitError::Scratch(e) => write!(f, "a scratch file could not be written: {e}"),
         }
     }
 }

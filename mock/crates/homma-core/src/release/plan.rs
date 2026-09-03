@@ -76,6 +76,7 @@ pub enum PlanError {
     /// the level makes of it.
     OffLevel {
         manifest: Version,
+        last:     Version,
         level:    Level,
         next:     Version,
     },
@@ -90,14 +91,25 @@ impl fmt::Display for PlanError {
             PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
             PlanError::OffLevel {
                 manifest,
+                last,
                 level,
                 next,
             } => {
-                write!(
-                    f,
-                    "the manifest is at {manifest} and a {level} release makes {next}; set it to \
-                 {next} or pick the level that makes {manifest}"
-                )
+                // below the tag no level makes the manifest's version, so the
+                // only offer is the tag's or the level's
+                if manifest < last {
+                    write!(
+                        f,
+                        "the manifest is at {manifest}, behind the last tag {last}; set it to \
+                         {last} or to {next}, which a {level} release makes"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "the manifest is at {manifest} and a {level} release makes {next}; set it \
+                         to {next} or pick the level that makes {manifest}"
+                    )
+                }
             },
         }
     }
@@ -146,6 +158,7 @@ pub fn plan(root: &Path, head: &str, level: Level, date: &str) -> Result<Plan, P
             if current != *v && current != next {
                 return Err(PlanError::OffLevel {
                     manifest: current,
+                    last: v.clone(),
                     level,
                     next,
                 });
@@ -292,6 +305,31 @@ mod tests {
         );
         assert!(err.to_string().contains("0.1.1"));
         assert!(err.to_string().contains("0.2.0"));
+        assert!(
+            err.to_string().contains("pick the level"),
+            "above the tag a level may make the manifest's version: {err}"
+        );
+        // below the tag no level makes it, and the message does not offer one
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.0.9\"\n",
+        )
+        .unwrap();
+        commit(d.path(), "chore: back too far");
+        let err = plan(d.path(), "HEAD", Level::Patch, "d").unwrap_err();
+        assert!(matches!(&err, PlanError::OffLevel { .. }), "{err}");
+        assert!(
+            err.to_string().contains("behind the last tag 0.1.0"),
+            "{err}"
+        );
+        assert!(!err.to_string().contains("pick the level"), "{err}");
+        // and back at what a patch makes of the tag
+        std::fs::write(
+            d.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.1\"\n",
+        )
+        .unwrap();
+        commit(d.path(), "chore: at the level");
         let p = plan(d.path(), "HEAD", Level::Patch, "d").unwrap();
         assert_eq!(
             p.next,
