@@ -230,7 +230,7 @@ homma release check [<repo>]              the invariants, by id, blocking ones f
 homma release gate [<repo>] [--sha <sha>] run the gate now, record it, post the status
 homma release gate --hook                 what the pre-push hook calls
 homma release gate --post <sha>           post a recorded run's status again
-homma release plan <repo> --level <l>     the plan and nothing else
+homma release plan [<repo>] --level <l>   the plan and nothing else
 homma release run [<repo>] --level <l>    the release, or every unreleased repo
 homma release badges <repo>               rewrite the badges branch from the newest record
 homma release hook install <repo>         write the pre-push hook, or refuse and say why

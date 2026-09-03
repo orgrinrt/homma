@@ -81,17 +81,38 @@ fn resolve_repo<'a>(
     }
     let here = std::env::current_dir()?;
     let here = here.canonicalize().unwrap_or(here);
-    cfg.repos
-        .iter()
-        .map(|(n, r)| (n.as_str(), r, root_of(r)))
-        .filter(|(_, _, root)| {
-            let p = root.canonicalize().unwrap_or_else(|_| root.clone());
-            here.starts_with(&p)
-        })
-        .max_by_key(|(_, _, root)| root.components().count())
-        .ok_or_else(|| {
-            anyhow!("the working directory is not inside a workspace repository; name one")
-        })
+    let containing = |dir: &Path| {
+        cfg.repos
+            .iter()
+            .map(|(n, r)| (n.as_str(), r, root_of(r)))
+            .filter(|(_, _, root)| {
+                let p = root.canonicalize().unwrap_or_else(|_| root.clone());
+                dir.starts_with(&p)
+            })
+            .max_by_key(|(_, _, root)| root.components().count())
+    };
+    if let Some(found) = containing(&here) {
+        return Ok(found);
+    }
+    // a worktree sits beside the clones rather than under one, and a hook
+    // runs with it as the working directory; the clone it hangs off is the
+    // parent of the common git directory
+    let common = std::process::Command::new("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(&here)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
+    if let Some(clone) = common.as_deref().and_then(Path::parent) {
+        let clone = clone.canonicalize().unwrap_or_else(|_| clone.to_path_buf());
+        if let Some(found) = containing(&clone) {
+            return Ok(found);
+        }
+    }
+    Err(anyhow!(
+        "the working directory is not inside a workspace repository; name one"
+    ))
 }
 
 /// The trunk and the release line for this repo: the workspace's working
@@ -171,20 +192,17 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
             sha,
             hook,
             post,
+            git_args: _,
         } => {
-            gate_cmd(
-                cli,
-                &cfg,
-                repo.as_deref(),
-                sha.as_deref(),
-                *hook,
-                post.as_deref(),
-            )
+            // under the hook the first positional is git's remote name, not
+            // a repo; the repo is the one the working directory is in
+            let repo = if *hook { None } else { repo.as_deref() };
+            gate_cmd(cli, &cfg, repo, sha.as_deref(), *hook, post.as_deref())
         },
         ReleaseOp::Plan {
             repo,
             level,
-        } => plan_cmd(cli, &cfg, repo, *level),
+        } => plan_cmd(cli, &cfg, repo.as_deref(), *level),
         ReleaseOp::Run {
             repo,
             level,
@@ -240,8 +258,8 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     })
 }
 
-fn plan_cmd(cli: &Cli, cfg: &Config, repo: &str, level: Level) -> Result<Outcome> {
-    let (_, _, root) = resolve_repo(cfg, Some(repo))?;
+fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result<Outcome> {
+    let (_, _, root) = resolve_repo(cfg, repo)?;
     let p = plan::plan(
         &root,
         branches_checked(cfg, &root)?.0,

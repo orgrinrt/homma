@@ -273,24 +273,30 @@ pub enum ReleaseOp {
     /// Run the gate on the checkout now, record the run, post its status.
     Gate {
         /// The repository's directory name; the working directory's when omitted.
-        repo: Option<String>,
+        repo:     Option<String>,
         /// Refuse unless the checkout is at this sha, since the gate measures
         /// the tree it is given and nothing else.
         #[arg(long)]
-        sha:  Option<String>,
+        sha:      Option<String>,
         /// What the pre-push hook calls: reads the refs being pushed on stdin,
         /// gates the tip when it is among them, and exits non-zero on red so
         /// the push stops.
         #[arg(long, conflicts_with_all = ["sha", "post"])]
-        hook: bool,
+        hook:     bool,
         /// Post the status of an already recorded run on this sha again,
         /// without running anything.
         #[arg(long, conflicts_with = "sha")]
-        post: Option<String>,
+        post:     Option<String>,
+        /// What git hands a pre-push hook after its own arguments: the
+        /// remote's name and url. Read by nothing here; the refs come on
+        /// stdin. Hidden, since only the hook passes them.
+        #[arg(trailing_var_arg = true, hide = true)]
+        git_args: Vec<String>,
     },
     /// Print what a release at this level would do, and do nothing.
     Plan {
-        repo:  String,
+        /// The repository's directory name; the working directory's when omitted.
+        repo:  Option<String>,
         /// `patch`, `minor` or `major`; never inferred.
         #[arg(long)]
         level: homma_api::Level,
@@ -436,6 +442,47 @@ mod tests {
     #[test]
     fn parse_slug_leading_slash_fails() {
         assert!(matches!(ForgeOp::parse_slug("/a"), Err(SlugError::Empty)));
+    }
+
+    #[test]
+    fn the_gate_under_the_hook_takes_gits_remote_name_and_url_as_trailing_arguments() {
+        // git runs `pre-push <remote name> <remote url>`, and the hook passes
+        // both on; neither is a repo and neither is an error
+        let cli = Cli::try_parse_from([
+            "homma",
+            "release",
+            "gate",
+            "--hook",
+            "origin",
+            "git@github.com:orgrinrt/notko.git",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Release {
+                op:
+                    ReleaseOp::Gate {
+                        repo,
+                        hook,
+                        git_args,
+                        ..
+                    },
+            } => {
+                assert!(hook);
+                assert_eq!(repo.as_deref(), Some("origin"));
+                assert_eq!(git_args, vec![
+                    "git@github.com:orgrinrt/notko.git".to_string()
+                ]);
+            },
+            other => panic!("{other:?}"),
+        }
+        // and without the hook a bare name is still the repo
+        let cli = Cli::try_parse_from(["homma", "release", "gate", "x"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Release {
+                op: ReleaseOp::Gate { repo: Some(ref r), hook: false, .. }
+            } if r == "x"
+        ));
     }
 
     #[test]
