@@ -43,6 +43,22 @@ fn release_is_listed_and_plan_prints_the_next_version_without_moving_anything() 
 }
 
 #[test]
+fn a_gate_on_a_commit_the_repo_does_not_have_is_refused_before_anything_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    // the refusal comes from resolving the commit, ahead of the gate's own
+    // steps, so nothing is built and no record is written
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "gate", "x", "--sha", "deadbeef"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("`deadbeef` is not a commit"));
+    assert!(!dir.path().join(".data/homma").exists());
+}
+
+#[test]
 fn a_workspace_wide_run_names_each_repo_it_passes_over_and_why() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("homma.toml");

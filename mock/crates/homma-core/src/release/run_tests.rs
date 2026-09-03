@@ -332,6 +332,14 @@ fn the_whole_release_bumps_merges_tags_releases_publishes_and_writes_badges() {
     assert_eq!(releases.len(), 1);
     assert_eq!(releases[0].0, "v0.1.1");
     assert!(releases[0].1.starts_with("## 0.1.1 (2026-09-02)"));
+    // the same block, verbatim, is the release body: what went into the
+    // changelog on the trunk is what the forge got, every commit line included
+    assert!(
+        log.contains(releases[0].1.as_str()),
+        "the release body is not the changelog's block:\n{}\n---\n{log}",
+        releases[0].1
+    );
+    assert!(releases[0].1.contains("feat: the thing"));
     let ran = runner.0.borrow();
     assert!(
         ran.iter().any(|l| l == "cargo publish -p x --locked"),

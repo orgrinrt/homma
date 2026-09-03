@@ -55,14 +55,16 @@ pub(super) fn gate_cmd(
         }
         tips
     } else {
-        if let Some(want) = sha {
-            if !head.starts_with(want) {
-                return Err(anyhow!(
-                    "the checkout is at {head}, not {want}; the gate measures the tree it is given"
-                ));
-            }
+        // a commit named by hand is gated the way a pushed tip is: the head
+        // in place, any other in a worktree of its own
+        match sha {
+            Some(want) => {
+                let full = homma_core::release::git::sha(root, want)
+                    .map_err(|_| anyhow!("`{want}` is not a commit in this repository"))?;
+                vec![full]
+            },
+            None => vec![head],
         }
-        vec![head]
     };
     let mut lines = Vec::new();
     let mut ok = true;
