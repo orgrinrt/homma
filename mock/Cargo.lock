@@ -1635,6 +1635,8 @@ version = "0.0.0"
 dependencies = [
  "homma-api",
  "homma-core",
+ "mockspace-template",
+ "serde",
  "tempfile",
 ]
 
