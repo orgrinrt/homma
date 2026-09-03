@@ -42,7 +42,6 @@ fn release_is_listed_and_plan_prints_the_next_version_without_moving_anything() 
     assert!(!dir.path().join("x/CHANGELOG.md").exists());
 }
 
-/// `git` in `root`, asserting it succeeded.
 #[test]
 fn a_workspace_wide_run_names_each_repo_it_passes_over_and_why() {
     let dir = tempfile::tempdir().unwrap();

@@ -412,7 +412,7 @@ fn run_cmd(
                     &done.tag_sha[.. 7]
                 ));
             },
-            Ok(Err(p)) => lines.push(format!("{name}:\n{p}")),
+            Ok(Err(p)) => lines.push(format!("{name}: {}\n{p}", branches_line(cfg, root))),
             Err(e) => {
                 ok = false;
                 lines.push(format!("{name}: {e}"));

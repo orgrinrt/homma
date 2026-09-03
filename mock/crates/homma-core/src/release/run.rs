@@ -211,13 +211,17 @@ pub fn step_merge_and_tag(
     } else {
         git::switch(root, setup.release)?;
         // a failure here hands the tree back to the trunk before it is
-        // reported, so a failed release leaves the branch it borrowed
+        // reported, and the release line back to where it was: a merge that
+        // landed and did not push cannot be aborted, only reset, and left
+        // there it makes the next run refuse on the wrong cause
+        let before = git::head(root)?;
         let merged = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.next))
             .and_then(|sha| git::push(root, setup.remote, setup.release, false).map(|_| sha));
         match merged {
             Ok(sha) => sha,
             Err(e) => {
                 let _ = git::abort_merge(root);
+                let _ = git::reset_hard(root, &before);
                 let _ = git::switch(root, setup.trunk);
                 return Err(e.into());
             },

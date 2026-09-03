@@ -39,6 +39,8 @@ fn a_patch_and_a_minor_move_the_part_they_name_and_reset_below() {
 fn a_prerelease_is_dropped_by_any_bump_and_sorts_before_its_release() {
     let pre: Version = "1.2.0-alpha.1".parse().unwrap();
     assert_eq!(pre.bumped(Level::Patch), Version::new(1, 2, 1));
+    assert_eq!(pre.bumped(Level::Minor), Version::new(1, 3, 0));
+    assert_eq!(pre.bumped(Level::Major), Version::new(2, 0, 0));
     assert!(pre < Version::new(1, 2, 0));
     assert!(Version::new(1, 1, 9) < pre);
 }

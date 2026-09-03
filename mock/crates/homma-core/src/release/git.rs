@@ -231,6 +231,12 @@ pub fn merge_no_ff(cwd: &Path, from: &str, message: &str) -> Result<String, GitE
 
 /// Abort a merge in progress. Fails where none is, which a caller cleaning up
 /// after a failed step ignores.
+/// Move the checked-out branch back to `rev`, discarding what sits past it.
+/// Only ever run on a branch this tool moved itself, to undo that move.
+pub fn reset_hard(cwd: &Path, rev: &str) -> Result<(), GitError> {
+    git(cwd, &["reset", "--quiet", "--hard", rev]).map(|_| ())
+}
+
 pub fn abort_merge(cwd: &Path) -> Result<(), GitError> {
     git(cwd, &["merge", "--abort"]).map(|_| ())
 }
@@ -320,7 +326,20 @@ pub fn parent_count(cwd: &Path, rev: &str) -> Result<usize, GitError> {
 /// tag object, so an annotated tag reports its commit the way `tag_target`
 /// does locally.
 pub fn remote_tags(cwd: &Path, remote: &str) -> Result<Vec<(String, String)>, GitError> {
-    let out = trimmed(cwd, &["ls-remote", "--tags", remote])?;
+    // a remote that stops answering is given up on in the same order of time
+    // the registry client allows, rather than for as long as the network
+    // takes; git has no wall bound, so this is the bound it does have
+    let out = sh::run_with_env(cwd, "git", &["ls-remote", "--tags", remote], &[
+        ("GIT_HTTP_LOW_SPEED_LIMIT", "1000"),
+        ("GIT_HTTP_LOW_SPEED_TIME", "15"),
+    ])?;
+    if !out.ok() {
+        return Err(GitError::Failed {
+            command: out.command_line(),
+            stderr:  out.stderr,
+        });
+    }
+    let out = out.stdout.trim().to_string();
     let mut peeled: Vec<(String, String)> = Vec::new();
     let mut plain: Vec<(String, String)> = Vec::new();
     for line in out.lines() {
