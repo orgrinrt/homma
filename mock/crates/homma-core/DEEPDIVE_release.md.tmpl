@@ -98,16 +98,18 @@ status before the push proceeds, so a branch never reaches the remote without
 its status. The hook is a few lines that call `homma release gate --hook`, so
 the logic stays in the binary and the file never drifts from it.
 
-The install refuses in three cases, and each refusal says which. When
-`core.hooksPath` points outside the repo, which is the case for a repo
-mockspace manages, since those route every hook through mockspace's own
-durable directory; such a repo is gated at release time only until mockspace's
-pre-push delegates to homma. When the hooks directory holds files the repo
-tracks, since a hook written there would ship with the repo and ask homma of
-everyone who clones it; that repo keeps its own hooks and is gated at release
-time. And when a `pre-push` is already there that is not homma's, whatever it
-holds and whether or not it can be read, since it is somebody's work; the gate
-goes into it by hand. Homma's own hook is rewritten in place.
+The install refuses in three cases, each refusal says which, and each is
+reported the same way, a line and a non-zero exit, so a sweep across a
+workspace goes on to the next repo. A `core.hooksPath` pointing outside the
+repo is refused, which is the case for a repo mockspace manages, since those
+route every hook through mockspace's own durable directory; such a repo is
+gated at release time only until mockspace's pre-push delegates to homma. A
+hooks directory holding files the repo tracks is refused, since a hook written
+there would ship with the repo and ask homma of everyone who clones it; that
+repo keeps its own hooks and is gated at release time. A `pre-push` already
+there that is not homma's is refused whatever it holds and whether or not it
+can be read, since it is somebody's work, and the gate goes into it by hand.
+homma's own hook is rewritten in place.
 
 ## The check
 
