@@ -301,6 +301,51 @@ fn a_member_with_an_empty_declaration_is_refused_rather_than_excluded() {
     assert!(fake.seen.borrow().is_empty());
 }
 
+/// Currently red, and deliberately left so.
+///
+/// A root package that declares sets is built once per set and the members
+/// under it are built by nothing. The mirror case below, a root declaring
+/// nothing beside a member that declares, handles its members carefully, so the
+/// asymmetry is in the code rather than in either fixture.
+///
+/// Which behaviour is wanted is open. Either the members are reached, on the
+/// reasoning the other branch already uses, or a root declaring sets has said
+/// which builds are legal for the whole tree and a workspace-wide run would
+/// perform one it excluded. This asserts the first, which is the intended
+/// behaviour if the case is meant to work at all; it turns green if that is
+/// chosen and is deleted with a sentence if the other is.
+///
+/// It cannot happen in this estate today, because a `None` entry needs the root
+/// to be a package and every workspace here has a virtual root. It goes live
+/// the first time one does not, and it fails by reporting green having built
+/// less.
+#[test]
+#[ignore = "catalogue: a root package declaring feature sets builds no member at all; \
+            which of the two readings is right is undecided, see design round 202609030600"]
+fn a_root_declaring_sets_still_builds_its_members() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"outer\"\nversion = \
+         \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"u8\"], \
+         [\"u16\"]]\n[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo test --no-default-features --features u8",
+        "cargo test --no-default-features --features u16",
+        "cargo test --workspace --exclude outer --all-features",
+    ]);
+}
+
 #[test]
 fn a_root_package_keeps_its_bare_runs_beside_a_declaring_member() {
     let d = tempfile::tempdir().unwrap();

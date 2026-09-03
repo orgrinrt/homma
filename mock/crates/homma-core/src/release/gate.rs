@@ -367,6 +367,13 @@ fn cargo_runs(
     };
     let members: Vec<&str> = declared.iter().filter_map(|(n, _)| n.as_deref()).collect();
     match declared.iter().find(|(n, _)| n.is_none()) {
+        // FIXME: this arm reaches the root and no member. `members` is computed
+        // above and never read here, so a root package declaring sets with
+        // members under it builds only itself, where the arm below excludes
+        // declaring members from a workspace-wide run and reaches the rest.
+        // Whether a declaring root should speak for the whole tree is open;
+        // `a_root_declaring_sets_still_builds_its_members` is the ignored arm
+        // holding the case, and design round 202609030600 is the reasoning.
         Some((_, sets)) => {
             for set in sets {
                 calls.push(with_set(&[], set));
