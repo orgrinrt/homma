@@ -56,16 +56,20 @@ kind is owed. What a step runs per signal:
 
 The description step is the one that runs no program: it reads the checkout
 and compares two lines of it. The tagline is the readme's blockquote under
-the title, the first line beginning `>` after the first heading, wherever
-the badge block puts it and inside a `<div>` or not, with the marker stripped
-and a quote wrapped over two lines joined by a space; it is the line a
-stranger reads first on the forge, and the opening prose after the badge
-block is a different element and is never taken for it. A title written
-setext style, underlined rather than hashed, is a title. The description is
-what the same stranger reads first on the registry, and the manifests read
-are the ones that reach one: every `Cargo.toml` in the tree whose `[package]`
-does not say `publish = false`, and every `deno.json` carrying a `name`,
-`target/` and `node_modules/` left unwalked. Each is held to the tagline of
+the title: the first line beginning `>` between the first heading and the
+next heading after it, wherever the badge block puts it and inside a `<div>`
+or not, with fenced code skipped, the marker stripped and a quote wrapped
+over two lines joined by a space; it is the line a stranger reads first on
+the forge. Nothing below the first section is read, so the opening prose is
+never taken for it and neither is a quote some later section carries. A
+title written setext style, underlined rather than hashed, is a title. The
+description is what the same stranger reads first on the registry, and the
+manifests read are the ones that reach one: every `Cargo.toml` in the tree
+whose `[package]` does not say `publish = false`, and every `deno.json`
+carrying a `name`. `target/`, `node_modules/` and `.git/` are left unwalked,
+and so is the audit trail, any directory named `research` or `design_rounds`
+or ending in `probes`, whose committed crates are evidence rather than
+anything a registry sees. Each is held to the tagline of
 the readme beside it where one exists, and to the root readme's otherwise,
 so a launcher crate under a virtual root is held to the root readme, a
 workspace publishing several crates with a readme each is held crate by
