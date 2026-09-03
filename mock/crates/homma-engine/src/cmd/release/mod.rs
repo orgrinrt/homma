@@ -351,11 +351,7 @@ fn run_cmd(
                 Ok(_) => active.push(name.clone()),
                 // a manifest off the level refuses a single run, so it
                 // refuses the sweep too rather than being passed over
-                Err(
-                    e @ plan::PlanError::OffLevel {
-                        ..
-                    },
-                ) => {
+                Err(e @ plan::PlanError::OffLevel(_)) => {
                     return Err(anyhow!("{name}: {e}"));
                 },
                 Err(e) => lines.push(format!("{name}: passed over, {e}")),

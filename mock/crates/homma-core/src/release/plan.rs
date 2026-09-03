@@ -73,13 +73,18 @@ pub enum PlanError {
     /// The publishable crates depend on each other in a cycle.
     Cycle(String),
     /// The manifest sits at a version that is neither the last tag's nor what
-    /// the level makes of it.
-    OffLevel {
-        manifest: Version,
-        last:     Version,
-        level:    Level,
-        next:     Version,
-    },
+    /// the level makes of it. Boxed, since three versions inline would make
+    /// every result carrying this error larger than the gate's clippy allows.
+    OffLevel(Box<OffLevel>),
+}
+
+/// What a manifest off the level was measured against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffLevel {
+    pub manifest: Version,
+    pub last:     Version,
+    pub level:    Level,
+    pub next:     Version,
 }
 
 impl fmt::Display for PlanError {
@@ -89,12 +94,13 @@ impl fmt::Display for PlanError {
             PlanError::NoManifest(e) => write!(f, "{e}"),
             PlanError::Version(e) => write!(f, "{e}"),
             PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
-            PlanError::OffLevel {
-                manifest,
-                last,
-                level,
-                next,
-            } => {
+            PlanError::OffLevel(o) => {
+                let OffLevel {
+                    manifest,
+                    last,
+                    level,
+                    next,
+                } = &**o;
                 // below the tag no level makes the manifest's version, so the
                 // only offer is the tag's or the level's
                 if manifest < last {
@@ -156,12 +162,12 @@ pub fn plan(root: &Path, head: &str, level: Level, date: &str) -> Result<Plan, P
         Some((_, v)) => {
             let next = v.bumped(level);
             if current != *v && current != next {
-                return Err(PlanError::OffLevel {
+                return Err(PlanError::OffLevel(Box::new(OffLevel {
                     manifest: current,
                     last: v.clone(),
                     level,
                     next,
-                });
+                })));
             }
             next
         },
@@ -299,8 +305,8 @@ mod tests {
         // 0.1.1 is what a patch makes of v0.1.0, and not what a major makes
         let err = plan(d.path(), "HEAD", Level::Major, "d").unwrap_err();
         assert!(
-            matches!(&err, PlanError::OffLevel { manifest, next, .. }
-                if *manifest == Version::new(0, 1, 1) && *next == Version::new(0, 2, 0)),
+            matches!(&err, PlanError::OffLevel(o)
+                if o.manifest == Version::new(0, 1, 1) && o.next == Version::new(0, 2, 0)),
             "{err}"
         );
         assert!(err.to_string().contains("0.1.1"));
@@ -317,7 +323,7 @@ mod tests {
         .unwrap();
         commit(d.path(), "chore: back too far");
         let err = plan(d.path(), "HEAD", Level::Patch, "d").unwrap_err();
-        assert!(matches!(&err, PlanError::OffLevel { .. }), "{err}");
+        assert!(matches!(&err, PlanError::OffLevel(_)), "{err}");
         assert!(
             err.to_string().contains("behind the last tag 0.1.0"),
             "{err}"
