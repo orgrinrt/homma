@@ -286,12 +286,29 @@ fn calls_for(
         Step::Tests => {
             if crate_ {
                 calls.push(Call::new("cargo", &["test", "--all-features"]));
-                let sets = feature_sets(root)?;
-                if sets.is_empty() {
-                    calls.push(Call::new("cargo", &["test", "--no-default-features"]));
-                } else {
+                // the root package's sets stand in for the plain no-features
+                // run; a member's sets run against that member, `-p`, beside
+                // the workspace-wide runs every member gets
+                let declared = feature_sets(root)?;
+                let root_sets = declared.iter().find(|(n, _)| n.is_none());
+                match root_sets {
+                    None => calls.push(Call::new("cargo", &["test", "--no-default-features"])),
+                    Some((_, sets)) => {
+                        for set in sets {
+                            let mut c = Call::new("cargo", &["test", "--no-default-features"]);
+                            if !set.is_empty() {
+                                c.args.push("--features".into());
+                                c.args.push(set.join(","));
+                            }
+                            calls.push(c);
+                        }
+                    },
+                }
+                for (name, sets) in declared.iter().filter(|(n, _)| n.is_some()) {
                     for set in sets {
-                        let mut c = Call::new("cargo", &["test", "--no-default-features"]);
+                        let mut c = Call::new("cargo", &["test", "-p"]);
+                        c.args.push(name.clone().unwrap_or_default());
+                        c.args.push("--no-default-features".into());
                         if !set.is_empty() {
                             c.args.push("--features".into());
                             c.args.push(set.join(","));
@@ -333,38 +350,46 @@ fn calls_for(
     Ok(calls)
 }
 
-/// `[package.metadata.homma] feature_sets` off the root manifest, or off
-/// the first workspace member that declares one; empty where none does.
-pub fn feature_sets(root: &Path) -> Result<Vec<Vec<String>>, GateError> {
-    // the root first, then each member the publish walks, so a virtual
-    // manifest whose member declares the sets is read the way a package
-    // root is; the first manifest declaring any wins
-    let mut dirs = vec![root.to_path_buf()];
-    dirs.extend(super::publish::crate_dirs(root).into_values());
-    let mut sets = None;
-    for dir in dirs {
-        let text = std::fs::read_to_string(dir.join("Cargo.toml")).map_err(|e| {
-            GateError::Manifest(format!("{}: {e}", dir.join("Cargo.toml").display()))
-        })?;
-        let doc: toml::Value = toml::from_str(&text).map_err(|e| {
-            GateError::Manifest(format!("{}: {e}", dir.join("Cargo.toml").display()))
-        })?;
-        let declared = doc
-            .get("package")
-            .and_then(|p| p.get("metadata"))
-            .and_then(|m| m.get("homma"))
-            .and_then(|h| h.get("feature_sets"))
-            .and_then(|s| s.as_array())
-            .cloned();
-        if declared.is_some() {
-            sets = declared;
-            break;
+/// Every declared feature set with the member it belongs to: the root
+/// package's with no name, each workspace member's with its package name,
+/// so a member's sets run against that member and none is inherited.
+pub type FeatureSets = Vec<(Option<String>, Vec<Vec<String>>)>;
+
+/// Every `[package.metadata.homma] feature_sets` the tree declares; see
+/// `FeatureSets`. Empty where nothing declares any.
+pub fn feature_sets(root: &Path) -> Result<FeatureSets, GateError> {
+    let mut found = Vec::new();
+    let root_doc = manifest(&root.join("Cargo.toml"))?;
+    if let Some(sets) = declared(&root_doc) {
+        found.push((None, parse_sets(sets)?));
+    }
+    for (name, dir) in super::publish::crate_dirs(root) {
+        if dir == root {
+            continue;
+        }
+        let doc = manifest(&dir.join("Cargo.toml"))?;
+        if let Some(sets) = declared(&doc) {
+            found.push((Some(name), parse_sets(sets)?));
         }
     }
-    let Some(sets) = sets else {
-        return Ok(Vec::new());
-    };
-    let sets = &sets;
+    Ok(found)
+}
+
+fn manifest(path: &Path) -> Result<toml::Value, GateError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| GateError::Manifest(format!("{}: {e}", path.display())))?;
+    toml::from_str(&text).map_err(|e| GateError::Manifest(format!("{}: {e}", path.display())))
+}
+
+fn declared(doc: &toml::Value) -> Option<&Vec<toml::Value>> {
+    doc.get("package")?
+        .get("metadata")?
+        .get("homma")?
+        .get("feature_sets")?
+        .as_array()
+}
+
+fn parse_sets(sets: &[toml::Value]) -> Result<Vec<Vec<String>>, GateError> {
     let mut out = Vec::new();
     for set in sets {
         let Some(items) = set.as_array() else {

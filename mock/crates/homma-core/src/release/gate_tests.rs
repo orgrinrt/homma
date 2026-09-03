@@ -105,7 +105,10 @@ fn feature_sets_declared_by_a_workspace_member_are_read_off_a_virtual_root() {
         "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[\"a\"]]\n",
     )
     .unwrap();
-    assert_eq!(feature_sets(d.path()).unwrap(), vec![vec!["a".to_string()]]);
+    assert_eq!(feature_sets(d.path()).unwrap(), vec![(
+        Some("inner".to_string()),
+        vec![vec!["a".to_string()]]
+    )]);
     // and a member declaring none leaves the root's answer, which is none
     std::fs::write(
         d.path().join("crates/inner/Cargo.toml"),
@@ -113,6 +116,44 @@ fn feature_sets_declared_by_a_workspace_member_are_read_off_a_virtual_root() {
     )
     .unwrap();
     assert!(feature_sets(d.path()).unwrap().is_empty());
+}
+
+#[test]
+fn each_member_s_feature_sets_run_against_that_member_and_none_is_inherited() {
+    let d = tempfile::tempdir().unwrap();
+    for (name, sets) in [("alpha", "[[\"a\"]]"), ("zeta", "[[\"z\"], []]")] {
+        std::fs::create_dir_all(d.path().join("crates").join(name)).unwrap();
+        std::fs::write(
+            d.path().join("crates").join(name).join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = {sets}\n"
+            ),
+        )
+        .unwrap();
+    }
+    std::fs::create_dir_all(d.path().join("crates/plain")).unwrap();
+    std::fs::write(
+        d.path().join("crates/plain/Cargo.toml"),
+        "[package]\nname = \"plain\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    let fake = Fake::new(vec![]);
+    run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
+    // the workspace-wide runs every member gets, then each member's own sets
+    // against itself; `plain` declares none and inherits none, and `zeta`'s
+    // empty set is its own no-features run
+    assert_eq!(fake.seen.borrow().as_slice(), &[
+        "cargo test --all-features",
+        "cargo test --no-default-features",
+        "cargo test -p alpha --no-default-features --features a",
+        "cargo test -p zeta --no-default-features --features z",
+        "cargo test -p zeta --no-default-features",
+    ]);
 }
 
 #[test]
@@ -167,11 +208,11 @@ fn feature_sets_from_the_manifest_each_get_a_run() {
     let d = crate_root(
         "[package]\nname = \"x\"\nversion = \"0.1.0\"\n[package.metadata.homma]\nfeature_sets = [[], [\"a\"], [\"a\", \"b\"]]\n",
     );
-    assert_eq!(feature_sets(d.path()).unwrap(), vec![
+    assert_eq!(feature_sets(d.path()).unwrap(), vec![(None, vec![
         vec![],
         vec!["a".to_string()],
         vec!["a".to_string(), "b".to_string()]
-    ]);
+    ])]);
     let fake = Fake::new(vec![]);
     run_step(&fake, d.path(), RepoKind::Crate, Step::Tests).unwrap();
     assert_eq!(fake.seen.borrow().as_slice(), &[

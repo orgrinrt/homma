@@ -18,6 +18,7 @@ pub mod path;
 pub mod record;
 pub mod reference;
 pub mod release;
+pub mod version;
 
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
