@@ -21,4 +21,5 @@ pub mod registry;
 pub mod run;
 pub mod sh;
 pub mod status;
+pub mod tagline;
 pub mod version;

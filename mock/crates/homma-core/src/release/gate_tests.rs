@@ -546,6 +546,63 @@ fn a_repo_that_is_both_runs_both_halves_of_a_step() {
 }
 
 #[test]
+fn the_description_step_runs_in_the_gate_and_a_drifted_description_turns_the_run_red() {
+    let readme = "# x\n\n<div align=\"center\">\n\n[![a](x)](y)\n\n> One line, said once.\n\n</div>\n\nOpening prose.\n";
+    let fake = Fake::new(vec![]);
+    let held = |description: &str| {
+        let d = git_repo_with(&[
+            ("README.md", readme),
+            (
+                "Cargo.toml",
+                &format!(
+                    "[package]\nname=\"x\"\nversion=\"0.1.0\"\ndescription=\"{description}\"\n"
+                ),
+            ),
+        ]);
+        run_gate(
+            &fake,
+            d.path(),
+            &Markers::default(),
+            "x",
+            "2026-09-02T20:00:00Z",
+        )
+        .unwrap()
+    };
+    let green = held("One line, said once.");
+    assert_eq!(green.verdict, Verdict::Green);
+    let step = green
+        .steps
+        .iter()
+        .find(|s| s.step == Step::Description)
+        .expect("the gate ran the description step");
+    assert!(step.passed && !step.skipped, "{}", step.log);
+
+    let red = held("One line, said twice.");
+    assert_eq!(
+        red.verdict,
+        Verdict::Red,
+        "the description is a blocking step"
+    );
+    let step = red
+        .steps
+        .iter()
+        .find(|s| s.step == Step::Description)
+        .unwrap();
+    assert!(!step.passed, "{}", step.log);
+    assert!(
+        step.log.contains("tagline:     One line, said once."),
+        "{}",
+        step.log
+    );
+    // the step runs no program: the runner saw nothing new for it
+    assert!(
+        !fake.seen.borrow().iter().any(|c| c.contains("README")),
+        "{:?}",
+        fake.seen.borrow()
+    );
+}
+
+#[test]
 fn the_whole_gate_refuses_a_dirty_tree_and_runs_every_step_on_a_clean_one() {
     let d = git_repo_with(&[("Cargo.toml", "[package]\nname=\"x\"\nversion=\"0.1.0\"\n")]);
     let fake = Fake::new(vec![(

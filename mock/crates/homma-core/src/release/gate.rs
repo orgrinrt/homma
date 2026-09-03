@@ -2,9 +2,10 @@
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
-//! The gate: six steps run against one clean checkout, each producing a pass
-//! or a fail, the numbers it measured and everything it printed. What each
-//! step runs per repo kind is the table in `DEEPDIVE_release.md`.
+//! The gate: seven steps run against one clean checkout, each producing a
+//! pass or a fail, the numbers it measured and everything it printed. What
+//! each step runs per repo kind is the table in `DEEPDIVE_release.md`; the
+//! last runs no program and reads two files instead.
 
 use std::fmt;
 use std::path::Path;
@@ -12,7 +13,7 @@ use std::time::Instant;
 
 use homma_api::{GateRun, Markers, RepoKind, Step, StepOutcome};
 
-use super::{git, kind, numbers, sh};
+use super::{git, kind, numbers, sh, tagline};
 
 /// How the gate reaches a program. The real one spawns it; a test hands the
 /// gate what a tool would have printed.
@@ -184,6 +185,11 @@ pub fn run_step(
     repo_kind: RepoKind,
     step: Step,
 ) -> Result<StepOutcome, GateError> {
+    // the one step that runs no program: a read of the manifest and the
+    // readme, compared in this process
+    if step == Step::Description {
+        return Ok(tagline::check(root));
+    }
     let calls = calls_for(root, repo_kind, step)?;
     if calls.is_empty() {
         return Ok(StepOutcome::skipped(step));
@@ -333,6 +339,8 @@ fn calls_for(
                 calls.push(Call::new("ante", &["check"]));
             }
         },
+        // handled before the calls are asked for; nothing to run
+        Step::Description => {},
     }
     Ok(calls)
 }
