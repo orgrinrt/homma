@@ -17,6 +17,7 @@ pub mod git;
 pub mod path;
 pub mod record;
 pub mod reference;
+pub mod rule;
 
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
@@ -26,3 +27,4 @@ pub use git::{CommitIdentity, EmptyPart, Git, Part};
 pub use path::{AbsPath, NotAbsolute};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
 pub use reference::{Namespace, NotAReference, Reference, Rung};
+pub use rule::{MetaError, Parsed, RuleKind, RuleMeta};
