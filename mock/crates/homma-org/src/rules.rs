@@ -143,6 +143,13 @@ impl Corpus {
                 continue;
             };
             if let Some(name) = file.strip_suffix(RULE_SUFFIX) {
+                // A rule's name is a slug and carries no dot of its own, so
+                // anything with a further extension left over is a different
+                // kind of file that happens to end the same way. Without this,
+                // `x.card.md.tmpl` loads as a rule named `x.card`.
+                if name.contains('.') {
+                    continue;
+                }
                 files.insert(name.to_string(), path);
             }
         }
@@ -192,9 +199,8 @@ impl Corpus {
 
     /// Render every card into `dst`, returning the paths written.
     ///
-    /// An elaboration with no card beside it is refused rather than skipped:
-    /// skipping leaves a rule authored, findable by `about`, and absent from
-    /// every session that was supposed to load it.
+    /// Every rule has a card by construction, since the card is the file's own
+    /// opening rather than a second document that could be missing.
     pub fn render_cards(&self, dst: &Path) -> Result<Vec<PathBuf>, CorpusError> {
         fs::create_dir_all(dst).map_err(|cause| {
             CorpusError::Write {

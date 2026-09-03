@@ -297,3 +297,21 @@ fn a_missing_directory_is_refused_rather_than_read_as_an_empty_corpus() {
     }
     let _ = fs::remove_dir_all(&d);
 }
+
+#[test]
+fn a_file_with_a_further_extension_is_not_a_rule() {
+    // A rule's name is a slug. Without the guard `x.card.md.tmpl` strips to a
+    // rule named `x.card`, which then fails to parse and refuses the whole
+    // corpus for a file that was never a rule.
+    let d = fixture();
+    let src = d.join("rules");
+    fs::write(
+        src.join("writing-style.card.md.tmpl"),
+        "not a rule at all\n",
+    )
+    .unwrap();
+    let c = Corpus::load(&src).expect("a neighbouring file must not refuse the load");
+    assert_eq!(c.rules.len(), 3);
+    assert!(!c.rules.iter().any(|r| r.name.contains('.')));
+    let _ = fs::remove_dir_all(&d);
+}
