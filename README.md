@@ -205,27 +205,6 @@ homma_branch  = "dev"     # a moving target, so the engine moves under you
 With no key at all the launcher says so rather than guessing, because a
 workspace that has not decided which engine it runs has not decided.
 
-## Responsible tooling
-
-`homma agent regen` walks the workspace and drives each member repo's own template
-regeneration, which in practice means assistant configuration files end up
-written into the workspace. It's a convenience for a workflow that already has
-those files, not a reason to adopt the tool, and everything else here works with
-it untouched.
-
-We do not recommend using coding agents with this codebase.
-
-If you still choose to use one:
-
-- Be aware of the environmental and social impact of large-scale model
-  inference. Minimise agent use where it is not needed. Be responsible.
-- Only use an agent if you yourself understand the architecture. Do not use an
-  agent because you do not understand; you will waste time and energy, both
-  yours and the planet's.
-
-The recommendation stands: do this work yourself unless you know what you are
-doing and why.
-
 ## Support
 
 Whether you use this project, have learned something from it, or just like it, please consider supporting it by buying me a coffee, so I can dedicate more time on open-source projects like this :)
