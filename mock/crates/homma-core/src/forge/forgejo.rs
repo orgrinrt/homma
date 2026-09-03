@@ -389,3 +389,7 @@ fn truncate(mut s: String, max: usize) -> String {
 #[cfg(test)]
 #[path = "forgejo_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "forgejo_wire_tests.rs"]
+mod wire_tests;
