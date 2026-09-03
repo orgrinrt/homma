@@ -53,13 +53,16 @@ and where it does, those sets are the whole of what the gate builds for it:
 lint, tests and docs each run once per set, `--no-default-features` with that
 set enabled, and `--all-features` is never run for it, since a crate whose
 features exclude each other has said which builds are legal and the gate does
-not build an illegal one. A crate without the entry is built with all features
-and with none. In a workspace, the workspace-wide all-features runs exclude
-every member declaring sets, so a plain member keeps its two runs and a
-declaring member gets its own against itself. The docs number is read off the
-first set's coverage table. A gate never edits a tree; it runs in the checkout it is given and fails if that
-checkout is dirty, because a number measured on a tree with unstaged changes
-describes no commit.
+not build an illegal one. An empty declaration is refused as a manifest error,
+since it would gate nothing and pass. A crate without the entry is built with
+all features and with none. On a virtual workspace root, the workspace-wide
+runs exclude every member declaring sets, so a plain member keeps its two runs
+and a declaring member gets its own against itself; a root that is itself a
+package builds alone as it always did, and a declaring member under it gets
+its own runs beside that. The docs number is read off the first set's coverage
+table. A gate never edits a tree; it runs in the checkout it is given and
+fails if that checkout is dirty, because a number measured on a tree with
+unstaged changes describes no commit.
 
 ## The run record
 
