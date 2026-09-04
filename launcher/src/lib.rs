@@ -10,10 +10,16 @@
 //! a per-version cache, execing it with an absolute working directory, keeping
 //! itself current. None of that is this tool's and none of it lives here.
 //!
-//! What lives here is the descriptor, and one hook: the engine is not at the
-//! top of this repo, so `--engine` pointed at a checkout of it needs to say
-//! where. Everything else a tool can hook is left alone, which is the thing
-//! the extraction was for.
+//! What lives here is the descriptor, one hook, four settings and one
+//! command. The hook: the engine is not at the top of this repo, so
+//! `--engine` pointed at a checkout of it needs to say where. The settings
+//! are the person's, read through renki's configuration surface, and the
+//! command is `homma workspace`, which runs where there is no workspace yet
+//! and so cannot be the engine's. Everything else a tool can hook is left
+//! alone, which is the thing the extraction was for.
+
+pub mod settings;
+pub mod workspace;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -51,6 +57,10 @@ pub const TOOL: Tool = Tool {
     // below it to name.
     workdir: None,
     locate: Some(Locate::DEFAULT),
+    // The person's file, and the one command that reads it before there is
+    // a workspace to run the engine in.
+    settings: settings::SETTINGS,
+    commands: workspace::COMMANDS,
     hooks: Hooks {
         verify_engine_dir: Some(engine_dir_holds_the_engine),
         ..Hooks::NONE

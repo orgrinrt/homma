@@ -41,13 +41,21 @@ keywords = ["homma", "workspace", "multi-repo", "git"]
 include = ["src/**/*.rs", "LICENSE"]
 
 # The launcher machinery is `renki` and is shared with every other tool built
-# the same way. What is left here is this tool's own, which is a descriptor and
-# nothing else.
+# the same way. What is left here is this tool's own: a descriptor, its four
+# settings, and the one command it answers without the engine.
 [dependencies]
-# A `0.0.x` requirement is already the exact version and nothing else, which is
-# what this wants: it is the launcher every operator installs, and it moves when
-# the number here moves rather than when a branch does.
-renki = "0.0.1"
+# renki's working trunk, until the release that carries a tool's own commands
+# and settings. A `0.0.x` requirement is the exact version and nothing else,
+# which is what this goes back to then: it is the launcher every operator
+# installs, and it moves when the number here moves rather than when a branch
+# does. The contracts crate is the same repository at the same revision, so
+# the two cannot disagree.
+# FIXME: a git requirement is not publishable, and `this_launcher_is_publishable`
+# says so from under an ignore; the renki release carrying `Tool::commands`
+# puts a version here and takes the ignore off.
+renki = { version = "0.0.2", git = "https://github.com/orgrinrt/renki.git", branch = "dev" }
+renki-config = { version = "0.0.0", git = "https://github.com/orgrinrt/renki.git", branch = "dev" }
+notko = { version = "0.0.1", default-features = false }
 
 # The engine's config type, so a test can hold both ends of the one file this
 # tool and its engine share. Dev-only: the launcher itself never reads the
