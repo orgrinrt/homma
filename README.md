@@ -49,11 +49,18 @@ into anything that has to keep running unattended just yet.
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
 | `homma release <op>` | The gate that runs on the pushing machine and posts its status, and the release that merges the trunk onto `main`, tags it, writes the changelog, publishes to the registries and rewrites the badges |
 | `homma hook <op>` | The git hooks: one entrypoint per event in a repo's own hooks directory, running what `[hooks]` in `homma.toml` names for it, the release gate on `pre-push` among them. `install` writes them and says how git reaches each; `run` is what an entrypoint calls |
+| `homma workspace [op]` | The launcher's own, so it works where there is no workspace yet. Bare inside one it prints every repo with its branch, whether it's dirty and what's on no remote; bare outside one it clones your content repository into the cwd, which has to be empty. `spawn <slug> [owner/name ...]` makes one under your workspaces directory, `reap [<slug>]` removes one and refuses while anything in it is dirty or unpushed, `list` says what's there |
+| `homma config <op>` | Your own settings, in a file under your config directory: `path`, `schema`, `get`, `set` and `edit`. Where workspaces go, which repository a fresh one is a clone of, what it clones beside it, and where one may never be made, which is your home directory unless you say otherwise |
 
 `--output json` sits on the root and applies to all of them, one document per
 command, which is there mostly so you can pipe it into `jq` and stop parsing our
 terminal formatting. `--config` and `--dir` are global the same way, and say
 which manifest to read and which directory to treat as the root.
+
+The settings file is the person's and the manifest is the workspace's, and the
+two don't overlap. `homma config schema` lists what the file may hold; a fresh
+install refuses to spawn anything until `spawn.content_repo` names a
+repository, because there's no sensible default for whose repository that is.
 
 ## Usage
 
