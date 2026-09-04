@@ -53,8 +53,8 @@ include = ["src/**/*.rs", "LICENSE"]
 # FIXME: a git requirement is not publishable, and `this_launcher_is_publishable`
 # says so from under an ignore; the renki release carrying `Tool::commands`
 # puts a version here and takes the ignore off.
-renki = { git = "https://github.com/orgrinrt/renki.git", branch = "dev" }
-renki-config = { git = "https://github.com/orgrinrt/renki.git", branch = "dev" }
+renki = { version = "0.0.2", git = "https://github.com/orgrinrt/renki.git", branch = "dev" }
+renki-config = { version = "0.0.0", git = "https://github.com/orgrinrt/renki.git", branch = "dev" }
 notko = { version = "0.0.1", default-features = false }
 
 # The engine's config type, so a test can hold both ends of the one file this
