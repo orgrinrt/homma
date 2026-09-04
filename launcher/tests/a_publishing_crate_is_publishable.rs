@@ -59,13 +59,6 @@ fn refused(text: &str) -> Vec<(String, Why)> {
     found
 }
 
-// Red on purpose while the launcher takes renki's working trunk: the command
-// table and the settings it declares are on no released renki yet. The
-// release that carries them flips the requirement back to a version and
-// takes this attribute off; the test itself is right and stays as it is.
-#[ignore = "catalogue: the launcher takes renki from its dev branch until the release carrying \
-            Tool::commands; tracked by the agenda row \
-            the-homma-launcher-takes-renki-with-the-locked-install"]
 #[test]
 fn this_launcher_is_publishable() {
     let manifest =
