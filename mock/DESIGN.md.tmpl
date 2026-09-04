@@ -95,8 +95,10 @@ and every repository in it with its branch, whether the tree is dirty and how
 many commits sit on no remote; bare, outside one, it clones the content
 repository into the cwd, which has to be empty; `spawn <slug>` does the same
 under the person's workspaces directory, with the repositories named beside
-it; `reap` removes one, refusing while anything in it is dirty or unpushed;
-`list` names what is there. It is the session's throwaway clone and knows
+it; `reap` removes one, refusing while anything in it is dirty or unpushed,
+and refusing outright a target that is not a workspace, one the settings
+deny, one the cwd is inside, or one holding a worktree, since a seat is
+somebody's; `list` names what is there. It is the session's throwaway clone and knows
 nothing about identities. The org design's workspace lifecycle, which stands
 a participant's workspace up from a registry entry inside a root, is a
 different thing and stays in the engine.
