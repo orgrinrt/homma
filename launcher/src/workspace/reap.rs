@@ -9,7 +9,8 @@
 use std::io::Write;
 use std::path::Path;
 
-use super::status;
+use super::{git, status};
+use crate::settings::Prefs;
 
 /// Remove the workspace at `root`.
 ///
@@ -17,9 +18,56 @@ use super::status;
 /// repository in it is surveyed first and anything dirty or on no remote
 /// refuses, naming what it found. `force` removes anyway, having printed
 /// the same list, so what is discarded is at least on the screen.
-pub fn reap(root: &Path, force: bool, out: &mut dyn Write) -> Result<(), String> {
+///
+/// Three refusals come ahead of the survey and `force` lifts none of them:
+/// the target is not a workspace at all, which is a directory with no clone
+/// at its root; it is a directory the settings deny, since a verb that ends
+/// in `remove_dir_all` is not held to a lower bar than the one that clones;
+/// and `cwd` is inside it, since removing the directory a shell stands in
+/// leaves that shell where every later command fails for no visible reason.
+/// Worktrees, a `.git` file rather than a directory, are what the survey
+/// cannot see, so any found one level down or under `.worktrees/` refuse
+/// too, whatever `force` says: a worktree is somebody's seat.
+pub fn reap(
+    prefs: &Prefs,
+    home: Option<&Path>,
+    cwd: &Path,
+    root: &Path,
+    force: bool,
+    out: &mut dyn Write,
+) -> Result<(), String> {
     if !root.is_dir() {
         return Err(format!("no workspace at {}", root.display()));
+    }
+    if !git::is_clone(root) {
+        return Err(format!(
+            "{} holds no repository at its root, so it is not a workspace and is not removed",
+            root.display()
+        ));
+    }
+    if let Some(why) = prefs.refusal_for(root, home)? {
+        return Err(why);
+    }
+    let resolved = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let standing = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    if standing.starts_with(&resolved) {
+        return Err(format!(
+            "the cwd is inside {}, and removing the directory a shell stands in leaves it \
+             nowhere; `cd` out of it first and name it: `homma workspace reap <slug>`",
+            root.display()
+        ));
+    }
+    let seats = worktrees_in(root)?;
+    if !seats.is_empty() {
+        return Err(format!(
+            "{} holds worktrees, which are somebody's seats and which the survey cannot \
+             see:\n{}remove them with `git worktree remove` first",
+            root.display(),
+            seats
+                .iter()
+                .map(|s| format!("  {}\n", s.display()))
+                .collect::<String>()
+        ));
     }
     let members = status::survey(root)?;
     let held: Vec<_> = members.iter().filter(|m| m.holds_work()).collect();
@@ -53,6 +101,35 @@ pub fn reap(root: &Path, force: bool, out: &mut dyn Write) -> Result<(), String>
     std::fs::remove_dir_all(root).map_err(|e| format!("cannot remove {}: {e}", root.display()))?;
     out.write_all(format!("removed {}\n", root.display()).as_bytes())
         .map_err(|e| e.to_string())
+}
+
+/// Every worktree in a workspace: an entry one level down whose `.git` is a
+/// file, and every entry under `.worktrees/`, where the workspace rules put
+/// agent seats.
+fn worktrees_in(root: &Path) -> Result<Vec<std::path::PathBuf>, String> {
+    let mut found = Vec::new();
+    let entries = |dir: &Path| -> Result<Vec<std::path::PathBuf>, String> {
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        Ok(std::fs::read_dir(dir)
+            .map_err(|e| format!("cannot read {}: {e}", dir.display()))?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .collect())
+    };
+    for p in entries(root)? {
+        if p.join(".git").is_file() {
+            found.push(p);
+        }
+    }
+    for p in entries(&root.join(".worktrees"))? {
+        if p.is_dir() {
+            found.push(p);
+        }
+    }
+    found.sort();
+    Ok(found)
 }
 
 /// The directories under the workspaces root, one per line, or a line saying

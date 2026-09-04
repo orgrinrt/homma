@@ -87,11 +87,22 @@ impl Prefs {
                 notko::Outcome::Err(()) => Err(format!("{key} is not a list: {t:?}")),
             }
         };
+        let workspaces_root = expand_home(text(WORKSPACES_ROOT)?, home)?;
+        // Relative, and the destination would land wherever the shell
+        // happened to be, with the denied-root check resolving against that
+        // cwd rather than against anything the person named.
+        if !workspaces_root.is_absolute() {
+            return Err(format!(
+                "{WORKSPACES_ROOT} is {:?}, which is relative; it has to be an absolute path \
+                 or start with ~",
+                text(WORKSPACES_ROOT)?
+            ));
+        }
         Ok(Prefs {
             disallowed_roots: list(DISALLOWED_ROOTS)?,
-            workspaces_root:  expand_home(text(WORKSPACES_ROOT)?, home)?,
-            content_repo:     text(CONTENT_REPO)?.trim().to_owned(),
-            repos:            list(SPAWN_REPOS)?,
+            workspaces_root,
+            content_repo: text(CONTENT_REPO)?.trim().to_owned(),
+            repos: list(SPAWN_REPOS)?,
         })
     }
 
@@ -152,16 +163,7 @@ fn resolve_through_ancestors(path: &Path) -> PathBuf {
     // Not there, so `.` and `..` are folded by hand first: `file_name` has
     // no answer for a trailing `..`, and a destination spelled `x/..` is the
     // directory above `x` whether or not `x` exists yet.
-    let mut lexical = PathBuf::new();
-    for c in path.components() {
-        match c {
-            std::path::Component::CurDir => {},
-            std::path::Component::ParentDir => {
-                lexical.pop();
-            },
-            other => lexical.push(other),
-        }
-    }
+    let lexical = lexical_of(path);
     if let Ok(p) = lexical.canonicalize() {
         return p;
     }
@@ -181,7 +183,23 @@ fn resolve_through_ancestors(path: &Path) -> PathBuf {
             break;
         }
     }
-    path.to_path_buf()
+    // Nothing on the way exists, so the folded form is the best there is:
+    // `.` and `..` still mean what they mean whether or not the rest does.
+    lexical_of(path)
+}
+
+fn lexical_of(path: &Path) -> PathBuf {
+    let mut lexical = PathBuf::new();
+    for c in path.components() {
+        match c {
+            std::path::Component::CurDir => {},
+            std::path::Component::ParentDir => {
+                lexical.pop();
+            },
+            other => lexical.push(other),
+        }
+    }
+    lexical
 }
 
 #[cfg(test)]
@@ -223,5 +241,18 @@ mod tests {
             resolve_through_ancestors(&d.path().join("l")),
             real.join("t")
         );
+        // a `..` inside a path that exists nowhere is still folded, which is
+        // the give-up branch, and the control is that the fold happened at
+        // all rather than the path coming back as written
+        let nowhere = Path::new("/nowhere-at-all/x/y/../z");
+        assert_eq!(
+            resolve_through_ancestors(nowhere),
+            PathBuf::from("/nowhere-at-all/x/z")
+        );
+        assert_ne!(resolve_through_ancestors(nowhere), nowhere);
+        // and the relative form with no existing ancestor at all, which is
+        // the only way to reach the give-up branch on a unix where `/` exists
+        let relative = Path::new("no-such-dir-here/../zed");
+        assert_eq!(resolve_through_ancestors(relative), PathBuf::from("zed"));
     }
 }

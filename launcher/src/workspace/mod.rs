@@ -183,13 +183,20 @@ pub fn answer(
             match slug {
                 Some(slug) => {
                     check_slug(&slug)?;
-                    reap::reap(&prefs.workspaces_root.join(slug), force, out)
+                    reap::reap(
+                        prefs,
+                        home,
+                        cwd,
+                        &prefs.workspaces_root.join(slug),
+                        force,
+                        out,
+                    )
                 },
                 None => {
                     let root = root.ok_or(
-                    "the cwd is not inside a workspace, so `reap` needs a slug to say which one",
-                )?;
-                    reap::reap(root, force, out)
+                        "the cwd is not inside a workspace, so `reap` needs a slug to say which one",
+                    )?;
+                    reap::reap(prefs, home, cwd, root, force, out)
                 },
             }
         },

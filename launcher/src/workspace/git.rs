@@ -5,8 +5,8 @@
 
 //! Git as a subprocess, which is how the scripts this replaces reached it.
 //!
-//! The launcher's one dependency is renki and stays so; the engine has gix
-//! and the engine is not here. Every question asked of git is one the
+//! The launcher depends on renki and the two crates beside it and on nothing
+//! else; the engine has gix and the engine is not here. Every question asked of git is one the
 //! command line answers in a line or two, and every answer is read as text.
 
 use std::path::Path;

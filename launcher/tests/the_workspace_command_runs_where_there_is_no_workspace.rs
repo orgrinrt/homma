@@ -301,9 +301,22 @@ fn status_reports_and_reap_refuses_on_exactly_what_would_be_lost() {
     assert!(said.contains("  notko  main  "), "{said}");
     assert!(said.contains("clean"), "{said}");
 
-    // a dirty member refuses the reap
+    // bare reap from inside refuses whatever the state, since the shell would
+    // be left standing in nothing, and it names the form to use instead
+    let err = run(&f, &ws.join("notko"), Some(&ws), Ask::Reap {
+        slug:  None,
+        force: true,
+    })
+    .expect_err("removed the directory the shell stands in");
+    assert!(
+        err.contains("cwd is inside") && err.contains("reap <slug>"),
+        "{err}"
+    );
+    assert!(ws.exists());
+
+    // a dirty member refuses the reap, named from outside
     std::fs::write(ws.join("notko").join("draft"), "half").unwrap();
-    let err = run(&f, &ws, Some(&ws), Ask::Reap {
+    let err = run(&f, &f.home, Some(&ws), Ask::Reap {
         slug:  None,
         force: false,
     })
@@ -472,4 +485,195 @@ fn the_binary_answers_workspace_and_config_with_no_manifest_above_the_cwd() {
     let out = homma(&f.home, &["workspace"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("disallowed_roots"));
+
+    // a relative workspaces root is refused when the settings are read,
+    // before any verb, since the destination would land wherever the shell
+    // stood and the denied-root check would resolve against that
+    let out = homma(&f.home, &[
+        "workspace",
+        "list",
+        "--cfg",
+        "workspaces_root=ws",
+    ]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("workspaces_root") && err.contains("relative"),
+        "{err}"
+    );
+    assert!(!f.home.join("ws").exists());
+}
+
+#[test]
+fn reap_refuses_a_workspace_holding_a_worktree_whatever_force_says() {
+    let f = fixture();
+    run(&f, &f.home, None, Ask::Spawn {
+        slug:   "alpha".into(),
+        repos:  vec![],
+        branch: None,
+    })
+    .unwrap();
+    let ws = f.home.join("work").join("alpha");
+    // a seat under `.worktrees/`, which is where the workspace rules put
+    // them, and which the survey cannot see since its `.git` is a file
+    std::fs::create_dir_all(ws.join(".worktrees")).unwrap();
+    git(&ws.join("notko"), &[
+        "worktree",
+        "add",
+        "-q",
+        "../.worktrees/seat",
+        "-b",
+        "seat",
+    ]);
+    assert!(ws.join(".worktrees").join("seat").join(".git").is_file());
+    for force in [false, true] {
+        let err = run(&f, &f.home, None, Ask::Reap {
+            slug: Some("alpha".into()),
+            force,
+        })
+        .expect_err("removed a workspace holding a seat");
+        assert!(
+            err.contains("worktrees") && err.contains(".worktrees/seat"),
+            "{err}"
+        );
+        assert!(ws.exists());
+    }
+    // and one placed one level down rather than under `.worktrees/`
+    git(&ws.join("notko"), &[
+        "worktree",
+        "remove",
+        "../.worktrees/seat",
+    ]);
+    git(&ws.join("notko"), &[
+        "worktree", "add", "-q", "../seat2", "-b", "seat2",
+    ]);
+    let err = run(&f, &f.home, None, Ask::Reap {
+        slug:  Some("alpha".into()),
+        force: true,
+    })
+    .expect_err("removed a workspace holding a seat one level down");
+    assert!(err.contains("seat2"), "{err}");
+    assert!(ws.exists());
+    // the control: with the seat gone the reap goes through
+    git(&ws.join("notko"), &["worktree", "remove", "../seat2"]);
+    std::fs::remove_dir_all(ws.join(".worktrees")).unwrap();
+    run(&f, &f.home, None, Ask::Reap {
+        slug:  Some("alpha".into()),
+        force: false,
+    })
+    .unwrap();
+    assert!(!ws.exists());
+}
+
+#[test]
+fn reap_is_held_to_the_same_bar_as_spawn_and_takes_only_a_workspace() {
+    let f = fixture();
+    // a directory with no clone at its root is not a workspace, whatever
+    // the slug says, and is not removed even under --force
+    let plain = f.home.join("work").join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join("keep"), "x").unwrap();
+    let err = run(&f, &f.home, None, Ask::Reap {
+        slug:  Some("plain".into()),
+        force: true,
+    })
+    .expect_err("removed a directory that is not a workspace");
+    assert!(err.contains("not a workspace"), "{err}");
+    assert!(plain.join("keep").exists());
+
+    // a workspace under a denied root is refused by the same check spawn
+    // makes, force or not, and the reason names the key
+    run(&f, &f.home, None, Ask::Spawn {
+        slug:   "alpha".into(),
+        repos:  vec![],
+        branch: None,
+    })
+    .unwrap();
+    let denied = Prefs {
+        disallowed_roots: vec!["~/work/*".into()],
+        ..f.prefs.clone()
+    };
+    let mut out = Vec::new();
+    let err = answer(
+        &denied,
+        Some(&f.home),
+        &f.home,
+        None,
+        Ask::Reap {
+            slug:  Some("alpha".into()),
+            force: true,
+        },
+        &mut out,
+    )
+    .expect_err("removed a workspace under a denied root");
+    assert!(err.contains("disallowed_roots"), "{err}");
+    assert!(f.home.join("work").join("alpha").exists());
+}
+
+#[test]
+fn the_denied_root_is_named_ahead_of_the_missing_content_repository() {
+    // a fresh install run in the home directory hears about the home
+    // directory, which is the refusal that protects something
+    let f = fixture();
+    let fresh = Prefs {
+        content_repo: String::new(),
+        ..f.prefs.clone()
+    };
+    let mut out = Vec::new();
+    let err = answer(&fresh, Some(&f.home), &f.home, None, Ask::Bare, &mut out)
+        .expect_err("spawned into the home");
+    assert!(err.contains("disallowed_roots"), "{err}");
+    assert!(!err.contains(CONTENT_REPO), "{err}");
+    // and elsewhere the missing key is what is said
+    let ok = f.home.join("elsewhere");
+    std::fs::create_dir_all(&ok).unwrap();
+    let err = answer(&fresh, Some(&f.home), &ok, None, Ask::Bare, &mut out)
+        .expect_err("spawned from nowhere");
+    assert!(err.contains(CONTENT_REPO), "{err}");
+}
+
+#[test]
+fn a_spawn_that_fails_partway_leaves_nothing_behind() {
+    let f = fixture();
+    // a member that cannot be cloned, after the content repository landed
+    let err = run(&f, &f.home, None, Ask::Spawn {
+        slug:   "alpha".into(),
+        repos:  vec![
+            f.home
+                .join("no-such-repo.git")
+                .to_string_lossy()
+                .into_owned(),
+        ],
+        branch: None,
+    })
+    .expect_err("spawned with a member that does not exist");
+    assert!(err.contains("nothing is left at"), "{err}");
+    assert!(!f.home.join("work").join("alpha").exists(), "{err}");
+    // and the slug is free again
+    run(&f, &f.home, None, Ask::Spawn {
+        slug:   "alpha".into(),
+        repos:  vec![],
+        branch: None,
+    })
+    .unwrap();
+
+    // in place, the directory was the caller's and is emptied rather than
+    // removed
+    let here = f.home.join("here");
+    std::fs::create_dir_all(&here).unwrap();
+    let broken = Prefs {
+        repos: vec![
+            f.home
+                .join("no-such-repo.git")
+                .to_string_lossy()
+                .into_owned(),
+        ],
+        ..f.prefs.clone()
+    };
+    let mut out = Vec::new();
+    let err = answer(&broken, Some(&f.home), &here, None, Ask::Bare, &mut out)
+        .expect_err("spawned in place with a member that does not exist");
+    assert!(err.contains("nothing is left at"), "{err}");
+    assert!(here.is_dir());
+    assert_eq!(std::fs::read_dir(&here).unwrap().count(), 0);
 }

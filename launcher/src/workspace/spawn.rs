@@ -70,19 +70,28 @@ pub fn under_root(
 /// The two refusals that come before anything is looked at on disk: no
 /// content repository to clone, and a destination the settings deny.
 fn preflight(prefs: &Prefs, home: Option<&Path>, dest: &Path) -> Result<(), String> {
+    // The refusal that protects something leads: a fresh install run in the
+    // home directory hears about the home directory, not about a key.
+    if let Some(why) = prefs.refusal_for(dest, home)? {
+        return Err(why);
+    }
     if prefs.content_repo.is_empty() {
         return Err(format!(
             "{CONTENT_REPO} is not set, so there is nothing to clone a workspace from; \
              `homma config set {CONTENT_REPO} <git url>` names it"
         ));
     }
-    if let Some(why) = prefs.refusal_for(dest, home)? {
-        return Err(why);
-    }
     Ok(())
 }
 
-/// The common half: the content repository, then the members.
+/// The common half: the content repository, then the members, and nothing
+/// left behind when either fails.
+///
+/// A member that fails after the content repository landed would otherwise
+/// leave a half-made workspace that refuses the same slug forever, and whose
+/// own reap refuses too since the fresh clone has nothing on a remote yet.
+/// So what this call made, it removes: the directory where it created it,
+/// the contents where it was handed an empty one.
 fn spawn(
     prefs: &Prefs,
     home: Option<&Path>,
@@ -93,6 +102,46 @@ fn spawn(
 ) -> Result<(), String> {
     preflight(prefs, home, dest)?;
     git::is_available()?;
+    let created = !dest.exists();
+    match clone_all(prefs, dest, extra, branch, out) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let undone = if created {
+                std::fs::remove_dir_all(dest).is_ok()
+            } else {
+                std::fs::read_dir(dest)
+                    .map(|entries| {
+                        entries.filter_map(Result::ok).all(|entry| {
+                            let p = entry.path();
+                            if p.is_dir() {
+                                std::fs::remove_dir_all(&p).is_ok()
+                            } else {
+                                std::fs::remove_file(&p).is_ok()
+                            }
+                        })
+                    })
+                    .unwrap_or(false)
+            };
+            Err(if undone {
+                format!("{e}\nnothing is left at {}", dest.display())
+            } else {
+                format!(
+                    "{e}\na partial workspace is left at {}, and `homma workspace reap --force` \
+                     clears it",
+                    dest.display()
+                )
+            })
+        },
+    }
+}
+
+fn clone_all(
+    prefs: &Prefs,
+    dest: &Path,
+    extra: &[String],
+    branch: Option<&str>,
+    out: &mut dyn Write,
+) -> Result<(), String> {
     let w = |out: &mut dyn Write, s: String| out.write_all(s.as_bytes()).map_err(|e| e.to_string());
 
     if let Some(parent) = dest.parent()
