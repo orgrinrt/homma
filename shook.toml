@@ -1,0 +1,23 @@
+# What homma wants run at a git event, for `git shook install` to register.
+#
+# homma installs these itself today and takes `core.hooksPath` to do it, so a
+# repository that also runs mockspace or ante ends up with whichever installed
+# last and no sign of the others. Declaring it here lets the three sit at one
+# event together, and nothing is installed until somebody runs
+# `git shook install` in their own clone.
+#
+# `homma hook run <event>` is the same entry point homma's own generated hook
+# execs, and it reads `[hooks]` in `homma.toml` to decide what that event means,
+# so this changes who calls it and nothing about what it does.
+#
+# Both entries are declared and neither is a decision about which one a given
+# repository wants; `git shook install` shows what each would run and registers
+# them only once the operator agrees.
+
+name = "homma"
+
+[hooks.pre-commit]
+run = ["homma", "hook", "run", "pre-commit"]
+
+[hooks.pre-push]
+run = ["homma", "hook", "run", "pre-push"]
