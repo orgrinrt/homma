@@ -136,6 +136,10 @@ impl Forge for MockForge {
         }
     }
 
+    fn commit_known(&self, owner: &str, name: &str, _sha: &str) -> Result<bool, ForgeError> {
+        self.repo_exists(owner, name)
+    }
+
     fn create_release(
         &self,
         owner: &str,

@@ -206,6 +206,10 @@ mod tests {
             Ok(())
         }
 
+        fn commit_known(&self, _: &str, _: &str, _: &str) -> Result<bool, ForgeError> {
+            Ok(true)
+        }
+
         fn create_release(&self, _: &str, _: &str, _: &str, _: &str) -> Result<(), ForgeError> {
             unreachable!()
         }

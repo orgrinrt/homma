@@ -36,6 +36,7 @@ pub mod docs;
 pub mod fake_git;
 pub mod forge;
 pub mod gates;
+pub mod hook;
 pub mod migrate;
 pub mod org;
 pub mod registry;
@@ -299,6 +300,12 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         Command::Release {
             op,
         } => release::run(&cli, op),
+        Command::Hook {
+            op,
+        } => {
+            let cfg = load_config(&cli)?;
+            hook::run(&cli, &cfg, op)
+        },
         Command::Docs {
             op,
         } => {

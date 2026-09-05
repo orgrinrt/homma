@@ -136,3 +136,92 @@ fn a_write_to_a_repo_forgejo_does_not_have_is_repo_not_found() {
         Err(ForgeError::RepoNotFound { .. })
     ));
 }
+
+/// A stub answering each request with the status of the first route whose
+/// path fragment the request line carries, `404` where none does, for a
+/// fixed number of requests. Forgejo's arms read no body, so none is taken.
+fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for _ in 0 .. requests {
+            let Ok((mut sock, _)) = listener.accept() else {
+                return;
+            };
+            let mut reader = BufReader::new(sock.try_clone().unwrap());
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).unwrap();
+            loop {
+                let mut header = String::new();
+                if reader.read_line(&mut header).unwrap() == 0 || header.trim().is_empty() {
+                    break;
+                }
+            }
+            let status = routes
+                .iter()
+                .find(|(path, _)| request_line.contains(path))
+                .map_or(404, |(_, status)| *status);
+            let response = format!("HTTP/1.1 {status} X\r\nContent-Length: 2\r\n\r\n{{}}");
+            let _ = sock.write_all(response.as_bytes());
+            let _ = sock.flush();
+        }
+    });
+    url
+}
+
+#[test]
+fn a_409_on_create_is_already_exists_whatever_the_body() {
+    let url = status_by_path(&[("/user/repos", 409)], 1);
+    let client = ForgejoClient::with_token(&url, "t");
+    assert!(matches!(
+        client.create_repo("o", &CreateRepoSpec::new("x")),
+        Err(ForgeError::RepoAlreadyExists { .. })
+    ));
+}
+
+#[test]
+fn a_credential_is_rejected_on_401_and_recognised_on_403() {
+    let url = status_by_path(&[("/user ", 401)], 1);
+    assert!(
+        !ForgejoClient::with_token(&url, "t")
+            .credential_works()
+            .unwrap()
+    );
+    let url = status_by_path(&[("/user ", 403)], 1);
+    assert!(
+        ForgejoClient::with_token(&url, "t")
+            .credential_works()
+            .unwrap()
+    );
+    // the control: anything else is neither answer
+    let url = status_by_path(&[("/user ", 500)], 1);
+    assert!(matches!(
+        ForgejoClient::with_token(&url, "t").credential_works(),
+        Err(ForgeError::UnexpectedStatus {
+            status: 500,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_forgejo_404_is_the_commit_when_the_repo_answers_and_the_repo_when_it_does_not() {
+    // the repo answers, so a 404 on the commit is a sha still on its way:
+    // one request for the commit and one asking after the repo
+    let url = status_by_path(
+        &[
+            ("/repos/o/r/git/commits/aaa", 200),
+            ("/repos/o/r/git/commits/", 404),
+            ("/repos/o/r ", 200),
+        ],
+        5,
+    );
+    let client = ForgejoClient::anonymous(&url);
+    assert!(client.commit_known("o", "r", "aaa").unwrap());
+    assert!(!client.commit_known("o", "r", "bbb").unwrap());
+    // nothing under `gone` answers, so the 404 is the repository
+    assert!(matches!(
+        client.commit_known("o", "gone", "aaa"),
+        Err(ForgeError::RepoNotFound { .. })
+    ));
+}

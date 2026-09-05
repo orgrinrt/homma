@@ -382,6 +382,10 @@ mod tests {
             unreachable!("verify never posts a status")
         }
 
+        fn commit_known(&self, _o: &str, _n: &str, _sha: &str) -> Result<bool, ForgeError> {
+            unreachable!("verify never asks after a commit")
+        }
+
         fn create_release(&self, _o: &str, _n: &str, _t: &str, _b: &str) -> Result<(), ForgeError> {
             unreachable!("verify never releases")
         }

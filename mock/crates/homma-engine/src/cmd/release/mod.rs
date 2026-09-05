@@ -15,12 +15,12 @@ use homma_core::forge::token;
 use homma_core::release::gate::Real;
 use homma_core::release::registry::Registry;
 use homma_core::release::run::Setup;
-use homma_core::release::{badges, check, hook, plan, publish, run, version};
+use homma_core::release::{badges, check, plan, publish, run, version};
 use homma_core::{Config, Forge, RepoConfig};
 use homma_store::Store;
 use serde::Serialize;
 
-use crate::cli::{Cli, HookOp, ReleaseOp};
+use crate::cli::{Cli, ReleaseOp};
 use crate::cmd::{Outcome, config_path, load_config};
 use crate::output::{HumanRender, emit};
 
@@ -33,11 +33,11 @@ pub mod clock;
 pub mod record;
 
 /// What every subcommand prints: lines for a person, and the same lines with
-/// a verdict for a pipe.
+/// a verdict for a pipe. Shared with the hook verbs, which report the same way.
 #[derive(Debug, Serialize)]
-struct Report {
-    ok:    bool,
-    lines: Vec<String>,
+pub(crate) struct Report {
+    pub(crate) ok:    bool,
+    pub(crate) lines: Vec<String>,
 }
 
 impl HumanRender for Report {
@@ -46,7 +46,7 @@ impl HumanRender for Report {
     }
 }
 
-fn finish(cli: &Cli, report: Report) -> Result<Outcome> {
+pub(crate) fn finish(cli: &Cli, report: Report) -> Result<Outcome> {
     let ok = report.ok;
     emit(&report, cli.output)?;
     Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
@@ -66,7 +66,7 @@ fn store(cli: &Cli) -> Store {
 
 /// The repo named, or the one the working directory is inside, with its
 /// root made absolute against the workspace.
-fn resolve_repo<'a>(
+pub(crate) fn resolve_repo<'a>(
     cfg: &'a Config,
     name: Option<&str>,
 ) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
@@ -192,12 +192,21 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
             sha,
             hook,
             post,
+            wait,
             git_args: _,
         } => {
             // under the hook the first positional is git's remote name, not
             // a repo; the repo is the one the working directory is in
             let repo = if *hook { None } else { repo.as_deref() };
-            gate_cmd(cli, &cfg, repo, sha.as_deref(), *hook, post.as_deref())
+            gate_cmd(
+                cli,
+                &cfg,
+                repo,
+                sha.as_deref(),
+                *hook,
+                post.as_deref(),
+                *wait,
+            )
         },
         ReleaseOp::Plan {
             repo,
@@ -211,16 +220,11 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
         ReleaseOp::Badges {
             repo,
         } => badges_cmd(cli, &cfg, repo),
-        ReleaseOp::Hook {
-            op: HookOp::Install {
-                repo,
-            },
-        } => hook_cmd(cli, &cfg, repo),
     }
 }
 
-fn published_for(root: &Path) -> Result<check::Published> {
-    let kind = homma_core::release::kind::detect(root)?;
+fn published_for(cfg: &Config, root: &Path) -> Result<check::Published> {
+    let kind = homma_core::release::kind::detect(root, &cfg.markers)?;
     let packages = check::packages(root, kind);
     Ok(check::fetch_published(&packages)?)
 }
@@ -228,7 +232,7 @@ fn published_for(root: &Path) -> Result<check::Published> {
 fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     let (_, _, root) = resolve_repo(cfg, repo)?;
     let root = &root;
-    let published = published_for(root)?;
+    let published = published_for(cfg, root)?;
     let findings = check::check(&check::Inputs {
         root,
         remote: "origin",
@@ -236,6 +240,7 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
         release: branches_checked(cfg, root)?.1,
         level: None,
         published: &published,
+        markers: &cfg.markers,
     })?;
     let lines: Vec<String> = if findings.is_empty() {
         vec!["nothing to report".into()]
@@ -262,6 +267,7 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result
     let (_, _, root) = resolve_repo(cfg, repo)?;
     let p = plan::plan(
         &root,
+        &cfg.markers,
         branches_checked(cfg, &root)?.0,
         level,
         &clock::today(),
@@ -294,7 +300,7 @@ fn run_cmd(
         for name in &names {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
             let (trunk, _) = branches_checked(cfg, &root)?;
-            match plan::plan(&root, trunk, level, &clock::today()) {
+            match plan::plan(&root, &cfg.markers, trunk, level, &clock::today()) {
                 Ok(p) if p.commits.is_empty() => {
                     lines.push(format!("{name}: nothing unreleased, passed over"));
                 },
@@ -332,7 +338,7 @@ fn run_cmd(
         let root = &root;
         let (trunk, release_line) = branches_checked(cfg, root)?;
         let (forge, owner) = forge_for(cfg, r)?;
-        let published = published_for(root)?;
+        let published = published_for(cfg, root)?;
         let tip = homma_core::release::git::sha(root, trunk)?;
         let newest = record::newest_for(&store, name, &tip)?;
         let date = clock::today();
@@ -348,6 +354,7 @@ fn run_cmd(
             token: &token,
             served: &publish::registry_serves,
             published: &published,
+            markers: &cfg.markers,
         };
         match run::release(&setup, root, level, newest.as_ref(), dry_run) {
             Ok(Ok(done)) => {
@@ -385,7 +392,7 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     let run: GateRun = record::newest(&store, name)?.ok_or_else(|| {
         anyhow!("no gate run recorded for `{name}`; push it through the hook or run `homma release gate`")
     })?;
-    let kind = homma_core::release::kind::detect(root)?;
+    let kind = homma_core::release::kind::detect(root, &cfg.markers)?;
     let v = version::read(root, kind)?;
     let files = badges::files(&run, &v);
     let sha = badges::write(root, &files)?;
@@ -405,31 +412,4 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
             &run.sha[.. 7]
         )],
     })
-}
-
-fn hook_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
-    let (_, _, root) = resolve_repo(cfg, Some(repo))?;
-    match hook::install(&root) {
-        Ok(i) => {
-            finish(cli, Report {
-                ok:    true,
-                lines: vec![format!("wrote {}", i.path.display())],
-            })
-        },
-        // a refusal is reported, a line and a non-zero exit, so a sweep
-        // across the workspace goes on to the next repo
-        Err(
-            e @ (hook::HookError::HooksPathOutside(_)
-            | hook::HookError::HooksPathTracked(_)
-            | hook::HookError::HookExists(_)),
-        ) => {
-            finish(cli, Report {
-                ok:    false,
-                lines: vec![e.to_string()],
-            })
-        },
-        // named, so a refusal added later has no arm here and does not
-        // compile, rather than aborting a sweep as an error
-        Err(e @ (hook::HookError::Git(_) | hook::HookError::Io(_))) => Err(e.into()),
-    }
 }

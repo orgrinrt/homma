@@ -2,17 +2,18 @@
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
-//! The gate: six steps run against one clean checkout, each producing a pass
-//! or a fail, the numbers it measured and everything it printed. What each
-//! step runs per repo kind is the table in `DEEPDIVE_release.md`.
+//! The gate: seven steps run against one clean checkout, each producing a
+//! pass or a fail, the numbers it measured and everything it printed. What
+//! each step runs per repo kind is the table in `DEEPDIVE_release.md`; the
+//! last runs no program and reads two files instead.
 
 use std::fmt;
 use std::path::Path;
 use std::time::Instant;
 
-use homma_api::{GateRun, RepoKind, Step, StepOutcome};
+use homma_api::{GateRun, Markers, RepoKind, Step, StepOutcome};
 
-use super::{git, kind, numbers, sh};
+use super::{git, kind, numbers, sh, tagline};
 
 /// How the gate reaches a program. The real one spawns it; a test hands the
 /// gate what a tool would have printed.
@@ -92,12 +93,13 @@ impl From<sh::Spawn> for GateError {
 pub fn run_gate_at(
     runner: &dyn Runner,
     root: &Path,
+    markers: &Markers,
     sha: &str,
     repo: &str,
     ran_at: &str,
 ) -> Result<GateRun, GateError> {
     if git::head(root)? == sha {
-        return run_gate(runner, root, repo, ran_at);
+        return run_gate(runner, root, markers, repo, ran_at);
     }
     let dir = std::env::temp_dir().join(format!(
         "homma-gate-{}-{}-{}",
@@ -109,7 +111,7 @@ pub fn run_gate_at(
             .unwrap_or_default()
     ));
     git::worktree_add_detached(root, &dir, sha)?;
-    let run = run_gate(runner, &dir, repo, ran_at);
+    let run = run_gate(runner, &dir, markers, repo, ran_at);
     let removed = git::worktree_remove(root, &dir);
     let run = run?;
     removed?;
@@ -121,6 +123,7 @@ pub fn run_gate_at(
 pub fn run_gate(
     runner: &dyn Runner,
     root: &Path,
+    markers: &Markers,
     repo: &str,
     ran_at: &str,
 ) -> Result<GateRun, GateError> {
@@ -128,7 +131,7 @@ pub fn run_gate(
         return Err(GateError::Dirty);
     }
     let sha = git::head(root)?;
-    let repo_kind = kind::detect(root).map_err(GateError::NoManifest)?;
+    let repo_kind = kind::detect(root, markers).map_err(GateError::NoManifest)?;
     let started = Instant::now();
     let mut steps = Vec::with_capacity(Step::ALL.len());
     for step in Step::ALL {
@@ -182,6 +185,11 @@ pub fn run_step(
     repo_kind: RepoKind,
     step: Step,
 ) -> Result<StepOutcome, GateError> {
+    // the one step that runs no program: a read of the manifest and the
+    // readme, compared in this process
+    if step == Step::Description {
+        return Ok(tagline::check(root));
+    }
     let calls = calls_for(root, repo_kind, step)?;
     if calls.is_empty() {
         return Ok(StepOutcome::skipped(step));
@@ -331,6 +339,8 @@ fn calls_for(
                 calls.push(Call::new("ante", &["check"]));
             }
         },
+        // handled before the calls are asked for; nothing to run
+        Step::Description => {},
     }
     Ok(calls)
 }
@@ -514,5 +524,5 @@ fn deno_has_task(root: &Path, task: &str) -> Result<bool, GateError> {
 }
 
 #[cfg(test)]
-#[path = "gate_tests.rs"]
+#[path = "gate_tests/mod.rs"]
 mod tests;

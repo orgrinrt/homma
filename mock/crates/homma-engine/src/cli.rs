@@ -173,6 +173,15 @@ pub enum Command {
         op: ReleaseOp,
     },
 
+    /// The git hooks: one entrypoint per event in the repository's own hooks
+    /// directory, running the entries `[hooks]` in `homma.toml` names, the
+    /// release gate on `pre-push` among them whether or not the table is
+    /// written.
+    Hook {
+        #[command(subcommand)]
+        op: HookOp,
+    },
+
     /// Migrate a repo from one configured forge to another.
     ///
     /// Reads source metadata, creates the destination repo (with description,
@@ -396,6 +405,11 @@ pub enum ReleaseOp {
         /// without running anything.
         #[arg(long, conflicts_with = "sha")]
         post:     Option<String>,
+        /// With `--post`: wait until the forge knows the commit before
+        /// posting, up to ten minutes. What the pre-push hook leaves behind,
+        /// since it measures a commit the push has not sent yet.
+        #[arg(long = "await", requires = "post")]
+        wait:     bool,
         /// What git hands a pre-push hook after its own arguments: the
         /// remote's name and url. Read by nothing here; the refs come on
         /// stdin. Hidden, since only the hook passes them.
@@ -428,19 +442,26 @@ pub enum ReleaseOp {
     Badges {
         repo: String,
     },
-    /// The pre-push hook.
-    Hook {
-        #[command(subcommand)]
-        op: HookOp,
-    },
 }
 
-/// `release hook` subcommands.
+/// `hook` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum HookOp {
-    /// Write the pre-push hook into the repository, or refuse and say why.
+    /// Write one entrypoint per event the `[hooks]` table names into the
+    /// repository's own hooks directory, or refuse and say why.
     Install {
+        /// The repository's directory name under the workspace root.
         repo: String,
+    },
+    /// What an entrypoint calls: run the event's entries, in order, against
+    /// what the event touched, and exit with the first refusal.
+    Run {
+        /// The git event, `pre-commit`, `pre-push`, `commit-msg` and the rest.
+        event: String,
+        /// What git hands the hook after its own name, passed on to every
+        /// entry. Hidden, since only an entrypoint passes them.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+        args:  Vec<String>,
     },
 }
 

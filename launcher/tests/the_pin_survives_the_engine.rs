@@ -56,7 +56,7 @@ fn every_pin_key() -> Vec<(&'static str, &'static str)> {
 #[test]
 fn the_engine_accepts_every_key_the_launcher_reads() {
     for (key, value) in every_pin_key() {
-        let text = config_with(&key, value);
+        let text = config_with(key, value);
         let parsed = homma_core::Config::parse(&text);
         assert!(
             parsed.is_ok(),
@@ -73,7 +73,7 @@ fn the_launcher_reads_every_key_this_test_claims_it_does() {
     // asserting the engine tolerates five keys nobody looks at, which is a
     // statement about nothing.
     for (key, value) in every_pin_key() {
-        let header = Header::parse(&TOOL, &config_with(&key, value));
+        let header = Header::parse(&TOOL, &config_with(key, value));
         assert!(
             header.pin.is_some() || header.url.is_some(),
             "the launcher reads nothing from `{key}`, so this list is wrong"

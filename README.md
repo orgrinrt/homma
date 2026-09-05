@@ -38,7 +38,7 @@ into anything that has to keep running unattended just yet.
 
 | Command | What it's for |
 |---|---|
-| `homma status` | What state the workspace is in: every repo it found, its forge and owner, whether each one's template scaffolding and git hooks are wired, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full` |
+| `homma status` | What state the workspace is in: every repo it found, its forge and owner, whether each one's template scaffolding is in place and its `core.hooksPath` is set, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full`. Whether homma's own hook entrypoints are installed is `homma hook install`'s to report, not this one's |
 | `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--forge` also asks each forge whether the repo is really there |
 | `homma repo <op>` | Per-repo work against the local tree, without the `cd`. `repo config check` compares a repo against the shared tool configs and `repo config init` places the ones it is missing |
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
@@ -50,11 +50,19 @@ into anything that has to keep running unattended just yet.
 | `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored |
 | `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |
 | `homma release <op>` | The gate that runs on the pushing machine and posts its status, and the release that merges the trunk onto `main`, tags it, writes the changelog, publishes to the registries and rewrites the badges |
+| `homma hook <op>` | The git hooks: one entrypoint per event in a repo's own hooks directory, running what `[hooks]` in `homma.toml` names for it, the release gate on `pre-push` among them. `install` writes them and says how git reaches each; `run` is what an entrypoint calls |
+| `homma workspace [op]` | The launcher's own, so it works where there is no workspace yet. Bare inside one it prints every repo with its branch, whether it's dirty and what's on no remote; bare outside one it clones your content repository into the cwd, which has to be empty. `spawn <slug> [owner/name ...]` makes one under your workspaces directory, `reap [<slug>]` removes one and refuses while anything in it is dirty or unpushed, or holds a worktree, or is the directory you're standing in, `list` says what's there |
+| `homma config <op>` | Your own settings, in a file under your config directory: `path`, `schema`, `get`, `set` and `edit`. Where workspaces go, which repository a fresh one is a clone of, what it clones beside it, and where one may never be made, which is your home directory unless you say otherwise |
 
 `--output json` sits on the root and applies to all of them, one document per
 command, which is there mostly so you can pipe it into `jq` and stop parsing our
 terminal formatting. `--config` and `--dir` are global the same way, and say
 which manifest to read and which directory to treat as the root.
+
+The settings file is the person's and the manifest is the workspace's, and the
+two don't overlap. `homma config schema` lists what the file may hold; a fresh
+install refuses to spawn anything until `spawn.content_repo` names a
+repository, because there's no sensible default for whose repository that is.
 
 ## Usage
 
@@ -206,27 +214,6 @@ homma_branch  = "dev"     # a moving target, so the engine moves under you
 `homma_git` names a different repository to take the engine from, for a fork.
 With no key at all the launcher says so rather than guessing, because a
 workspace that has not decided which engine it runs has not decided.
-
-## Responsible tooling
-
-`homma agent regen` walks the workspace and drives each member repo's own template
-regeneration, which in practice means assistant configuration files end up
-written into the workspace. It's a convenience for a workflow that already has
-those files, not a reason to adopt the tool, and everything else here works with
-it untouched.
-
-We do not recommend using coding agents with this codebase.
-
-If you still choose to use one:
-
-- Be aware of the environmental and social impact of large-scale model
-  inference. Minimise agent use where it is not needed. Be responsible.
-- Only use an agent if you yourself understand the architecture. Do not use an
-  agent because you do not understand; you will waste time and energy, both
-  yours and the planet's.
-
-The recommendation stands: do this work yourself unless you know what you are
-doing and why.
 
 ## Support
 

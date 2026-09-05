@@ -8,7 +8,7 @@
 use std::fmt;
 use std::path::Path;
 
-use homma_api::{Finding, GateRun, Level, Verdict};
+use homma_api::{Finding, GateRun, Level, Markers, Verdict};
 
 use super::check::{self, Published};
 use super::gate::Runner;
@@ -35,6 +35,8 @@ pub struct Setup<'a> {
     pub token:     TokenSource<'a>,
     pub served:    Served<'a>,
     pub published: &'a Published,
+    /// The workspace's root markers, which decide what the repo is.
+    pub markers:   &'a Markers,
 }
 
 /// Why the release stopped, and at which step.
@@ -137,6 +139,7 @@ pub fn step_check(
         release: setup.release,
         level: Some(level),
         published: setup.published,
+        markers: setup.markers,
     })?;
     if check::blocked(&findings) {
         return Err(ReleaseError::Blocked(findings));
@@ -324,7 +327,7 @@ pub fn release(
 ) -> Result<Result<Released, Plan>, ReleaseError> {
     step_check(setup, root, level)?;
     step_gate_run(root, setup.trunk, newest_run)?;
-    let plan = plan::plan(root, setup.trunk, level, setup.date)?;
+    let plan = plan::plan(root, setup.markers, setup.trunk, level, setup.date)?;
     if dry_run {
         return Ok(Err(plan));
     }

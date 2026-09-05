@@ -89,6 +89,7 @@ fn run(f: &Fixture, published: &Published, level: Option<Level>) -> Vec<Finding>
         release: "main",
         level,
         published,
+        markers: &homma_api::Markers::default(),
     })
     .unwrap()
 }

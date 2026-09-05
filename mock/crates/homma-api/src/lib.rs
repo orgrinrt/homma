@@ -15,7 +15,9 @@ pub mod denied;
 pub mod deny_entry;
 pub mod frontmatter;
 pub mod git;
+pub mod hooks;
 pub mod path;
+pub mod poster;
 pub mod record;
 pub mod reference;
 pub mod release;
@@ -29,7 +31,9 @@ pub use denied::{Denied, Forbidden, NoHome, Standing};
 pub use deny_entry::DenyEntry;
 pub use frontmatter::{Block, FrontmatterError};
 pub use git::{CommitIdentity, EmptyPart, Git, Part};
+pub use hooks::{HookEntry, Hooks, InvalidHooks};
 pub use path::{AbsPath, NotAbsolute};
+pub use poster::{NotAGiveUp, POSTER_GAVE_UP_KIND, PosterGaveUp};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
 pub use reference::{Namespace, NotAReference, Reference, Rung};
 pub use release::{
@@ -39,9 +43,11 @@ pub use release::{
     GATE_RUN_KIND,
     GateRun,
     Level,
+    Markers,
     NotAGateRun,
     NotAVersion,
     RepoKind,
+    Signal,
     Step,
     StepOutcome,
     UnknownLevel,

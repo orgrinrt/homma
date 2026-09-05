@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use homma_api::{CheckSeverity, Finding, Level, RepoKind, Version};
+use homma_api::{CheckSeverity, Finding, Level, Markers, RepoKind, Version};
 
 pub use super::packages::{Packages, Published, fetch_published, packages, tag_name, tag_version};
 use super::registry::Registry;
@@ -23,6 +23,7 @@ pub struct Inputs<'a> {
     pub release:   &'a str,
     pub level:     Option<Level>,
     pub published: &'a Published,
+    pub markers:   &'a Markers,
 }
 
 /// Every finding, blocking ones first.
@@ -188,7 +189,7 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     }
 
     // the manifest against the tags, and the working version
-    let repo_kind = kind::detect(root).ok();
+    let repo_kind = kind::detect(root, inputs.markers).ok();
     let working = repo_kind.and_then(|k| version::read(root, k).ok());
     // every bump on the release line carries a tag: walk `main` by first
     // parent over the commits that touch the manifest, and where the version
