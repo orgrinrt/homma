@@ -30,3 +30,9 @@ layers = [
 [known_macros]
 
 [crate_colors]
+
+# `mock ask <question...>`: a question against this mock dir, answered with
+# the passages that clear. The tool lives in muisti's repository and comes in
+# on the same cdylib a lint pack would; muisti is private, hence ssh.
+[lint-crates]
+ask = { git = "ssh://git@github.com/orgrinrt/muisti.git", branch = "dev" }
