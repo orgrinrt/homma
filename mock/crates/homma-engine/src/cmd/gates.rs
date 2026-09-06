@@ -240,8 +240,24 @@ if [ -f "$match_path/.cargo/config.toml" ]; then
     [ "$alias_hit" = "1" ] && has_alias=1
 fi
 
-if [ -n "$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)" ]; then
-    has_hooks_path=1
+hooks_path="$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)"
+if [ -n "$hooks_path" ]; then
+    # The question this surface answers is whether mockspace's hooks fire, and
+    # the path being set answered it only while mockspace was the one thing
+    # that set it. git-shook points the same setting at a dispatcher directory
+    # of its own, in a repository that may never have heard of mockspace, and
+    # counting that reads the repository as half-adopted and refuses every
+    # commit in it with an instruction that cannot help.
+    #
+    # Compared against the directory git-shook generates rather than matched by
+    # spelling, since a repository is free to name a directory `shook` and mean
+    # nothing by it. git-shook writes the path absolute and this resolves the
+    # same way, so the two agree exactly or the path is somebody else's.
+    common="$(git -C "$match_path" rev-parse --path-format=absolute \
+        --git-common-dir 2>/dev/null)"
+    if [ "$hooks_path" != "$common/shook/hooks" ]; then
+        has_hooks_path=1
+    fi
 fi
 
 # The launcher+pin model has no `[alias] mock`; its config marker is a
@@ -777,6 +793,64 @@ pub(crate) mod tests {
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "zero adoption should be a silent allow; got: {out}",
+        );
+    }
+
+    /// Point a repo's `core.hooksPath` at the directory git-shook generates,
+    /// which is what `git shook install` writes and where its dispatcher runs
+    /// the entries a repository's manifests declare.
+    fn point_hooks_path_at_shook(repo: &Path) {
+        std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        let common = std::process::Command::new("git")
+            .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        let common = String::from_utf8_lossy(&common.stdout).trim().to_string();
+        std::process::Command::new("git")
+            .args(["config", "core.hooksPath", &format!("{common}/shook/hooks")])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    fn gate_e2e_a_git_shook_hooks_path_is_not_a_mockspace_surface() {
+        // A repository that never adopted mockspace and did adopt git-shook:
+        // no mock/, no alias, and a hooks path pointing at git-shook's own
+        // dispatcher directory. Counting that as mockspace's reads one surface
+        // of three, which is drift, and refuses every commit in a repository
+        // with nothing wrong with it and nothing `homma agent regen` can fix.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, false);
+        point_hooks_path_at_shook(&repo);
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "git-shook's hooks path is not mockspace's; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_a_hooks_path_that_is_not_git_shooks_still_counts() {
+        // The boundary, and the reason the check compares against the
+        // directory git-shook generates rather than matching a spelling: any
+        // other hooks path is still evidence that mockspace's hooks are wired,
+        // so a repository carrying that and nothing else is still drift.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, true);
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "a hooks path that is not git-shook's is still a surface; got: {out}",
         );
     }
 

@@ -1,10 +1,13 @@
 # What homma wants run at a git event, for `git shook install` to register.
 #
-# homma installs these itself today and takes `core.hooksPath` to do it, so a
-# repository that also runs mockspace or ante ends up with whichever installed
-# last and no sign of the others. Declaring it here lets the three sit at one
-# event together, and nothing is installed until somebody runs
-# `git shook install` in their own clone.
+# homma installs these itself today, into the common git directory's `hooks/`
+# rather than into `core.hooksPath`, which is somebody else's directory. That
+# was the one place every chain reached: git reads it where no hooks path is
+# set, and mockspace's gate runs the repository's own hook there after its own
+# checks. It reaches nothing where git-shook owns the path, because a
+# dispatcher runs what the manifests declare and chains to nothing, so a
+# manifest is how homma gets to the event at all in a repository that has
+# adopted it.
 #
 # `homma hook run <event>` is the same entry point homma's own generated hook
 # execs, and it reads `[hooks]` in `homma.toml` to decide what that event means,

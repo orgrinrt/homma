@@ -47,6 +47,10 @@ pub enum Reach {
     Chained(PathBuf),
     /// Nothing under the path for this event, so git runs nothing for it.
     Missing(PathBuf),
+    /// The path is git-shook's dispatcher directory. It runs what the
+    /// repository's manifests declare and chains to nothing, so the
+    /// entrypoint is not reached and a `shook.toml` is the way in.
+    Shook(PathBuf),
     /// A hook under the path that is some other tool's, and nothing runs the
     /// entrypoint until that tool chains to it.
     Foreign(PathBuf),
@@ -82,6 +86,15 @@ impl fmt::Display for Reach {
                     f,
                     "{} is not mockspace's; git will not run this until that tool chains to the \
                      repository's own hooks",
+                    p.display()
+                )
+            },
+            Reach::Shook(p) => {
+                write!(
+                    f,
+                    "{} is git-shook's, which runs what the manifests declare and chains to \
+                     nothing; declare `homma hook run <event>` in a shook.toml and run `git shook \
+                     install`",
                     p.display()
                 )
             },
@@ -187,13 +200,30 @@ pub fn hooks_path(root: &Path) -> Result<Option<PathBuf>, HookError> {
     Ok(Some(if p.is_absolute() { p } else { root.join(p) }))
 }
 
+/// The directory `git shook install` generates its dispatchers into, which is
+/// what it points `core.hooksPath` at. Compared against rather than matched by
+/// spelling, since a repository is free to keep a directory called `shook` and
+/// mean nothing by it.
+fn shook_hooks_dir(root: &Path) -> Result<PathBuf, HookError> {
+    let out = git(root, &[
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+    ])?;
+    Ok(PathBuf::from(out.stdout.trim()).join("shook").join("hooks"))
+}
+
 /// How git reaches `root`'s own entrypoint for `event`: directly with no
-/// hooks path, else through whatever sits at `<hooksPath>/<event>`, which is
-/// mockspace's and chains where its first lines say so.
+/// hooks path, through git-shook's dispatcher, which does not reach it at all,
+/// else through whatever sits at `<hooksPath>/<event>`, which is mockspace's
+/// and chains where its first lines say so.
 pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
     let Some(dir) = hooks_path(root)? else {
         return Ok(Reach::Direct);
     };
+    if dir == shook_hooks_dir(root)? {
+        return Ok(Reach::Shook(dir));
+    }
     let file = dir.join(event);
     match std::fs::read(&file) {
         Ok(bytes) => {
@@ -467,6 +497,44 @@ mod tests {
             .collect();
         assert!(matches!(by_event["pre-push"], Reach::Foreign(_)));
         assert!(matches!(by_event["pre-commit"], Reach::Missing(_)));
+    }
+
+    #[test]
+    fn git_shooks_hooks_path_is_its_own_kind_and_names_the_manifest() {
+        // git-shook's dispatcher runs what the repository's manifests declare
+        // and chains to nothing, so `Foreign`'s advice, that git will run the
+        // entrypoint once that tool chains to it, is advice about something
+        // that is not going to happen. What a reader can act on is the
+        // manifest, so this is a kind of its own and says so.
+        let d = repo();
+        let shook = shook_hooks_dir(d.path()).unwrap();
+        std::fs::create_dir_all(&shook).unwrap();
+        set_hooks_path(d.path(), shook.to_str().unwrap());
+
+        let r = reach(d.path(), "pre-push").unwrap();
+        assert_eq!(r, Reach::Shook(shook.clone()));
+        assert!(!r.reached());
+        assert!(r.to_string().contains("shook.toml"));
+        assert!(!r.to_string().contains("not mockspace's"));
+
+        // and an empty dispatcher directory is still git-shook's: the kind is
+        // decided by the path being the one that tool generates, not by what
+        // it holds, since the entries live beside it rather than under it
+        assert!(matches!(
+            reach(d.path(), "pre-commit").unwrap(),
+            Reach::Shook(_)
+        ));
+
+        // a sibling directory of the git directory spelled the same way is
+        // not it, which is what comparing rather than matching a spelling buys
+        let elsewhere = tempfile::tempdir().unwrap();
+        let lookalike = elsewhere.path().join("shook").join("hooks");
+        std::fs::create_dir_all(&lookalike).unwrap();
+        set_hooks_path(d.path(), lookalike.to_str().unwrap());
+        assert!(matches!(
+            reach(d.path(), "pre-push").unwrap(),
+            Reach::Missing(_)
+        ));
     }
 
     #[test]
