@@ -138,6 +138,39 @@ fn a_scalar_holding_a_colon_keeps_everything_after_the_first_one() {
 }
 
 #[test]
+fn a_list_element_holding_a_comma_stays_one_element() {
+    // The list half of what the test above pins for the scalar half, and the
+    // half that was missing: every fixture in this file and in `rule_meta`
+    // fed a list whose elements contain no comma, which is the one input the
+    // split could not handle.
+    //
+    // `paths` is the field this decides. A brace group is the ordinary way to
+    // write a path pattern, so a split on every comma turns one pattern into
+    // two with unbalanced quotes, and a rule whose gating the host cannot read
+    // is promoted to always loaded rather than refused.
+    let block = split("---\npaths: [\"src/**/*.{ts,tsx}\"]\n---\n").unwrap();
+    assert_eq!(block.list("paths").unwrap(), vec![
+        "src/**/*.{ts,tsx}".to_string()
+    ]);
+
+    // And the separator still separates, so the arm above is not passing
+    // because the split stopped happening.
+    let two = split("---\npaths: [\"a/{x,y}\", 'b/{p,q}']\n---\n").unwrap();
+    assert_eq!(two.list("paths").unwrap(), vec![
+        "a/{x,y}".to_string(),
+        "b/{p,q}".to_string()
+    ]);
+
+    // An unquoted element is unchanged, which is most of the corpus.
+    let bare = split("---\ntopics: [a, b, c]\n---\n").unwrap();
+    assert_eq!(bare.list("topics").unwrap(), vec![
+        "a".to_string(),
+        "b".to_string(),
+        "c".to_string()
+    ]);
+}
+
+#[test]
 fn an_empty_required_scalar_is_refused() {
     let block = split("---\nfires: \"\"\n---\n").unwrap();
     assert!(matches!(

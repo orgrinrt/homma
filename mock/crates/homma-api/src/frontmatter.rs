@@ -251,11 +251,49 @@ pub fn parse_list(key: &str, raw: &str) -> Result<Vec<String>, FrontmatterError>
                 reason: format!("expected an inline list like `[a, b]`, found `{raw}`"),
             }
         })?;
-    Ok(inner
-        .split(',')
-        .map(unquote)
+    Ok(split_outside_quotes(inner)
+        .iter()
+        .map(|s| unquote(s))
         .filter(|s| !s.is_empty())
         .collect())
+}
+
+/// Split on the commas that separate elements, not on the ones inside them.
+///
+/// `paths` is the field that carries globs and a brace group is the ordinary
+/// way to write one, so `["src/**/*.{ts,tsx}"]` is a list of one element with a
+/// comma in it. Splitting on every comma turns that into `"src/**/*.{ts` and
+/// `tsx}"`, two patterns with unbalanced quotes that match nothing, and the
+/// generated card then declares gating on nothing rather than failing to parse.
+/// A rule whose gating the host cannot read is promoted to always loaded, so
+/// the only sign was the always-loaded count rising by two.
+///
+/// What is guarded is a quoted element containing commas. There is no escape
+/// handling, because the format has no escape: a quote of the same kind inside
+/// a quoted element is not expressible either way, and an unterminated quote
+/// takes the rest of the list as one element rather than erroring, which
+/// `unquote` then leaves with its opening quote attached where a reader sees it.
+fn split_outside_quotes(inner: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for c in inner.chars() {
+        match quote {
+            Some(q) if c == q => {
+                quote = None;
+                cur.push(c);
+            },
+            Some(_) => cur.push(c),
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                cur.push(c);
+            },
+            None if c == ',' => out.push(core::mem::take(&mut cur)),
+            None => cur.push(c),
+        }
+    }
+    out.push(cur);
+    out
 }
 
 /// Strip matching surrounding quotes and surrounding space.

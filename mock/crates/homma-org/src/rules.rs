@@ -231,6 +231,14 @@ impl Corpus {
     ///
     /// Every rule has a card by construction, since the card is the file's own
     /// opening rather than a second document that could be missing.
+    ///
+    /// A card in `dst` that no authored rule claims is left alone and reported
+    /// by [`Self::unclaimed`], the way [`crate::skills`] treats a directory
+    /// nothing claims. `dst` is the always-loaded corpus, so such a card is
+    /// injected into every session for as long as it is there, which is why it
+    /// cannot go unreported; and on disk a card this pass wrote last time and a
+    /// document somebody put there on purpose are the same file, which is why
+    /// it cannot be deleted.
     pub fn render_cards(&self, dst: &Path) -> Result<Vec<PathBuf>, CorpusError> {
         fs::create_dir_all(dst).map_err(|cause| {
             CorpusError::Write {
@@ -255,6 +263,50 @@ impl Corpus {
             written.push(path);
         }
         Ok(written)
+    }
+
+    /// Cards in `dst` that no authored rule claims.
+    ///
+    /// Reported rather than removed, on the same ground the skill corpus gives
+    /// for an unclaimed directory: one is either a rule that has not been moved
+    /// to the authored side yet or something else entirely, and this pass
+    /// cannot tell which.
+    ///
+    /// It matters more here than there. `dst` is the always-loaded set, so a
+    /// card whose rule was deleted or renamed is not a stale file sitting in a
+    /// directory, it is a document that keeps being injected into every session
+    /// with nothing saying so.
+    pub fn unclaimed(&self, dst: &Path) -> Result<Vec<String>, CorpusError> {
+        if !dst.is_dir() {
+            return Ok(Vec::new());
+        }
+        let entries = fs::read_dir(dst).map_err(|cause| {
+            CorpusError::Unreadable {
+                path: dst.to_path_buf(),
+                cause,
+            }
+        })?;
+        let mut stray = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|cause| {
+                CorpusError::Unreadable {
+                    path: dst.to_path_buf(),
+                    cause,
+                }
+            })?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|f| f.to_str()) else {
+                continue;
+            };
+            if !self.rules.iter().any(|r| r.name == name) {
+                stray.push(name.to_string());
+            }
+        }
+        stray.sort();
+        Ok(stray)
     }
 
     /// The whole rule, card and elaboration, rendered as one document.

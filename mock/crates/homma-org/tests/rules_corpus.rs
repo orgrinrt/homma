@@ -407,3 +407,44 @@ fn every_authored_rule_generates_a_card() {
     );
     let _ = fs::remove_dir_all(&d);
 }
+
+#[test]
+fn a_card_no_rule_claims_is_reported_and_left_alone() {
+    // The destination is the always-loaded set, so a card whose rule was
+    // deleted or renamed is not a stale file sitting in a directory: it keeps
+    // being injected into every session, and before this the only sign was the
+    // count of always-loaded cards not going down.
+    //
+    // Reported rather than removed, which is what the skills half already
+    // decides for a directory nothing claims. On disk a card this pass wrote
+    // last time and a document somebody put there on purpose are the same file.
+    let d = fixture();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let out = d.join("out");
+    c.render_cards(&out).unwrap();
+    assert!(c.unclaimed(&out).unwrap().is_empty());
+
+    // The shape a deleted rule leaves behind, planted rather than produced by
+    // deleting one, so the arm says what the state is and does not move when
+    // the fixture does.
+    fs::write(out.join("a-rule-that-was-deleted.md"), "stale\n").unwrap();
+    let stray = c.unclaimed(&out).unwrap();
+    assert_eq!(stray, vec!["a-rule-that-was-deleted".to_string()]);
+    assert!(
+        out.join("a-rule-that-was-deleted.md").is_file(),
+        "reported, not deleted: this pass cannot tell what put it there"
+    );
+
+    // A second render does not remove it either, which is the half that would
+    // pass vacuously if `unclaimed` were the only thing checked.
+    c.render_cards(&out).unwrap();
+    assert!(out.join("a-rule-that-was-deleted.md").is_file());
+
+    // And what is not a card is not reported as one, so the report is about
+    // the corpus rather than about everything in the directory.
+    fs::write(out.join("notes.txt"), "x\n").unwrap();
+    assert_eq!(c.unclaimed(&out).unwrap(), vec![
+        "a-rule-that-was-deleted".to_string()
+    ]);
+    let _ = fs::remove_dir_all(&d);
+}

@@ -131,6 +131,8 @@ pub mod render {
         pub authored:  String,
         pub generated: String,
         pub cards:     Vec<String>,
+        /// Cards in the generated tree that no authored rule claims.
+        pub unclaimed: Vec<String>,
     }
 
     impl HumanRender for RenderReport {
@@ -141,7 +143,20 @@ pub mod render {
                 self.cards.len(),
                 self.authored,
                 self.generated
-            )
+            )?;
+            if !self.unclaimed.is_empty() {
+                // Named rather than removed: one is either a rule not moved to
+                // the authored side yet or something else entirely, and this
+                // pass cannot tell which. The generated tree is the
+                // always-loaded set, so an unnamed one is carried into every
+                // session with nothing saying so.
+                write!(
+                    out,
+                    "\n\nin the generated tree and authored nowhere, left alone: {}",
+                    self.unclaimed.join(", ")
+                )?;
+            }
+            Ok(())
         }
     }
 
@@ -152,14 +167,16 @@ pub mod render {
         let written = corpus
             .render_cards(&dst)
             .with_context(|| format!("generating cards into {}", dst.display()))?;
+        let unclaimed = corpus.unclaimed(&dst)?;
         emit(
             &RenderReport {
-                authored:  src.display().to_string(),
+                authored: src.display().to_string(),
                 generated: dst.display().to_string(),
-                cards:     written
+                cards: written
                     .iter()
                     .filter_map(|p| p.file_name().map(|f| f.to_string_lossy().into_owned()))
                     .collect(),
+                unclaimed,
             },
             format,
         )?;

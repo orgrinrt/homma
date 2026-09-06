@@ -100,6 +100,18 @@ words a reader arrives with, and the moment the rule fires. A session about to
 write a README asks the subject and gets the governing set; asking by filename
 only works for somebody who already knows the answer.
 
+A card whose rule is gone is reported and not deleted. The destination is the
+always-loaded set, so such a card is not a stale file sitting in a directory,
+it is a document injected into every session for as long as it is there, and
+saying nothing about it is the one thing the pass may not do. Deleting it is
+the other thing: on disk a card the pass wrote last time and a document
+somebody put there on purpose are the same file, and this is the case the skill
+corpus below already decides for a directory nothing claims.
+
+An element of an inline list may carry a comma inside quotes, and the split
+respects them. A brace group is the ordinary way to write a path pattern, so a
+list that split on every comma could not express one at all.
+
 ## The skill corpus
 
 The same split, one tier over. A skill is authored as a directory rather than a
