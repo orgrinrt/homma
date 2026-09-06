@@ -14,7 +14,18 @@
 use anyhow::{Context, Result};
 use homma_core::Config;
 
-use crate::cli::{AgentOp, Cli, Command, ConfigOp, DocsOp, ForgeOp, OrgOp, RepoOp};
+use crate::cli::{
+    AgentOp,
+    Cli,
+    Command,
+    ConfigOp,
+    DocsOp,
+    ForgeOp,
+    OrgOp,
+    RepoOp,
+    RulesOp,
+    SkillsOp,
+};
 
 pub mod agent;
 pub mod aggregate;
@@ -31,6 +42,8 @@ pub mod org;
 pub mod registry;
 pub mod release;
 pub mod repo;
+pub mod rules;
+pub mod skills;
 pub mod stand;
 pub mod status;
 pub(crate) mod util;
@@ -302,6 +315,40 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 } => {
                     let cfg = load_config(&cli)?;
                     docs::status::run(&cfg, repo.as_deref(), cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+            }
+        },
+        Command::Rules {
+            op,
+        } => {
+            match op {
+                RulesOp::About {
+                    query,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    rules::about::run(&cfg, query, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                RulesOp::Render {} => {
+                    let cfg = load_config(&cli)?;
+                    rules::render::run(&cfg, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+            }
+        },
+        Command::Skills {
+            op,
+        } => {
+            match op {
+                SkillsOp::List {} => {
+                    let cfg = load_config(&cli)?;
+                    skills::list::run(&cfg, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                SkillsOp::Render {} => {
+                    let cfg = load_config(&cli)?;
+                    skills::render::run(&cfg, cli.output)?;
                     Ok(Outcome::Ok)
                 },
             }

@@ -13,6 +13,7 @@ pub mod config;
 pub mod contained;
 pub mod denied;
 pub mod deny_entry;
+pub mod frontmatter;
 pub mod git;
 pub mod hooks;
 pub mod path;
@@ -20,12 +21,15 @@ pub mod poster;
 pub mod record;
 pub mod reference;
 pub mod release;
+pub mod rule;
+pub mod skill;
 pub mod version;
 
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};
 pub use deny_entry::DenyEntry;
+pub use frontmatter::{Block, FrontmatterError};
 pub use git::{CommitIdentity, EmptyPart, Git, Part};
 pub use hooks::{HookEntry, Hooks, InvalidHooks};
 pub use path::{AbsPath, NotAbsolute};
@@ -50,3 +54,5 @@ pub use release::{
     Verdict,
     Version,
 };
+pub use rule::{MetaError, Parsed, RuleKind, RuleMeta};
+pub use skill::{SkillError, SkillMeta};

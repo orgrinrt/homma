@@ -11,6 +11,11 @@ publish = false
 
 [dependencies]
 homma-api = { path = "../homma-api" }
+# The same engine every `mock/*.md.tmpl` already renders through, so a rule
+# author writes the templating they already know and the language's planned
+# extensions arrive once for both.
+mockspace-template = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3"

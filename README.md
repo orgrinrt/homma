@@ -47,6 +47,8 @@ into anything that has to keep running unattended just yet.
 | `homma org <op>` | The registry of who works here, and standing an entry up with its directories and its own clone |
 | `homma agent <op>` | Reports which member repos carry their own template scaffolding, and drives each one's regeneration |
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
+| `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored |
+| `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |
 | `homma release <op>` | The gate that runs on the pushing machine and posts its status, and the release that merges the trunk onto `main`, tags it, writes the changelog, publishes to the registries and rewrites the badges |
 | `homma hook <op>` | The git hooks: one entrypoint per event in a repo's own hooks directory, running what `[hooks]` in `homma.toml` names for it, the release gate on `pre-push` among them. `install` writes them and says how git reaches each; `run` is what an entrypoint calls |
 | `homma workspace [op]` | The launcher's own, so it works where there is no workspace yet. Bare inside one it prints every repo with its branch, whether it's dirty and what's on no remote; bare outside one it clones your content repository into the cwd, which has to be empty. `spawn <slug> [owner/name ...]` makes one under your workspaces directory, `reap [<slug>]` removes one and refuses while anything in it is dirty or unpushed, or holds a worktree, or is the directory you're standing in, `list` says what's there |
