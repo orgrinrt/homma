@@ -80,6 +80,14 @@ pub(crate) fn install_workspace_gate(
             )
         })
         .collect();
+    // A file under the gate's name that homma did not write is somebody's, and
+    // is refused by path rather than replaced.
+    if target.as_path().exists() && !crate::cmd::aggregate::carries_the_mark(target.as_path()) {
+        return Err(anyhow::anyhow!(
+            "`.claude/hooks/{GATE_SCRIPT_NAME}` was not written by homma, so the workspace gate \
+             is not written over it; move that file aside or rename it"
+        ));
+    }
     let body = gate_script(&repos);
     root.write(&target, body)
         .with_context(|| format!("writing {}", target.as_path().display()))?;
@@ -90,6 +98,7 @@ pub(crate) fn install_workspace_gate(
     // directory the hook runs in, so one tracked `settings.json` names this
     // workspace's gate in every clone.
     Ok(HookEntry {
+        event:   "PreToolUse".to_string(),
         matcher: "Bash".to_string(),
         command: format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{GATE_SCRIPT_NAME}"),
     })

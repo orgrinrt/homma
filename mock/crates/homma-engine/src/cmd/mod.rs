@@ -31,6 +31,7 @@ pub mod agent;
 pub mod aggregate;
 pub mod archive;
 pub mod config;
+pub mod declared;
 pub mod docs;
 #[cfg(test)]
 pub mod fake_git;
