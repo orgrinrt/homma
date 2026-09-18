@@ -1,0 +1,50 @@
+fcfbe61 chore: lock the src changelist for the readme handoff
+4d702d9 fix: check every readme span the engine drops in the launcher
+7ce6601 docs: name both commands the launcher answers before the engine
+a85699a Merge remote-tracking branch 'origin/dev' into fix/the-readme-test-knows-the-launchers-verbs
+20384f2 feat: carry every agent hook at its event and drop none
+a987c3e chore: close the round for the readme test and the launcher
+1708eaa fix: check the readme's launcher commands against the launcher
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
+fc70a3d refactor: split the gate tests into a module per concern
+bfb2260 fix: clear the thirteen clippy findings the engine workspace carried
+30302a7 feat: the pre-push gate leaves a poster and gates a tag's commit once
+5055158 feat: the release gate holds the description to the readme tagline
+eb26e80 feat: one entrypoint per git event, read off a hooks table
+c853079 feat: read a repo's kind off root markers declared in homma.toml
+69e8765 docs: drop the coding-agents notice from the readme
+3390cf0 feat: build a crate on its declared feature sets alone
+a6c16b5 feat: gate commits on the shared tool configs and widen homma status
+da84833 fix: the hook takes git's two arguments, and a worktree finds its clone
+c6ab612 fix: hook install refuses a tracked hooks dir and a hook not its own
+d9615ab fix: the release's gate, plan, sweep and hook after the first merge
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml
+9695777 fix: the launcher can reach its own engine
+f2b0c4e feat!: detect workspace members rather than declaring them
+4abf397 docs: rewrite the readme, and fix what checking it turned up
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round
+de1d474 chore: lock the src changelist
+ad13abe fix: permit the workspace being aggregated into, which was denied
+c661a1c chore: open the src changelist
+6308d25 chore: lock the doc changelist
+97eafe3 docs: open an empty doc window, the change is source-only
