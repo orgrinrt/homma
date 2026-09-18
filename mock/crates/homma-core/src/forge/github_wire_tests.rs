@@ -212,6 +212,11 @@ fn a_release_is_posted_to_the_releases_endpoint_with_its_tag_name_and_body() {
 /// A stub answering each request with the status and body of the first route
 /// whose path fragment the request line carries, `404` where none does, for
 /// a fixed number of requests.
+///
+/// The request's body is read before the answer goes back, although nothing
+/// here looks at it. A create is a `POST` carrying one, and a socket closed
+/// with it unread reaches the client as a reset rather than the status, so the
+/// test would be asserting on which of two threads won.
 fn status_by_path(routes: &'static [(&'static str, u16, &'static str)], requests: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -223,12 +228,18 @@ fn status_by_path(routes: &'static [(&'static str, u16, &'static str)], requests
             let mut reader = BufReader::new(sock.try_clone().unwrap());
             let mut request_line = String::new();
             reader.read_line(&mut request_line).unwrap();
+            let mut length = 0usize;
             loop {
                 let mut header = String::new();
                 if reader.read_line(&mut header).unwrap() == 0 || header.trim().is_empty() {
                     break;
                 }
+                if let Some(v) = header.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = v.trim().parse().unwrap_or(0);
+                }
             }
+            let mut body = vec![0u8; length];
+            std::io::Read::read_exact(&mut reader, &mut body).unwrap();
             let (status, body) = routes
                 .iter()
                 .find(|(path, ..)| request_line.contains(path))
@@ -314,4 +325,32 @@ fn a_sha_github_has_not_received_is_unknown_and_a_repo_it_has_not_is_an_error() 
         client.commit_known("o", "gone", "aaa"),
         Err(ForgeError::RepoNotFound { .. })
     ));
+}
+
+/// The stub answers a request whose body is still arriving, rather than
+/// closing on it.
+///
+/// Four mebibytes is past what the loopback buffers, so a stub that answered
+/// after the headers would close with most of the body unsent and this write
+/// would fail on every run rather than on some, which is what turned the create
+/// tests above into a coin toss.
+#[test]
+fn the_stub_reads_a_large_body_before_it_answers() {
+    use std::io::Read;
+    let url = status_by_path(&[("/user/repos", 422, "{}")], 1);
+    let mut sock = std::net::TcpStream::connect(url.trim_start_matches("http://")).unwrap();
+    let body = vec![b'x'; 4 << 20];
+    let head = format!(
+        "POST /user/repos HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    sock.write_all(head.as_bytes()).unwrap();
+    sock.write_all(&body)
+        .expect("the stub closed while the body was still being sent");
+    let mut answer = String::new();
+    sock.read_to_string(&mut answer).unwrap();
+    assert!(
+        answer.starts_with("HTTP/1.1 422"),
+        "the stub answered {answer:?}"
+    );
 }
