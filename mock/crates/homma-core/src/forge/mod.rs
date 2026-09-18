@@ -29,6 +29,8 @@ pub mod github;
 pub mod token;
 pub mod trait_def;
 pub mod url;
+#[cfg(test)]
+mod wire_stub;
 
 pub use error::ForgeError;
 pub use forgejo::ForgejoClient;

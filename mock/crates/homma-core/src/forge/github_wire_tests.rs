@@ -5,10 +5,11 @@
 //! The github client against a listener on the loopback, so what goes over
 //! the wire is what is asserted: the redirect, the status post, the release.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::net::TcpListener;
 
 use super::*;
+use crate::forge::wire_stub::read_request;
 use crate::forge::{Forge, StatusState};
 
 /// A stub of the one GitHub behaviour that matters here: a renamed repo
@@ -26,22 +27,9 @@ fn renamed_private_repo(requests: usize) -> String {
             let Ok((mut sock, _)) = listener.accept() else {
                 return;
             };
-            let mut reader = BufReader::new(sock.try_clone().unwrap());
-            let mut request_line = String::new();
-            reader.read_line(&mut request_line).unwrap();
-            let mut authorized = false;
-            loop {
-                let mut header = String::new();
-                if reader.read_line(&mut header).unwrap() == 0 {
-                    break;
-                }
-                if header.trim().is_empty() {
-                    break;
-                }
-                if header.to_ascii_lowercase().starts_with("authorization:") {
-                    authorized = true;
-                }
-            }
+            let request = read_request(&sock);
+            let request_line = request.line();
+            let authorized = request.carries("authorization");
             let response = if request_line.contains("/repos/o/renamed") {
                 "HTTP/1.1 301 Moved Permanently\r\nLocation: /repositories/123\r\n\
                  Content-Length: 0\r\n\r\n"
@@ -100,27 +88,7 @@ fn recording_server() -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
         let Ok((mut sock, _)) = listener.accept() else {
             return;
         };
-        let mut reader = BufReader::new(sock.try_clone().unwrap());
-        let mut text = String::new();
-        let mut length = 0usize;
-        loop {
-            let mut line = String::new();
-            if reader.read_line(&mut line).unwrap() == 0 {
-                break;
-            }
-            if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                length = v.trim().parse().unwrap_or(0);
-            }
-            let blank = line.trim().is_empty();
-            text.push_str(&line);
-            if blank {
-                break;
-            }
-        }
-        let mut body = vec![0u8; length];
-        std::io::Read::read_exact(&mut reader, &mut body).unwrap();
-        text.push_str(&String::from_utf8_lossy(&body));
-        *seen.lock().unwrap() = text;
+        *seen.lock().unwrap() = read_request(&sock).text();
         let _ = sock.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}");
         let _ = sock.flush();
     });
@@ -213,10 +181,8 @@ fn a_release_is_posted_to_the_releases_endpoint_with_its_tag_name_and_body() {
 /// whose path fragment the request line carries, `404` where none does, for
 /// a fixed number of requests.
 ///
-/// The request's body is read before the answer goes back, although nothing
-/// here looks at it. A create is a `POST` carrying one, and a socket closed
-/// with it unread reaches the client as a reset rather than the status, so the
-/// test would be asserting on which of two threads won.
+/// The whole request is read before the answer goes back, body included,
+/// through the reader every stub shares; its module says why.
 fn status_by_path(routes: &'static [(&'static str, u16, &'static str)], requests: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -225,24 +191,10 @@ fn status_by_path(routes: &'static [(&'static str, u16, &'static str)], requests
             let Ok((mut sock, _)) = listener.accept() else {
                 return;
             };
-            let mut reader = BufReader::new(sock.try_clone().unwrap());
-            let mut request_line = String::new();
-            reader.read_line(&mut request_line).unwrap();
-            let mut length = 0usize;
-            loop {
-                let mut header = String::new();
-                if reader.read_line(&mut header).unwrap() == 0 || header.trim().is_empty() {
-                    break;
-                }
-                if let Some(v) = header.to_ascii_lowercase().strip_prefix("content-length:") {
-                    length = v.trim().parse().unwrap_or(0);
-                }
-            }
-            let mut body = vec![0u8; length];
-            std::io::Read::read_exact(&mut reader, &mut body).unwrap();
+            let request = read_request(&sock);
             let (status, body) = routes
                 .iter()
-                .find(|(path, ..)| request_line.contains(path))
+                .find(|(path, ..)| request.line().contains(path))
                 .map_or((404, "{}"), |(_, status, body)| (*status, *body));
             let response = format!(
                 "HTTP/1.1 {status} X\r\nContent-Length: {}\r\n\r\n{body}",
