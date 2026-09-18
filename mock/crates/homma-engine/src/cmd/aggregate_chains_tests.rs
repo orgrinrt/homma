@@ -38,7 +38,7 @@ pub(crate) fn run_with_payload(
 }
 
 /// A hook that swallows its input and does nothing else.
-const QUIET: &str = "#!/usr/bin/env bash\ncat > /dev/null\n";
+pub(crate) const QUIET: &str = "#!/usr/bin/env bash\ncat > /dev/null\n";
 
 /// A hook that records its arguments in `marker`, so whether it ran, and with
 /// what, is observable rather than read off an exit code that is 0 either way.
@@ -51,7 +51,7 @@ fn recording(marker: &Path) -> String {
 
 /// A repository `arvo` under `ws`, with each `(name, body)` as an executable
 /// hook and `settings` as its `settings.json`.
-fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> PathBuf {
+pub(crate) fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> PathBuf {
     let repo = ws.join("arvo");
     fs::create_dir_all(repo.join(".claude/hooks")).unwrap();
     for (name, body) in hooks {
@@ -65,7 +65,7 @@ fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> PathBuf {
 
 /// The pass over the planted repo and the merge after it, returning what the
 /// pass reported and the workspace settings as written.
-fn regen(ws: &Path, repo: &Path) -> (Aggregated, serde_json::Value) {
+pub(crate) fn regen(ws: &Path, repo: &Path) -> (Aggregated, serde_json::Value) {
     let root = test_root(ws);
     let mut entries = Vec::new();
     let a = aggregate_repo(&root, "arvo", repo, &mut entries).unwrap();
@@ -79,7 +79,7 @@ fn settings(ws: &Path) -> serde_json::Value {
 
 /// Every `(event, matcher, command)` a settings value registers, the matcher
 /// `None` where the entry names none.
-fn registrations(v: &serde_json::Value) -> Vec<(String, Option<String>, String)> {
+pub(crate) fn registrations(v: &serde_json::Value) -> Vec<(String, Option<String>, String)> {
     let mut out = Vec::new();
     for (event, arr) in v["hooks"].as_object().unwrap() {
         for e in arr.as_array().unwrap() {
@@ -101,7 +101,11 @@ fn registrations(v: &serde_json::Value) -> Vec<(String, Option<String>, String)>
     out
 }
 
-fn reg(event: &str, matcher: Option<&str>, file: &str) -> (String, Option<String>, String) {
+pub(crate) fn reg(
+    event: &str,
+    matcher: Option<&str>,
+    file: &str,
+) -> (String, Option<String>, String) {
     (
         event.to_string(),
         matcher.map(str::to_string),
@@ -276,7 +280,7 @@ fn a_file_homma_did_not_write_is_neither_overwritten_nor_unregistered() {
     let gone = ws.path().join(".claude/hooks/arvo--gone.sh");
     fs::write(
         &gone,
-        wrapper_script("arvo", "arvo", ".claude/hooks/gone.sh"),
+        wrapper_script("arvo", "arvo", ".claude/hooks/gone.sh", ""),
     )
     .unwrap();
 
@@ -364,7 +368,7 @@ fn the_mark_is_what_makes_a_file_hommas() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("h.sh");
 
-    fs::write(&p, wrapper_script("arvo", "arvo", ".claude/hooks/x.sh")).unwrap();
+    fs::write(&p, wrapper_script("arvo", "arvo", ".claude/hooks/x.sh", "")).unwrap();
     assert!(carries_the_mark(&p), "an aggregated wrapper");
 
     fs::write(
@@ -391,22 +395,6 @@ fn the_mark_is_what_makes_a_file_hommas() {
         ),
         "the workspace gate"
     );
-}
-
-#[test]
-fn a_hooks_file_is_read_off_every_spelling_of_its_path() {
-    for (cmd, want) in [
-        (".claude/hooks/a.sh", Some("a.sh")),
-        ("\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/a.sh", Some("a.sh")),
-        ("/abs/ws/.claude/hooks/a.sh --strict", Some("a.sh")),
-        ("'.claude/hooks/a'", Some("a")),
-        ("scripts/a.sh", None),
-        (".claude/hooks/sub/a.sh", None),
-        (".claude/hooks/", None),
-        ("", None),
-    ] {
-        assert_eq!(hook_file_named(cmd).as_deref(), want, "{cmd}");
-    }
 }
 
 #[test]

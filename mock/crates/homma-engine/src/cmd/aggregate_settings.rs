@@ -170,3 +170,7 @@ pub(crate) fn is_retired_aggregated_command(cmd: &str, known_repos: &[&str]) -> 
     });
     legacy || (cmd.starts_with('/') && is_aggregated_command(cmd, known_repos))
 }
+
+#[cfg(test)]
+#[path = "aggregate_settings_tests.rs"]
+mod tests;

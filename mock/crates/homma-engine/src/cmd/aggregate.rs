@@ -15,7 +15,7 @@
 //!    otherwise hands control to the real per-repo hook with the same stdin
 //!    re-fed. Per-repo updates flow through automatically: the workspace
 //!    wrapper is a thin scope check, and the substantive logic still lives in
-//!    the repo.
+//!    the repo. The wrapper itself is in `aggregate_wrapper.rs`.
 //!
 //! 2. Merges per-repo `settings.json` hook registrations into the workspace
 //!    `.claude/settings.json`, under every event and matcher the repo gave
@@ -40,7 +40,7 @@
 //! get cleaned on every regen via [`clean_stale`] so upgrades from
 //! older homma versions converge to the current shape automatically.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -99,29 +99,6 @@ pub(crate) fn is_executable(path: &Path) -> bool {
         path.is_file()
     }
 }
-
-/// The file a hook command runs, by its name under `.claude/hooks/`, whatever
-/// prefix the command reaches it through: a relative path, the host's
-/// project-root placeholder, or an absolute one. None for a command running
-/// something elsewhere.
-pub(crate) fn hook_file_named(cmd: &str) -> Option<String> {
-    let first: String = cmd
-        .split_whitespace()
-        .next()?
-        .chars()
-        .filter(|c| *c != '"' && *c != '\'')
-        .collect();
-    let (_, name) = first.rsplit_once(".claude/hooks/")?;
-    (!name.is_empty() && !name.contains('/')).then(|| name.to_string())
-}
-
-/// Where a call lands, as the jq expression every wrapper reads it with: the
-/// file a file tool writes, then the directory the host says the session is
-/// in, then a directory the call itself carries. Empty when none is there, and
-/// the wrapper then falls back to its own working directory, which is the
-/// workspace root whatever the session did.
-pub(crate) const TARGET_JQ: &str =
-    ".tool_input.file_path // .tool_input.path // .cwd // .tool_input.cwd // empty";
 
 /// What one repository's pass carried and what it could not.
 #[derive(Debug, Default)]
@@ -257,9 +234,10 @@ fn clean_stale(
 
 /// Walk the repository's `.claude/hooks/`, write a wrapper for every hook
 /// something calls, and collect a registration for every event and matcher it
-/// is called under. A file the host could not run, one nothing registers, and
-/// one whose wrapper would land on a file homma did not write are each
-/// reported in `problems` and carried nowhere.
+/// is called under. A file the host could not run, one nothing registers, one
+/// two registrations run two different ways, and one whose wrapper would land
+/// on a file homma did not write are each reported in `problems` and carried
+/// nowhere.
 fn aggregate_hooks(
     root: &Root,
     repo_claude_dir: &Path,
@@ -302,15 +280,20 @@ fn aggregate_hooks(
     for name in names {
         let path = src_dir.join(&name);
         let shown = format!("{repo_rel_path}/.claude/hooks/{name}");
-        if !is_executable(&path) {
+        let given = per_repo_settings.get(&name).filter(|r| !r.is_empty());
+        // A registration that runs the hook through a program is how the host
+        // runs a file with no execute bit, so only a hook nothing runs that way
+        // has to carry one.
+        let through_a_program = given.is_some_and(|r| r.iter().any(|x| !x.runner.is_empty()));
+        if !through_a_program && !is_executable(&path) {
             problems.push(format!(
                 "`{shown}` is not executable, so the host could not run it either; not carried"
             ));
             continue;
         }
-        let registrations = match per_repo_settings.get(&name) {
-            Some(r) if !r.is_empty() => r.clone(),
-            _ => {
+        let registrations = match given {
+            Some(r) => r.clone(),
+            None => {
                 match detect_matchers_from_hook_body(&path) {
                     Some(ms) => {
                         ms.into_iter()
@@ -319,6 +302,7 @@ fn aggregate_hooks(
                                     event: "PreToolUse".into(),
                                     matcher,
                                     args: String::new(),
+                                    runner: String::new(),
                                 }
                             })
                             .collect()
@@ -334,6 +318,21 @@ fn aggregate_hooks(
                 }
             },
         };
+
+        let runners: BTreeSet<&str> = registrations.iter().map(|r| r.runner.as_str()).collect();
+        if runners.len() > 1 {
+            let ways: Vec<String> = runners
+                .iter()
+                .map(|r| if r.is_empty() { "itself".to_string() } else { format!("`{r}`") })
+                .collect();
+            problems.push(format!(
+                "`{shown}` is run through {} by different registrations, and one wrapper can \
+                 only run it one way; not carried",
+                ways.join(" and ")
+            ));
+            continue;
+        }
+        let runner = runners.first().copied().unwrap_or("").to_string();
 
         // The wrapper is bash whatever the hook is written in, since all it
         // does is decide whether to hand off.
@@ -354,7 +353,7 @@ fn aggregate_hooks(
         }
 
         let stem_path = format!(".claude/hooks/{name}");
-        let wrapper = wrapper_script(repo_name, repo_rel_path, &stem_path);
+        let wrapper = wrapper_script(repo_name, repo_rel_path, &stem_path, &runner);
         root.write(&target_path, wrapper)
             .with_context(|| format!("write {}", target_path.as_path().display()))?;
         #[cfg(unix)]
@@ -395,6 +394,9 @@ struct Registration {
     /// Whatever followed the hook's path on its command line, carried onto the
     /// wrapper's command so the hook still receives it.
     args:    String,
+    /// Whatever preceded it, the program the host runs the hook with, which
+    /// the wrapper runs it with in turn. Empty where the host runs the file.
+    runner:  String,
 }
 
 /// Map each hook file a repository's `settings.json` calls, by its name under
@@ -430,20 +432,16 @@ fn read_settings_hooks(path: &Path) -> BTreeMap<String, Vec<Registration>> {
                 let Some(cmd) = h.get("command").and_then(|c| c.as_str()) else {
                     continue;
                 };
-                let Some(name) = hook_file_named(cmd) else {
+                let Some(call) = hook_call(cmd) else {
                     continue;
                 };
-                let args = cmd
-                    .trim()
-                    .split_once(char::is_whitespace)
-                    .map(|(_, a)| a.trim().to_string())
-                    .unwrap_or_default();
                 let r = Registration {
-                    event: event.clone(),
+                    event:   event.clone(),
                     matcher: matcher.clone(),
-                    args,
+                    args:    call.args,
+                    runner:  call.runner,
                 };
-                let regs = out.entry(name).or_default();
+                let regs = out.entry(call.name).or_default();
                 if !regs.contains(&r) {
                     regs.push(r);
                 }
@@ -473,89 +471,15 @@ fn detect_matchers_from_hook_body(path: &Path) -> Option<Vec<String>> {
     None
 }
 
-/// Escape a string for embedding inside a bash single-quoted literal.
-/// Replaces each `'` with `'\''` so the generated script is safe for
-/// paths or names that happen to contain a single quote.
-pub(crate) fn sh_single_quote_escape(s: &str) -> String {
-    s.replace('\'', "'\\''")
-}
-
-/// Build the wrapper script body for an aggregated hook.
-///
-/// Both paths are relative, and that is the whole of this function.
-/// `repo_rel_path` is the repo's path under the workspace, which the manifest
-/// already holds for the detected member; `hook_rel_path` is the hook's
-/// path under the repo. Neither names a machine.
-///
-/// A wrapper sits at `<workspace>/.claude/hooks/<file>`, a fixed depth, so it
-/// finds the workspace from its own location and needs no baked prefix and no
-/// environment variable. That is what lets a tracked wrapper work in every
-/// clone rather than only in the one that generated it. The shape it replaces
-/// baked the generating workspace's absolute path, which made every wrapper
-/// inert in every other clone: the scope check matched nothing and the wrapper
-/// exited 0, indistinguishable from a guard that ran and approved.
-///
-/// The emitted wrapper:
-/// 1. Locates the workspace from its own path and derives the repo root and the
-///    real hook under it.
-/// 2. Exits 0 when that hook is not executable, which is the case where this
-///    workspace has not cloned the repo. There is no guard to run, so it
-///    declines rather than reporting an approval it did not make.
-/// 3. Reads the host's JSON on stdin and finds where the call lands, by
-///    [`TARGET_JQ`], falling back to `$PWD` when nothing in it says.
-/// 4. Exits 0 when the target is not under the repo root.
-/// 5. Otherwise replaces itself with the real hook, passing on its own
-///    arguments and re-feeding the original stdin.
-pub(crate) fn wrapper_script(repo_name: &str, repo_rel_path: &str, hook_rel_path: &str) -> String {
-    let repo_rel = sh_single_quote_escape(repo_rel_path);
-    let hook_rel = sh_single_quote_escape(hook_rel_path);
-    let target_jq = TARGET_JQ;
-    format!(
-        r##"#!/usr/bin/env bash
-# Aggregated from `{repo_name}` by `homma agent regen`.
-# Scoped to {repo_rel_path}, relative to the workspace this file sits in.
-# Source hook: {repo_rel_path}/{hook_rel_path}
-
-set -u
-
-WS=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd) || exit 0
-REPO_REL='{repo_rel}'
-case "$REPO_REL" in
-    /*) REPO_ROOT="$REPO_REL" ;;
-    *)  REPO_ROOT="$WS/$REPO_REL" ;;
-esac
-ORIG_HOOK="$REPO_ROOT"'/{hook_rel}'
-
-# Not cloned in this workspace: there is no guard here to run, and declining is
-# the honest answer rather than an approval nobody made.
-[ -x "$ORIG_HOOK" ] || exit 0
-
-INPUT=$(cat)
-
-# Without `jq` this cannot read which path is being written, so it cannot narrow
-# to this repo. It forwards instead of guessing: forwarding is what happens with
-# no aggregation at all, so the guard runs more often than it needs to and never
-# silently fails to run. Guessing `$PWD` is what it used to do, and that skips
-# the guard for every write outside the directory the caller happens to be in.
-if ! command -v jq >/dev/null 2>&1; then
-    exec "$ORIG_HOOK" "$@" <<<"$INPUT"
-fi
-
-target=$(printf '%s' "$INPUT" | jq -r '{target_jq}' 2>/dev/null)
-
-if [ -z "$target" ]; then
-    target="$PWD"
-fi
-
-case "$target" in
-    "$REPO_ROOT"|"$REPO_ROOT"/*) ;;
-    *) exit 0 ;;
-esac
-
-exec "$ORIG_HOOK" "$@" <<<"$INPUT"
-"##
-    )
-}
+#[path = "aggregate_wrapper.rs"]
+mod wrapper;
+pub(crate) use wrapper::{
+    LANDS_IN_SH,
+    hook_call,
+    hook_file_named,
+    sh_single_quote_escape,
+    wrapper_script,
+};
 
 #[path = "aggregate_settings.rs"]
 mod settings;
@@ -568,697 +492,9 @@ use settings::{is_aggregated_command, is_retired_aggregated_command};
 pub(crate) mod chains_tests;
 
 #[cfg(test)]
-pub(crate) mod tests {
+#[path = "aggregate_tests.rs"]
+pub(crate) mod tests;
 
-    /// A `Root` over a test workspace, denying nothing that a test uses.
-    ///
-    /// The real code path, not a variant of it: these go through
-    /// `Root::contain` exactly as production does, which is what makes the
-    /// containment they assert mean anything.
-    pub(crate) fn test_root(workspace: &Path) -> Root {
-        Root::new(
-            &homma_api::AbsPath::new(workspace).expect("a tempdir path is absolute"),
-            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
-        )
-        .expect("a tempdir is a legitimate root")
-    }
-
-    /// Mark a file executable, which the wrapper's own `[ -x ]` check reads.
-    pub(crate) fn make_executable(p: &Path) {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perm = fs::metadata(p).unwrap().permissions();
-            perm.set_mode(0o755);
-            fs::set_permissions(p, perm).unwrap();
-        }
-    }
-
-    /// Run an emitted wrapper with a tool-input payload naming `target`.
-    fn run_wrapper(wrapper: &Path, target: &Path) {
-        run_wrapper_output(wrapper, target);
-    }
-
-    /// As `run_wrapper`, keeping what the process said and how it exited.
-    fn run_wrapper_output(wrapper: &Path, target: &Path) -> std::process::Output {
-        run_wrapper_on_path(wrapper, target, None)
-    }
-
-    /// The same, with `path` replacing `PATH` for the child.
-    ///
-    /// A machine without `jq` is reproduced on one that has it by handing over
-    /// a directory holding only `bash`.
-    fn run_wrapper_on_path(
-        wrapper: &Path,
-        target: &Path,
-        path: Option<&str>,
-    ) -> std::process::Output {
-        use std::io::Write;
-        let payload = format!(r#"{{"tool_input":{{"file_path":"{}"}}}}"#, target.display());
-        let mut cmd = std::process::Command::new("bash");
-        cmd.arg(wrapper)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        if let Some(p) = path {
-            cmd.env("PATH", p);
-        }
-        let mut child = cmd.spawn().unwrap();
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(payload.as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
-    }
-
-    use super::*;
-
-    #[test]
-    fn a_wrapper_carries_no_absolute_path_and_finds_its_workspace_from_its_own_location() {
-        let s = wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh");
-        assert!(s.starts_with("#!/usr/bin/env bash"));
-        assert!(s.contains("REPO_REL='arvo'"));
-        assert!(s.contains("ORIG_HOOK=\"$REPO_ROOT\"'/.claude/hooks/foo.sh'"));
-        assert!(s.contains("BASH_SOURCE[0]"));
-        assert!(s.contains("$ORIG_HOOK"));
-        assert!(s.contains("Aggregated from `arvo`"));
-
-        // The whole point, and the assertion the old shape could not have
-        // passed: nothing in the emitted script names a machine. A path
-        // starting at the filesystem root is a fact about the workspace that
-        // generated the file and is inert in every other clone.
-        for line in s.lines() {
-            let code = line.split('#').next().unwrap_or(line);
-            assert!(
-                !code.contains("='/") && !code.contains("=\"/"),
-                "wrapper assigns an absolute path: {line}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_wrapper_matches_a_path_under_its_repo_and_declines_one_outside() {
-        // The emitted script, run. A unit test over its text can only say the
-        // strings are there; whether the scope check fires is a property of
-        // bash, and bash is available.
-        let ws = tempfile::tempdir().unwrap();
-        let hooks = ws.path().join(".claude/hooks");
-        fs::create_dir_all(&hooks).unwrap();
-        fs::create_dir_all(ws.path().join("arvo/.claude/hooks")).unwrap();
-
-        // The real hook records that it ran, so "did the wrapper hand off" is
-        // observable rather than inferred from an exit code that is 0 either
-        // way.
-        let marker = ws.path().join("fired");
-        let real = ws.path().join("arvo/.claude/hooks/foo.sh");
-        fs::write(
-            &real,
-            format!(
-                "#!/usr/bin/env bash\ncat > /dev/null\ntouch '{}'\n",
-                marker.display()
-            ),
-        )
-        .unwrap();
-        make_executable(&real);
-
-        let wrapper = hooks.join("arvo--foo.sh");
-        fs::write(
-            &wrapper,
-            wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh"),
-        )
-        .unwrap();
-        make_executable(&wrapper);
-
-        let inside = ws.path().join("arvo/src/lib.rs");
-        run_wrapper(&wrapper, &inside);
-        assert!(
-            marker.exists(),
-            "the wrapper did not hand off for a path inside the repo"
-        );
-
-        // The control. Without it, a wrapper that handed off unconditionally
-        // would pass the assertion above and be exactly the guard-shaped thing
-        // that guards nothing.
-        fs::remove_file(&marker).unwrap();
-        let outside = ws.path().join("kolli/src/lib.rs");
-        run_wrapper(&wrapper, &outside);
-        assert!(
-            !marker.exists(),
-            "the wrapper handed off for a path outside the repo"
-        );
-    }
-
-    /// **Without `jq` the wrapper hands off rather than guessing.**
-    ///
-    /// It read the target path with `jq` and fell back to `$PWD` when that came
-    /// back empty, so on a machine without `jq` the scope check was against the
-    /// caller's directory rather than against the write. A write inside the repo
-    /// from anywhere else silently skipped the repo's own hook, which is a guard
-    /// that does not run reporting nothing.
-    ///
-    /// Handing off is the safe direction: it is what happens with no
-    /// aggregation at all, so the cost of being wrong is a hook running when it
-    /// need not rather than one that never runs.
-    #[test]
-    fn a_wrapper_without_jq_hands_off_rather_than_guessing_from_the_directory() {
-        let ws = tempfile::tempdir().unwrap();
-        let hooks = ws.path().join(".claude/hooks");
-        fs::create_dir_all(&hooks).unwrap();
-        fs::create_dir_all(ws.path().join("arvo/.claude/hooks")).unwrap();
-
-        // Builtins only, because this runs under a PATH holding one program.
-        // `printf` and the redirection are bash's own; `cat` and `touch` are
-        // not, and the first version of this fixture used both and failed for
-        // that rather than for the property under test.
-        let marker = ws.path().join("fired");
-        let real = ws.path().join("arvo/.claude/hooks/foo.sh");
-        fs::write(
-            &real,
-            format!("#!/usr/bin/env bash\nprintf '' > '{}'\n", marker.display()),
-        )
-        .unwrap();
-        make_executable(&real);
-
-        let wrapper = hooks.join("arvo--foo.sh");
-        fs::write(
-            &wrapper,
-            wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh"),
-        )
-        .unwrap();
-        make_executable(&wrapper);
-
-        let bare = crate::cmd::gates::tests::a_path_without_jq(ws.path());
-
-        // The write is inside the repo, and the working directory is not, which
-        // is the exact shape the `$PWD` fallback got wrong.
-        let inside = ws.path().join("arvo/src/lib.rs");
-        run_wrapper_on_path(&wrapper, &inside, Some(&bare));
-        assert!(
-            marker.exists(),
-            "a write inside the repo skipped the repo's own hook when jq was absent"
-        );
-
-        // The control: with jq present the same call also hands off, so the
-        // assertion above is about the missing tool and not about the wrapper
-        // handing off unconditionally in every configuration.
-        fs::remove_file(&marker).unwrap();
-        let outside = ws.path().join("kolli/src/lib.rs");
-        run_wrapper(&wrapper, &outside);
-        assert!(
-            !marker.exists(),
-            "control: with jq present a path outside the repo is still declined"
-        );
-    }
-
-    #[test]
-    fn a_wrapper_declines_when_the_repo_is_not_cloned_here() {
-        // A tracked wrapper travels to workspaces holding a different subset of
-        // the manifest. There is no guard to run there.
-        //
-        // The target has to be INSIDE the absent repo, and that is the whole of
-        // this test. A path outside it exits 0 through the scope check whether
-        // or not the executable check exists, so a test aiming there passes
-        // against the defect and measures nothing. Inside, the two arms
-        // separate: with the check the wrapper declines, and without it the
-        // wrapper reaches `exec` on a file that is not there and fails.
-        let ws = tempfile::tempdir().unwrap();
-        let hooks = ws.path().join(".claude/hooks");
-        fs::create_dir_all(&hooks).unwrap();
-        // deliberately: no `arvo/` in this workspace
-
-        let wrapper = hooks.join("arvo--foo.sh");
-        fs::write(
-            &wrapper,
-            wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh"),
-        )
-        .unwrap();
-        make_executable(&wrapper);
-
-        let inside = ws.path().join("arvo/src/lib.rs");
-        let out = run_wrapper_output(&wrapper, &inside);
-        assert!(
-            out.status.success(),
-            "a wrapper with nothing to run failed instead of declining: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert!(
-            out.stdout.is_empty() && out.stderr.is_empty(),
-            "a wrapper with nothing to run said something: out={} err={}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    #[test]
-    fn a_relative_repo_root_never_matches_the_absolute_path_the_host_supplies() {
-        // Why the shape this replaces was inert even in the workspace that
-        // generated it, when the manifest was reached by a relative path. The
-        // host always supplies an absolute `file_path`, and the wrapper's
-        // comparison is textual.
-        let matches = |root: &str, target: &str| -> bool {
-            let out = std::process::Command::new("bash")
-                .arg("-c")
-                .arg(format!(
-                    r#"case "{target}" in "{root}"|"{root}"/*) exit 0;; *) exit 1;; esac"#
-                ))
-                .output()
-                .unwrap();
-            out.status.success()
-        };
-        assert!(!matches("./arvo", "/ws/arvo/src/lib.rs"));
-        // Two controls, so the assertion above is about the relative form
-        // rather than about the comparison never matching anything.
-        assert!(matches("./arvo", "./arvo/src/lib.rs"));
-        assert!(matches("/ws/arvo", "/ws/arvo/src/lib.rs"));
-    }
-
-    #[test]
-    fn aggregated_command_detected_by_prefix() {
-        let cmd = ".claude/hooks/arvo--no-alloc-guard.sh";
-        assert!(is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
-    }
-
-    #[test]
-    fn non_aggregated_command_not_detected() {
-        let cmd = ".claude/hooks/workspace-only.sh";
-        assert!(!is_aggregated_command(cmd, &["arvo"]));
-    }
-
-    #[test]
-    fn legacy_imports_path_detected_as_aggregated() {
-        // Pre-homma bash aggregator wrote per-repo hooks under
-        // `imports/<repo>/<name>.sh` rather than the current flat
-        // `<repo>--<name>.sh` convention. Entries left over from that
-        // era must still get swept out on regen.
-        let cmd = ".claude/hooks/imports/arvo/no-alloc-guard.sh";
-        assert!(is_retired_aggregated_command(cmd, &[
-            "arvo",
-            "hilavitkutin"
-        ]));
-        // and the current-shape check does not claim it, so the two are not
-        // silently the same predicate under two names
-        assert!(!is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
-    }
-
-    #[test]
-    fn legacy_imports_at_path_start_detected_as_aggregated() {
-        // Relative path starting with `imports/<repo>/` (no leading
-        // separator). Must still match the legacy pattern.
-        let cmd = "imports/arvo/no-alloc-guard.sh";
-        assert!(is_retired_aggregated_command(cmd, &["arvo"]));
-    }
-
-    #[test]
-    fn an_absolute_managed_command_is_retired_whatever_repo_it_names() {
-        let cmd = "/Users/someone/Dev/their-workspace/.claude/hooks/arvo--no-alloc-guard.sh";
-        assert!(is_retired_aggregated_command(cmd, &["arvo"]));
-    }
-
-    #[test]
-    fn a_placeholder_command_for_an_unvisited_repo_is_not_retired() {
-        // The control that keeps the preservation rule alive. A predicate that
-        // swept both shapes would satisfy the test above and quietly undo it.
-        let cmd = "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--no-alloc-guard.sh";
-        assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
-    }
-
-    #[test]
-    fn an_unmanaged_absolute_command_is_left_alone() {
-        // The second control, and the worst thing this could get wrong: a
-        // hand-authored user-level hook is absolute too.
-        let cmd = "/Users/someone/.claude/hooks/self-compact-trigger.sh";
-        assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
-        assert!(!is_aggregated_command(cmd, &["arvo"]));
-    }
-
-    #[test]
-    fn imports_substring_not_at_path_boundary_not_detected() {
-        // A command that happens to contain the substring `imports/arvo/`
-        // in the middle of a longer path component must NOT be flagged.
-        // Path-component anchoring prevents false positives on
-        // e.g. user-authored paths like `myimports/arvo/foo.sh`.
-        let cmd = ".claude/hooks/myimports/arvo/foo.sh";
-        assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
-    }
-
-    #[test]
-    fn matcher_detection_from_hook_body_directive() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("hook.sh");
-        fs::write(
-            &p,
-            "#!/usr/bin/env bash\n# @matchers: Write, Edit\n# Some hook.\n",
-        )
-        .unwrap();
-        let m = detect_matchers_from_hook_body(&p).unwrap();
-        assert_eq!(m, vec!["Write".to_string(), "Edit".to_string()]);
-    }
-
-    #[test]
-    fn aggregate_repo_end_to_end_against_synthetic_workspace() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        let repo_abs = workspace.join("arvo");
-        fs::create_dir_all(repo_abs.join(".claude/rules")).unwrap();
-        fs::create_dir_all(repo_abs.join(".claude/hooks")).unwrap();
-
-        // Stale aggregated rule from a prior homma version: must get
-        // swept out on regen even though no new rule is being written.
-        fs::create_dir_all(workspace.join(".claude/rules")).unwrap();
-        fs::write(
-            workspace.join(".claude/rules/arvo--stale-rule.md"),
-            "---\npaths:\n  - \"arvo/**\"\n---\nLeftover.\n",
-        )
-        .unwrap();
-
-        // Per-repo source rules still live in the repo; homma no longer
-        // copies them. Verify by writing one and checking it does NOT
-        // appear in the workspace .claude/rules/ post-aggregate.
-        fs::write(
-            repo_abs.join(".claude/rules/type-surface.md"),
-            "---\npaths:\n  - \"crates/**/*.rs\"\n---\nBody.\n",
-        )
-        .unwrap();
-        fs::write(
-            repo_abs.join(".claude/hooks/no-alloc.sh"),
-            "#!/usr/bin/env bash\n# @matchers: Write, Edit\necho hi\n",
-        )
-        .unwrap();
-        make_executable(&repo_abs.join(".claude/hooks/no-alloc.sh"));
-        fs::write(
-            repo_abs.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/no-alloc.sh"}]}]}}"#,
-        )
-        .unwrap();
-
-        let mut settings = Vec::new();
-        let a = aggregate_repo(&test_root(workspace), "arvo", &repo_abs, &mut settings).unwrap();
-        assert_eq!(a.hooks, 1);
-        assert!(a.problems.is_empty(), "{:?}", a.problems);
-
-        // Stale aggregated rule was cleaned.
-        assert!(
-            !workspace.join(".claude/rules/arvo--stale-rule.md").exists(),
-            "stale aggregated rule should have been cleaned by clean_stale"
-        );
-        // Repo-side rule was NOT propagated.
-        assert!(
-            !workspace
-                .join(".claude/rules/arvo--type-surface.md")
-                .exists(),
-            "homma no longer aggregates per-repo rules"
-        );
-
-        let hook = fs::read_to_string(workspace.join(".claude/hooks/arvo--no-alloc.sh")).unwrap();
-        assert!(hook.contains("REPO_REL='arvo'"));
-        assert!(hook.contains("ORIG_HOOK="));
-        assert!(
-            !hook.contains(workspace.to_str().unwrap()),
-            "the wrapper baked the generating workspace's path"
-        );
-
-        assert_eq!(settings.len(), 1);
-        assert_eq!(settings[0].event, "PreToolUse");
-        assert_eq!(settings[0].matcher, "Edit");
-        assert_eq!(
-            settings[0].command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--no-alloc.sh",
-            "the registered command must name the host's project-root placeholder rather \
-             than this run's workspace",
-        );
-        assert!(
-            !settings[0].command.contains(workspace.to_str().unwrap()),
-            "expected no generating-workspace path in the command, got: {}",
-            settings[0].command,
-        );
-
-        merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &settings, None).unwrap();
-        let written = fs::read_to_string(workspace.join(".claude/settings.json")).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&written).unwrap();
-        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["matcher"], "Edit");
-        let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
-        assert!(
-            cmd.ends_with("/.claude/hooks/arvo--no-alloc.sh"),
-            "expected absolute path, got: {cmd}",
-        );
-    }
-
-    #[test]
-    fn merge_settings_preserves_hand_authored_entries() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        fs::create_dir_all(workspace.join(".claude")).unwrap();
-        fs::write(
-            workspace.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}]}}"#,
-        )
-        .unwrap();
-
-        let entries = vec![HookEntry {
-            event:   "PreToolUse".into(),
-            matcher: "Edit".into(),
-            command: ".claude/hooks/arvo--no-alloc.sh".into(),
-        }];
-        merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
-        let v: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert!(
-            arr.iter()
-                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh")
-        );
-        assert!(
-            arr.iter()
-                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--no-alloc.sh")
-        );
-    }
-
-    #[test]
-    fn merge_settings_replaces_previously_aggregated() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        fs::create_dir_all(workspace.join(".claude")).unwrap();
-        fs::write(
-            workspace.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[
-                {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/arvo--old.sh"}]},
-                {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}
-            ]}}"#,
-        )
-        .unwrap();
-
-        let entries = vec![HookEntry {
-            event:   "PreToolUse".into(),
-            matcher: "Write".into(),
-            command: ".claude/hooks/arvo--new.sh".into(),
-        }];
-        merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
-        let v: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert!(
-            !arr.iter()
-                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh")
-        );
-        assert!(
-            arr.iter()
-                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/workspace-byline.sh")
-        );
-        assert!(
-            arr.iter()
-                .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh")
-        );
-    }
-
-    #[test]
-    fn merge_settings_preserves_mixed_hook_entries() {
-        // An entry with one aggregated hook AND one hand-authored hook
-        // in the same `hooks[]` array. Per-hook filtering must strip
-        // only the aggregated hook and keep the entry intact with the
-        // hand-authored hook surviving.
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        fs::create_dir_all(workspace.join(".claude")).unwrap();
-        fs::write(
-            workspace.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[
-                {"matcher":"Edit","hooks":[
-                    {"type":"command","command":".claude/hooks/arvo--old.sh"},
-                    {"type":"command","command":".claude/hooks/workspace-handauthored.sh"}
-                ]}
-            ]}}"#,
-        )
-        .unwrap();
-
-        let entries = vec![HookEntry {
-            event:   "PreToolUse".into(),
-            matcher: "Write".into(),
-            command: ".claude/hooks/arvo--new.sh".into(),
-        }];
-        merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
-        let v: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-        // Original Edit entry preserved, with `arvo--old.sh` stripped
-        // and `workspace-handauthored.sh` surviving. Plus the freshly
-        // pushed `arvo--new.sh`.
-        assert_eq!(arr.len(), 2);
-        let edit = arr.iter().find(|e| e["matcher"] == "Edit").unwrap();
-        let edit_hooks = edit["hooks"].as_array().unwrap();
-        assert_eq!(
-            edit_hooks.len(),
-            1,
-            "aggregated hook should be stripped, hand-authored preserved"
-        );
-        assert_eq!(
-            edit_hooks[0]["command"],
-            ".claude/hooks/workspace-handauthored.sh"
-        );
-        let write = arr.iter().find(|e| e["matcher"] == "Write").unwrap();
-        assert_eq!(write["hooks"][0]["command"], ".claude/hooks/arvo--new.sh");
-    }
-
-    #[test]
-    fn merge_settings_keeps_entries_for_a_known_repo_this_run_did_not_visit() {
-        // A workspace clones the repos its work touches, so most of the
-        // manifest aggregates nothing on any given run. Sweeping on the full
-        // manifest deleted those registrations, and the wrapper files survived
-        // because the cleanup runs inside the per-repo pass that was skipped.
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        fs::create_dir_all(workspace.join(".claude")).unwrap();
-        fs::write(
-            workspace.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[
-                {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kolli--guard.sh"}]},
-                {"matcher":"Edit","hooks":[{"type":"command","command":"/elsewhere/.claude/hooks/kolli--stale.sh"}]},
-                {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--old.sh"}]}
-            ]}}"#,
-        )
-        .unwrap();
-
-        let entries = vec![HookEntry {
-            event:   "PreToolUse".into(),
-            matcher: "Edit".into(),
-            command: "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--new.sh".into(),
-        }];
-        merge_settings(
-            &test_root(workspace),
-            &["arvo", "kolli"],
-            &["arvo"],
-            &entries,
-            None,
-        )
-        .unwrap();
-
-        let v: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        let cmds: Vec<String> = v["hooks"]["PreToolUse"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|e| e["hooks"].as_array().unwrap())
-            .map(|h| h["command"].as_str().unwrap().to_string())
-            .collect();
-
-        assert!(
-            cmds.iter().any(|c| c.ends_with("kolli--guard.sh")),
-            "an unvisited repo's registration was swept: {cmds:?}"
-        );
-        // The control on the same run: the repo that WAS visited is rewritten,
-        // so preservation is not the whole predicate.
-        assert!(
-            !cmds.iter().any(|c| c.ends_with("arvo--old.sh")),
-            "a visited repo's stale registration survived: {cmds:?}"
-        );
-        assert!(cmds.iter().any(|c| c.ends_with("arvo--new.sh")));
-        // And the unvisited repo's *absolute* entry goes, because no clone can
-        // resolve it. Preservation is about the placeholder form only.
-        assert!(
-            !cmds.iter().any(|c| c.ends_with("kolli--stale.sh")),
-            "a retired absolute entry survived on an unvisited repo: {cmds:?}"
-        );
-    }
-
-    #[test]
-    fn merge_settings_sweeps_the_legacy_shape_for_any_known_repo_visited_or_not() {
-        // The retired bash aggregator's `imports/<repo>/` form. Nothing writes
-        // it any more, so there is no workspace where keeping it makes it work,
-        // and it is swept on the full manifest rather than on the visited set.
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        fs::create_dir_all(workspace.join(".claude")).unwrap();
-        fs::write(
-            workspace.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[
-                {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/imports/kolli/guard.sh"}]},
-                {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/mine.sh"}]}
-            ]}}"#,
-        )
-        .unwrap();
-
-        merge_settings(
-            &test_root(workspace),
-            &["arvo", "kolli"],
-            &["arvo"],
-            &[],
-            None,
-        )
-        .unwrap();
-
-        let body = fs::read_to_string(workspace.join(".claude/settings.json")).unwrap();
-        assert!(
-            !body.contains("imports/kolli"),
-            "legacy entry survived: {body}"
-        );
-        // The control: a hand-authored entry is not swept alongside it.
-        assert!(
-            body.contains("mine.sh"),
-            "hand-authored entry was swept: {body}"
-        );
-    }
-
-    #[test]
-    fn merge_settings_drops_entry_when_all_hooks_aggregated() {
-        // Inverse of the mixed-hook test: when every hook in an entry
-        // is aggregated, the entry collapses to empty and gets dropped.
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path();
-        fs::create_dir_all(workspace.join(".claude")).unwrap();
-        fs::write(
-            workspace.join(".claude/settings.json"),
-            r#"{"hooks":{"PreToolUse":[
-                {"matcher":"Edit","hooks":[
-                    {"type":"command","command":".claude/hooks/arvo--old1.sh"},
-                    {"type":"command","command":".claude/hooks/arvo--old2.sh"}
-                ]},
-                {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}
-            ]}}"#,
-        )
-        .unwrap();
-
-        merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
-        let v: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(workspace.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-        // Edit entry collapsed (all hooks were aggregated); Bash entry
-        // survives.
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["matcher"], "Bash");
-    }
-}
+#[cfg(test)]
+#[path = "aggregate_registration_tests.rs"]
+mod registration_tests;

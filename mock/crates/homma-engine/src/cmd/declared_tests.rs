@@ -137,6 +137,35 @@ fn a_row_narrowed_to_repositories_runs_only_for_calls_landing_in_them() {
 }
 
 #[test]
+fn a_row_sees_a_shell_call_at_the_root_that_names_its_repository_by_path() {
+    let ws = tempfile::tempdir().unwrap();
+    let marker = ws.path().join("fired");
+    plant_script(ws.path(), "scripts/guard", &marker);
+    install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &["kolli"])]),
+        &repos(),
+    )
+    .unwrap();
+    let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
+    let at_root = |command: &str| {
+        let _ = fs::remove_file(&marker);
+        let payload = serde_json::json!({
+            "cwd": ws.path().display().to_string(),
+            "tool_input": { "command": command },
+        })
+        .to_string();
+        run_with_payload(&w, &payload, &[]);
+        marker.exists()
+    };
+    assert!(at_root("cargo bench --manifest-path kolli/mock/Cargo.toml"));
+    assert!(at_root("git -C kolli commit -m x"));
+    // The control: the same calls naming the other repository.
+    assert!(!at_root("cargo bench --manifest-path arvo/mock/Cargo.toml"));
+    assert!(!at_root("git -C arvo commit -m x"));
+}
+
+#[test]
 fn a_row_naming_nothing_it_can_run_is_reported_and_not_registered() {
     let ws = tempfile::tempdir().unwrap();
     fs::create_dir_all(ws.path().join("scripts")).unwrap();

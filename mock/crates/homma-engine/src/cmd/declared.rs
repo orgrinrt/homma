@@ -18,7 +18,7 @@ use std::fs;
 use anyhow::{Context, Result, anyhow};
 use homma_api::{AgentHooks, Root};
 
-use crate::cmd::aggregate::{self, HookEntry, MANAGED_MARK, TARGET_JQ, sh_single_quote_escape};
+use crate::cmd::aggregate::{self, HookEntry, LANDS_IN_SH, MANAGED_MARK, sh_single_quote_escape};
 
 /// The prefix every declared wrapper's file name starts with, which no
 /// repository name can produce, since the aggregated ones start with a name
@@ -177,7 +177,7 @@ HOOK="$WS"/'{run_q}'
         .map(|r| format!("'{}'", sh_single_quote_escape(r)))
         .collect();
     let list = list.join(" ");
-    out.push_str(&format!(
+    out.push_str(
         r##"
 INPUT=$(cat)
 
@@ -187,17 +187,19 @@ if ! command -v jq >/dev/null 2>&1; then
     exec "$HOOK" "$@" <<<"$INPUT"
 fi
 
-target=$(printf '%s' "$INPUT" | jq -r '{TARGET_JQ}' 2>/dev/null)
-[ -n "$target" ] || target="$PWD"
-
+"##,
+    );
+    out.push_str(LANDS_IN_SH);
+    out.push_str(&format!(
+        r##"
 for rel in {list}; do
     case "$rel" in
         /*) root="$rel" ;;
         *)  root="$WS/$rel" ;;
     esac
-    case "$target" in
-        "$root"|"$root"/*) exec "$HOOK" "$@" <<<"$INPUT" ;;
-    esac
+    if lands_in "$root"; then
+        exec "$HOOK" "$@" <<<"$INPUT"
+    fi
 done
 exit 0
 "##
