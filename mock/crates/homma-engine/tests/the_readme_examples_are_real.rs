@@ -485,25 +485,77 @@ fn only_the_launchers_commands_are_left_to_the_launcher() {
         );
     }
 
-    let written = commands_the_readme_writes();
-    let asked = commands_the_readme_names();
-    let left: Vec<&str> = written
-        .iter()
-        .filter(|w| !asked.iter().any(|a| a.as_written == w.as_written))
-        .map(|w| w.as_written.as_str())
-        .collect();
+    let left = spans_left_to_the_launcher();
     assert!(
         !left.is_empty(),
         "the readme names no launcher command, so the skip was never exercised"
     );
-    for span in &left {
-        let first = span.split_whitespace().nth(1).unwrap_or_default();
-        assert!(
-            launchers.contains(&first),
-            "`{span}` was left out of the engine's check and the launcher does \
-             not answer it"
-        );
-    }
+    let unchecked: Vec<&str> = left
+        .iter()
+        .filter(|span| !the_launchers_row_writes(span))
+        .map(String::as_str)
+        .collect();
+    assert!(
+        unchecked.is_empty(),
+        "these spans are left out of the engine's check and are not a form the \
+         launcher's row for their command writes, so neither suite reads them: \
+         {unchecked:?}"
+    );
+}
+
+/// Every span the engine's check leaves out, as written.
+fn spans_left_to_the_launcher() -> Vec<String> {
+    let asked = commands_the_readme_names();
+    commands_the_readme_writes()
+        .into_iter()
+        .filter(|w| !asked.iter().any(|a| a.as_written == w.as_written))
+        .map(|w| w.as_written)
+        .collect()
+}
+
+/// Whether `span` is a form the readme's table row for its command writes.
+///
+/// The launcher's suite checks every form in its rows and reads nothing else,
+/// so a span dropped here is checked exactly when it is one of those: its word
+/// after the command starts a form in the row, or it has no word after the
+/// command beyond a placeholder, which is the row's own first cell.
+fn the_launchers_row_writes(span: &str) -> bool {
+    let mut words = span.split_whitespace().skip(1);
+    let Some(name) = words.next() else {
+        return false;
+    };
+    let head = format!("| `homma {name}");
+    let Some(row) = README.lines().find(|l| {
+        l.strip_prefix(&head)
+            .is_some_and(|rest| rest.starts_with(' ') || rest.starts_with('`'))
+    }) else {
+        return false;
+    };
+    let verb = match words.next() {
+        None => return true,
+        Some(w) if w.starts_with('<') || w.starts_with('[') => return true,
+        Some(w) => w,
+    };
+    let forms = row.splitn(3, '|').nth(2).unwrap_or_default();
+    forms
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .any(|f| f.split_whitespace().next() == Some(verb))
+}
+
+/// The control for the handoff above: a verb the row does not write, a command
+/// with no row, and a prefix of a command's name are each reported.
+#[test]
+fn a_span_the_launchers_row_does_not_write_is_reported() {
+    assert!(the_launchers_row_writes("homma workspace spawn my-slug"));
+    assert!(the_launchers_row_writes("homma config schema"));
+    assert!(the_launchers_row_writes("homma workspace"));
+    assert!(the_launchers_row_writes("homma config <op>"));
+    assert!(!the_launchers_row_writes("homma workspace frob"));
+    assert!(!the_launchers_row_writes("homma config frob"));
+    assert!(!the_launchers_row_writes("homma work spawn"));
+    assert!(!the_launchers_row_writes("homma nosuchcommand"));
 }
 
 /// **The readme names `token_cmd`.**
