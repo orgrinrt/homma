@@ -122,6 +122,34 @@ fn a_hook_two_registrations_run_two_ways_is_reported_and_not_carried() {
 }
 
 #[test]
+fn a_hook_run_through_a_line_of_shell_is_reported_and_not_carried() {
+    let ws = tempfile::tempdir().unwrap();
+    let repo = plant_repo(
+        ws.path(),
+        &[("check.sh", QUIET), ("other.sh", QUIET)],
+        r#"{"hooks":{"PreToolUse":[
+            {"matcher":"Bash","hooks":[{"type":"command","command":"cd . && .claude/hooks/check.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":"bash .claude/hooks/other.sh"}]}
+        ]}}"#,
+    );
+    let (a, v) = regen(ws.path(), &repo);
+    assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
+    assert!(
+        a.problems[0].contains("arvo/.claude/hooks/check.sh")
+            && a.problems[0].contains("a line of shell"),
+        "{:?}",
+        a.problems
+    );
+    assert!(!ws.path().join(".claude/hooks/arvo--check.sh").exists());
+    // The control: the hook run through a program beside it is carried.
+    assert_eq!(registrations(&v), vec![reg(
+        "PreToolUse",
+        Some("Edit"),
+        "arvo--other.sh"
+    )]);
+}
+
+#[test]
 fn a_hidden_file_among_the_hooks_is_neither_carried_nor_reported() {
     let ws = tempfile::tempdir().unwrap();
     let repo = plant_repo(

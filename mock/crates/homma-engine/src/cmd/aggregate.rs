@@ -40,7 +40,7 @@
 //! get cleaned on every regen via [`clean_stale`] so upgrades from
 //! older homma versions converge to the current shape automatically.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -319,20 +319,13 @@ fn aggregate_hooks(
             },
         };
 
-        let runners: BTreeSet<&str> = registrations.iter().map(|r| r.runner.as_str()).collect();
-        if runners.len() > 1 {
-            let ways: Vec<String> = runners
-                .iter()
-                .map(|r| if r.is_empty() { "itself".to_string() } else { format!("`{r}`") })
-                .collect();
-            problems.push(format!(
-                "`{shown}` is run through {} by different registrations, and one wrapper can \
-                 only run it one way; not carried",
-                ways.join(" and ")
-            ));
-            continue;
-        }
-        let runner = runners.first().copied().unwrap_or("").to_string();
+        let runner = match one_runner(registrations.iter().map(|r| r.runner.as_str()), &shown) {
+            Ok(r) => r,
+            Err(problem) => {
+                problems.push(problem);
+                continue;
+            },
+        };
 
         // The wrapper is bash whatever the hook is written in, since all it
         // does is decide whether to hand off.
@@ -477,6 +470,7 @@ pub(crate) use wrapper::{
     LANDS_IN_SH,
     hook_call,
     hook_file_named,
+    one_runner,
     sh_single_quote_escape,
     wrapper_script,
 };

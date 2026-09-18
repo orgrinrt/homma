@@ -34,7 +34,7 @@ fn run_wrapper_on_path(wrapper: &Path, target: &Path, path: Option<&str>) -> std
 
 /// Run a wrapper with `payload` on stdin, each `(name, Some(value))` set in its
 /// environment.
-fn run_payload(
+pub(super) fn run_payload(
     wrapper: &Path,
     payload: &str,
     env: &[(&str, Option<&str>)],
@@ -62,7 +62,7 @@ fn run_payload(
 
 /// A workspace holding repository `rel` with a hook `foo.sh` that records it
 /// ran, and the wrapper for it. Returns the wrapper and the marker.
-fn planted(ws: &Path, rel: &str) -> (PathBuf, PathBuf) {
+pub(super) fn planted(ws: &Path, rel: &str) -> (PathBuf, PathBuf) {
     let hooks = ws.join(".claude/hooks");
     fs::create_dir_all(&hooks).unwrap();
     fs::create_dir_all(ws.join(rel).join(".claude/hooks")).unwrap();
@@ -230,25 +230,6 @@ fn a_wrapper_declines_when_the_repo_is_not_cloned_here() {
             String::from_utf8_lossy(&out.stderr)
         );
     }
-}
-
-#[test]
-fn a_relative_repo_root_never_matches_the_absolute_path_the_host_supplies() {
-    // The host always supplies an absolute `file_path`, and the comparison is
-    // textual.
-    let matches = |root: &str, target: &str| -> bool {
-        let out = std::process::Command::new("bash")
-            .arg("-c")
-            .arg(format!(
-                r#"case "{target}" in "{root}"|"{root}"/*) exit 0;; *) exit 1;; esac"#
-            ))
-            .output()
-            .unwrap();
-        out.status.success()
-    };
-    assert!(!matches("./arvo", "/ws/arvo/src/lib.rs"));
-    assert!(matches("./arvo", "./arvo/src/lib.rs"));
-    assert!(matches("/ws/arvo", "/ws/arvo/src/lib.rs"));
 }
 
 #[test]

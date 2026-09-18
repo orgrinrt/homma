@@ -48,6 +48,47 @@ pub(crate) fn hook_call(cmd: &str) -> Option<HookCall> {
     None
 }
 
+/// The one program every registration of a hook runs it with, or the problem
+/// to report for `shown` where there is not one.
+///
+/// Two registrations running one hook two ways cannot share a wrapper, since it
+/// runs the hook one way. A runner that is a line of shell rather than a
+/// program is refused too: the wrapper puts it in front of the hook in an
+/// `exec`, which runs a program with arguments, so an assignment in front of
+/// the hook fails there and a separator before it runs something else. `cd dir
+/// && .claude/hooks/x.sh` would `exec` a `cd` binary, which exits 0, and that
+/// would read as the hook's approval.
+pub(crate) fn one_runner<'a>(
+    runners: impl Iterator<Item = &'a str>,
+    shown: &str,
+) -> Result<String, String> {
+    let runners: std::collections::BTreeSet<&str> = runners.collect();
+    if runners.len() > 1 {
+        let ways: Vec<String> = runners
+            .iter()
+            .map(|r| if r.is_empty() { "itself".to_string() } else { format!("`{r}`") })
+            .collect();
+        return Err(format!(
+            "`{shown}` is run through {} by different registrations, and one wrapper can \
+             only run it one way; not carried",
+            ways.join(" and ")
+        ));
+    }
+    let runner = runners.first().copied().unwrap_or("");
+    let assignment = runner
+        .split_whitespace()
+        .next()
+        .is_some_and(|w| w.contains('='));
+    let shell = ['&', ';', '|', '(', ')', '`', '<', '>'];
+    if assignment || runner.contains(shell) || runner.contains("$(") {
+        return Err(format!(
+            "`{shown}` is run through `{runner}`, which is a line of shell rather than a \
+             program, and the wrapper can only run a program with arguments; not carried"
+        ));
+    }
+    Ok(runner.to_string())
+}
+
 /// The file a hook command runs, by its name under `.claude/hooks/`.
 pub(crate) fn hook_file_named(cmd: &str) -> Option<String> {
     hook_call(cmd).map(|c| c.name)
@@ -68,8 +109,8 @@ pub(crate) fn sh_single_quote_escape(s: &str) -> String {
 /// workspace root whatever the session did.
 ///
 /// A command is split on everything that cannot be part of a path, which takes
-/// quotes, separators, redirections and the `=` of `--flag=path` apart. A piece
-/// climbing with `..` lands everywhere, and a directory's absolute path anywhere
+/// quotes, separators, redirections and the `=` of `--flag=path` apart. A file
+/// or a piece climbing with `..` lands everywhere, and a directory's absolute path anywhere
 /// in the command counts, which is what catches one with a space in it. Not
 /// seen: a relative path with a space in it, a path spelled through a variable,
 /// and what a script the command runs does next.
@@ -85,11 +126,15 @@ under() {
     return 1
 }
 
-# A piece climbing with `..` lands everywhere: a guard run once too often costs
-# a process, and one skipped costs what the guard is for.
+# A path or piece climbing with `..` lands everywhere, since a guard skipped
+# costs what the guard is for. Running one too often is not free either: a
+# guard that denies can deny a call that never touched its repository.
 lands_in() {
     local root=$1 w
     if [ -n "$FILE" ]; then
+        case "$FILE" in
+            ..|../*|*/..|*/../*) return 0 ;;
+        esac
         case "$FILE" in
             /*) under "$root" "$FILE" ;;
             *)  under "$root" "$CWD/$FILE" ;;
@@ -156,7 +201,9 @@ lands_in() {
 /// 4. Exits 0 when the call does not land under the repo root, by
 ///    [`LANDS_IN_SH`].
 /// 5. Otherwise replaces itself with the real hook, passing on its own
-///    arguments and re-feeding the original stdin.
+///    arguments and re-feeding the original stdin, in the directory the host
+///    ran it in. A relative path in the payload is relative to that directory,
+///    so running the hook anywhere else would have it misread one.
 pub(crate) fn wrapper_script(
     repo_name: &str,
     repo_rel_path: &str,
@@ -209,3 +256,7 @@ exec {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
 #[cfg(test)]
 #[path = "aggregate_wrapper_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "aggregate_wrapper_handoff_tests.rs"]
+mod handoff_tests;
