@@ -9,6 +9,7 @@
 //! lets the store, the registry and the command surface all depend on it without
 //! depending on each other.
 
+pub mod agent_hooks;
 pub mod config;
 pub mod contained;
 pub mod denied;
@@ -25,6 +26,7 @@ pub mod rule;
 pub mod skill;
 pub mod version;
 
+pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};

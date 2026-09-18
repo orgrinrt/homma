@@ -1,0 +1,50 @@
+550b168 chore: lock the source changelist for the shell call narrowing
+4eabda4 fix: narrow a shell call by every path it names, not just its cwd
+1b84213 docs: a shell call lands wherever its paths point
+6c5860a chore: close the round for workspace agent hooks that chain
+8c3daea chore: lock the source changelist for workspace agent hooks
+e950fa4 docs: regenerate the structure graph for the declared hooks module
+f8e9b1d feat: carry every agent hook at its event and drop none
+f7c2fbc docs: open the source changelist for workspace agent hooks
+25aa183 chore: lock the doc changelist for workspace agent hooks
+bf11498 docs: say what homma owes the agent hooks it carries
+e57bdc3 docs: open the doc changelist for workspace agent hooks
+8dcc851 docs: open the round for workspace agent hooks that chain
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
+fc70a3d refactor: split the gate tests into a module per concern
+bfb2260 fix: clear the thirteen clippy findings the engine workspace carried
+30302a7 feat: the pre-push gate leaves a poster and gates a tag's commit once
+5055158 feat: the release gate holds the description to the readme tagline
+eb26e80 feat: one entrypoint per git event, read off a hooks table
+c853079 feat: read a repo's kind off root markers declared in homma.toml
+69e8765 docs: drop the coding-agents notice from the readme
+3390cf0 feat: build a crate on its declared feature sets alone
+a6c16b5 feat: gate commits on the shared tool configs and widen homma status
+da84833 fix: the hook takes git's two arguments, and a worktree finds its clone
+c6ab612 fix: hook install refuses a tracked hooks dir and a hook not its own
+d9615ab fix: the release's gate, plan, sweep and hook after the first merge
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml
+9695777 fix: the launcher can reach its own engine
+f2b0c4e feat!: detect workspace members rather than declaring them
+4abf397 docs: rewrite the readme, and fix what checking it turned up
+9db7e53 chore: take renki from crates.io, and publish what compiles
+6e970ad chore: every source file carries its notice
+22aee22 feat: run homma from its own launcher over renki
+14d6ad2 feat: a forge credential can come from whatever holds it
+2c20bf2 fix: track `deny.toml` and bump `gix` past three advisories
+e835e69 fix: an aggregated hook finds its own workspace
+70c3ac4 fix: the generated paths are ignored before they exist
+e51889f feat: verify can ask the forge whether a repo is there
+223a797 docs: regenerate the structure docs after the org dependency
+b26697b chore: every generated file is ignored or tracked, and none is neither
+e96aaa8 feat: regen ensures every repo has the shared tool configs
+de79e31 feat: an author and a committer, so one clone carries two identities
+22ea3ba chore: track the generated taplo schema config
+d5306b8 fix: the workspace root is the config's directory, not the cwd
+c30164c chore: close the round

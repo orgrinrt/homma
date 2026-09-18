@@ -84,6 +84,12 @@ pub struct Config {
     #[serde(default)]
     pub hooks: homma_api::Hooks,
 
+    /// `[agent]`: the hooks a workspace declares for the agent host, one array
+    /// per host event under `[agent.hooks]`. `homma agent regen` writes a
+    /// wrapper for each row and registers it; see `homma_api::AgentHooks`.
+    #[serde(default)]
+    pub agent: homma_api::AgentTable,
+
     /// `[registries.<key>]`: the package registries a release publishes to,
     /// keyed `crates-io`, `jsr` and `npm`, each with the same two credential
     /// fields a forge has. The three exist whether or not the manifest names
