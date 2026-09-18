@@ -255,7 +255,8 @@ repository's `settings.json` gives it, and under the matchers its own
 neither is not written as a wrapper nobody calls: it is reported by path, and
 the regen exits `1`. Any executable file under the repository's `.claude/hooks/`
 is a hook, whatever language it is in, and a file there that is not executable
-is reported the same way, since the host could not run it either.
+and that no registration runs through a program is reported the same way, since
+the host could not run it either.
 
 A workspace declares hooks of its own in the manifest, under `[agent.hooks]`,
 one array per event named as the host names it:
@@ -274,10 +275,37 @@ beside the aggregated ones, carrying the same line, so the rows are kept and
 removed by the same rule, and a guard a workspace wants in every session is a
 line in the manifest rather than a hand edit to a generated file.
 
-A call is narrowed by where it lands. For a tool writing a file that is the
-file's path; for a shell call it is the directory the host says the session is
-in, then any path the call carries, and the hook process's own working
-directory last, since that is the workspace root whatever the session did.
+A call is narrowed by where it lands, and a hook sees it when any place it
+lands is under the hook's repository. For a tool writing a file that is the
+file's path. For a shell call it is the directory the host says the session is
+in, and every path the command names as well, read relative to that directory,
+since `cargo test --manifest-path engine/Cargo.toml` typed at the workspace
+root lands in `engine` whatever directory it was typed in. Where the host says
+nothing about a directory, the hook process's own working directory stands in,
+and that is the workspace root whatever the session did.
+
+A wrapper is not a shell, so it reads a command by splitting it on everything
+that cannot be part of a path, which takes quotes, separators, redirections and
+the `=` in `--flag=path` apart, and reading each piece as a path. It also looks
+for a repository's absolute root anywhere in the command, and a piece that
+climbs with `..` counts as landing everywhere, since a guard run once too often
+costs a process and one skipped costs what the guard is for. What it cannot
+see is a relative path with a space in it, a path spelled through a variable,
+and whatever a script the command runs goes on to do. A guard that needs those
+reads the command itself.
+
+A registration names its hook by the first word of its command that reaches
+into `.claude/hooks/`. Whatever precedes that word is the program the host runs
+it with, as in `bash .claude/hooks/check.sh`, and whatever follows is its
+arguments, both of which the wrapper carries. A hook run through a program does
+not have to be executable. A hook that two registrations run through two
+different programs is reported by path and not carried, since one wrapper can
+only run it one way.
+
+A file under a repository's `.claude/hooks/` whose name starts with a dot is an
+editor's or a filesystem's, and is neither carried nor reported. A registration
+in the workspace naming a file homma writes, where that file is no longer
+there, is removed on the next regen, since nothing it could run exists.
 
 ## What a status answers
 
