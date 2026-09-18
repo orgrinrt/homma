@@ -301,16 +301,22 @@ pub mod regen {
     /// Roll-up regen report across all repos.
     #[derive(Debug, Serialize)]
     pub struct RegenReport {
-        pub results:       Vec<RegenResult>,
-        pub ok:            bool,
+        pub results:           Vec<RegenResult>,
+        pub ok:                bool,
         /// Configs that differ from the shared copy, across the whole run.
         /// **A warning, never a failure**: a difference may be deliberate.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub diverged:      Vec<String>,
+        pub diverged:          Vec<String>,
         /// Configs nothing could place, and why the stage could not run at all.
         /// These want somebody to act.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        pub needs_a_human: Vec<String>,
+        pub needs_a_human:     Vec<String>,
+        /// Agent hooks no session opened at the root will run: a repository
+        /// hook nothing registers or the host could not run, a declared row
+        /// naming nothing it can run, and a hook whose wrapper would land on a
+        /// file homma did not write. **Each fails the run.**
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub hooks_not_carried: Vec<String>,
     }
 
     /// Per-repo regen outcome covering both pipeline stages.
@@ -453,6 +459,7 @@ pub mod regen {
         let mut had_failure = false;
         let mut needs_a_human: Vec<String> = Vec::new();
         let mut diverged: Vec<String> = Vec::new();
+        let mut hooks_not_carried: Vec<String> = Vec::new();
 
         for (name, repo_cfg) in &cfg.repos {
             if let Some(filter) = repo {
@@ -531,24 +538,44 @@ pub mod regen {
             // Stage 3: aggregate. Only attempt if the repo has a
             // rendered .claude/ to read from.
             let claude_present = local.join(".claude").is_dir();
-            let (aggregated_hooks, aggregate_stage) = if opts.skip_aggregate {
-                (0, StageStatus::Skipped("--skip-aggregate".into()))
+            let (aggregated_hooks, aggregate_stage, stage_failed) = if opts.skip_aggregate {
+                (0, StageStatus::Skipped("--skip-aggregate".into()), false)
             } else if !claude_present {
-                (0, StageStatus::Skipped("no .claude/ to aggregate".into()))
+                (
+                    0,
+                    StageStatus::Skipped("no .claude/ to aggregate".into()),
+                    false,
+                )
             } else {
                 match aggregate::aggregate_repo(&root, name, &local, &mut settings_entries) {
-                    Ok(h) => {
+                    Ok(a) => {
                         visited.push(name.clone());
-                        (h, StageStatus::Success)
+                        // Failed, and still not a reason to stop: the hooks
+                        // that could be carried were, and stopping would leave
+                        // the next repository's uncarried as well.
+                        let stage = if a.problems.is_empty() {
+                            StageStatus::Success
+                        } else {
+                            had_failure = true;
+                            StageStatus::Failed(format!(
+                                "{} hook(s) not carried, listed below",
+                                a.problems.len()
+                            ))
+                        };
+                        hooks_not_carried.extend(a.problems);
+                        (a.hooks, stage, false)
                     },
                     Err(e) => {
                         had_failure = true;
-                        (0, StageStatus::Failed(truncate(format!("{e:#}"), 256)))
+                        (
+                            0,
+                            StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                            true,
+                        )
                     },
                 }
             };
 
-            let stage_failed = aggregate_stage.is_failure();
             results.push(RegenResult {
                 repo: name.clone(),
                 cargo_mock,
@@ -591,13 +618,51 @@ pub mod regen {
                 },
             };
 
-            if let Err(e) = aggregate::merge_settings(
+            // The manifest's own rows, under the same mark as everything above,
+            // so they are kept and removed by the same rule. Installed on every
+            // run, a one-repository run included, since the merge below sweeps
+            // their registrations and writes back only what it is handed.
+            //
+            // **A failure here leaves `settings.json` as it was**: the merge
+            // would sweep the rows' registrations and have none to write back.
+            let declared_ok = match crate::cmd::declared::install_declared(
                 &root,
-                &known_repos,
-                &visited_repos,
-                &settings_entries,
-                gate_entry.as_ref(),
+                &cfg.agent.hooks,
+                &repo_paths,
             ) {
+                Ok(d) => {
+                    if !d.problems.is_empty() {
+                        had_failure = true;
+                    }
+                    hooks_not_carried.extend(d.problems);
+                    settings_entries.extend(d.entries);
+                    true
+                },
+                Err(e) => {
+                    had_failure = true;
+                    results.push(RegenResult {
+                        repo:             "(declared hooks)".into(),
+                        cargo_mock:       StageStatus::Skipped("not a repo".into()),
+                        configs:          Vec::new(),
+                        aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
+                        aggregated_hooks: 0,
+                    });
+                    false
+                },
+            };
+
+            let merged = if declared_ok {
+                aggregate::merge_settings(
+                    &root,
+                    &known_repos,
+                    &visited_repos,
+                    &settings_entries,
+                    gate_entry.as_ref(),
+                )
+            } else {
+                Ok(())
+            };
+            if let Err(e) = merged {
                 had_failure = true;
                 results.push(RegenResult {
                     repo:             "(settings.json)".into(),
@@ -624,6 +689,7 @@ pub mod regen {
             ok,
             diverged,
             needs_a_human,
+            hooks_not_carried,
         })
     }
 
@@ -702,6 +768,12 @@ pub mod regen {
             if !self.needs_a_human.is_empty() {
                 writeln!(out, "\nconfigs somebody has to place:")?;
                 for d in &self.needs_a_human {
+                    writeln!(out, "  {d}")?;
+                }
+            }
+            if !self.hooks_not_carried.is_empty() {
+                writeln!(out, "\nagent hooks not carried:")?;
+                for d in &self.hooks_not_carried {
                     writeln!(out, "  {d}")?;
                 }
             }
