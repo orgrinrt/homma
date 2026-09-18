@@ -32,3 +32,10 @@ tempfile = "3"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+# The launcher, for the one list the readme test needs from it: which commands
+# the launcher answers before the engine runs at all. Read off the launcher's
+# descriptor rather than written down here, so a second launcher command cannot
+# land without the engine's test knowing. The launcher dev-depends on
+# `homma-core` the other way round for the same reason, and neither is built
+# outside a test.
+homma = { path = "../../../launcher" }

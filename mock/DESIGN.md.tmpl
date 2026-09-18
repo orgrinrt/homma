@@ -144,8 +144,10 @@ homma serve    the daemon and its surfaces
 homma release  the gate, the run record, and dev onto main as a release
 ```
 
-One command is the launcher's rather than the engine's, because it runs where
-there is no engine to run. `homma workspace` reports the workspace the cwd is
+Two commands are the launcher's rather than the engine's, because each runs
+where there may be no engine to run. `homma config`, described with the settings
+below, is answered by renki for any tool that declares settings, since the
+engine is the thing being configured and may not build. `homma workspace` reports the workspace the cwd is
 in, or makes one where it is not: bare, inside a workspace, it prints the root
 and every repository in it with its branch, whether the tree is dirty and how
 many commits sit on no remote; bare, outside one, it clones the content
