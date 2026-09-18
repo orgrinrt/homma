@@ -5,10 +5,11 @@
 //! The forgejo client against a listener on the loopback, so what goes over
 //! the wire is what is asserted: the status post and the release.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::net::TcpListener;
 
 use super::*;
+use crate::forge::wire_stub::read_request;
 use crate::forge::{Forge, StatusState};
 
 /// A stub that records one request whole and answers `201`, or `404` where
@@ -23,26 +24,7 @@ fn recording_server() -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
         let Ok((mut sock, _)) = listener.accept() else {
             return;
         };
-        let mut reader = BufReader::new(sock.try_clone().unwrap());
-        let mut text = String::new();
-        let mut length = 0usize;
-        loop {
-            let mut line = String::new();
-            if reader.read_line(&mut line).unwrap() == 0 {
-                break;
-            }
-            if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                length = v.trim().parse().unwrap_or(0);
-            }
-            let blank = line.trim().is_empty();
-            text.push_str(&line);
-            if blank {
-                break;
-            }
-        }
-        let mut body = vec![0u8; length];
-        std::io::Read::read_exact(&mut reader, &mut body).unwrap();
-        text.push_str(&String::from_utf8_lossy(&body));
+        let text = read_request(&sock).text();
         let missing = text.contains("/repos/o/nope/");
         *seen.lock().unwrap() = text;
         let response: &[u8] = if missing {
@@ -139,7 +121,10 @@ fn a_write_to_a_repo_forgejo_does_not_have_is_repo_not_found() {
 
 /// A stub answering each request with the status of the first route whose
 /// path fragment the request line carries, `404` where none does, for a
-/// fixed number of requests. Forgejo's arms read no body, so none is taken.
+/// fixed number of requests.
+///
+/// The whole request is read before the answer goes back, body included,
+/// through the reader every stub shares; its module says why.
 fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -148,18 +133,10 @@ fn status_by_path(routes: &'static [(&'static str, u16)], requests: usize) -> St
             let Ok((mut sock, _)) = listener.accept() else {
                 return;
             };
-            let mut reader = BufReader::new(sock.try_clone().unwrap());
-            let mut request_line = String::new();
-            reader.read_line(&mut request_line).unwrap();
-            loop {
-                let mut header = String::new();
-                if reader.read_line(&mut header).unwrap() == 0 || header.trim().is_empty() {
-                    break;
-                }
-            }
+            let request = read_request(&sock);
             let status = routes
                 .iter()
-                .find(|(path, _)| request_line.contains(path))
+                .find(|(path, _)| request.line().contains(path))
                 .map_or(404, |(_, status)| *status);
             let response = format!("HTTP/1.1 {status} X\r\nContent-Length: 2\r\n\r\n{{}}");
             let _ = sock.write_all(response.as_bytes());
@@ -224,4 +201,32 @@ fn a_forgejo_404_is_the_commit_when_the_repo_answers_and_the_repo_when_it_does_n
         client.commit_known("o", "gone", "aaa"),
         Err(ForgeError::RepoNotFound { .. })
     ));
+}
+
+/// The stub answers a request whose body is still arriving, rather than
+/// closing on it.
+///
+/// Four mebibytes is past what the loopback buffers, so a stub that answered
+/// after the headers would close with most of the body unsent and this write
+/// would fail on every run rather than on some, which is what turned the create
+/// test above into a coin toss.
+#[test]
+fn the_stub_reads_a_large_body_before_it_answers() {
+    use std::io::Read;
+    let url = status_by_path(&[("/user/repos", 409)], 1);
+    let mut sock = std::net::TcpStream::connect(url.trim_start_matches("http://")).unwrap();
+    let body = vec![b'x'; 4 << 20];
+    let head = format!(
+        "POST /user/repos HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    sock.write_all(head.as_bytes()).unwrap();
+    sock.write_all(&body)
+        .expect("the stub closed while the body was still being sent");
+    let mut answer = String::new();
+    sock.read_to_string(&mut answer).unwrap();
+    assert!(
+        answer.starts_with("HTTP/1.1 409"),
+        "the stub answered {answer:?}"
+    );
 }
