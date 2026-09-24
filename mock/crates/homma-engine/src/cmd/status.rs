@@ -42,6 +42,9 @@ use crate::output::{HumanRender, emit};
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
     pub workspace: WorkspaceLine,
+    /// What this clone is for, out of `homma.local.toml`. `null` where the
+    /// clone has no such file.
+    pub instance:  Option<homma_core::local::Instance>,
     pub forges:    Vec<ForgeLine>,
     pub repos:     Vec<RepoLine>,
     /// What the workspace's own tools said, in the order `[[status.inject]]`
@@ -212,6 +215,7 @@ fn build_report(
         .collect();
     StatusReport {
         workspace,
+        instance: cfg.local.as_ref().map(|l| l.instance.clone()),
         forges,
         repos,
         injected,
@@ -241,6 +245,12 @@ impl StatusReport {
             "  default public={}  working={}",
             self.workspace.default_public_branch, self.workspace.default_working_branch
         )?;
+        if let Some(i) = &self.instance {
+            match &i.title {
+                Some(title) => writeln!(out, "  this clone is for {} ({title})", i.work)?,
+                None => writeln!(out, "  this clone is for {}", i.work)?,
+            }
+        }
         if !self.forges.is_empty() && full {
             writeln!(out)?;
             writeln!(out, "forges:")?;
@@ -490,6 +500,55 @@ mod tests {
             .render(&mut out, true)
             .expect("writing to a vec cannot fail");
         String::from_utf8(out).expect("the render is utf-8")
+    }
+
+    fn with_local(local: &str) -> StatusReport {
+        let mut cfg =
+            Config::parse("[workspace]\nname = \"w\"\n").expect("a minimal manifest parses");
+        cfg.local = Some(homma_core::local::Local::parse(local).expect("this local file parses"));
+        build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new())
+    }
+
+    #[test]
+    fn a_clone_without_a_local_file_says_nothing_about_what_it_is_for() {
+        let r = report(Vec::new());
+        assert!(r.instance.is_none());
+        assert!(!rendered(&r).contains("this clone is for"));
+        let doc = serde_json::to_value(&r).unwrap();
+        assert!(doc["instance"].is_null(), "{doc}");
+    }
+
+    #[test]
+    fn a_clone_with_a_local_file_says_what_it_is_for() {
+        let r = with_local("[instance]\nwork = \"kenno\"\n");
+        assert!(
+            rendered(&r).contains("  this clone is for kenno\n"),
+            "{}",
+            rendered(&r)
+        );
+        let r = with_local("[instance]\nwork = \"kenno\"\ntitle = \"the tile machine\"\n");
+        assert!(
+            rendered(&r).contains("  this clone is for kenno (the tile machine)\n"),
+            "{}",
+            rendered(&r)
+        );
+    }
+
+    #[test]
+    fn the_document_carries_the_instance_whole() {
+        let r = with_local(
+            "[instance]\nwork = \"k\"\nrepos = [\"a\"]\nstate = \"s.md\"\ngoal = \"g.md\"\n[tools.x]\ny = \"z\"\n",
+        );
+        let doc = serde_json::to_value(&r).unwrap();
+        assert_eq!(doc["instance"]["work"], "k");
+        assert_eq!(doc["instance"]["repos"][0], "a");
+        assert_eq!(doc["instance"]["state"], "s.md");
+        assert_eq!(doc["instance"]["goal"], "g.md");
+        // The tools' tables are theirs and stay out of the status document.
+        assert!(
+            doc.get("tools").is_none() && doc["instance"].get("tools").is_none(),
+            "{doc}"
+        );
     }
 
     #[test]

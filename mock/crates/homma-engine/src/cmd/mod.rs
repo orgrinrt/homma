@@ -38,6 +38,7 @@ pub mod fake_git;
 pub mod forge;
 pub mod gates;
 pub mod hook;
+pub mod local;
 pub mod migrate;
 pub mod org;
 pub mod registry;
@@ -307,6 +308,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             let cfg = load_config(&cli)?;
             hook::run(&cli, &cfg, op)
         },
+        Command::Local {
+            op,
+        } => local::run(&cli, op),
         Command::Docs {
             op,
         } => {

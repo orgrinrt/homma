@@ -39,6 +39,7 @@ into anything that has to keep running unattended just yet.
 | Command | What it's for |
 |---|---|
 | `homma status` | What state the workspace is in: every repo it found, its forge and owner, whether each one's template scaffolding is in place and its `core.hooksPath` is set, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full`. Whether homma's own hook entrypoints are installed is `homma hook install`'s to report, not this one's |
+| `homma local <op>` | This clone's own `homma.local.toml`, beside the manifest and never committed: which body of work the clone is for, where that work keeps its state and its goal, and the settings of the workspace's own tools. `init --work <name>` writes it and adds it to `.gitignore`, `show` prints it, `set <table.key> <value>` writes one value and keeps the comments. `homma status` names what the clone is for |
 | `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--forge` also asks each forge whether the repo is really there |
 | `homma repo <op>` | Per-repo work against the local tree, without the `cd`. `repo config check` compares a repo against the shared tool configs and `repo config init` places the ones it is missing |
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
