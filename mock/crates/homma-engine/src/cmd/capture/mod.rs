@@ -28,6 +28,7 @@ use crate::output::{HumanRender, emit};
 pub mod render;
 pub mod store;
 pub mod transcript;
+pub mod typed;
 
 #[cfg(test)]
 mod tests;
@@ -110,6 +111,9 @@ pub fn make(
     zone: &TimeZone,
 ) -> Result<Option<Made>> {
     let slug = store::slug(ask.title)?;
+    if let Some(b) = ask.bears_on.iter().find(|b| b.contains(['\n', '\r'])) {
+        bail!("--bears-on {b:?} holds a line break, which would write a key of its own");
+    }
     let events: Vec<_> = read
         .events
         .iter()
@@ -151,7 +155,14 @@ pub fn make(
     }))
 }
 
-pub fn run(cfg: &Config, ask: &Ask<'_>, format: OutputFormat) -> Result<()> {
+/// One run. `denied` is where homma never writes, which the store is checked
+/// against before anything is written.
+pub fn run(
+    cfg: &Config,
+    ask: &Ask<'_>,
+    denied: &homma_api::Denied,
+    format: OutputFormat,
+) -> Result<()> {
     let root = cfg.workspace.path.as_path();
     // A transcript named by path needs no home to be found under.
     let path = match ask.session {
@@ -171,9 +182,14 @@ pub fn run(cfg: &Config, ask: &Ask<'_>, format: OutputFormat) -> Result<()> {
         .into
         .map(Path::to_path_buf)
         .unwrap_or_else(|| root.join(ask.store));
+    let at = homma_api::AbsPath::new(std::path::absolute(&dir).unwrap_or_else(|_| dir.clone()))
+        .map_err(|e| anyhow!("{e}"))?;
+    denied.check(&at, "the capture store")?;
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let read = transcript::read(&text)?;
+    let mut read = transcript::read(&text)?;
+    // What a tool typed into the terminal is the tool's, not the person's.
+    read.events = typed::without(std::mem::take(&mut read.events), &typed::read(&path)?);
     let mark = store::watermark(&dir, &session, &read)?;
     let made = make(
         root,

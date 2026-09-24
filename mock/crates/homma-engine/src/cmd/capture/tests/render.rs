@@ -32,17 +32,56 @@ fn unquote(block: &str) -> String {
         .join("\n")
 }
 
+/// What JavaScript's `\s` and `trim` count as whitespace: its white space and
+/// line terminators. Not Rust's `is_whitespace`, which takes U+0085 and
+/// leaves U+FEFF.
+fn js_space(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..= '\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
+    )
+}
+
+/// `text.trim()` is empty, in JavaScript.
+fn js_blank(text: &str) -> bool {
+    text.chars().all(js_space)
+}
+
+#[test]
+fn the_mirror_counts_whitespace_as_javascript_does() {
+    // Where the two languages part: U+0085 is Rust's and not JavaScript's,
+    // U+FEFF the other way round, and U+00A0 both.
+    assert!(!js_space('\u{85}') && '\u{85}'.is_whitespace());
+    assert!(js_space('\u{FEFF}') && !'\u{FEFF}'.is_whitespace());
+    assert!(js_space('\u{A0}') && '\u{A0}'.is_whitespace());
+    // So a quote of U+0085 alone is kept, and one of U+00A0 alone is dropped.
+    assert_eq!(quotes(&quote("\u{85}")), ["\u{85}"]);
+    assert!(quotes(&quote("\u{A0}")).is_empty());
+    assert!(quotes(&quote("\u{FEFF}")).is_empty());
+    // And the space after the mark is only taken when it is one.
+    assert_eq!(quotes(">\u{A0}x"), ["x"]);
+    assert_eq!(quotes(">\u{85}x"), ["\u{85}x"]);
+}
+
 /// Every blockquote in `text` as the voice tool finds them, rule for rule
 /// with `quotes` in the workspace's `.shared/scripts/voice/src/corpus/remarks.ts`:
 /// a line matching `/^>\s?(.*)$/s` is a quote line holding the capture, a run
 /// of them is one quote, a blank line inside a run is skipped and adds a break
 /// when the line after it is a quote line again, any other line ends the run,
 /// and the text has its leading and trailing newlines trimmed and is dropped
-/// when it is only whitespace.
+/// when it is only whitespace. Whitespace is JavaScript's, which `js_space`
+/// spells out.
 fn quotes(text: &str) -> Vec<String> {
     fn quoted(l: &str) -> Option<&str> {
         let rest = l.strip_prefix('>')?;
-        Some(rest.strip_prefix(char::is_whitespace).unwrap_or(rest))
+        Some(rest.strip_prefix(js_space).unwrap_or(rest))
     }
     let lines: Vec<&str> = text.split('\n').collect();
     let mut out = Vec::new();
@@ -51,7 +90,7 @@ fn quotes(text: &str) -> Vec<String> {
         if let Some(h) = held.take() {
             let t = h.join("\n");
             let t = t.trim_end_matches('\n').trim_start_matches('\n');
-            if !t.trim().is_empty() {
+            if !js_blank(t) {
                 out.push(t.to_string());
             }
         }
@@ -62,7 +101,7 @@ fn quotes(text: &str) -> Vec<String> {
             continue;
         }
         if let Some(h) = held.as_mut() {
-            if l.trim().is_empty() {
+            if js_blank(l) {
                 if lines.get(i + 1).is_some_and(|n| n.starts_with('>')) {
                     h.push("");
                 }
@@ -125,7 +164,7 @@ fn every_short_string_survives_the_quote_both_ways() {
         // The voice tool trims newlines off the ends and drops a quote that is
         // only whitespace; everything else comes back whole.
         let kept = text.trim_start_matches('\n').trim_end_matches('\n');
-        let want: Vec<&str> = if kept.trim().is_empty() { vec![] } else { vec![kept] };
+        let want: Vec<&str> = if js_blank(kept) { vec![] } else { vec![kept] };
         assert_eq!(quotes(&q), want, "{text:?}");
     }
 }

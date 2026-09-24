@@ -292,7 +292,15 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 store: ws.paths.captures.as_path(),
                 running: running.as_deref(),
             };
-            capture::run(&cfg, &ask, cli.output)?;
+            // The store is checked against the whole list, like every other
+            // place homma writes at a path somebody configured or named.
+            let root = homma_api::AbsPath::new(
+                std::path::absolute(&cfg.workspace.path)
+                    .unwrap_or_else(|_| cfg.workspace.path.clone()),
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let denied = homma_api::Denied::for_the_workspace(&ws, &root)?;
+            capture::run(&cfg, &ask, &denied, cli.output)?;
             Ok(Outcome::Ok)
         },
         Command::Agent {

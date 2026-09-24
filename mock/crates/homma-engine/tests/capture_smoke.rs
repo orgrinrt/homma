@@ -169,29 +169,177 @@ fn the_session_the_command_runs_inside_is_read_and_the_store_is_configured() {
 }
 
 #[test]
-fn a_session_by_path_needs_no_home() {
+fn no_home_is_refused_even_for_a_session_by_path() {
+    // Without a home the places nothing may be written cannot be known, so a
+    // run that would write stops, whichever way the transcript was named.
     let dir = tempfile::tempdir().unwrap();
     let (root, _) = workspace(dir.path());
     let t = dir.path().join("s.jsonl");
     std::fs::write(&t, format!("{SAID}\n")).unwrap();
-    bin()
-        .env_remove("HOME")
-        .env("TZ", "UTC")
-        .current_dir(&root)
-        .args(["-c", root.join("homma.toml").to_str().unwrap(), "capture"])
-        .args(["--title", "No home", "--session", t.to_str().unwrap()])
-        .assert()
-        .success();
+    for session in [t.to_str().unwrap(), "s"] {
+        bin()
+            .env_remove("HOME")
+            .env("TZ", "UTC")
+            .current_dir(&root)
+            .args(["-c", root.join("homma.toml").to_str().unwrap(), "capture"])
+            .args(["--title", "No home", "--session", session])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("HOME"));
+    }
+    assert!(store(&root).is_empty());
+    // The control: the same run with a home writes.
+    capture(&root, &dir.path().join("home"), &[
+        "--title",
+        "No home",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success();
     assert_eq!(store(&root), ["202609241400_no-home.md"]);
-    // The control: by id, it does need one, and says what to do instead.
-    bin()
-        .env_remove("HOME")
-        .current_dir(&root)
-        .args(["-c", root.join("homma.toml").to_str().unwrap(), "capture"])
-        .args(["--title", "No home", "--session", "s"])
-        .assert()
+}
+
+/// Every file under `dir`, as paths relative to it.
+fn every_file(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(d) = todo.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                todo.push(p);
+            } else {
+                out.push(p.strip_prefix(dir).unwrap().to_path_buf());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn a_store_in_a_denied_place_is_refused_and_nothing_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    std::fs::write(&t, format!("{SAID}\n")).unwrap();
+    let session = t.to_str().unwrap();
+    // The operator's own `.claude`, by flag.
+    let claude = home.join(".claude/projects");
+    capture(&root, &home, &[
+        "--title",
+        "x",
+        "--session",
+        session,
+        "--into",
+        claude.to_str().unwrap(),
+    ])
+    .failure()
+    .stderr(predicate::str::contains("the capture store"));
+    // A place the manifest denies, by flag.
+    std::fs::write(
+        root.join("homma.toml"),
+        "deny = [{ path = \"~/theirs\", why = \"it is somebody else's\" }]\n\n\
+         [workspace]\nname = \"ws\"\n",
+    )
+    .unwrap();
+    let theirs = home.join("theirs/notes");
+    capture(&root, &home, &[
+        "--title",
+        "x",
+        "--session",
+        session,
+        "--into",
+        theirs.to_str().unwrap(),
+    ])
+    .failure()
+    .stderr(predicate::str::contains("somebody else's"));
+    // And a denied place inside the workspace as the configured store.
+    std::fs::write(
+        root.join("homma.toml"),
+        "deny = [{ path = \"vendored\", why = \"it is somebody else's\" }]\n\n\
+         [workspace]\nname = \"ws\"\n\n[paths]\ncaptures = \"vendored/said\"\n",
+    )
+    .unwrap();
+    capture(&root, &home, &["--title", "x", "--session", session])
         .failure()
-        .stderr(predicate::str::contains("no HOME"));
+        .stderr(predicate::str::contains("somebody else's"));
+    assert!(every_file(&home).is_empty(), "{:?}", every_file(&home));
+    assert!(!root.join("vendored").exists());
+    assert!(store(&root).is_empty());
+    // The control: a store beside the denied one is written.
+    let beside = home.join("mine");
+    capture(&root, &home, &[
+        "--title",
+        "x",
+        "--session",
+        session,
+        "--into",
+        beside.to_str().unwrap(),
+    ])
+    .success();
+    assert_eq!(every_file(&home), [PathBuf::from("mine/202609241400_x.md")]);
+}
+
+#[test]
+fn what_a_tool_typed_beside_the_transcript_is_left_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    let compact = r#"{"type":"attachment","uuid":"c","timestamp":"2026-09-24T14:00:03Z","attachment":{"type":"queued_command","prompt":"/compact \"keep\"","commandMode":"prompt","origin":{"kind":"human"}}}"#;
+    let go = r#"{"type":"user","uuid":"g","timestamp":"2026-09-24T14:00:06Z","origin":{"kind":"human"},"message":{"content":"<pasted_content id=\"1\">\nContinue\n</pasted_content id=\"1\">"}}"#;
+    std::fs::write(&t, format!("{SAID}\n{compact}\n{go}\n")).unwrap();
+    // The control first: with no record, both lines read as the person's.
+    let first = dir.path().join("first");
+    capture(&root, &home, &[
+        "--title",
+        "x",
+        "--session",
+        t.to_str().unwrap(),
+        "--into",
+        first.to_str().unwrap(),
+    ])
+    .success();
+    let body = std::fs::read_to_string(first.join("202609241400_x.md")).unwrap();
+    assert!(
+        body.contains("/compact") && body.contains("Continue"),
+        "{body}"
+    );
+    std::fs::write(
+        dir.path().join("s.typed-by-tools.ndjson"),
+        "{\"at\":\"2026-09-24T14:00:02Z\",\"text\":\"/compact \\\"keep\\\"\"}\n\
+         {\"at\":\"2026-09-24T14:00:05Z\",\"text\":\"Continue\"}\n",
+    )
+    .unwrap();
+    capture(&root, &home, &[
+        "--title",
+        "x",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success();
+    let body = std::fs::read_to_string(root.join(".data/op-responses/202609241400_x.md")).unwrap();
+    assert!(body.contains("> hello there"), "{body}");
+    assert!(
+        !body.contains("/compact") && !body.contains("Continue"),
+        "{body}"
+    );
+    // A record that is not one refuses the run rather than keeping the lines.
+    std::fs::write(
+        dir.path().join("s.typed-by-tools.ndjson"),
+        "{\"text\":\"x\"}\n",
+    )
+    .unwrap();
+    capture(&root, &home, &[
+        "--title",
+        "y",
+        "--session",
+        t.to_str().unwrap(),
+        "--into",
+        first.to_str().unwrap(),
+    ])
+    .failure()
+    .stderr(predicate::str::contains("no `at`"));
 }
 
 #[test]

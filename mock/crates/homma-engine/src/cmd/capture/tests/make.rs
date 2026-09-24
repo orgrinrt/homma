@@ -185,6 +185,26 @@ fn what_it_bears_on_is_what_was_named_then_what_was_mentioned() {
 }
 
 #[test]
+fn a_bears_on_with_a_line_break_is_refused() {
+    let t = read(&lines(&[typed("a", T0, "x")])).unwrap();
+    for bad in ["a\nb", "a\r", "\nkey: value"] {
+        let named = [bad.to_string()];
+        let err = format!(
+            "{:#}",
+            make(Path::new("/"), &t, "s", None, &ask(&named), &TimeZone::UTC).expect_err(bad)
+        );
+        assert!(err.contains("line break"), "{bad:?}: {err}");
+    }
+    // The control: the same names on one line are taken.
+    let named = ["a b".to_string()];
+    assert!(
+        make(Path::new("/"), &t, "s", None, &ask(&named), &TimeZone::UTC)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
 fn a_title_with_nothing_to_name_a_file_by_is_refused() {
     let t = read(&lines(&[typed("a", T0, "x")])).unwrap();
     let a = Ask {

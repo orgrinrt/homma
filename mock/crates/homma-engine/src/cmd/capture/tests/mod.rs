@@ -8,10 +8,12 @@
 
 use serde_json::{Value, json};
 
+mod answers;
 mod make;
 mod render;
 mod store;
 mod transcript;
+mod typed;
 
 /// One transcript out of lines.
 fn lines(v: &[Value]) -> String {

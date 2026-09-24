@@ -270,7 +270,15 @@ fn user(o: &Map<String, Value>, asks: &HashSet<String>) -> Result<Option<Happene
         // A rejected ask carries a string here rather than a round, and says
         // nothing of the person's.
         return match o.get("toolUseResult").and_then(Value::as_object) {
-            Some(r) => round(r).map(|q| Some(Happened::Answered(q))),
+            // A round nobody answered, the harness's timeout among them, said
+            // nothing.
+            Some(r) => {
+                round(r).map(|qs| {
+                    qs.iter()
+                        .any(|q| q.answer != Answer::default() || q.notes.is_some())
+                        .then_some(Happened::Answered(qs))
+                })
+            },
             None => Ok(None),
         };
     }
