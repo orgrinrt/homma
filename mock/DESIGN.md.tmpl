@@ -151,8 +151,9 @@ and the answer, as one capture file in the workspace's capture store. The store
 is `.data/op-responses/` in the content repository unless `--into` names another
 directory, and the transcript is the newest session the agent harness keeps for
 this workspace unless `--session` names one, by id or by path. The harness keeps
-them under `~/.claude/projects/`, in a directory named for the workspace path
-with every character outside `[A-Za-z0-9]` turned into `-`.
+them under `~/.claude/projects/`, in a directory named for the workspace's real
+path, symlinks resolved, with every character outside `[A-Za-z0-9]` turned into
+`-`. A last line with no newline is still being written and is not read.
 
 The words are copied out of the transcript's structured fields and never
 rewritten, so every quoted span equals a string the transcript holds. A line is
@@ -160,7 +161,9 @@ the person's when the harness marks its origin as human, and that marker is the
 only test, since hook output, compaction summaries, task notifications and
 prompts the harness sends itself are all typed lines too and none carries it. A
 message typed while a turn runs is read where it landed: as a typed line once the
-turn ended, or as the queued-command attachment the running turn took it in. An
+turn ended, or as the queued-command attachment the running turn took it in, and
+where the harness wrote both, the typed line's `uuid` being the attachment's
+`source_uuid`, the one earlier in the file is read and the other is not. An
 answered question is read whole off its tool result, which carries the
 questions, their options, the answers and the notes.
 
@@ -171,16 +174,22 @@ blocks. That text is copied as it stands, which is longer than a summary and
 exact; a summary through muisti's `answer` takes its place once muisti builds
 where homma runs.
 
-A capture names the session it came from and the timestamp of its last event in
-its front matter, as `source` and `through`, and a run takes only what the
-session holds after the latest `through` the store records for it. So a second
-run with nothing new writes nothing and says so, and there is no state file
-beside the store to go stale. A session no capture has come from yet has no
-watermark, and `--since` takes an RFC 3339 instant as the floor instead; with
-both, the later one wins, and with neither the run takes the whole session. An
-answer the person picked from the options is named in plain text, since the
-labels are the agent's; the harness's `(notes only)` is dropped; typed answers
-and notes are the person's and are quoted. One run is one capture, in the order things
+A capture names the session it came from and the `uuid` of the last complete
+line the run read in its front matter, as `source` and `through`, and a run takes
+only the lines after the latest `through` the store records for it. Latest means
+latest in the transcript, and the position in the file is the order everything
+follows, since the harness stamps a queued message with the time it was queued
+and writes it after lines stamped later. So a second run with nothing new writes
+nothing and says so, and there is no state file beside the store to go stale. A
+`through` the transcript does not hold is refused rather than guessed around. A
+session no capture has come from yet has no watermark, and `--since` takes an
+RFC 3339 instant as the floor instead, keeping only events stamped after it; with
+neither the run takes the whole session. An answer is read as the chosen labels
+first, joined by `, ` with a label that holds `, ` in double quotes, the longest
+label tried first, and whatever follows them is what the person typed. The labels
+are the agent's and are named in plain text; the harness's `(notes only)` is
+dropped; the typed part and the notes are the person's and are quoted. The file
+is created new and never replaces one. One run is one capture, in the order things
 happened, and its `kind` says whether it holds unprompted words, answered
 questions, or both. The title is given rather than made up, because it decides
 whether the voice tool reads the capture at all; `bears_on` is what `--bears-on`
