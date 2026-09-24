@@ -55,19 +55,25 @@ fn store(root: &Path) -> Vec<String> {
 fn the_newest_transcript_under_home_is_read_into_the_store() {
     let dir = tempfile::tempdir().unwrap();
     let (root, home) = workspace(dir.path());
-    // The harness names the directory for the path it was started in, and
-    // on some systems that path reaches the temporary directory through a
-    // link, so both spellings are planted.
-    for at in [root.clone(), root.canonicalize().unwrap()] {
-        let escaped: String = at
+    let escaped = |at: &Path| -> PathBuf {
+        let name: String = at
             .to_string_lossy()
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
             .collect();
-        let projects = home.join(".claude/projects").join(escaped);
-        std::fs::create_dir_all(&projects).unwrap();
-        std::fs::write(projects.join("sess.jsonl"), format!("{SAID}\n")).unwrap();
+        home.join(".claude/projects").join(name)
+    };
+    // The harness names the directory for the real path, links resolved. Where
+    // the temporary directory is reached through a link, as on macOS, the
+    // spelling through the link holds a decoy that must not be read.
+    let real = escaped(&root.canonicalize().unwrap());
+    let linked = escaped(&root);
+    if linked != real {
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(linked.join("decoy.jsonl"), format!("{MORE}\n")).unwrap();
     }
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::write(real.join("sess.jsonl"), format!("{SAID}\n")).unwrap();
     capture(&root, &home, &["--title", "First words"])
         .success()
         .stdout(predicate::str::contains("1 said, 0 asked"));
@@ -82,10 +88,59 @@ fn the_newest_transcript_under_home_is_read_into_the_store() {
     // Nothing new: nothing written, and it says so.
     capture(&root, &home, &["--title", "Again"])
         .success()
-        .stdout(predicate::str::contains(
-            "nothing in sess after 2026-09-24T14:00:00Z",
-        ));
+        .stdout(predicate::str::contains("nothing in sess after a"));
     assert_eq!(store(&root).len(), 1);
+
+    // The session goes on, and the report is a document when asked for one.
+    std::fs::write(real.join("sess.jsonl"), format!("{SAID}\n{MORE}\n")).unwrap();
+    let out = bin()
+        .env("HOME", &home)
+        .env("TZ", "UTC")
+        .current_dir(&root)
+        .args(["--output", "json", "-c", root.join("homma.toml").to_str().unwrap()])
+        .args(["capture", "--title", "More"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).expect("a json document");
+    assert_eq!(v["session"], "sess");
+    assert_eq!(v["said"], 1);
+    assert_eq!(v["asked"], 0);
+    assert_eq!(v["after"], "a");
+    assert!(
+        v["written"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("202609241500_more.md")),
+        "{v}"
+    );
+}
+
+#[test]
+fn a_session_by_path_needs_no_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, _) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    std::fs::write(&t, format!("{SAID}\n")).unwrap();
+    bin()
+        .env_remove("HOME")
+        .env("TZ", "UTC")
+        .current_dir(&root)
+        .args(["-c", root.join("homma.toml").to_str().unwrap(), "capture"])
+        .args(["--title", "No home", "--session", t.to_str().unwrap()])
+        .assert()
+        .success();
+    assert_eq!(store(&root), ["202609241400_no-home.md"]);
+    // The control: by id, it does need one, and says what to do instead.
+    bin()
+        .env_remove("HOME")
+        .current_dir(&root)
+        .args(["-c", root.join("homma.toml").to_str().unwrap(), "capture"])
+        .args(["--title", "No home", "--session", "s"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no HOME"));
 }
 
 #[test]
@@ -144,7 +199,11 @@ fn no_transcript_and_a_bad_instant_are_refused_before_anything_is_written() {
     capture(&root, &home, &["--title", "x"])
         .failure()
         .stderr(predicate::str::contains("--session"));
-    capture(&root, &home, &["--title", "x", "--since", "last tuesday"]).failure();
-    capture(&root, &home, &[]).failure();
+    capture(&root, &home, &["--title", "x", "--since", "last tuesday"])
+        .failure()
+        .stderr(predicate::str::contains("--since"));
+    capture(&root, &home, &[])
+        .failure()
+        .stderr(predicate::str::contains("--title"));
     assert!(store(&root).is_empty());
 }

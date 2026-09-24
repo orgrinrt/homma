@@ -9,14 +9,16 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use jiff::Timestamp;
+
+use super::transcript::Transcript;
 
 /// Where the store sits under the workspace root unless `--into` says
 /// otherwise.
 pub const STORE: &str = ".data/op-responses";
 
 /// The directory the harness names for a workspace path: every character
-/// outside `[A-Za-z0-9]` turned into `-`.
+/// outside `[A-Za-z0-9]` turned into `-`. The harness escapes the real path, so
+/// the caller resolves symlinks first.
 pub fn escaped(workspace: &Path) -> String {
     workspace
         .to_string_lossy()
@@ -97,13 +99,22 @@ fn front(text: &str) -> Option<(Option<&str>, Option<&str>)> {
     Some((source, through))
 }
 
-/// The latest `through` any capture in `store` records for `session`.
+/// Where the last capture of a session ended: the line its `through` names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mark {
+    pub line: usize,
+    pub uuid: String,
+}
+
+/// The `through` of the capture in `store` that reaches furthest into the
+/// session's transcript.
 ///
-/// A capture naming the session with a `through` that does not parse is
-/// refused by file, since skipping it would move the watermark back and write
-/// its events a second time.
-pub fn watermark(store: &Path, session: &str) -> Result<Option<Timestamp>> {
-    let mut latest: Option<Timestamp> = None;
+/// Furthest in the file, not latest in time, since the file is the order the
+/// harness read things in. A capture naming the session with no `through`, or
+/// one the transcript does not hold, is refused by file: skipping it would
+/// move the watermark back and write its events a second time.
+pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Option<Mark>> {
+    let mut latest: Option<Mark> = None;
     let entries = match std::fs::read_dir(store) {
         Ok(d) => d,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -124,22 +135,20 @@ pub fn watermark(store: &Path, session: &str) -> Result<Option<Timestamp>> {
         }
         let through =
             through.ok_or_else(|| anyhow!("{} names the session and no `through`", p.display()))?;
-        let at: Timestamp = through
-            .parse()
-            .with_context(|| format!("{}: `through` {through:?} is not an instant", p.display()))?;
-        if latest.is_none_or(|l| at > l) {
-            latest = Some(at);
+        let line = read.line_of(through).ok_or_else(|| {
+            anyhow!(
+                "{}: `through` {through:?} is no line of the session's transcript",
+                p.display()
+            )
+        })?;
+        if latest.as_ref().is_none_or(|l| line > l.line) {
+            latest = Some(Mark {
+                line,
+                uuid: through.to_string(),
+            });
         }
     }
     Ok(latest)
-}
-
-/// The later of the two floors, when there is one.
-pub fn floor(watermark: Option<Timestamp>, since: Option<Timestamp>) -> Option<Timestamp> {
-    match (watermark, since) {
-        (Some(w), Some(s)) => Some(w.max(s)),
-        (w, s) => w.or(s),
-    }
 }
 
 /// The file-name slug of a title: lowercase letters and digits, runs of

@@ -5,21 +5,17 @@
 
 use std::path::Path;
 
-use jiff::Timestamp;
-
+use super::*;
 use crate::cmd::capture::store::{
+    Mark,
     escaped,
-    floor,
     mentioned,
     session_of,
     slug,
     transcript,
     watermark,
 };
-
-fn at(s: &str) -> Timestamp {
-    s.parse().expect("an instant")
-}
+use crate::cmd::capture::transcript::{Transcript, read};
 
 fn capture(source: Option<&str>, through: Option<&str>) -> String {
     let mut s = String::from("---\nwhen: 2026-09-24 17:00\nkind: unprompted\n");
@@ -49,71 +45,66 @@ fn the_transcript_directory_is_the_path_with_every_other_character_a_dash() {
     assert_eq!(escaped(Path::new("/tmp/ä")), "-tmp--");
 }
 
+fn mark(line: usize, uuid: &str) -> Option<Mark> {
+    Some(Mark {
+        line,
+        uuid: uuid.to_string(),
+    })
+}
+
 #[test]
-fn the_watermark_is_the_latest_through_for_the_session_and_no_other() {
+fn the_watermark_is_the_through_furthest_into_the_transcript_and_no_other_sessions() {
+    // Stamped backwards, as a queued message is: `late` is written first and
+    // carries the later time. The file order is what counts.
+    let t = read(&lines(&[
+        typed("late", "2026-09-24T12:00:00Z", "x"),
+        typed("mid", "2026-09-24T11:00:00Z", "y"),
+        typed("early", "2026-09-24T10:00:00Z", "z"),
+    ]))
+    .expect("reads");
     let dir = tempfile::tempdir().expect("a directory");
     let d = dir.path();
-    std::fs::write(
-        d.join("a.md"),
-        capture(Some("s1"), Some("2026-09-24T10:00:00Z")),
-    )
-    .unwrap();
-    std::fs::write(
-        d.join("b.md"),
-        capture(Some("s1"), Some("2026-09-24T12:00:00Z")),
-    )
-    .unwrap();
-    std::fs::write(
-        d.join("c.md"),
-        capture(Some("s2"), Some("2026-09-25T00:00:00Z")),
-    )
-    .unwrap();
+    std::fs::write(d.join("a.md"), capture(Some("s1"), Some("late"))).unwrap();
+    std::fs::write(d.join("b.md"), capture(Some("s1"), Some("early"))).unwrap();
+    std::fs::write(d.join("c.md"), capture(Some("s1"), Some("mid"))).unwrap();
+    std::fs::write(d.join("z.md"), capture(Some("s2"), Some("mid"))).unwrap();
     // A capture the archivist wrote names no session, and front-matter-looking
     // lines in a body are not front matter.
     std::fs::write(d.join("d.md"), capture(None, None)).unwrap();
-    std::fs::write(
-        d.join("e.txt"),
-        capture(Some("s1"), Some("2027-01-01T00:00:00Z")),
-    )
-    .unwrap();
+    std::fs::write(d.join("e.txt"), capture(Some("s1"), Some("nowhere"))).unwrap();
     std::fs::write(d.join("f.md"), "no front matter at all\n").unwrap();
-    assert_eq!(
-        watermark(d, "s1").unwrap(),
-        Some(at("2026-09-24T12:00:00Z"))
-    );
-    assert_eq!(
-        watermark(d, "s2").unwrap(),
-        Some(at("2026-09-25T00:00:00Z"))
-    );
-    assert_eq!(watermark(d, "s3").unwrap(), None);
+    assert_eq!(watermark(d, "s1", &t).unwrap(), mark(2, "early"));
+    assert_eq!(watermark(d, "s2", &t).unwrap(), mark(1, "mid"));
+    assert_eq!(watermark(d, "s3", &t).unwrap(), None);
 }
 
 #[test]
 fn a_store_that_is_not_there_yet_has_no_watermark() {
     let dir = tempfile::tempdir().expect("a directory");
-    assert_eq!(watermark(&dir.path().join("absent"), "s").unwrap(), None);
+    let t = Transcript::default();
+    assert_eq!(
+        watermark(&dir.path().join("absent"), "s", &t).unwrap(),
+        None
+    );
 }
 
 #[test]
-fn a_capture_of_the_session_with_a_bad_through_is_refused_by_name() {
-    for bad in [None, Some("not a time")] {
+fn a_capture_of_the_session_with_a_through_the_transcript_lacks_is_refused_by_name() {
+    let t = read(&lines(&[typed("a", "2026-09-24T10:00:00Z", "x")])).expect("reads");
+    // No `through`, a time where a uuid belongs, and a uuid of some other
+    // transcript or of a rewritten one.
+    for bad in [None, Some("2026-09-24T10:00:00Z"), Some("b")] {
         let dir = tempfile::tempdir().expect("a directory");
         std::fs::write(dir.path().join("x.md"), capture(Some("s"), bad)).unwrap();
-        let err = format!("{:#}", watermark(dir.path(), "s").expect_err("refused"));
+        let err = format!("{:#}", watermark(dir.path(), "s", &t).expect_err("refused"));
         assert!(err.contains("x.md"), "{err}");
         // The same file under another session is none of this run's business.
-        assert_eq!(watermark(dir.path(), "other").unwrap(), None);
+        assert_eq!(watermark(dir.path(), "other", &t).unwrap(), None);
     }
-}
-
-#[test]
-fn the_later_floor_wins_and_either_alone_stands() {
-    let (a, b) = (at("2026-09-24T10:00:00Z"), at("2026-09-24T11:00:00Z"));
-    assert_eq!(floor(Some(a), Some(b)), Some(b));
-    assert_eq!(floor(Some(b), Some(a)), Some(b));
-    assert_eq!(floor(Some(a), None), Some(a));
-    assert_eq!(floor(None, Some(a)), Some(a));
-    assert_eq!(floor(None, None), None);
+    // The control: the same file naming a line the transcript has.
+    let dir = tempfile::tempdir().expect("a directory");
+    std::fs::write(dir.path().join("x.md"), capture(Some("s"), Some("a"))).unwrap();
+    assert_eq!(watermark(dir.path(), "s", &t).unwrap(), mark(0, "a"));
 }
 
 #[test]

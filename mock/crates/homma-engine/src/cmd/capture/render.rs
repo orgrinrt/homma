@@ -23,6 +23,8 @@ use super::transcript::{Answer, Event, Happened, Question};
 pub struct Capture<'a> {
     pub title:    &'a str,
     pub session:  &'a str,
+    /// The `uuid` of the last line the run read.
+    pub through:  &'a str,
     pub events:   &'a [Event],
     pub bears_on: &'a [String],
     pub zone:     &'a TimeZone,
@@ -117,20 +119,24 @@ fn question(out: &mut String, q: &Question) {
             let _ = writeln!(out, "{}\n", indented(&fenced(p), 3));
         }
     }
-    match &q.answer {
-        Answer::Chose(labels) => {
-            out.push_str("Chosen:\n\n");
-            for l in labels {
-                let _ = writeln!(out, "- {l}");
-            }
-            out.push('\n');
-        },
-        Answer::Typed(t) => {
-            out.push_str("Answered in their own words:\n\n");
-            out.push_str(&quote(t));
-            out.push('\n');
-        },
-        Answer::Nothing => out.push_str("No option chosen.\n\n"),
+    let Answer {
+        chose,
+        typed,
+    } = &q.answer;
+    if !chose.is_empty() {
+        out.push_str("Chosen:\n\n");
+        for l in chose {
+            let _ = writeln!(out, "- {l}");
+        }
+        out.push('\n');
+    }
+    if let Some(t) = typed {
+        out.push_str("Answered in their own words:\n\n");
+        out.push_str(&quote(t));
+        out.push('\n');
+    }
+    if chose.is_empty() && typed.is_none() {
+        out.push_str("No option chosen.\n\n");
     }
     if let Some(n) = &q.notes {
         out.push_str("Notes:\n\n");
@@ -143,12 +149,11 @@ fn question(out: &mut String, q: &Question) {
 /// there is nothing new.
 pub fn render(c: &Capture<'_>) -> String {
     let first = c.events.first().map(|e| e.at).unwrap_or_default();
-    let last = c.events.last().map(|e| e.at).unwrap_or_default();
     let mut out = String::from("---\n");
     let _ = writeln!(out, "when: {}", local(first, c.zone, "%Y-%m-%d %H:%M"));
     let _ = writeln!(out, "kind: {}", kind(c.events));
     let _ = writeln!(out, "source: {}", c.session);
-    let _ = writeln!(out, "through: {last}");
+    let _ = writeln!(out, "through: {}", c.through);
     if c.bears_on.is_empty() {
         out.push_str("bears_on: []\n");
     } else {

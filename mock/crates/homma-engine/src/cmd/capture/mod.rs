@@ -21,6 +21,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::Serialize;
 
+use self::transcript::Transcript;
 use crate::cli::OutputFormat;
 use crate::output::{HumanRender, emit};
 
@@ -48,7 +49,8 @@ pub struct CaptureReport {
     pub written: Option<PathBuf>,
     pub said:    usize,
     pub asked:   usize,
-    /// Where the run started from, when anything set a floor.
+    /// Where the run started from, when anything set a floor: the `uuid` of
+    /// the last capture's final line, or else the `--since` instant.
     pub after:   Option<String>,
 }
 
@@ -95,23 +97,30 @@ fn projects(root: &Path) -> Result<PathBuf> {
 /// The capture a run makes, before anything touches the disk.
 ///
 /// Split from [`run`] so the whole path from transcript to file text is
-/// tested without a home directory or a clock.
+/// tested without a home directory or a clock. Takes the events after `mark`
+/// in the file, then those stamped after `ask.since`.
 pub fn make(
     root: &Path,
-    text: &str,
+    read: &Transcript,
     session: &str,
-    floor: Option<Timestamp>,
+    mark: Option<&store::Mark>,
     ask: &Ask<'_>,
     zone: &TimeZone,
 ) -> Result<Option<Made>> {
     let slug = store::slug(ask.title)?;
-    let events: Vec<_> = transcript::read(text)?
-        .into_iter()
-        .filter(|e| floor.is_none_or(|f| e.at > f))
+    let events: Vec<_> = read
+        .events
+        .iter()
+        .filter(|e| mark.is_none_or(|m| e.line > m.line))
+        .filter(|e| ask.since.is_none_or(|s| e.at > s))
+        .cloned()
         .collect();
     let Some(first) = events.first() else {
         return Ok(None);
     };
+    let through = read.last.as_deref().ok_or_else(|| {
+        anyhow!("no line of the transcript carries a `uuid` to mark where this capture ends")
+    })?;
     let mut bears_on: Vec<String> = ask.bears_on.to_vec();
     let words: Vec<&str> = events.iter().flat_map(|e| e.words()).collect();
     for p in store::mentioned(root, &words) {
@@ -123,6 +132,7 @@ pub fn make(
     let body = render::render(&render::Capture {
         title: ask.title,
         session,
+        through,
         events: &events,
         bears_on: &bears_on,
         zone,
@@ -141,17 +151,38 @@ pub fn make(
 
 pub fn run(cfg: &Config, ask: &Ask<'_>, format: OutputFormat) -> Result<()> {
     let root = cfg.workspace.path.as_path();
-    let path = store::transcript(&projects(root)?, ask.session)?;
+    // A transcript named by path needs no home to be found under.
+    let path = match ask.session {
+        Some(s) if Path::new(s).is_file() => PathBuf::from(s),
+        _ => {
+            let real = root
+                .canonicalize()
+                .with_context(|| format!("resolving {}", root.display()))?;
+            store::transcript(&projects(&real)?, ask.session)?
+        },
+    };
     let session = store::session_of(&path)?;
     let dir = ask
         .into
         .map(Path::to_path_buf)
         .unwrap_or_else(|| root.join(store::STORE));
-    let floor = store::floor(store::watermark(&dir, &session)?, ask.since);
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let made = make(root, &text, &session, floor, ask, &TimeZone::system())?;
-    let after = floor.map(|f| f.to_string());
+    let read = transcript::read(&text)?;
+    let mark = store::watermark(&dir, &session, &read)?;
+    let made = make(
+        root,
+        &read,
+        &session,
+        mark.as_ref(),
+        ask,
+        &TimeZone::system(),
+    )?;
+    let after = match (&mark, ask.since) {
+        (Some(m), _) => Some(m.uuid.clone()),
+        (None, Some(s)) => Some(s.to_string()),
+        (None, None) => None,
+    };
     let report = match made {
         None => {
             CaptureReport {
@@ -170,13 +201,22 @@ pub fn run(cfg: &Config, ask: &Ask<'_>, format: OutputFormat) -> Result<()> {
         }) => {
             std::fs::create_dir_all(&dir).with_context(|| format!("making {}", dir.display()))?;
             let file = dir.join(name);
-            if file.exists() {
-                bail!(
-                    "{} is already there, and a capture is never written over",
-                    file.display()
-                );
-            }
-            std::fs::write(&file, body).with_context(|| format!("writing {}", file.display()))?;
+            let mut f = match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&file)
+            {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    bail!(
+                        "{} is already there, and a capture is never written over",
+                        file.display()
+                    )
+                },
+                Err(e) => return Err(e).with_context(|| format!("writing {}", file.display())),
+            };
+            f.write_all(body.as_bytes())
+                .with_context(|| format!("writing {}", file.display()))?;
             CaptureReport {
                 session,
                 written: Some(file),

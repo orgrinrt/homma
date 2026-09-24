@@ -11,7 +11,7 @@
 //! wrong kind is refused by line number rather than passed over, since passing
 //! over it would drop the person's words without a trace.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
 use jiff::Timestamp;
@@ -29,15 +29,13 @@ pub struct Choice {
     pub preview:     Option<String>,
 }
 
-/// How the person answered one question.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Answer {
-    /// They picked one or more of the options, named by label.
-    Chose(Vec<String>),
-    /// They typed something that is not an option's label.
-    Typed(String),
-    /// They picked nothing, and whatever notes they left stand alone.
-    Nothing,
+/// How the person answered one question: the options they picked, named by
+/// label, and whatever they typed after them. Both empty is an answer too, the
+/// one where only the notes say anything.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Answer {
+    pub chose: Vec<String>,
+    pub typed: Option<String>,
 }
 
 /// One question of an ask round, as it was put and as it was answered.
@@ -63,6 +61,9 @@ pub enum Happened {
 /// One thing the person said or answered, with the agent's last text before it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
+    /// Where in the transcript it was written, counted from 0. The order a
+    /// capture follows, since the stamps are not in it.
+    pub line:   usize,
     pub at:     Timestamp,
     pub what:   Happened,
     /// The last text the agent wrote before this, verbatim.
@@ -82,7 +83,7 @@ impl Event {
             Happened::Answered(qs) => {
                 let mut out = Vec::new();
                 for q in qs {
-                    if let Answer::Typed(t) = &q.answer {
+                    if let Some(t) = &q.answer.typed {
                         out.push(t.as_str());
                     }
                     if let Some(n) = &q.notes {
@@ -95,12 +96,41 @@ impl Event {
     }
 }
 
-/// Every event in `text`, a whole transcript, in the order the lines give them.
-pub fn read(text: &str) -> Result<Vec<Event>> {
-    let mut events = Vec::new();
-    let mut seen = HashSet::new();
+/// A transcript read whole.
+#[derive(Debug, Default)]
+pub struct Transcript {
+    /// Every event, in the order the lines give them.
+    pub events: Vec<Event>,
+    /// The line each `uuid` was first written on, which is what a watermark
+    /// is looked up in.
+    pub lines:  HashMap<String, usize>,
+    /// The `uuid` of the last complete line carrying one, the watermark a
+    /// capture of all of this records.
+    pub last:   Option<String>,
+}
+
+impl Transcript {
+    /// Where the line carrying `uuid` sits, if the transcript has it.
+    pub fn line_of(&self, uuid: &str) -> Option<usize> {
+        self.lines.get(uuid).copied()
+    }
+}
+
+/// Every event in `text`, a whole transcript.
+///
+/// A last line with no newline is still being written and is not read. A
+/// message the harness wrote twice, once as the queued-command attachment a
+/// running turn took it in and once as a typed line whose `uuid` is that
+/// attachment's `source_uuid`, is read where it was written first.
+pub fn read(text: &str) -> Result<Transcript> {
+    let complete = text.rfind('\n').map_or("", |i| &text[..= i]);
+    let mut out = Transcript::default();
     let mut before: Option<String> = None;
-    for (at, line) in text.lines().enumerate() {
+    // Typed human lines, by uuid, and the uuids queued attachments name as
+    // their typed twin; whichever of a pair comes second is not read.
+    let mut typed: HashSet<String> = HashSet::new();
+    let mut queued_as: HashSet<String> = HashSet::new();
+    for (at, line) in complete.lines().enumerate() {
         let n = at + 1;
         if line.trim().is_empty() {
             continue;
@@ -110,15 +140,18 @@ pub fn read(text: &str) -> Result<Vec<Event>> {
         let Some(o) = v.as_object() else {
             bail!("transcript line {n} is not an object");
         };
+        let uuid = o.get("uuid").and_then(Value::as_str);
+        // A resumed session can replay a line; its uuid says so.
+        if let Some(u) = uuid {
+            if out.lines.contains_key(u) {
+                continue;
+            }
+            out.lines.insert(u.to_string(), at);
+            out.last = Some(u.to_string());
+        }
         // A sub-agent's lines are its own conversation, not this one.
         if o.get("isSidechain").and_then(Value::as_bool) == Some(true) {
             continue;
-        }
-        // A resumed session can replay a line; its uuid says so.
-        if let Some(uuid) = o.get("uuid").and_then(Value::as_str) {
-            if !seen.insert(uuid.to_string()) {
-                continue;
-            }
         }
         let happened = match o.get("type").and_then(Value::as_str) {
             Some("assistant") => {
@@ -127,19 +160,45 @@ pub fn read(text: &str) -> Result<Vec<Event>> {
                 }
                 None
             },
-            Some("user") => user(o).with_context(|| format!("transcript line {n}"))?,
-            Some("attachment") => queued(o).with_context(|| format!("transcript line {n}"))?,
+            Some("user") => {
+                let said = user(o).with_context(|| format!("transcript line {n}"))?;
+                if let (Some(Happened::Said(_)), Some(u)) = (&said, uuid) {
+                    if queued_as.contains(u) {
+                        continue;
+                    }
+                    typed.insert(u.to_string());
+                }
+                said
+            },
+            Some("attachment") => {
+                let said = queued(o).with_context(|| format!("transcript line {n}"))?;
+                if said.is_some() {
+                    if let Some(s) = twin(o) {
+                        if typed.contains(s) {
+                            continue;
+                        }
+                        queued_as.insert(s.to_string());
+                    }
+                }
+                said
+            },
             _ => None,
         };
         if let Some(what) = happened {
-            events.push(Event {
+            out.events.push(Event {
+                line: at,
                 at: stamp(o).with_context(|| format!("transcript line {n}"))?,
                 what,
                 before: before.clone(),
             });
         }
     }
-    Ok(events)
+    Ok(out)
+}
+
+/// The `uuid` a queued attachment's typed twin would carry.
+fn twin(o: &Map<String, Value>) -> Option<&str> {
+    o.get("attachment")?.get("source_uuid")?.as_str()
 }
 
 fn stamp(o: &Map<String, Value>) -> Result<Timestamp> {
@@ -253,7 +312,7 @@ fn round(r: &Map<String, Value>) -> Result<Vec<Question>> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             let answer = match answers.get(&text) {
-                None => Answer::Nothing,
+                None => Answer::default(),
                 Some(a) => {
                     let a = a
                         .as_str()
@@ -278,18 +337,42 @@ fn round(r: &Map<String, Value>) -> Result<Vec<Question>> {
         .collect()
 }
 
-/// Which of the three an answer string is.
+/// An answer string split into the labels picked and what was typed after them.
+///
+/// The harness joins picked labels with `, `, puts a label holding `, ` in
+/// double quotes, and appends the free text after the labels. So labels are
+/// taken off the front one at a time, the longest that fits first, each ending
+/// at `, ` or at the end, and what is left is the typed part.
 pub fn answered(a: &str, options: &[Choice]) -> Answer {
     if a == NOTES_ONLY {
-        return Answer::Nothing;
+        return Answer::default();
     }
-    let is_label = |s: &str| options.iter().any(|c| c.label == s);
-    if is_label(a) {
-        return Answer::Chose(vec![a.to_string()]);
+    let mut labels: Vec<&str> = options.iter().map(|c| c.label.as_str()).collect();
+    labels.sort_by_key(|l| std::cmp::Reverse(l.len()));
+    let mut chose = Vec::new();
+    let mut rest = a;
+    while !rest.is_empty() {
+        fn ends(after: &str) -> Option<&str> {
+            if after.is_empty() { Some(after) } else { after.strip_prefix(", ") }
+        }
+        let next = labels.iter().copied().find_map(|l| {
+            let quoted = rest
+                .strip_prefix('"')
+                .and_then(|r| r.strip_prefix(l))
+                .and_then(|r| r.strip_prefix('"'))
+                .and_then(ends);
+            quoted
+                .or_else(|| rest.strip_prefix(l).and_then(ends))
+                .map(|after| (l, after))
+        });
+        let Some((label, after)) = next else {
+            break;
+        };
+        chose.push(label.to_string());
+        rest = after;
     }
-    let parts: Vec<&str> = a.split(", ").collect();
-    if parts.len() > 1 && parts.iter().all(|p| is_label(p)) {
-        return Answer::Chose(parts.into_iter().map(str::to_string).collect());
+    Answer {
+        chose,
+        typed: (!rest.is_empty()).then(|| rest.to_string()),
     }
-    Answer::Typed(a.to_string())
 }

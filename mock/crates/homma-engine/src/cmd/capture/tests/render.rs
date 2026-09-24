@@ -7,7 +7,15 @@ use jiff::tz::{TimeZone, offset};
 
 use super::*;
 use crate::cmd::capture::render::{Capture, fenced, file_name, kind, quote, render};
-use crate::cmd::capture::transcript::read;
+use crate::cmd::capture::transcript::{self, Event};
+
+fn read(text: &str) -> anyhow::Result<Vec<Event>> {
+    transcript::read(text).map(|t| t.events)
+}
+
+fn events(text: &str) -> Vec<Event> {
+    read(text).expect("reads")
+}
 
 /// The reverse of a blockquote: what the voice tool reads back out of one.
 fn unquote(block: &str) -> String {
@@ -23,34 +31,64 @@ fn unquote(block: &str) -> String {
         .join("\n")
 }
 
-/// Every blockquote in `text` as the voice tool finds them
-/// (`.shared/scripts/voice/src/corpus/remarks.ts`, `quotes`): a run of lines
-/// opening with `>`, wherever they sit, and a blank line joins two runs when
-/// the line after it opens with `>` again.
+/// Every blockquote in `text` as the voice tool finds them, rule for rule
+/// with `quotes` in the workspace's `.shared/scripts/voice/src/corpus/remarks.ts`:
+/// a line matching `/^>\s?(.*)$/s` is a quote line holding the capture, a run
+/// of them is one quote, a blank line inside a run is skipped and adds a break
+/// when the line after it is a quote line again, any other line ends the run,
+/// and the text has its leading and trailing newlines trimmed and is dropped
+/// when it is only whitespace.
 fn quotes(text: &str) -> Vec<String> {
+    fn quoted(l: &str) -> Option<&str> {
+        let rest = l.strip_prefix('>')?;
+        Some(rest.strip_prefix(char::is_whitespace).unwrap_or(rest))
+    }
     let lines: Vec<&str> = text.split('\n').collect();
     let mut out = Vec::new();
-    let mut run = String::new();
+    let mut held: Option<Vec<&str>> = None;
+    let close = |held: &mut Option<Vec<&str>>, out: &mut Vec<String>| {
+        if let Some(h) = held.take() {
+            let t = h.join("\n");
+            let t = t.trim_end_matches('\n').trim_start_matches('\n');
+            if !t.trim().is_empty() {
+                out.push(t.to_string());
+            }
+        }
+    };
     for (i, l) in lines.iter().enumerate() {
-        if l.starts_with('>') {
-            run.push_str(l);
-            run.push('\n');
-        } else if !run.is_empty() {
-            if l.trim().is_empty() && lines.get(i + 1).is_some_and(|n| n.starts_with('>')) {
-                run.push_str(">\n");
-                continue;
-            }
+        if let Some(q) = quoted(l) {
+            held.get_or_insert_with(Vec::new).push(q);
+            continue;
+        }
+        if let Some(h) = held.as_mut() {
             if l.trim().is_empty() {
+                if lines.get(i + 1).is_some_and(|n| n.starts_with('>')) {
+                    h.push("");
+                }
                 continue;
             }
-            out.push(unquote(&run));
-            run.clear();
+            close(&mut held, &mut out);
         }
     }
-    if !run.is_empty() {
-        out.push(unquote(&run));
-    }
+    close(&mut held, &mut out);
     out
+}
+
+#[test]
+fn the_voice_tools_reader_takes_a_blockquote_back_to_the_exact_string() {
+    // The same round trip as below, through the reader that consumes it, for
+    // every string whose ends are not blank lines, which it trims.
+    for text in [
+        "one line",
+        "two\nlines",
+        "a blank\n\nbetween",
+        "  leading and trailing  ",
+        "> already quoted",
+        "\r\nwindows\r",
+        "\ttab first",
+    ] {
+        assert_eq!(quotes(&quote(text)), [text], "{text:?}");
+    }
 }
 
 #[test]
@@ -100,6 +138,7 @@ fn made(events: &[crate::cmd::capture::transcript::Event], bears_on: &[String]) 
     render(&Capture {
         title: "A title",
         session: "sess",
+        through: "last-uuid",
         events,
         bears_on,
         zone: &TimeZone::fixed(offset(3)),
@@ -156,22 +195,19 @@ fn two_quotes_of_his_never_run_together() {
 }
 
 #[test]
-fn the_front_matter_carries_the_session_and_the_last_instant() {
+fn the_front_matter_carries_the_session_and_the_last_line_read() {
     let text = lines(&[typed("a", T0, "one"), typed("b", T1, "two")]);
-    let out = made(&read(&text).unwrap(), &[
-        "muisti".into(),
-        ".shared/x.md".into(),
-    ]);
+    let out = made(&events(&text), &["muisti".into(), "example/x.md".into()]);
     assert!(
         out.starts_with(
             "---\nwhen: 2026-09-24 17:00\nkind: unprompted\nsource: sess\n\
-         through: 2026-09-24T14:05:00Z\nbears_on:\n  - muisti\n  - .shared/x.md\n\
+         through: last-uuid\nbears_on:\n  - muisti\n  - example/x.md\n\
          tags: [chat]\n---\n\n# A title\n\n"
         ),
         "{out}"
     );
     assert!(out.ends_with("> two\n"), "{out:?}");
-    let none = made(&read(&text).unwrap(), &[]);
+    let none = made(&events(&text), &[]);
     assert!(none.contains("\nbears_on: []\n"), "{none}");
 }
 
@@ -224,6 +260,31 @@ fn every_answer_kind_is_written_as_what_it_is() {
         typed_answer.contains("Answered in their own words:\n\n> my own\n"),
         "{typed_answer}"
     );
+    assert!(
+        !typed_answer.contains("Chosen:\n\n- my own"),
+        "{typed_answer}"
+    );
+
+    // Labels and then his words: the labels named, only his words quoted.
+    let mixed = made(
+        &events(&lines(&[round(
+            "r",
+            T0,
+            "Left",
+            "Red, \"Blue\", and green",
+            Some("n"),
+        )])),
+        &[],
+    );
+    assert!(
+        mixed.contains(
+            "### Colours\n\n  ```text\n  Which colours?\n  ```\n\nOptions offered:\n\n1. Red\n\n   Warm.\n\n2. Blue\n\n   Cold.\n\n\
+             Chosen:\n\n- Red\n- Blue\n\nAnswered in their own words:\n\n> and green\n"
+        ),
+        "{mixed}"
+    );
+    // The first question's notes, then the second's typed part.
+    assert_eq!(quotes(&mixed), ["n", "and green"]);
 }
 
 #[test]
