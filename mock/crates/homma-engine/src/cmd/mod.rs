@@ -38,6 +38,7 @@ pub mod fake_git;
 pub mod forge;
 pub mod gates;
 pub mod hook;
+pub mod local;
 pub mod migrate;
 pub mod org;
 pub mod registry;
@@ -74,7 +75,10 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             full,
         } => {
             let cfg = load_config(&cli)?;
-            status::run(&cfg, *full, cli.output)
+            // Read here rather than by the manifest's loader, which every
+            // command runs and none of the others has a use for.
+            let local = homma_core::local::Local::load(&local::manifest_dir(&cli));
+            status::run(&cfg, local, *full, cli.output)
         },
         Command::Org {
             op,
@@ -307,6 +311,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             let cfg = load_config(&cli)?;
             hook::run(&cli, &cfg, op)
         },
+        Command::Local {
+            op,
+        } => local::run(&cli, op),
         Command::Docs {
             op,
         } => {
