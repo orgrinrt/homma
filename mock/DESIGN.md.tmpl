@@ -175,7 +175,12 @@ A capture names the session it came from and the timestamp of its last event in
 its front matter, as `source` and `through`, and a run takes only what the
 session holds after the latest `through` the store records for it. So a second
 run with nothing new writes nothing and says so, and there is no state file
-beside the store to go stale. One run is one capture, in the order things
+beside the store to go stale. A session no capture has come from yet has no
+watermark, and `--since` takes an RFC 3339 instant as the floor instead; with
+both, the later one wins, and with neither the run takes the whole session. An
+answer the person picked from the options is named in plain text, since the
+labels are the agent's; the harness's `(notes only)` is dropped; typed answers
+and notes are the person's and are quoted. One run is one capture, in the order things
 happened, and its `kind` says whether it holds unprompted words, answered
 questions, or both. The title is given rather than made up, because it decides
 whether the voice tool reads the capture at all; `bears_on` is what `--bears-on`
