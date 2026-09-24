@@ -142,7 +142,47 @@ homma skills   what is authored, and generating the tree a session finds
 homma sauna    correspondence and work
 homma serve    the daemon and its surfaces
 homma release  the gate, the run record, and dev onto main as a release
+homma capture  what the person said to a session, copied into the capture store
 ```
+
+`homma capture --title <title>` reads an agent session's transcript and writes
+what the person typed into it, and every question put to them with the options
+and the answer, as one capture file in the workspace's capture store. The store
+is `.data/op-responses/` in the content repository unless `--into` names another
+directory, and the transcript is the newest session the agent harness keeps for
+this workspace unless `--session` names one, by id or by path. The harness keeps
+them under `~/.claude/projects/`, in a directory named for the workspace path
+with every character outside `[A-Za-z0-9]` turned into `-`.
+
+The words are copied out of the transcript's structured fields and never
+rewritten, so every quoted span equals a string the transcript holds. A line is
+the person's when the harness marks its origin as human, and that marker is the
+only test, since hook output, compaction summaries, task notifications and
+prompts the harness sends itself are all typed lines too and none carries it. A
+message typed while a turn runs is read where it landed: as a typed line once the
+turn ended, or as the queued-command attachment the running turn took it in. An
+answered question is read whole off its tool result, which carries the
+questions, their options, the answers and the notes.
+
+Only the person's words are blockquotes in the file. The voice tool reads every
+blockquote in a capture as one of their remarks, so the agent's text around them,
+the question it asked and the turn before an unprompted message, goes in fenced
+blocks. That text is copied as it stands, which is longer than a summary and
+exact; a summary through muisti's `answer` takes its place once muisti builds
+where homma runs.
+
+A capture names the session it came from and the timestamp of its last event in
+its front matter, as `source` and `through`, and a run takes only what the
+session holds after the latest `through` the store records for it. So a second
+run with nothing new writes nothing and says so, and there is no state file
+beside the store to go stale. One run is one capture, in the order things
+happened, and its `kind` says whether it holds unprompted words, answered
+questions, or both. The title is given rather than made up, because it decides
+whether the voice tool reads the capture at all; `bears_on` is what `--bears-on`
+names plus every path the words mention that exists under the workspace root;
+`when` is the first event's local time, and the file is named for it and the
+title. The command writes the file and stops. Committing it is the caller's, who
+is on a branch in the content repository already.
 
 Two commands are the launcher's rather than the engine's, because each runs
 where there may be no engine to run. `homma config`, described with the settings
