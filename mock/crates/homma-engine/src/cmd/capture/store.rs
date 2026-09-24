@@ -14,17 +14,45 @@ use super::transcript::Transcript;
 
 /// The directory the harness names for a workspace path: every character
 /// outside `[A-Za-z0-9]` turned into `-`, once per UTF-16 unit as the harness
-/// counts them. The harness escapes the real path, so
-/// the caller resolves symlinks first.
+/// counts them, and a spelling longer than [`LONGEST`] cut there and followed
+/// by `-` and [`hashed`] of the whole path. The harness escapes the real path,
+/// so the caller resolves symlinks first.
 pub fn escaped(workspace: &Path) -> String {
-    workspace
-        .to_string_lossy()
+    let path = workspace.to_string_lossy();
+    let mut s: String = path
         .chars()
         .flat_map(|c| {
             let (keep, n) = if c.is_ascii_alphanumeric() { (c, 1) } else { ('-', c.len_utf16()) };
             std::iter::repeat_n(keep, n)
         })
-        .collect()
+        .collect();
+    if s.len() > LONGEST {
+        s.truncate(LONGEST);
+        s.push('-');
+        s.push_str(&hashed(&path));
+    }
+    s
+}
+
+/// How many units of a spelling the harness keeps before it hashes the rest.
+pub const LONGEST: usize = 200;
+
+/// The harness's hash of a path: each UTF-16 unit added to thirty-one times
+/// the running value, wrapped to 32 bits, its absolute value in base 36.
+pub fn hashed(path: &str) -> String {
+    let h = path
+        .encode_utf16()
+        .fold(0i32, |h, u| h.wrapping_mul(31).wrapping_add(i32::from(u)));
+    let mut n = i64::from(h).unsigned_abs();
+    let mut digits = Vec::new();
+    loop {
+        digits.push(char::from_digit((n % 36) as u32, 36).unwrap_or('0'));
+        n /= 36;
+        if n == 0 {
+            break;
+        }
+    }
+    digits.iter().rev().collect()
 }
 
 /// Which session a run reads, in the order the design gives: the one named,

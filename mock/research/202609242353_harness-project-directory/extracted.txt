@@ -1,0 +1,28 @@
+Where the harness keeps a session's transcript, read out of the installed binary.
+
+binary:  ~/.local/share/claude/versions/2.1.282
+version: 2.1.282 (Claude Code)
+
+commands:
+  LC_ALL=C grep -a -o -E 'function k\(e\)\{return e\.replace[^}]{0,60}\}' <binary>
+  LC_ALL=C grep -a -o -E '.{0,40}function Le\(e\)\{return Math\.abs\(TX\(e\)\)' <binary>
+  LC_ALL=C grep -a -o -E 'function TX\([a-z]\)\{.{0,200}' <binary>
+
+what they returned, the lines that matter:
+
+function k(e){return e.replace(/[^a-zA-Z0-9]/g,"-")}
+var hte=200;function Le(e){return Math.abs(TX(e))
+function Le(e){return Math.abs(TX(e)).toString(36)}function k(e){return e.replace(/[^a-zA-Z0-9]/g,"-")}function fx(e){let n=k(e);if(n.length<=hte)return n;return`${n.slice(0,hte)}-${Le(e)}`}
+function TX(t){let e=0;for(let n=0;n<t.length;n++)e=(e<<5)-e+t.charCodeAt(n)|0;return e}
+
+Those four functions, copied as they are into `bun -e` (bun is the runtime the
+harness ships on), give the spellings the tests pin. `a{n}` is n copies:
+
+  /Users/x/a{191}          200 units, kept whole
+  /Users/x/a{192}          TX -700568211, suffix -bl3lw3
+  /Users/x/b{192}          TX 2128066925, suffix -z6zuy5
+  /Users/x/(b/){100}work   TX -1304045422, suffix -lke7vy
+  /a/😀/é{250}             TX -685571697, suffix -bc66i9
+
+A second `function TX(e)` exists in the binary, over an assistant message, and
+is another minified scope's; the one above is the string hash.

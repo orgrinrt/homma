@@ -68,9 +68,8 @@ pub struct Event {
     pub what:   Happened,
     /// The last text the agent wrote before this, verbatim.
     ///
-    /// FIXME: the context is the agent's own words copied whole; a summary
-    /// through muisti's `answer` replaces it once muisti builds where homma
-    /// runs, which today is only the lifebook.
+    /// FIXME: the context is the agent's own words copied whole; nothing
+    /// summarises it yet, and a summary takes its place once one exists.
     pub before: Option<String>,
 }
 

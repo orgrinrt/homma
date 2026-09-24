@@ -50,6 +50,48 @@ fn the_transcript_directory_is_the_path_with_every_other_character_a_dash() {
     assert_eq!(escaped(Path::new("/a/€/b")), "-a---b");
 }
 
+/// The spelling of `path`, split at the two hundredth unit: what is kept, and
+/// what follows it.
+fn spelled(path: &str) -> (String, String) {
+    let s = escaped(Path::new(path));
+    let (kept, rest) = s.split_at(s.len().min(200));
+    (kept.to_string(), rest.to_string())
+}
+
+#[test]
+fn a_spelling_past_two_hundred_units_is_cut_and_hashed_as_the_harness_does() {
+    // The suffixes are what the harness's own functions give for these paths,
+    // run under bun; the research note beside this round has the lines.
+    let at_limit = format!("/Users/x/{}", "a".repeat(191));
+    let (kept, rest) = spelled(&at_limit);
+    assert_eq!(kept.len(), 200);
+    assert_eq!(rest, "", "two hundred units exactly is kept whole");
+    let cases = [
+        (format!("/Users/x/{}", "a".repeat(192)), "-bl3lw3"),
+        // A hash that stays positive, so the absolute value is not the only
+        // arm the suite ever sees.
+        (format!("/Users/x/{}", "b".repeat(192)), "-z6zuy5"),
+        (format!("/Users/x/{}work", "b/".repeat(100)), "-lke7vy"),
+        // Hashed over UTF-16 units of the path, not its bytes or its chars.
+        (format!("/a/😀/{}", "é".repeat(250)), "-bc66i9"),
+    ];
+    for (path, suffix) in cases {
+        let (kept, rest) = spelled(&path);
+        assert_eq!(kept.len(), 200, "{path}");
+        assert_eq!(rest, suffix, "{path}");
+        // What is kept is the plain spelling's first two hundred units.
+        assert!(
+            path.encode_utf16()
+                .map(|u| {
+                    if u < 128 && (u as u8).is_ascii_alphanumeric() { u as u8 as char } else { '-' }
+                })
+                .take(200)
+                .eq(kept.chars()),
+            "{path}"
+        );
+    }
+}
+
 fn mark(line: usize, uuid: &str) -> Option<Mark> {
     Some(Mark {
         line,
