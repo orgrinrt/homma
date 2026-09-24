@@ -1,0 +1,50 @@
+7f2f3c0 chore: lock the source changelist for typed lines and denied places
+3e865b8 feat: leave out lines a tool typed, and check the store against the deny list
+cc4b8c7 docs: open the source changelist for typed lines and denied places
+b409e25 chore: lock the doc changelist for typed lines and denied places
+1ac0416 docs: lines a tool typed, unanswered rounds, and where a capture may write
+898c604 docs: open a round on lines a tool typed and where a capture may write
+c3595c1 docs: file a topic on answers the person leaves on a page
+d1238a8 chore: close the round on agent fields, ask rounds and the session
+784fcca chore: lock the source changelist for agent fields and the session
+4761e31 fix: keep agent fields off the margin, read only ask results, find the session
+d78acbf docs: open the source changelist for agent fields and the session
+b4cbca2 chore: lock the doc changelist for agent fields and the session
+76621cc docs: name the capture store in paths, the session, and which rounds are asks
+22613fd docs: open a round on agent fields, which rounds are asks, and the session
+148883f chore: close the round on blocks and twins in capture
+b421446 chore: lock the source changelist for blocks and twins in capture
+ec1c359 fix: read blocks, every copy of a queued message, and single answers
+ef6a69f docs: open the source changelist for blocks and twins in capture
+b27dfb7 chore: lock the doc changelist for blocks and twins in capture
+0aff9a2 docs: read blocks, every copy of a queued message, and single answers
+218251f docs: open a round on blocks, twins and single-select answers in capture
+34daf05 chore: merge dev, with its generated documents regenerated
+089383d chore: close the round on the capture watermark
+e797fe8 chore: lock the source changelist for the capture watermark
+0113351 fix: mark a capture by transcript line so queued words are kept
+6854d44 docs: open the source changelist for the capture watermark
+2b1c127 chore: lock the doc changelist for the capture watermark
+729137a docs: set a capture's watermark by transcript line, not by time
+0c49c4d docs: open a round on where a capture's watermark sits
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+ed3552c chore: close the round for capturing what op says
+bcaaddd chore: lock the source changelist for `homma capture`
+285d397 feat: add `homma capture`, copying what op says out of a transcript
+9694646 docs: open the source changelist for `homma capture`
+9c86de0 chore: lock the doc changelist for capturing what op says
+b07df5a docs: give `homma capture` a floor and say how an answer is written
+70a4c93 chore: reopen the capture design for where a first run starts
+4c5e582 chore: lock the doc changelist for capturing what op says
+42b6b47 docs: design `homma capture` into the command surface
+caaf9da docs: open the round for capturing what op says from the transcript
+b4e9548 fix: read the request body in the stub forges before answering
+6dd0a1c fix: check the readme's launcher commands against the launcher
+20384f2 feat: carry every agent hook at its event and drop none
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
+fc70a3d refactor: split the gate tests into a module per concern
+bfb2260 fix: clear the thirteen clippy findings the engine workspace carried
