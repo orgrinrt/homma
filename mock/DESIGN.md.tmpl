@@ -155,7 +155,9 @@ the session the command runs inside, which the harness names to every shell it
 starts as `CLAUDE_CODE_SESSION_ID`; else the newest session the harness keeps for
 this workspace. The harness keeps them under `~/.claude/projects/`, in a
 directory named for the real path the session started in, symlinks resolved,
-with every character outside `[A-Za-z0-9]` turned into `-`. A session id is
+with every character outside `[A-Za-z0-9]` turned into `-`, counted as the
+harness counts them, in UTF-16 units, so a character outside the basic plane
+is two. A session id is
 looked for in the workspace's directory first and then in every other one there,
 since a session started inside a member repository keeps its transcript under
 that repository's name; an id found nowhere is refused rather than replaced by
@@ -172,9 +174,13 @@ down what it typed beside the transcript, as `<session>.typed-by-tools.ndjson`,
 one JSON object per line typed with `at`, the instant before it typed, and
 `text`, exactly what it typed. A human line whose words are a recorded `text`,
 bare or inside one `<pasted_content id="…">` wrapper the harness puts round a
-paste, and which is stamped at or after that record's `at`, is the tool's; each
-record takes at most one line, the first that fits, so the person typing the
-same words later is still the person. A
+paste, and which is stamped at or after that record's `at` and no more than
+sixty seconds after it, is the tool's; each record takes at most one line, the
+first that fits, so the person typing the same words later is still the person.
+A tool writes its record before typing and nothing confirms the typing landed,
+so the bound is what keeps a failed paste's record from taking the person's own
+words later; a tool's line landing past it is quoted as the person's, which is
+visible in the file. A
 message typed while a turn runs is read where it landed: as a typed line once the
 turn ended, or as the queued-command attachment the running turn took it in. The
 harness can write one message more than once, as an attachment and a typed line
@@ -195,8 +201,7 @@ Only the person's words are blockquotes in the file. The voice tool reads every
 blockquote in a capture as one of their remarks, so the agent's text around them,
 the question it asked and the turn before an unprompted message, goes in fenced
 blocks. That text is copied as it stands, which is longer than a summary and
-exact; a summary through muisti's `answer` takes its place once muisti builds
-where homma runs. The agent's fields that sit on one line of the file, the title,
+exact. The agent's fields that sit on one line of the file, the title,
 a question's header and an option's label, are written with every line break in
 them spelled `\n` and every carriage return `\r`, so none of them can open a
 line at the margin.
