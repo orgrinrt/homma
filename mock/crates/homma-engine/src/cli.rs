@@ -142,6 +142,15 @@ pub enum Command {
         op: DocsOp,
     },
 
+    /// `homma.local.toml`: what this clone of the workspace is for.
+    ///
+    /// Beside the manifest and never committed. `[instance]` is homma's,
+    /// `[tools.<name>]` belongs to the workspace's own tools.
+    Local {
+        #[command(subcommand)]
+        op: LocalOp,
+    },
+
     /// The workspace's own rule corpus: what governs a subject, and the cards.
     ///
     /// Rules are injected into every session the workspace runs, sub-agents
@@ -365,6 +374,31 @@ pub enum DocsOp {
         /// Single repo from `homma.toml`. Default: all.
         #[arg(long)]
         repo: Option<String>,
+    },
+}
+
+/// `local` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum LocalOp {
+    /// Write the file with every key in it, and ignore it in `.gitignore`.
+    ///
+    /// Refuses to overwrite one that exists.
+    Init {
+        /// The body of work this clone is for.
+        #[arg(long)]
+        work: String,
+    },
+    /// Print the file. Exit 1 where there is none.
+    Show,
+    /// Write one string at `instance.<key>` or `tools.<name>.<key>`.
+    ///
+    /// Keeps every comment, and refuses a value that would leave the file
+    /// unable to load.
+    Set {
+        /// `instance.<key>` or `tools.<name>.<key>`.
+        key:   String,
+        /// The string to write.
+        value: String,
     },
 }
 

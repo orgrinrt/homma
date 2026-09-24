@@ -393,9 +393,9 @@ The narrower verbs are unchanged and stay the place to see one population
 entirely, healthy entries included. With the plain status there is no need to
 know which of them to reach for.
 
-Covered: the workspace and its forges, the agent surfaces including whether the
-repository's git hooks are wired at all, the shared tool configs, and the working
-tree. The doc surfaces are deliberately not, being a survey of what a repository
+Covered: the workspace and its forges, what this clone of it is for, the agent
+surfaces including whether the repository's git hooks are wired at all, the
+shared tool configs, and the working tree. The doc surfaces are deliberately not, being a survey of what a repository
 has rather than a report of anything being wrong, and nothing offline is left
 out for cost. Nothing here reaches the network, which is what makes it the
 command to run first.
@@ -405,3 +405,51 @@ reads it today keeps working and simply ignores what it does not know. It is
 never summarised, whatever the human output is doing: a document that quietly
 omitted the healthy members would be misdescribing the population to the one
 reader with no way to notice.
+
+## What a clone is for
+
+The manifest is committed and every clone of the content repository shares it,
+so it says only what is true of the workspace everywhere. The same content
+repository is cloned once per body of work, and what one clone is for is a fact
+about that clone alone. It lives in `homma.local.toml`, beside the manifest and
+never committed.
+
+Two tables. `[instance]` is homma's and typed: `work` names the body of work and
+is the one key required, `title` is what to call it, `repos` narrows which
+members the work spans and means all of them when empty, and `state` and `goal`
+are paths from the workspace root to the document carrying the work's current
+state and the one carrying what it is trying to reach. The file points at those
+documents and decides nothing about them; where a workspace keeps its state and
+which goal is current are its own conventions. `[tools.<name>]` belongs to the
+workspace's tools and is carried untyped, for the reason `[[status.inject]]`
+runs a tool without knowing it: homma holds a tool's settings without growing
+an opinion about them.
+
+The manifest's loader does not read it. Only `status` and `local` use the file,
+and they read it themselves, anchored beside the manifest, because every other
+command, the commit and push gates among them, has nothing to learn from it and
+no reason to refuse over it. Absent is the ordinary case and nothing notices.
+Present and not parsing is never silently ignored either: `status` gives it a
+line of its own naming the file and the error, and `local show` fails on it.
+
+`homma local init --work <name>` writes the file with every key in it, refuses
+to overwrite one that exists, and adds `/homma.local.toml` and
+`/homma.local.toml.*` to the workspace's `.gitignore`, each where no line names
+it yet: a file described as never committed that is one `git add -A` from being
+committed is a file that will be, and the second line covers the lock and the
+temporary file `set` leaves behind when it dies halfway.
+`homma local show` prints it, the document whole with `--output json`, so a
+script reads it through homma's parser rather than a second one; no file is
+exit `1`, a command that ran and reported. `homma local set <table.key> <value>`
+writes one string under `instance` or under `tools.<name>` and nowhere else,
+keeps every comment around it, and refuses a result that would not parse. It
+exists so a hook can record what it learned without anybody editing the file,
+and a hook runs beside whatever else reads the file, so the read, edit and write
+happen under a lock file beside it, created exclusively and retried for a
+bounded time before `set` refuses, and the result goes to a temporary file in
+the same directory renamed over the original. A reader sees the old file or the
+new one and never a half, and two writers at once both land.
+
+`homma status` carries the instance, one line in the human output and the
+table whole in the document, `null` where there is no file. Where the file does
+not parse the instance is `null` and `instance_error` carries the message.
