@@ -45,6 +45,7 @@ into anything that has to keep running unattended just yet.
 | `homma forge show` | Reads a repo's metadata off whichever forge the manifest maps it to |
 | `homma migrate` | Mirror-clones a repo to another forge and pushes it, replicating description, visibility and default branch |
 | `homma archive` | Marks the source archived, deliberately as a second step rather than folded into the migration |
+| `homma capture` | Copies what the person at the keyboard said to an agent session out of its transcript into the workspace's capture store, word for word, with every question put to them, its options and the answer. Only what came after the last capture from that session is taken, so a second run over the same session writes nothing, and the file is written and not committed |
 | `homma org <op>` | The registry of who works here, and standing an entry up with its directories and its own clone |
 | `homma agent <op>` | Reports which member repos carry their own template scaffolding, and drives each one's regeneration |
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |

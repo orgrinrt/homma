@@ -239,6 +239,39 @@ pub enum Command {
         #[arg(long)]
         owner: Option<String>,
     },
+
+    /// Copy what the person said to an agent session into the capture store.
+    ///
+    /// Reads the session's transcript and writes every message they typed, and
+    /// every question put to them with its options and their answer, as one
+    /// capture file. Only what came after the last capture from that session is
+    /// taken, and a run with nothing new writes nothing. The file is written and
+    /// left for the caller to commit.
+    Capture {
+        /// The capture's title, which also names its file.
+        #[arg(long)]
+        title:    String,
+        /// A session id, or a transcript's path. Defaults to the session the
+        /// command runs inside, `CLAUDE_CODE_SESSION_ID`, and outside one to
+        /// the newest transcript the agent harness keeps for this workspace.
+        #[arg(long)]
+        session:  Option<String>,
+        /// Take nothing stamped at or before this instant (RFC 3339), for the
+        /// first run on a session. The store's own watermark is a line in the
+        /// transcript and applies as well; a message typed during a turn is
+        /// stamped earlier than lines written before it, so a later run passing
+        /// this loses those.
+        #[arg(long)]
+        since:    Option<jiff::Timestamp>,
+        /// A path or repository the capture bears on, beyond those its words
+        /// mention. Repeatable.
+        #[arg(long = "bears-on")]
+        bears_on: Vec<String>,
+        /// The store to write into for this run. Defaults to `captures` under
+        /// `[paths]` in the manifest, `.data/op-responses/` when it is absent.
+        #[arg(long)]
+        into:     Option<PathBuf>,
+    },
 }
 
 /// `repo` subcommands.

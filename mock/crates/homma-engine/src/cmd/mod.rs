@@ -30,6 +30,7 @@ use crate::cli::{
 pub mod agent;
 pub mod aggregate;
 pub mod archive;
+pub mod capture;
 pub mod config;
 pub mod declared;
 pub mod docs;
@@ -267,6 +268,39 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         } => {
             let cfg = load_config(&cli)?;
             archive::run(&cfg, repo, from.as_deref(), owner.as_deref(), cli.output)?;
+            Ok(Outcome::Ok)
+        },
+        Command::Capture {
+            title,
+            session,
+            since,
+            bears_on,
+            into,
+        } => {
+            let cfg = load_config(&cli)?;
+            let ws = org::load(&config_path(&cli))?;
+            // The harness names the session to every shell it starts.
+            let running = std::env::var("CLAUDE_CODE_SESSION_ID")
+                .ok()
+                .filter(|s| !s.is_empty());
+            let ask = capture::Ask {
+                title,
+                session: session.as_deref(),
+                since: *since,
+                bears_on,
+                into: into.as_deref(),
+                store: ws.paths.captures.as_path(),
+                running: running.as_deref(),
+            };
+            // The store is checked against the whole list, like every other
+            // place homma writes at a path somebody configured or named.
+            let root = homma_api::AbsPath::new(
+                std::path::absolute(&cfg.workspace.path)
+                    .unwrap_or_else(|_| cfg.workspace.path.clone()),
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let denied = homma_api::Denied::for_the_workspace(&ws, &root)?;
+            capture::run(&cfg, &ask, &denied, cli.output)?;
             Ok(Outcome::Ok)
         },
         Command::Agent {

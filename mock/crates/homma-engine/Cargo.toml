@@ -26,6 +26,9 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 anyhow = "1"
+# A transcript stamps its lines in UTC and a capture is named for the local
+# minute, which needs the system's time zone database.
+jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
 
