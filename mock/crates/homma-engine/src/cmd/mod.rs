@@ -30,6 +30,7 @@ use crate::cli::{
 pub mod agent;
 pub mod aggregate;
 pub mod archive;
+pub mod capture;
 pub mod config;
 pub mod declared;
 pub mod docs;
@@ -263,6 +264,24 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         } => {
             let cfg = load_config(&cli)?;
             archive::run(&cfg, repo, from.as_deref(), owner.as_deref(), cli.output)?;
+            Ok(Outcome::Ok)
+        },
+        Command::Capture {
+            title,
+            session,
+            since,
+            bears_on,
+            into,
+        } => {
+            let cfg = load_config(&cli)?;
+            let ask = capture::Ask {
+                title,
+                session: session.as_deref(),
+                since: *since,
+                bears_on,
+                into: into.as_deref(),
+            };
+            capture::run(&cfg, &ask, cli.output)?;
             Ok(Outcome::Ok)
         },
         Command::Agent {
