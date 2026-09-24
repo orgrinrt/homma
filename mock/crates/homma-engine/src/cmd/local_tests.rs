@@ -18,7 +18,9 @@ fn init_writes_a_file_that_loads_and_ignores_it() {
     let (parsed, _) = show(d.path()).unwrap().unwrap();
     assert_eq!(parsed.instance.work, "kenno");
     let ignore = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
-    assert!(ignore.lines().any(|l| l == "/homma.local.toml"), "{ignore}");
+    for line in ["/homma.local.toml", "/homma.local.toml.*"] {
+        assert!(ignore.lines().any(|l| l == line), "{line} in {ignore}");
+    }
 }
 
 #[test]
@@ -41,10 +43,72 @@ fn init_refuses_where_there_is_no_manifest() {
 }
 
 #[test]
-fn init_with_the_line_already_ignored_reports_no_change() {
+fn init_with_both_lines_already_ignored_reports_no_change() {
+    let d = ws();
+    std::fs::write(
+        d.path().join(".gitignore"),
+        "/homma.local.toml\n/homma.local.toml.*\n",
+    )
+    .unwrap();
+    assert!(!init(d.path(), "k").unwrap());
+}
+
+#[test]
+fn init_with_only_the_file_ignored_adds_the_leftovers() {
     let d = ws();
     std::fs::write(d.path().join(".gitignore"), "/homma.local.toml\n").unwrap();
-    assert!(!init(d.path(), "k").unwrap());
+    assert!(init(d.path(), "k").unwrap());
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".gitignore")).unwrap(),
+        "/homma.local.toml\n/homma.local.toml.*\n"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// where the file is looked for
+// ---------------------------------------------------------------------------
+
+fn cli(args: &[&str]) -> Cli {
+    use clap::Parser;
+    Cli::try_parse_from(std::iter::once("homma").chain(args.iter().copied())).unwrap()
+}
+
+#[test]
+fn the_file_is_found_beside_the_manifest_not_at_the_workspace_path() {
+    // `workspace.path` pointing elsewhere must not move where the clone's own
+    // file is read from, whichever flag names the manifest.
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().canonicalize().unwrap();
+    let elsewhere = root.join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::fs::write(
+        root.join("homma.toml"),
+        "[workspace]\nname = \"w\"\npath = \"elsewhere\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join(LOCAL_FILE), "[instance]\nwork = \"beside\"\n").unwrap();
+    std::fs::write(elsewhere.join(LOCAL_FILE), "[instance]\nwork = \"root\"\n").unwrap();
+    let manifest = root.join("homma.toml");
+    for args in [vec!["--config", manifest.to_str().unwrap(), "status"], vec![
+        "--dir",
+        root.to_str().unwrap(),
+        "status",
+    ]] {
+        let dir = manifest_dir(&cli(&args));
+        assert_eq!(dir, root, "{args:?}");
+        let l = Local::load(&dir).unwrap().unwrap();
+        assert_eq!(l.instance.work, "beside", "{args:?}");
+    }
+}
+
+#[test]
+fn a_relative_manifest_is_resolved_against_the_working_directory() {
+    let here = std::env::current_dir().unwrap();
+    assert_eq!(
+        manifest_dir(&cli(&["--config", "sub/homma.toml", "status"])),
+        here.join("sub")
+    );
+    assert_eq!(manifest_dir(&cli(&["status"])), here);
 }
 
 #[test]

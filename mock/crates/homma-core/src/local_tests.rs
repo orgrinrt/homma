@@ -294,46 +294,83 @@ fn set_quotes_what_it_writes() {
 // the ignore line
 // ---------------------------------------------------------------------------
 
-#[test]
-fn a_missing_gitignore_is_made_with_the_line() {
+const BOTH: &str = "/homma.local.toml\n/homma.local.toml.*\n";
+
+fn ignore_after(before: Option<&str>) -> (bool, String) {
     let d = tempfile::tempdir().unwrap();
-    assert!(ensure_ignored(d.path()).unwrap());
-    assert_eq!(
+    if let Some(before) = before {
+        std::fs::write(d.path().join(".gitignore"), before).unwrap();
+    }
+    let wrote = ensure_ignored(d.path()).unwrap();
+    (
+        wrote,
         std::fs::read_to_string(d.path().join(".gitignore")).unwrap(),
-        "/homma.local.toml\n"
+    )
+}
+
+#[test]
+fn a_missing_gitignore_is_made_with_both_lines() {
+    assert_eq!(ignore_after(None), (true, BOTH.to_owned()));
+}
+
+#[test]
+fn the_lines_are_appended_after_a_missing_final_newline() {
+    assert_eq!(
+        ignore_after(Some("/target")),
+        (true, format!("/target\n{BOTH}"))
     );
 }
 
 #[test]
-fn the_line_is_appended_after_a_missing_final_newline() {
-    let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join(".gitignore"), "/target").unwrap();
-    assert!(ensure_ignored(d.path()).unwrap());
-    assert_eq!(
-        std::fs::read_to_string(d.path().join(".gitignore")).unwrap(),
-        "/target\n/homma.local.toml\n"
-    );
-}
-
-#[test]
-fn a_gitignore_already_naming_it_is_left_alone() {
-    for existing in ["/homma.local.toml\n", "homma.local.toml\n", "a\n  /homma.local.toml  \nb\n"] {
-        let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join(".gitignore"), existing).unwrap();
-        assert!(!ensure_ignored(d.path()).unwrap(), "{existing:?}");
+fn a_gitignore_already_naming_both_is_left_alone() {
+    for existing in [
+        BOTH,
+        "homma.local.toml\nhomma.local.toml.*\n",
+        "a\n  /homma.local.toml.*  \nb\n  /homma.local.toml  \n",
+    ] {
         assert_eq!(
-            std::fs::read_to_string(d.path().join(".gitignore")).unwrap(),
-            existing
+            ignore_after(Some(existing)),
+            (false, existing.to_owned()),
+            "{existing:?}"
         );
     }
 }
 
 #[test]
-fn a_line_that_only_resembles_it_does_not_count() {
-    for near in ["/homma.local.toml.bak\n", "# /homma.local.toml\n", "/sub/homma.local.toml\n"] {
-        let d = tempfile::tempdir().unwrap();
-        std::fs::write(d.path().join(".gitignore"), near).unwrap();
-        assert!(ensure_ignored(d.path()).unwrap(), "{near:?}");
+fn a_gitignore_naming_only_the_file_gains_the_leftovers() {
+    // Every clone set up before the second line existed is in this state.
+    for existing in ["/homma.local.toml\n", "homma.local.toml\n"] {
+        assert_eq!(
+            ignore_after(Some(existing)),
+            (true, format!("{existing}/homma.local.toml.*\n")),
+            "{existing:?}"
+        );
+    }
+}
+
+#[test]
+fn a_gitignore_naming_only_the_leftovers_gains_the_file() {
+    assert_eq!(
+        ignore_after(Some("/homma.local.toml.*\n")),
+        (true, "/homma.local.toml.*\n/homma.local.toml\n".to_owned())
+    );
+}
+
+#[test]
+fn a_line_that_only_resembles_either_does_not_count() {
+    for near in [
+        "/homma.local.toml.bak\n",
+        "# /homma.local.toml\n",
+        "/sub/homma.local.toml\n",
+        "# /homma.local.toml.*\n",
+        "/homma.local.*\n",
+        "/sub/homma.local.toml.*\n",
+    ] {
+        assert_eq!(
+            ignore_after(Some(near)),
+            (true, format!("{near}{BOTH}")),
+            "{near:?}"
+        );
     }
 }
 
@@ -344,6 +381,33 @@ fn ensuring_twice_writes_once() {
     assert!(!ensure_ignored(d.path()).unwrap());
     assert_eq!(
         std::fs::read_to_string(d.path().join(".gitignore")).unwrap(),
-        "/homma.local.toml\n"
+        BOTH
     );
+}
+
+#[test]
+fn the_leftovers_line_ignores_exactly_what_set_leaves_behind() {
+    // Asked of git itself, so the claim is about the pattern's meaning rather
+    // than its spelling.
+    let d = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(d.path())
+            .output()
+            .unwrap()
+    };
+    assert!(git(&["init", "-q"]).status.success());
+    ensure_ignored(d.path()).unwrap();
+    for (path, ignored) in [
+        ("homma.local.toml", true),
+        ("homma.local.toml.lock", true),
+        ("homma.local.toml.4242.tmp", true),
+        ("homma.toml", false),
+        ("homma.local.tomlx", false),
+        ("sub/homma.local.toml.lock", false),
+    ] {
+        let out = git(&["check-ignore", "-q", "--no-index", path]);
+        assert_eq!(out.status.success(), ignored, "{path}");
+    }
 }

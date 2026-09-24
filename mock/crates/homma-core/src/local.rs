@@ -23,6 +23,10 @@ pub const LOCAL_FILE: &str = "homma.local.toml";
 /// The line `init` makes sure the workspace's `.gitignore` carries.
 const IGNORE_LINE: &str = "/homma.local.toml";
 
+/// The second one, covering the lock and the temporary file `set` writes
+/// beside the file and leaves behind when it dies halfway.
+const IGNORE_LEFTOVERS: &str = "/homma.local.toml.*";
+
 /// Parsed `homma.local.toml`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -151,8 +155,8 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
     Ok(out)
 }
 
-/// Make sure the workspace's `.gitignore` in `root` names the file, appending
-/// the line where none does. `true` when it wrote.
+/// Make sure the workspace's `.gitignore` in `root` names the file and its
+/// leftovers, appending each line where none does. `true` when it wrote.
 pub fn ensure_ignored(root: &Path) -> std::io::Result<bool> {
     let path = root.join(".gitignore");
     let text = match std::fs::read_to_string(&path) {
@@ -160,18 +164,28 @@ pub fn ensure_ignored(root: &Path) -> std::io::Result<bool> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
-    if text
-        .lines()
-        .any(|l| matches!(l.trim(), IGNORE_LINE | LOCAL_FILE))
-    {
+    let names = |wanted: &[&str]| text.lines().any(|l| wanted.contains(&l.trim()));
+    let missing: Vec<&str> = [
+        (IGNORE_LINE, names(&[IGNORE_LINE, LOCAL_FILE])),
+        (
+            IGNORE_LEFTOVERS,
+            names(&[IGNORE_LEFTOVERS, "homma.local.toml.*"]),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(line, present)| (!present).then_some(line))
+    .collect();
+    if missing.is_empty() {
         return Ok(false);
     }
     let mut out = text;
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str(IGNORE_LINE);
-    out.push('\n');
+    for line in missing {
+        out.push_str(line);
+        out.push('\n');
+    }
     std::fs::write(&path, out)?;
     Ok(true)
 }

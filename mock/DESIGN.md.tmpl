@@ -379,9 +379,11 @@ Present and not parsing is never silently ignored either: `status` gives it a
 line of its own naming the file and the error, and `local show` fails on it.
 
 `homma local init --work <name>` writes the file with every key in it, refuses
-to overwrite one that exists, and adds `/homma.local.toml` to the workspace's
-`.gitignore` where no line names it yet: a file described as never committed
-that is one `git add -A` from being committed is a file that will be.
+to overwrite one that exists, and adds `/homma.local.toml` and
+`/homma.local.toml.*` to the workspace's `.gitignore`, each where no line names
+it yet: a file described as never committed that is one `git add -A` from being
+committed is a file that will be, and the second line covers the lock and the
+temporary file `set` leaves behind when it dies halfway.
 `homma local show` prints it, the document whole with `--output json`, so a
 script reads it through homma's parser rather than a second one; no file is
 exit `1`, a command that ran and reported. `homma local set <table.key> <value>`
