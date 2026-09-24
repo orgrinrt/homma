@@ -5,10 +5,9 @@
 
 //! `homma local ...`: the clone's own `homma.local.toml`.
 //!
-//! None of these loads the manifest through [`homma_core::Config`], because
-//! that load fails on a malformed local file, and `set` has to be able to
-//! write the file somebody is trying to repair. They need only the directory
-//! the manifest sits in.
+//! None of these loads the manifest through [`homma_core::Config`]: they need
+//! only the directory the manifest sits in, and `set` has to be able to write a
+//! file somebody is repairing in a workspace whose manifest does not load.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -61,7 +60,7 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
 }
 
 /// The directory holding the manifest, absolute, which is where the file sits.
-fn manifest_dir(cli: &Cli) -> PathBuf {
+pub(crate) fn manifest_dir(cli: &Cli) -> PathBuf {
     let path = super::config_path(cli);
     let here = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let absolute = if path.is_absolute() { path } else { here.join(path) };
@@ -94,9 +93,57 @@ pub fn show(dir: &Path) -> Result<Option<(Local, String)>> {
     Ok(Some((parsed, text)))
 }
 
+/// How long `set` waits for another writer's lock before refusing.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The lock beside the file, removed when dropped.
+struct Lock(PathBuf);
+
+impl Lock {
+    /// Create the lock file exclusively, retrying until [`LOCK_WAIT`] is spent.
+    fn take(path: PathBuf, wait: std::time::Duration) -> Result<Self> {
+        let start = std::time::Instant::now();
+        loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self(path)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if start.elapsed() >= wait {
+                        bail!(
+                            "{} is held; another `homma local set` is writing, or one died \
+                             holding it and the file can be removed",
+                            path.display()
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                },
+                Err(e) => return Err(e).with_context(|| format!("creating {}", path.display())),
+            }
+        }
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// Write one string into the file, refusing where there is no file.
+///
+/// Under a lock beside the file, so two writers both land, and through a
+/// temporary file renamed over the original, so a reader sees the old file or
+/// the new one and never a truncated half.
 pub fn set(dir: &Path, key: &str, value: &str) -> Result<()> {
+    set_waiting(dir, key, value, LOCK_WAIT)
+}
+
+fn set_waiting(dir: &Path, key: &str, value: &str, wait: std::time::Duration) -> Result<()> {
     let path = dir.join(LOCAL_FILE);
+    let _lock = Lock::take(dir.join(format!("{LOCAL_FILE}.lock")), wait)?;
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -108,7 +155,12 @@ pub fn set(dir: &Path, key: &str, value: &str) -> Result<()> {
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
     let out = local::set(&text, key, value)?;
-    std::fs::write(&path, out).with_context(|| format!("writing {}", path.display()))
+    let tmp = dir.join(format!("{LOCAL_FILE}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, out).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).with_context(|| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("replacing {}", path.display())
+    })
 }
 
 #[cfg(test)]

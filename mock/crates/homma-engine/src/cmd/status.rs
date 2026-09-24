@@ -25,6 +25,7 @@
 use std::io::Write;
 
 use anyhow::Result;
+use homma_core::local::{Local, LocalError};
 use homma_core::{Config, ForgeKind, Injected};
 use serde::Serialize;
 
@@ -41,22 +42,25 @@ use crate::output::{HumanRender, emit};
 /// know.
 #[derive(Debug, Serialize)]
 pub struct StatusReport {
-    pub workspace: WorkspaceLine,
+    pub workspace:      WorkspaceLine,
     /// What this clone is for, out of `homma.local.toml`. `null` where the
-    /// clone has no such file.
-    pub instance:  Option<homma_core::local::Instance>,
-    pub forges:    Vec<ForgeLine>,
-    pub repos:     Vec<RepoLine>,
+    /// clone has no such file, or has one that does not load.
+    pub instance:       Option<homma_core::local::Instance>,
+    /// Why `homma.local.toml` did not load, where it is there and does not.
+    /// The one place a broken file is reported, since nothing else reads it.
+    pub instance_error: Option<String>,
+    pub forges:         Vec<ForgeLine>,
+    pub repos:          Vec<RepoLine>,
     /// What the workspace's own tools said, in the order `[[status.inject]]`
     /// declares them. Empty where the manifest declares none, which is most of
     /// them.
-    pub injected:  Vec<Injected>,
+    pub injected:       Vec<Injected>,
     /// The agent surfaces, per repo, including the git hooks wiring.
-    pub agent:     Vec<RepoAgentState>,
+    pub agent:          Vec<RepoAgentState>,
     /// The shared tool configs, per repo.
-    pub configs:   ConfigReport,
+    pub configs:        ConfigReport,
     /// The working tree, per repo.
-    pub worktrees: Vec<WorktreeLine>,
+    pub worktrees:      Vec<WorktreeLine>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,7 +115,12 @@ impl WorktreeLine {
     }
 }
 
-pub fn run(cfg: &Config, full: bool, format: OutputFormat) -> Result<Outcome> {
+pub fn run(
+    cfg: &Config,
+    local: Result<Option<Local>, LocalError>,
+    full: bool,
+    format: OutputFormat,
+) -> Result<Outcome> {
     // Every population is gathered here rather than inside `build_report`, so
     // that stays a pure function of what it is handed and can be tested without
     // spawning or touching a disk.
@@ -119,7 +128,8 @@ pub fn run(cfg: &Config, full: bool, format: OutputFormat) -> Result<Outcome> {
     let agent = crate::cmd::agent::status::collect(cfg, None)?;
     let configs = config::collect(cfg, None)?;
     let worktrees = worktrees(cfg);
-    let report = build_report(cfg, injected, agent, configs, worktrees);
+    let mut report = build_report(cfg, injected, agent, configs, worktrees);
+    report.carry_local(local);
     // The human rendering summarises and the document does not, so the flag
     // reaches only the first. A machine handed a document with the healthy
     // members dropped would be reading a lie about the population, and it has
@@ -215,7 +225,8 @@ fn build_report(
         .collect();
     StatusReport {
         workspace,
-        instance: cfg.local.as_ref().map(|l| l.instance.clone()),
+        instance: None,
+        instance_error: None,
         forges,
         repos,
         injected,
@@ -233,6 +244,25 @@ fn forge_kind_str(kind: ForgeKind) -> &'static str {
 }
 
 impl StatusReport {
+    /// Carry what reading `homma.local.toml` gave: the instance, or why not.
+    fn carry_local(&mut self, local: Result<Option<Local>, LocalError>) {
+        match local {
+            Ok(l) => self.instance = l.map(|l| l.instance),
+            Err(e) => {
+                // The whole chain, since the parse error under the file's name
+                // is what says which line to fix.
+                let mut msg = e.to_string();
+                let mut src = std::error::Error::source(&e);
+                while let Some(s) = src {
+                    msg.push_str(": ");
+                    msg.push_str(s.to_string().trim_end());
+                    src = s.source();
+                }
+                self.instance_error = Some(msg);
+            },
+        }
+    }
+
     /// Render for a person. `full` prints every population whole.
     pub fn render(&self, out: &mut dyn Write, full: bool) -> std::io::Result<()> {
         writeln!(
@@ -250,6 +280,9 @@ impl StatusReport {
                 Some(title) => writeln!(out, "  this clone is for {} ({title})", i.work)?,
                 None => writeln!(out, "  this clone is for {}", i.work)?,
             }
+        }
+        if let Some(e) = &self.instance_error {
+            writeln!(out, "  what this clone is for is unknown: {e}")?;
         }
         if !self.forges.is_empty() && full {
             writeln!(out)?;
@@ -502,11 +535,50 @@ mod tests {
         String::from_utf8(out).expect("the render is utf-8")
     }
 
+    /// The report over a real file read from a real directory, the way `run`
+    /// is handed it.
     fn with_local(local: &str) -> StatusReport {
-        let mut cfg =
-            Config::parse("[workspace]\nname = \"w\"\n").expect("a minimal manifest parses");
-        cfg.local = Some(homma_core::local::Local::parse(local).expect("this local file parses"));
-        build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new())
+        let d = tempfile::tempdir().expect("a temp dir");
+        std::fs::write(d.path().join(homma_core::local::LOCAL_FILE), local).expect("writable");
+        let cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a minimal manifest parses");
+        let mut r = build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new());
+        r.carry_local(Local::load(d.path()));
+        r
+    }
+
+    #[test]
+    fn a_broken_local_file_is_reported_rather_than_refused_or_ignored() {
+        // A missing key, bad syntax, and an unknown field. Each leaves the
+        // instance null, names the file, and carries the parser's own detail.
+        for (broken, detail) in [
+            ("[instance]\n", "work"),
+            ("[instance\n", "line 1"),
+            ("[instance]\nwork = \"k\"\nwhat = 1\n", "what"),
+        ] {
+            let r = with_local(broken);
+            assert!(r.instance.is_none(), "{broken:?}");
+            let e = r.instance_error.as_deref().expect("the error is carried");
+            assert!(e.contains(homma_core::local::LOCAL_FILE), "{e}");
+            assert!(e.contains(detail), "{broken:?} lost its detail: {e}");
+            let human = rendered(&r);
+            assert!(
+                human.contains("what this clone is for is unknown: "),
+                "{human}"
+            );
+            let doc = serde_json::to_value(&r).unwrap();
+            assert!(doc["instance"].is_null(), "{doc}");
+            assert_eq!(doc["instance_error"], e);
+        }
+    }
+
+    #[test]
+    fn a_good_or_absent_local_file_carries_no_error() {
+        let r = with_local("[instance]\nwork = \"k\"\n");
+        assert!(r.instance_error.is_none());
+        assert!(!rendered(&r).contains("unknown"));
+        assert!(serde_json::to_value(&r).unwrap()["instance_error"].is_null());
+        let r = report(Vec::new());
+        assert!(r.instance_error.is_none());
     }
 
     #[test]

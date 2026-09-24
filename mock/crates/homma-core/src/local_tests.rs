@@ -4,7 +4,7 @@
 //--------------------------------------------------------------------------------------------------
 
 use super::*;
-use crate::{Config, ConfigError};
+use crate::Config;
 
 const MANIFEST: &str = "[workspace]\nname = \"w\"\n";
 
@@ -145,48 +145,24 @@ fn an_unreadable_file_is_an_io_error_rather_than_absent() {
 }
 
 #[test]
-fn the_manifest_load_carries_the_file() {
+fn a_malformed_file_does_not_stop_the_manifest_load() {
+    // Every command loads the manifest, the gates included, and none of them
+    // reads the instance. Each spelling of broken is tried: a missing key, bad
+    // syntax, an unknown field, and a directory where the file should be.
+    for broken in ["[instance]\n", "[instance\n", "[instance]\nwork = \"k\"\nx = 1\n"] {
+        let d = ws();
+        std::fs::write(d.path().join(LOCAL_FILE), broken).unwrap();
+        assert!(
+            Local::load(d.path()).is_err(),
+            "the control: {broken:?} is broken"
+        );
+        Config::from_path(&d.path().join("homma.toml"))
+            .unwrap_or_else(|e| panic!("{broken:?} stopped the manifest load: {e}"));
+    }
     let d = ws();
-    std::fs::write(d.path().join(LOCAL_FILE), "[instance]\nwork = \"kenno\"\n").unwrap();
-    let cfg = Config::from_path(&d.path().join("homma.toml")).unwrap();
-    assert_eq!(cfg.local.unwrap().instance.work, "kenno");
-}
-
-#[test]
-fn the_manifest_load_without_the_file_carries_none() {
-    let d = ws();
-    let cfg = Config::from_path(&d.path().join("homma.toml")).unwrap();
-    assert!(cfg.local.is_none());
-}
-
-#[test]
-fn a_malformed_file_fails_the_manifest_load() {
-    let d = ws();
-    std::fs::write(d.path().join(LOCAL_FILE), "[instance]\n").unwrap();
-    let e = Config::from_path(&d.path().join("homma.toml")).unwrap_err();
-    assert!(
-        matches!(e, ConfigError::Local(LocalError::Parse { .. })),
-        "{e:?}"
-    );
-    assert!(e.to_string().contains(LOCAL_FILE), "{e}");
-}
-
-#[test]
-fn the_file_is_found_beside_the_manifest_not_at_the_workspace_path() {
-    // `workspace.path` pointing elsewhere must not move where the clone's own
-    // file is read from.
-    let d = tempfile::tempdir().unwrap();
-    let elsewhere = d.path().join("elsewhere");
-    std::fs::create_dir(&elsewhere).unwrap();
-    std::fs::write(
-        d.path().join("homma.toml"),
-        "[workspace]\nname = \"w\"\npath = \"elsewhere\"\n",
-    )
-    .unwrap();
-    std::fs::write(d.path().join(LOCAL_FILE), "[instance]\nwork = \"beside\"\n").unwrap();
-    std::fs::write(elsewhere.join(LOCAL_FILE), "[instance]\nwork = \"root\"\n").unwrap();
-    let cfg = Config::from_path(&d.path().join("homma.toml")).unwrap();
-    assert_eq!(cfg.local.unwrap().instance.work, "beside");
+    std::fs::create_dir(d.path().join(LOCAL_FILE)).unwrap();
+    assert!(Local::load(d.path()).is_err());
+    Config::from_path(&d.path().join("homma.toml")).expect("a directory there stops nothing");
 }
 
 #[test]

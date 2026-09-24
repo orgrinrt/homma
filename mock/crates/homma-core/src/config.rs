@@ -106,13 +106,6 @@ pub struct Config {
     #[serde(default)]
     pub status: crate::inject::StatusConfig,
 
-    /// `homma.local.toml`, what this clone is for; see [`crate::local`].
-    ///
-    /// Read by [`Config::from_path`] from beside the manifest rather than out
-    /// of it, so `skip`: a manifest carrying a `local` table is still refused.
-    #[serde(skip)]
-    pub local: Option<crate::local::Local>,
-
     /// The engine pin, which belongs to the launcher and not to this program.
     ///
     /// The launcher reads this same file to decide which engine to build and
@@ -198,9 +191,6 @@ impl Config {
         // wherever `workspace.path` is left at `.`, which is the ordinary case.
         crate::inject::settle(&mut cfg.status, &root);
         cfg.detect_members(&root, &crate::repo::GixGit);
-        // Beside the manifest, which is what a clone's own file is anchored on
-        // whatever `workspace.path` says.
-        cfg.local = crate::local::Local::load(beside).map_err(ConfigError::Local)?;
         Ok(cfg)
     }
 
@@ -569,8 +559,6 @@ pub enum ConfigError {
         path:   PathBuf,
         source: std::io::Error,
     },
-    /// `homma.local.toml` is there and could not be read or parsed.
-    Local(crate::local::LocalError),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -591,7 +579,6 @@ impl std::fmt::Display for ConfigError {
             } => {
                 write!(f, "failed to read {}", path.display())
             },
-            Self::Local(e) => write!(f, "{e}"),
         }
     }
 }
@@ -604,9 +591,6 @@ impl std::error::Error for ConfigError {
                 source,
                 ..
             } => Some(source),
-            // The local error is the whole message, so the chain continues
-            // from its own source rather than repeating it.
-            Self::Local(e) => std::error::Error::source(e),
         }
     }
 }

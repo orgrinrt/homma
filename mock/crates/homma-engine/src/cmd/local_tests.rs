@@ -98,13 +98,112 @@ fn a_refused_set_leaves_the_file_as_it_was() {
 }
 
 #[test]
-fn set_repairs_a_file_the_manifest_load_would_refuse() {
-    // The reason none of these goes through `Config`: a file missing its work
-    // fails that load, and `set` is how it gets its work back.
+fn set_repairs_a_file_that_does_not_load() {
+    // A file missing its work does not load, and `set` is how it gets it back.
     let d = ws();
     std::fs::write(d.path().join(LOCAL_FILE), "[instance]\ntitle = \"t\"\n").unwrap();
-    assert!(homma_core::Config::from_path(&d.path().join("homma.toml")).is_err());
+    assert!(Local::load(d.path()).is_err());
     set(d.path(), "instance.work", "k").unwrap();
-    let cfg = homma_core::Config::from_path(&d.path().join("homma.toml")).unwrap();
-    assert_eq!(cfg.local.unwrap().instance.work, "k");
+    let l = Local::load(d.path()).unwrap().unwrap();
+    assert_eq!(l.instance.work, "k");
+    assert_eq!(l.instance.title.as_deref(), Some("t"));
+}
+
+#[test]
+fn set_leaves_neither_its_lock_nor_its_temporary_file() {
+    let d = ws();
+    init(d.path(), "k").unwrap();
+    set(d.path(), "instance.title", "t").unwrap();
+    assert!(set(d.path(), "instance.repos", "refused").is_err());
+    let mut left: Vec<String> = std::fs::read_dir(d.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, [".gitignore", "homma.local.toml", "homma.toml"]);
+}
+
+#[test]
+fn a_held_lock_refuses_after_the_wait_and_writes_nothing() {
+    let d = ws();
+    init(d.path(), "k").unwrap();
+    let before = std::fs::read_to_string(d.path().join(LOCAL_FILE)).unwrap();
+    let lock = d.path().join(format!("{LOCAL_FILE}.lock"));
+    std::fs::write(&lock, "").unwrap();
+    let e = set_waiting(
+        d.path(),
+        "instance.title",
+        "t",
+        std::time::Duration::from_millis(50),
+    )
+    .unwrap_err();
+    assert!(e.to_string().contains("is held"), "{e}");
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(LOCAL_FILE)).unwrap(),
+        before
+    );
+    // The lock it did not take is not its to remove.
+    assert!(lock.exists());
+    // The control: the same call lands once the lock is gone.
+    std::fs::remove_file(&lock).unwrap();
+    set_waiting(
+        d.path(),
+        "instance.title",
+        "t",
+        std::time::Duration::from_millis(50),
+    )
+    .unwrap();
+    assert_eq!(
+        Local::load(d.path())
+            .unwrap()
+            .unwrap()
+            .instance
+            .title
+            .as_deref(),
+        Some("t")
+    );
+}
+
+#[test]
+fn concurrent_writers_all_land_and_no_reader_sees_a_half() {
+    // Many writers, one key each, while a reader loads the file in a loop.
+    // Without the lock the read-modify-write loses updates; without the rename
+    // a reader catches the file empty between truncate and write.
+    let d = ws();
+    init(d.path(), "k").unwrap();
+    let dir = d.path().to_path_buf();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reader = {
+        let (dir, stop) = (dir.clone(), stop.clone());
+        std::thread::spawn(move || {
+            let mut reads = 0u32;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let l = Local::load(&dir).expect("a reader never sees a broken file");
+                assert!(l.is_some(), "a reader never sees the file missing");
+                reads += 1;
+            }
+            reads
+        })
+    };
+    const WRITERS: usize = 96;
+    let writers: Vec<_> = (0 .. WRITERS)
+        .map(|i| {
+            let dir = dir.clone();
+            std::thread::spawn(move || set(&dir, &format!("tools.t.k{i}"), &i.to_string()))
+        })
+        .collect();
+    for w in writers {
+        w.join().unwrap().unwrap();
+    }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(reader.join().unwrap() > 0, "the reader ran");
+    let l = Local::load(&dir).unwrap().unwrap();
+    let t = &l.tools["t"];
+    for i in 0 .. WRITERS {
+        assert_eq!(
+            t[&format!("k{i}")].as_str(),
+            Some(i.to_string().as_str()),
+            "k{i} was lost"
+        );
+    }
 }
