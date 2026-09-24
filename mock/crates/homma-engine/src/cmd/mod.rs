@@ -278,12 +278,19 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             into,
         } => {
             let cfg = load_config(&cli)?;
+            let ws = org::load(&config_path(&cli))?;
+            // The harness names the session to every shell it starts.
+            let running = std::env::var("CLAUDE_CODE_SESSION_ID")
+                .ok()
+                .filter(|s| !s.is_empty());
             let ask = capture::Ask {
                 title,
                 session: session.as_deref(),
                 since: *since,
                 bears_on,
                 into: into.as_deref(),
+                store: ws.paths.captures.as_path(),
+                running: running.as_deref(),
             };
             capture::run(&cfg, &ask, cli.output)?;
             Ok(Outcome::Ok)

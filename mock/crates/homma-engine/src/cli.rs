@@ -251,8 +251,9 @@ pub enum Command {
         /// The capture's title, which also names its file.
         #[arg(long)]
         title:    String,
-        /// A session id, or a transcript's path. Defaults to the newest
-        /// transcript the agent harness keeps for this workspace.
+        /// A session id, or a transcript's path. Defaults to the session the
+        /// command runs inside, `CLAUDE_CODE_SESSION_ID`, and outside one to
+        /// the newest transcript the agent harness keeps for this workspace.
         #[arg(long)]
         session:  Option<String>,
         /// Take nothing stamped at or before this instant (RFC 3339), for the
@@ -266,8 +267,8 @@ pub enum Command {
         /// mention. Repeatable.
         #[arg(long = "bears-on")]
         bears_on: Vec<String>,
-        /// The store to write into. Defaults to `.data/op-responses/` under
-        /// the workspace root.
+        /// The store to write into for this run. Defaults to `captures` under
+        /// `[paths]` in the manifest, `.data/op-responses/` when it is absent.
         #[arg(long)]
         into:     Option<PathBuf>,
     },

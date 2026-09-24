@@ -20,11 +20,13 @@ const T2: &str = "2026-09-24T14:10:00.000Z";
 
 fn ask<'a>(bears_on: &'a [String]) -> Ask<'a> {
     Ask {
-        title: "What he said",
+        title: "What was said",
         session: None,
         since: None,
         bears_on,
         into: None,
+        store: Path::new(".data/op-responses"),
+        running: None,
     }
 }
 
@@ -53,7 +55,10 @@ fn a_second_run_over_the_same_transcript_writes_nothing() {
     );
 
     // The session goes on; the next run takes only what came after.
-    let more = format!("{text}{}", lines(&[round("r", T2, "Left", "Red", None)]));
+    let more = format!(
+        "{text}{}",
+        lines(&[asking("r"), round("r", T2, "Left", "Red", None)])
+    );
     let second = run_over(dir.path(), &more, &ask(&[])).expect("the new round");
     assert_eq!((second.said, second.asked), (0, 1));
     assert!(
@@ -62,16 +67,16 @@ fn a_second_run_over_the_same_transcript_writes_nothing() {
         second.body
     );
     assert!(second.body.contains("\nthrough: r\n"), "{}", second.body);
-    assert_eq!(second.name, "202609241410_what-he-said.md");
+    assert_eq!(second.name, "202609241410_what-was-said.md");
 }
 
 #[test]
 fn a_message_queued_during_a_turn_is_not_lost_to_the_next_run() {
-    // What the review found against a timestamp watermark, as the harness
-    // writes it: an ask round answered at T2, the capture taken right after,
-    // then a message he typed at T1 while the turn ran, written after it.
+    // A timestamp watermark loses this, as the harness writes it: an ask round
+    // answered at T2, the capture taken right after, then a message the person
+    // typed at T1 while the turn ran, written after it.
     let dir = tempfile::tempdir().expect("a directory");
-    let before = lines(&[typed("a", T0, "go"), round("r", T2, "Left", "Red", None)]);
+    let before = lines(&[typed("a", T0, "go"), asking("r"), round("r", T2, "Left", "Red", None)]);
     let first = run_over(dir.path(), &before, &ask(&[])).expect("the round");
     assert_eq!((first.said, first.asked), (1, 1));
     let after = format!(
@@ -86,7 +91,7 @@ fn a_message_queued_during_a_turn_is_not_lost_to_the_next_run() {
         second.body
     );
     // Named for when it was said, which is earlier than the capture before it.
-    assert_eq!(second.name, "202609241405_what-he-said.md");
+    assert_eq!(second.name, "202609241405_what-was-said.md");
 }
 
 #[test]

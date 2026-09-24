@@ -207,6 +207,8 @@ pub struct Paths {
     pub channels: RelPath,
     pub agents:   RelPath,
     pub index:    RelPath,
+    /// Where `homma capture` writes what the person said to a session.
+    pub captures: RelPath,
 }
 
 impl Default for Paths {
@@ -221,6 +223,7 @@ impl Default for Paths {
             channels: rel(".shared/channels"),
             agents:   rel(".claude/agents"),
             index:    rel(".shared/.index"),
+            captures: rel(".data/op-responses"),
         }
     }
 }
@@ -541,6 +544,27 @@ handle = "proof"
             w.paths.channels.as_path(),
             std::path::Path::new(".shared/channels")
         );
+        assert_eq!(
+            w.paths.captures.as_path(),
+            std::path::Path::new(".data/op-responses")
+        );
+    }
+
+    #[test]
+    fn the_capture_store_is_a_configured_path_like_the_others() {
+        let toml = "content_repo = \"local\"\n\n[paths]\ncaptures = \"notes/said\"\n";
+        let w = Workspace::parse(toml).expect("a contained store is fine");
+        assert_eq!(
+            w.paths.captures.as_path(),
+            std::path::Path::new("notes/said")
+        );
+        assert_eq!(
+            w.paths.hands.as_path(),
+            std::path::Path::new(".shared/hands")
+        );
+        // And it is refused where it leaves, like every other one.
+        let bad = "content_repo = \"local\"\n\n[paths]\ncaptures = \"../elsewhere\"\n";
+        assert!(Workspace::parse(bad).is_err());
     }
 
     #[test]

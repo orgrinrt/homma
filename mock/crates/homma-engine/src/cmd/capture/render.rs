@@ -88,6 +88,13 @@ pub fn fenced(text: &str) -> String {
     out
 }
 
+/// One of the agent's fields that sits on a line of its own, the title, a
+/// header or a label, with its line breaks spelled out so none of them can open
+/// a line at the margin a quote is read at.
+pub fn one_line(text: &str) -> String {
+    text.replace('\r', "\\r").replace('\n', "\\n")
+}
+
 fn indented(text: &str, by: usize) -> String {
     let pad = " ".repeat(by);
     text.lines()
@@ -109,11 +116,11 @@ pub fn aside(text: &str) -> String {
 }
 
 fn question(out: &mut String, q: &Question) {
-    let _ = writeln!(out, "### {}\n", q.header);
+    let _ = writeln!(out, "### {}\n", one_line(&q.header));
     out.push_str(&aside(&q.text));
     out.push_str("\nOptions offered:\n\n");
     for (i, c) in q.options.iter().enumerate() {
-        let _ = writeln!(out, "{}. {}\n", i + 1, c.label);
+        let _ = writeln!(out, "{}. {}\n", i + 1, one_line(&c.label));
         let _ = writeln!(out, "{}\n", indented(&c.description, 3));
         if let Some(p) = &c.preview {
             let _ = writeln!(out, "{}\n", indented(&fenced(p), 3));
@@ -126,7 +133,7 @@ fn question(out: &mut String, q: &Question) {
     if !chose.is_empty() {
         out.push_str("Chosen:\n\n");
         for l in chose {
-            let _ = writeln!(out, "- {l}");
+            let _ = writeln!(out, "- {}", one_line(l));
         }
         out.push('\n');
     }
@@ -163,7 +170,7 @@ pub fn render(c: &Capture<'_>) -> String {
         }
     }
     out.push_str("tags: [chat]\n---\n\n");
-    let _ = writeln!(out, "# {}\n", c.title);
+    let _ = writeln!(out, "# {}\n", one_line(c.title));
     let mut shown: Option<&str> = None;
     for e in c.events {
         if let Some(b) = e.before.as_deref() {

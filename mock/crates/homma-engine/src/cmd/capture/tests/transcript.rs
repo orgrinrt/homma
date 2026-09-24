@@ -180,13 +180,10 @@ fn an_image_alone_is_no_words() {
 
 #[test]
 fn an_answered_round_is_read_whole_off_its_result() {
-    let events = events(&lines(&[round(
-        "r",
-        T0,
-        "Right",
-        "Red, Blue",
-        Some("  his note "),
-    )]))
+    let events = events(&lines(&[
+        asking("r"),
+        round("r", T0, "Right", "Red, Blue", Some("  his note ")),
+    ]))
     .expect("reads");
     let Happened::Answered(qs) = &events[0].what else {
         panic!("not a round");
@@ -319,7 +316,11 @@ fn a_single_answer_is_a_label_or_his_words_whole() {
 fn a_round_reads_which_questions_take_several() {
     // The fixture's first question takes one, its second several; the same
     // answer string reads differently under each.
-    let got = events(&lines(&[round("r", T0, "Left, Right", "Red, Blue", None)])).expect("reads");
+    let got = events(&lines(&[
+        asking("r"),
+        round("r", T0, "Left, Right", "Red, Blue", None),
+    ]))
+    .expect("reads");
     let Happened::Answered(qs) = &got[0].what else {
         panic!("not a round");
     };
@@ -355,7 +356,7 @@ fn an_unanswered_question_is_nothing_and_empty_notes_are_none() {
         .as_object_mut()
         .expect("a map")
         .remove("Which colours?");
-    let events = events(&lines(&[r])).expect("reads");
+    let events = events(&lines(&[asking("r"), r])).expect("reads");
     let Happened::Answered(qs) = &events[0].what else {
         panic!("not a round");
     };
@@ -363,24 +364,25 @@ fn an_unanswered_question_is_nothing_and_empty_notes_are_none() {
     assert_eq!(qs[0].notes, None);
 }
 
-#[test]
-fn a_tool_result_without_answers_is_not_a_round() {
-    let line = json!({"type": "user", "uuid": "a", "timestamp": T0,
-        "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content": "ok"}]},
-        "toolUseResult": {"stdout": "ok"}});
-    assert!(events(&lines(&[line])).expect("reads").is_empty());
+/// A result line answering the call `asking("b")` makes, carrying `result`.
+fn answering_b(result: serde_json::Value) -> String {
+    json!({"type": "user", "uuid": "b", "timestamp": T1,
+           "message": {"content": [{"type": "tool_result", "tool_use_id": "ask-b"}]},
+           "toolUseResult": result})
+    .to_string()
 }
 
 #[test]
 fn a_malformed_line_of_a_read_shape_is_refused_by_number() {
+    // Every case is line 3: a typed line, the agent's ask call, then the case.
     let cases = [
-        ("not json", "line 2 is not JSON".to_string()),
-        ("[1, 2]", "line 2 is not an object".to_string()),
+        ("not json", "line 3 is not JSON".to_string()),
+        ("[1, 2]", "line 3 is not an object".to_string()),
         (
             &*json!({"type": "user", "uuid": "b", "origin": {"kind": "human"},
                      "message": {"content": "no stamp"}})
             .to_string(),
-            "line 2".to_string(),
+            "no `timestamp`".to_string(),
         ),
         (
             &*json!({"type": "user", "uuid": "b", "timestamp": "yesterday",
@@ -406,58 +408,79 @@ fn a_malformed_line_of_a_read_shape_is_refused_by_number() {
             "no `prompt`".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": {}}})
-            .to_string(),
+            &*answering_b(json!({"answers": {}})),
             "no `questions`".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": [], "questions": []}})
-            .to_string(),
+            &*answering_b(json!({"answers": [], "questions": []})),
             "`answers` is not a map".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": {}, "questions": [{"question": "q", "options": []}]}})
-            .to_string(),
+            &*answering_b(json!({"answers": {}, "questions": [{"question": "q", "options": []}]})),
             "no `header`".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": {}, "questions": [{"question": "q", "header": "h"}]}})
-            .to_string(),
+            &*answering_b(json!({"answers": {}, "questions": [{"question": "q", "header": "h"}]})),
             "has no `options`".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": {"q": 3}, "questions": [
-                         {"question": "q", "header": "h", "multiSelect": false,
-                          "options": [{"label": "l", "description": "d"}]}]}})
-            .to_string(),
+            &*answering_b(json!({"answers": {"q": 3}, "questions": [
+                {"question": "q", "header": "h", "multiSelect": false,
+                 "options": [{"label": "l", "description": "d"}]}]})),
             "is not text".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": {"q": "l"}, "questions": [
-                         {"question": "q", "header": "h", "options": [{"label": "l", "description": "d"}]}]}})
-            .to_string(),
+            &*answering_b(json!({"answers": {"q": "l"}, "questions": [
+                {"question": "q", "header": "h", "options": [{"label": "l", "description": "d"}]}]})),
             "no `multiSelect`".to_string(),
         ),
         (
-            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
-                     "toolUseResult": {"answers": {}, "questions": [
-                         {"question": "q", "header": "h", "options": [{"label": "l"}]}]}})
-            .to_string(),
+            &*answering_b(json!({"answers": {}, "questions": [
+                {"question": "q", "header": "h", "options": [{"label": "l"}]}]})),
             "no `description`".to_string(),
         ),
     ];
     for (line, want) in cases {
-        let text = format!("{}\n{line}\n", typed("a", T0, "fine"));
+        let text = format!("{}\n{}\n{line}\n", typed("a", T0, "fine"), asking("b"));
         let err = format!("{:#}", read(&text).expect_err(line));
         assert!(err.contains(&want), "{line}: {err}");
-        assert!(err.contains("line 2"), "{line}: {err}");
+        assert!(err.contains("line 3"), "{line}: {err}");
     }
+}
+
+#[test]
+fn only_a_result_answering_an_ask_call_is_read_as_a_round() {
+    // Another tool's result shaped like a round, malformed or whole, is not
+    // one: the reviewer's planted `answers` without `questions`, and a whole
+    // round's shape under a call to some other tool.
+    let whole = round("x", T1, "Left", "Red", None)["toolUseResult"].clone();
+    for result in [json!({"collection": "x", "answers": ["a"]}), whole] {
+        let other = json!({"type": "assistant", "uuid": "c", "timestamp": T0,
+            "message": {"content": [{"type": "tool_use", "id": "t9", "name": "ArtifactData", "input": {}}]}});
+        let line = json!({"type": "user", "uuid": "b", "timestamp": T1,
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "t9"}]},
+            "toolUseResult": result});
+        let got = events(&lines(&[other, line])).expect("another tool's result is not refused");
+        assert!(got.is_empty(), "{got:?}");
+    }
+    // A round whose call the transcript never shows is not read either.
+    assert!(
+        events(&lines(&[round("r", T1, "Left", "Red", None)]))
+            .expect("reads")
+            .is_empty()
+    );
+    // The control: the same result answering an ask call is a round.
+    let got = events(&lines(&[asking("x"), round("x", T1, "Left", "Red", None)])).expect("reads");
+    assert!(matches!(got[0].what, Happened::Answered(_)), "{got:?}");
+    // And a call named for asking but rejected carries a string, not a round.
+    let rejected = json!({"type": "user", "uuid": "b", "timestamp": T1,
+        "message": {"content": [{"type": "tool_result", "tool_use_id": "ask-x", "is_error": true}]},
+        "toolUseResult": "User rejected tool use"});
+    assert!(
+        events(&lines(&[asking("x"), rejected]))
+            .expect("reads")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -476,6 +499,7 @@ fn lines_of_shapes_nobody_reads_pass_without_a_word() {
 fn a_person_said_and_answered_words_are_what_paths_are_looked_for_in() {
     let got = events(&lines(&[
         typed("a", T0, "said"),
+        asking("r"),
         round("r", T1, "not a label", "Red", Some("a note")),
     ]))
     .expect("reads");
@@ -483,7 +507,11 @@ fn a_person_said_and_answered_words_are_what_paths_are_looked_for_in() {
     // The chosen label is the agent's word and is not his.
     assert_eq!(got[1].words(), ["not a label", "a note"]);
     // Nor when he typed after it: the typed part alone is his.
-    let mixed = events(&lines(&[round("r", T0, "Left", "Red, and GOAL.md", None)])).expect("reads");
+    let mixed = events(&lines(&[
+        asking("r"),
+        round("r", T0, "Left", "Red, and GOAL.md", None),
+    ]))
+    .expect("reads");
     assert_eq!(mixed[0].words(), ["and GOAL.md"]);
 }
 

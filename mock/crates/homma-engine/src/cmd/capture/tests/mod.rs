@@ -47,7 +47,18 @@ fn queued(uuid: &str, at: &str, words: &str) -> Value {
     })
 }
 
-/// An answered round of two questions.
+/// The agent's call putting round `uuid` to the person, which a round's result
+/// has to answer to be read as one.
+fn asking(uuid: &str) -> Value {
+    json!({
+        "type": "assistant", "uuid": format!("{uuid}-call"), "timestamp": "2026-09-24T09:00:00Z",
+        "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": format!("ask-{uuid}"), "name": "AskUserQuestion", "input": {}},
+        ]},
+    })
+}
+
+/// An answered round of two questions, answering the call [`asking`] makes.
 fn round(uuid: &str, at: &str, first: &str, second: &str, notes: Option<&str>) -> Value {
     let mut annotations = serde_json::Map::new();
     if let Some(n) = notes {
@@ -56,7 +67,7 @@ fn round(uuid: &str, at: &str, first: &str, second: &str, notes: Option<&str>) -
     json!({
         "type": "user", "uuid": uuid, "timestamp": at,
         "message": {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "t", "content": "answered"},
+            {"type": "tool_result", "tool_use_id": format!("ask-{uuid}"), "content": "answered"},
         ]},
         "toolUseResult": {
             "questions": [

@@ -39,6 +39,10 @@ pub struct Ask<'a> {
     pub since:    Option<Timestamp>,
     pub bears_on: &'a [String],
     pub into:     Option<&'a Path>,
+    /// The store from the manifest's `[paths]`, relative to the workspace root.
+    pub store:    &'a Path,
+    /// The session the command runs inside, as the harness names it.
+    pub running:  Option<&'a str>,
 }
 
 /// What a run did.
@@ -85,13 +89,11 @@ pub struct Made {
     pub asked: usize,
 }
 
-/// Where the harness keeps this workspace's transcripts.
-fn projects(root: &Path) -> Result<PathBuf> {
+/// Where the harness keeps its project directories.
+fn projects() -> Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| anyhow!("no HOME to find the transcripts under; name one with --session"))?;
-    Ok(PathBuf::from(home)
-        .join(".claude/projects")
-        .join(store::escaped(root)))
+    Ok(PathBuf::from(home).join(".claude/projects"))
 }
 
 /// The capture a run makes, before anything touches the disk.
@@ -158,14 +160,17 @@ pub fn run(cfg: &Config, ask: &Ask<'_>, format: OutputFormat) -> Result<()> {
             let real = root
                 .canonicalize()
                 .with_context(|| format!("resolving {}", root.display()))?;
-            store::transcript(&projects(&real)?, ask.session)?
+            store::transcript(&projects()?, &store::escaped(&real), store::Which {
+                named:   ask.session,
+                running: ask.running,
+            })?
         },
     };
     let session = store::session_of(&path)?;
     let dir = ask
         .into
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| root.join(store::STORE));
+        .unwrap_or_else(|| root.join(ask.store));
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let read = transcript::read(&text)?;

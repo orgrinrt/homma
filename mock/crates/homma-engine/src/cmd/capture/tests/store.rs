@@ -8,6 +8,7 @@ use std::path::Path;
 use super::*;
 use crate::cmd::capture::store::{
     Mark,
+    Which,
     escaped,
     mentioned,
     session_of,
@@ -68,7 +69,7 @@ fn the_watermark_is_the_through_furthest_into_the_transcript_and_no_other_sessio
     std::fs::write(d.join("b.md"), capture(Some("s1"), Some("early"))).unwrap();
     std::fs::write(d.join("c.md"), capture(Some("s1"), Some("mid"))).unwrap();
     std::fs::write(d.join("z.md"), capture(Some("s2"), Some("mid"))).unwrap();
-    // A capture the archivist wrote names no session, and front-matter-looking
+    // A capture written by hand names no session, and front-matter-looking
     // lines in a body are not front matter.
     std::fs::write(d.join("d.md"), capture(None, None)).unwrap();
     std::fs::write(d.join("e.txt"), capture(Some("s1"), Some("nowhere"))).unwrap();
@@ -117,8 +118,12 @@ fn a_slug_keeps_letters_and_digits_and_one_dash_between() {
         slug("  --Lifebook's 2nd night--  ").unwrap(),
         "lifebook-s-2nd-night"
     );
-    assert_eq!(slug("ÄÖ mix äö").unwrap(), "mix");
-    for nothing in ["", "   ", "!!!", "äö"] {
+    // Finnish and Swedish letters fold to the letter under them; anything
+    // else outside ASCII is a separator.
+    assert_eq!(slug("Käyttö").unwrap(), "kaytto");
+    assert_eq!(slug("ÄÖ mix äöå").unwrap(), "ao-mix-aoa");
+    assert_eq!(slug("naïve ß").unwrap(), "na-ve");
+    for nothing in ["", "   ", "!!!", "ïß"] {
         assert!(slug(nothing).is_err(), "{nothing:?}");
     }
 }
@@ -134,40 +139,105 @@ fn a_long_slug_is_cut_at_a_word_and_never_past_sixty() {
     assert_eq!(slug(&one).unwrap().len(), 60);
 }
 
-#[test]
-fn a_session_names_a_file_an_id_or_the_newest() {
+fn which<'a>(named: Option<&'a str>, running: Option<&'a str>) -> Which<'a> {
+    Which {
+        named,
+        running,
+    }
+}
+
+/// A projects directory holding the workspace's own project directory `ws` and
+/// a member repository's `member`, with times set rather than waited for, so a
+/// filesystem with coarse stamps cannot tie them.
+fn projects() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
-    let d = dir.path();
-    // Times set rather than waited for, so a filesystem with coarse stamps
-    // cannot tie them; the newest file of all is not a transcript.
     let at = |name: &str, secs: u64| {
-        let f = std::fs::File::create(d.join(name)).unwrap();
+        let p = dir.path().join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let f = std::fs::File::create(p).unwrap();
         f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
             .unwrap();
     };
-    at("new.jsonl", 2_000_000_000);
-    at("old.jsonl", 1_000_000_000);
-    at("newer.txt", 2_100_000_000);
-    assert_eq!(transcript(d, None).unwrap(), d.join("new.jsonl"));
-    assert_eq!(transcript(d, Some("old")).unwrap(), d.join("old.jsonl"));
-    let by_path = d.join("old.jsonl");
+    at("ws/new.jsonl", 2_000_000_000);
+    at("ws/old.jsonl", 1_000_000_000);
+    // The newest file of all is not a transcript.
+    at("ws/newer.txt", 2_100_000_000);
+    at("member/inside.jsonl", 3_000_000_000);
+    // An id in both: the workspace's own copy is the one read.
+    at("member/old.jsonl", 3_000_000_000);
+    dir
+}
+
+#[test]
+fn with_nothing_named_and_no_session_running_the_newest_of_the_workspace_is_read() {
+    let d = projects();
+    let d = d.path();
+    // Not the member's, though it is newer: newest means in the workspace's.
     assert_eq!(
-        transcript(Path::new("/nowhere"), Some(by_path.to_str().unwrap())).unwrap(),
+        transcript(d, "ws", which(None, None)).unwrap(),
+        d.join("ws/new.jsonl")
+    );
+    assert_eq!(session_of(&d.join("ws/new.jsonl")).unwrap(), "new");
+}
+
+#[test]
+fn the_session_running_is_read_over_a_newer_one() {
+    let d = projects();
+    let d = d.path();
+    assert_eq!(
+        transcript(d, "ws", which(None, Some("old"))).unwrap(),
+        d.join("ws/old.jsonl")
+    );
+    // Started inside a member repository, it is found under that one's name.
+    assert_eq!(
+        transcript(d, "ws", which(None, Some("inside"))).unwrap(),
+        d.join("member/inside.jsonl")
+    );
+}
+
+#[test]
+fn a_named_session_wins_over_the_running_one() {
+    let d = projects();
+    let d = d.path();
+    assert_eq!(
+        transcript(d, "ws", which(Some("new"), Some("old"))).unwrap(),
+        d.join("ws/new.jsonl")
+    );
+    // By path, needing no projects directory at all.
+    let by_path = d.join("ws/old.jsonl");
+    assert_eq!(
+        transcript(
+            Path::new("/nowhere"),
+            "ws",
+            which(Some(by_path.to_str().unwrap()), Some("new"))
+        )
+        .unwrap(),
         by_path
     );
-    let err = format!("{:#}", transcript(d, Some("absent")).expect_err("no such"));
-    assert!(err.contains("absent"), "{err}");
-    assert_eq!(session_of(&d.join("new.jsonl")).unwrap(), "new");
+}
+
+#[test]
+fn an_id_found_nowhere_is_refused_rather_than_replaced() {
+    let d = projects();
+    let d = d.path();
+    for w in [which(Some("absent"), None), which(None, Some("absent"))] {
+        let err = format!("{:#}", transcript(d, "ws", w).expect_err("no such"));
+        assert!(err.contains("absent"), "{err}");
+    }
 }
 
 #[test]
 fn no_transcripts_at_all_is_refused_with_what_to_do() {
     let dir = tempfile::tempdir().expect("a directory");
-    let empty = format!("{:#}", transcript(dir.path(), None).expect_err("empty"));
+    std::fs::create_dir(dir.path().join("ws")).unwrap();
+    let empty = format!(
+        "{:#}",
+        transcript(dir.path(), "ws", which(None, None)).expect_err("empty")
+    );
     assert!(empty.contains("--session"), "{empty}");
     let absent = format!(
         "{:#}",
-        transcript(&dir.path().join("x"), None).expect_err("absent")
+        transcript(dir.path(), "x", which(None, None)).expect_err("absent")
     );
     assert!(absent.contains("--session"), "{absent}");
 }

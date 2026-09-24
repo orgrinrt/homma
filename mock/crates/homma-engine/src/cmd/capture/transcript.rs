@@ -130,6 +130,9 @@ pub fn read(text: &str) -> Result<Transcript> {
     // the uuid a queued attachment names as `source_uuid`. A key met again is
     // a copy, and is not read.
     let mut messages: HashSet<String> = HashSet::new();
+    // The ids of the calls the agent made to ask the person something. A tool
+    // result is a round only when it answers one of these.
+    let mut asks: HashSet<String> = HashSet::new();
     for (at, line) in complete.lines().enumerate() {
         let n = at + 1;
         if line.trim().is_empty() {
@@ -158,10 +161,11 @@ pub fn read(text: &str) -> Result<Transcript> {
                 if let Some(t) = last_text(o) {
                     before = Some(t);
                 }
+                asks.extend(ask_calls(o));
                 None
             },
             Some("user") => {
-                let said = user(o).with_context(|| format!("transcript line {n}"))?;
+                let said = user(o, &asks).with_context(|| format!("transcript line {n}"))?;
                 if let (Some(Happened::Said(_)), Some(u)) = (&said, uuid) {
                     if !messages.insert(u.to_string()) {
                         continue;
@@ -225,13 +229,50 @@ fn last_text(o: &Map<String, Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn user(o: &Map<String, Value>) -> Result<Option<Happened>> {
-    if let Some(r) = o
-        .get("toolUseResult")
-        .and_then(Value::as_object)
-        .filter(|r| r.contains_key("answers"))
-    {
-        return round(r).map(|q| Some(Happened::Answered(q)));
+/// The tool the agent calls to put questions to the person.
+pub const ASK: &str = "AskUserQuestion";
+
+/// The ids of the ask calls on an assistant line.
+fn ask_calls(o: &Map<String, Value>) -> Vec<String> {
+    let Some(blocks) = o
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    blocks
+        .iter()
+        .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_use"))
+        .filter(|b| b.get("name").and_then(Value::as_str) == Some(ASK))
+        .filter_map(|b| b.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Whether a user line carries the result of one of `asks`.
+fn answers_an_ask(o: &Map<String, Value>, asks: &HashSet<String>) -> bool {
+    o.get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(Value::as_array)
+        .is_some_and(|blocks| {
+            blocks.iter().any(|b| {
+                b.get("type").and_then(Value::as_str) == Some("tool_result")
+                    && b.get("tool_use_id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| asks.contains(id))
+            })
+        })
+}
+
+fn user(o: &Map<String, Value>, asks: &HashSet<String>) -> Result<Option<Happened>> {
+    if answers_an_ask(o, asks) {
+        // A rejected ask carries a string here rather than a round, and says
+        // nothing of the person's.
+        return match o.get("toolUseResult").and_then(Value::as_object) {
+            Some(r) => round(r).map(|q| Some(Happened::Answered(q))),
+            None => Ok(None),
+        };
     }
     if !human(o.get("origin")) {
         return Ok(None);

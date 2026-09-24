@@ -12,10 +12,6 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use super::transcript::Transcript;
 
-/// Where the store sits under the workspace root unless `--into` says
-/// otherwise.
-pub const STORE: &str = ".data/op-responses";
-
 /// The directory the harness names for a workspace path: every character
 /// outside `[A-Za-z0-9]` turned into `-`. The harness escapes the real path, so
 /// the caller resolves symlinks first.
@@ -27,23 +23,62 @@ pub fn escaped(workspace: &Path) -> String {
         .collect()
 }
 
-/// The transcript to read: `session` as a path when a file is there, else as a
-/// session id under `projects`; without one, the newest transcript there.
-pub fn transcript(projects: &Path, session: Option<&str>) -> Result<PathBuf> {
-    if let Some(s) = session {
+/// Which session a run reads, in the order the design gives: the one named,
+/// the one the run is inside, the newest.
+#[derive(Debug, Clone, Copy)]
+pub struct Which<'a> {
+    /// `--session`, an id or a path.
+    pub named:   Option<&'a str>,
+    /// The session the command runs inside, as the harness names it.
+    pub running: Option<&'a str>,
+}
+
+/// The transcript to read.
+///
+/// `projects` is the harness's directory of project directories and `own` the
+/// name of the workspace's among them. A named session is a path when a file is
+/// there, else an id; an id, named or running, is looked for in `own` first and
+/// then in every other project directory, and is refused when found nowhere.
+/// With neither, the newest transcript in `own`.
+pub fn transcript(projects: &Path, own: &str, which: Which<'_>) -> Result<PathBuf> {
+    if let Some(s) = which.named {
         let as_path = Path::new(s);
         if as_path.is_file() {
             return Ok(as_path.to_path_buf());
         }
-        let by_id = projects.join(format!("{s}.jsonl"));
-        if by_id.is_file() {
-            return Ok(by_id);
-        }
-        bail!(
-            "no session `{s}`: neither a file there nor a transcript at {}",
-            by_id.display()
-        );
     }
+    if let Some(id) = which.named.or(which.running) {
+        return by_id(projects, own, id);
+    }
+    newest(&projects.join(own))
+}
+
+/// The transcript named `id`, in `own` or else in any project directory.
+fn by_id(projects: &Path, own: &str, id: &str) -> Result<PathBuf> {
+    let file = format!("{id}.jsonl");
+    let first = projects.join(own).join(&file);
+    if first.is_file() {
+        return Ok(first);
+    }
+    if let Ok(dirs) = std::fs::read_dir(projects) {
+        let mut found: Vec<PathBuf> = dirs
+            .filter_map(|d| d.ok())
+            .map(|d| d.path().join(&file))
+            .filter(|p| p.is_file())
+            .collect();
+        found.sort();
+        if let Some(p) = found.into_iter().next() {
+            return Ok(p);
+        }
+    }
+    bail!(
+        "no session `{id}`: neither a file there nor a transcript named for it under {}",
+        projects.display()
+    )
+}
+
+/// The newest transcript in one project directory.
+fn newest(projects: &Path) -> Result<PathBuf> {
     let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
     let dir = std::fs::read_dir(projects).with_context(|| {
         format!(
@@ -151,12 +186,18 @@ pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Optio
     Ok(latest)
 }
 
-/// The file-name slug of a title: lowercase letters and digits, runs of
-/// anything else as one `-`, cut at a word boundary to keep a name readable.
+/// The file-name slug of a title: lowercase letters and digits, `ä` and `å`
+/// folded to `a` and `ö` to `o`, runs of anything else as one `-`, cut at a
+/// word boundary to keep a name readable.
 pub fn slug(title: &str) -> Result<String> {
     const MOST: usize = 60;
     let mut out = String::new();
     for c in title.chars().flat_map(char::to_lowercase) {
+        let c = match c {
+            'ä' | 'å' => 'a',
+            'ö' => 'o',
+            c => c,
+        };
         if c.is_ascii_alphanumeric() {
             out.push(c);
         } else if !out.is_empty() && !out.ends_with('-') {

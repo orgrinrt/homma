@@ -4,6 +4,7 @@
 //--------------------------------------------------------------------------------------------------
 
 use jiff::tz::{TimeZone, offset};
+use serde_json::json;
 
 use super::*;
 use crate::cmd::capture::render::{Capture, fenced, file_name, kind, quote, render};
@@ -91,6 +92,44 @@ fn the_voice_tools_reader_takes_a_blockquote_back_to_the_exact_string() {
     }
 }
 
+/// Every string of up to `most` characters over `alphabet`.
+fn every_string(alphabet: &[char], most: usize) -> Vec<String> {
+    let mut all = vec![String::new()];
+    let mut last = vec![String::new()];
+    for _ in 0 .. most {
+        last = last
+            .iter()
+            .flat_map(|s| {
+                alphabet.iter().map(move |c| {
+                    let mut t = s.clone();
+                    t.push(*c);
+                    t
+                })
+            })
+            .collect();
+        all.extend(last.iter().cloned());
+    }
+    all
+}
+
+#[test]
+fn every_short_string_survives_the_quote_both_ways() {
+    // Exhaustive over the characters a line break or a quote mark is made of,
+    // plus a letter, a space and a tab: both readers, every string.
+    let alphabet = ['a', ' ', '\n', '\r', '>', '\t', '\u{2028}', '\u{85}'];
+    let all = every_string(&alphabet, 6);
+    assert_eq!(all.len(), (0 ..= 6).map(|n| 8usize.pow(n)).sum::<usize>());
+    for text in &all {
+        let q = quote(text);
+        assert_eq!(unquote(&q), *text, "{text:?}");
+        // The voice tool trims newlines off the ends and drops a quote that is
+        // only whitespace; everything else comes back whole.
+        let kept = text.trim_start_matches('\n').trim_end_matches('\n');
+        let want: Vec<&str> = if kept.trim().is_empty() { vec![] } else { vec![kept] };
+        assert_eq!(quotes(&q), want, "{text:?}");
+    }
+}
+
 #[test]
 fn a_blockquote_strips_back_to_the_exact_string() {
     for text in [
@@ -149,17 +188,18 @@ fn made(events: &[crate::cmd::capture::transcript::Event], bears_on: &[String]) 
 fn only_the_persons_words_are_blockquotes() {
     let text = lines(&[
         said_by_agent("x", T0, "my question, with\n> a quote of my own"),
-        typed("a", T0, "his words\n\nsecond paragraph"),
-        said_by_agent("y", T1, "put to him"),
-        round("r", T1, "freely typed", "Red", Some("his note")),
-        typed("b", T1, "more of his"),
+        typed("a", T0, "their words\n\nsecond paragraph"),
+        said_by_agent("y", T1, "put to them"),
+        asking("r"),
+        round("r", T1, "freely typed", "Red", Some("their note")),
+        typed("b", T1, "more of theirs"),
     ]);
     let out = made(&read(&text).unwrap(), &[]);
     assert_eq!(quotes(&out), [
-        "his words\n\nsecond paragraph",
+        "their words\n\nsecond paragraph",
         "freely typed",
-        "his note",
-        "more of his",
+        "their note",
+        "more of theirs",
     ]);
     // The agent's words are there, fenced and off the margin, its own `>`
     // line included.
@@ -171,23 +211,73 @@ fn only_the_persons_words_are_blockquotes() {
 }
 
 #[test]
-fn an_agent_line_opening_with_a_quote_mark_would_be_his_at_the_margin() {
-    // The control for the indent: the same text fenced at the margin is read
-    // as a remark of his by the voice tool's own rule.
-    let at_margin = fenced("mine\n> not his");
-    assert_eq!(quotes(&at_margin), ["not his"]);
-    let aside = crate::cmd::capture::render::aside("mine\n> not his");
-    assert!(quotes(&aside).is_empty(), "{aside}");
-    assert_eq!(aside, "  ```text\n  mine\n  > not his\n  ```\n");
+fn agent_text_in_every_place_it_sits_stays_off_the_margin() {
+    // The agent's turn, the question, its header, an option's label (listed
+    // and chosen), its description, its preview, and the title: each carries
+    // a line break and a quote mark, and the person's typed answer is the
+    // only quote the file holds.
+    const LEAK: &str = "\n> leak";
+    let call = json!({"type": "assistant", "uuid": "c", "timestamp": T0,
+    "message": {"content": [
+        {"type": "text", "text": format!("turn{LEAK}")},
+        {"type": "tool_use", "id": "ask-c", "name": "AskUserQuestion", "input": {}},
+    ]}});
+    let label = format!("label{LEAK}");
+    let result = json!({"type": "user", "uuid": "r", "timestamp": T1,
+    "message": {"content": [{"type": "tool_result", "tool_use_id": "ask-c"}]},
+    "toolUseResult": {
+        "questions": [
+            {"question": format!("question{LEAK}"), "header": format!("header{LEAK}"),
+             "multiSelect": true, "options": [
+                {"label": label, "description": format!("description{LEAK}"),
+                 "preview": format!("preview{LEAK}")},
+            ]},
+        ],
+        "answers": {format!("question{LEAK}"): format!("{label}, typed")},
+        "annotations": {},
+    }});
+    let events = events(&lines(&[call, result]));
+    let out = render(&Capture {
+        title:    &format!("title{LEAK}"),
+        session:  "sess",
+        through:  "r",
+        events:   &events,
+        bears_on: &[],
+        zone:     &TimeZone::UTC,
+    });
+    assert_eq!(quotes(&out), ["typed"], "{out}");
+    // The one-line fields are there, their breaks spelled out.
+    for field in [
+        "# title\\n> leak\n",
+        "### header\\n> leak\n",
+        "1. label\\n> leak\n",
+        "- label\\n> leak\n",
+    ] {
+        assert!(out.contains(field), "{field:?} in {out}");
+    }
 }
 
 #[test]
-fn two_quotes_of_his_never_run_together() {
+fn an_agent_line_opening_with_a_quote_mark_would_be_the_persons_at_the_margin() {
+    // The control for the indent: the same text fenced at the margin is read
+    // as one of the person's remarks by the voice tool's own rule.
+    let at_margin = fenced("mine\n> not theirs");
+    assert_eq!(quotes(&at_margin), ["not theirs"]);
+    let aside = crate::cmd::capture::render::aside("mine\n> not theirs");
+    assert!(quotes(&aside).is_empty(), "{aside}");
+    assert_eq!(aside, "  ```text\n  mine\n  > not theirs\n  ```\n");
+    // And the control for the one-line fields: unescaped, a label is a quote.
+    assert_eq!(quotes("1. label\n> leak\n"), ["leak"]);
+}
+
+#[test]
+fn two_of_the_persons_quotes_never_run_together() {
     // The voice tool joins quotes across one blank line, so what separates
     // two of them in a capture has to be a line of text.
     let text = lines(&[
         typed("a", T0, "one"),
         typed("b", T0, "two"),
+        asking("r"),
         round("r", T1, "typed", "Red", Some("note")),
     ]);
     let out = made(&read(&text).unwrap(), &[]);
@@ -214,9 +304,10 @@ fn the_front_matter_carries_the_session_and_the_last_line_read() {
 #[test]
 fn the_kind_says_what_the_capture_holds() {
     let said = read(&lines(&[typed("a", T0, "x")])).unwrap();
-    let asked = read(&lines(&[round("r", T0, "Left", "Red", None)])).unwrap();
+    let asked = read(&lines(&[asking("r"), round("r", T0, "Left", "Red", None)])).unwrap();
     let both = read(&lines(&[
         typed("a", T0, "x"),
+        asking("r"),
         round("r", T1, "Left", "Red", None),
     ]))
     .unwrap();
@@ -228,7 +319,11 @@ fn the_kind_says_what_the_capture_holds() {
 #[test]
 fn every_answer_kind_is_written_as_what_it_is() {
     let chose = made(
-        &read(&lines(&[round("r", T0, "Right", "Red, Blue", None)])).unwrap(),
+        &read(&lines(&[
+            asking("r"),
+            round("r", T0, "Right", "Red, Blue", None),
+        ]))
+        .unwrap(),
         &[],
     );
     assert!(chose.contains("Chosen:\n\n- Right\n"), "{chose}");
@@ -236,13 +331,10 @@ fn every_answer_kind_is_written_as_what_it_is() {
     assert!(quotes(&chose).is_empty(), "{chose}");
 
     let notes_only = made(
-        &read(&lines(&[round(
-            "r",
-            T0,
-            "(notes only)",
-            "Red",
-            Some("only this"),
-        )]))
+        &read(&lines(&[
+            asking("r"),
+            round("r", T0, "(notes only)", "Red", Some("only this")),
+        ]))
         .unwrap(),
         &[],
     );
@@ -253,7 +345,11 @@ fn every_answer_kind_is_written_as_what_it_is() {
     assert!(!notes_only.contains("(notes only)"), "{notes_only}");
 
     let typed_answer = made(
-        &read(&lines(&[round("r", T0, "my own", "Red", None)])).unwrap(),
+        &read(&lines(&[
+            asking("r"),
+            round("r", T0, "my own", "Red", None),
+        ]))
+        .unwrap(),
         &[],
     );
     assert!(
@@ -265,15 +361,13 @@ fn every_answer_kind_is_written_as_what_it_is() {
         "{typed_answer}"
     );
 
-    // Labels and then his words: the labels named, only his words quoted.
+    // Labels and then the person's words: the labels named, only their words
+    // quoted.
     let mixed = made(
-        &events(&lines(&[round(
-            "r",
-            T0,
-            "Left",
-            "Red, \"Blue\", and green",
-            Some("n"),
-        )])),
+        &events(&lines(&[
+            asking("r"),
+            round("r", T0, "Left", "Red, \"Blue\", and green", Some("n")),
+        ])),
         &[],
     );
     assert!(
@@ -290,7 +384,7 @@ fn every_answer_kind_is_written_as_what_it_is() {
 #[test]
 fn every_option_is_written_with_its_description_and_preview() {
     let out = made(
-        &read(&lines(&[round("r", T0, "Left", "Red", None)])).unwrap(),
+        &read(&lines(&[asking("r"), round("r", T0, "Left", "Red", None)])).unwrap(),
         &[],
     );
     assert!(out.contains("### Way\n"), "{out}");

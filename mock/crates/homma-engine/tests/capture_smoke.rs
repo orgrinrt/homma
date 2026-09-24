@@ -13,8 +13,11 @@ use std::path::{Path, PathBuf};
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+/// The binary, outside any agent session whatever shell runs the tests.
 fn bin() -> Command {
-    Command::cargo_bin("homma-engine").expect("binary built")
+    let mut c = Command::cargo_bin("homma-engine").expect("binary built");
+    c.env_remove("CLAUDE_CODE_SESSION_ID");
+    c
 }
 
 const SAID: &str = r#"{"type":"user","uuid":"a","timestamp":"2026-09-24T14:00:00Z","origin":{"kind":"human"},"message":{"content":"hello there"}}"#;
@@ -51,6 +54,7 @@ fn store(root: &Path) -> Vec<String> {
     names
 }
 
+#[cfg(unix)]
 #[test]
 fn the_newest_transcript_under_home_is_read_into_the_store() {
     let dir = tempfile::tempdir().unwrap();
@@ -118,6 +122,50 @@ fn the_newest_transcript_under_home_is_read_into_the_store() {
             .is_some_and(|p| p.ends_with("202609241500_more.md")),
         "{v}"
     );
+}
+
+#[test]
+fn the_session_the_command_runs_inside_is_read_and_the_store_is_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    std::fs::write(
+        root.join("homma.toml"),
+        "[workspace]\nname = \"ws\"\n\n[paths]\ncaptures = \"notes/said\"\n",
+    )
+    .unwrap();
+    let real = root.canonicalize().unwrap();
+    let name: String = real
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let own = home.join(".claude/projects").join(name);
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("running.jsonl"), format!("{SAID}\n")).unwrap();
+    // A headless session wrote a newer transcript beside it.
+    std::fs::write(own.join("headless.jsonl"), format!("{MORE}\n")).unwrap();
+    let f = std::fs::File::options()
+        .write(true)
+        .open(own.join("running.jsonl"))
+        .unwrap();
+    f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000))
+        .unwrap();
+    bin()
+        .env("HOME", &home)
+        .env("TZ", "UTC")
+        .env("CLAUDE_CODE_SESSION_ID", "running")
+        .current_dir(&root)
+        .args(["-c", root.join("homma.toml").to_str().unwrap(), "capture"])
+        .args(["--title", "Inside"])
+        .assert()
+        .success();
+    let body = std::fs::read_to_string(root.join("notes/said/202609241400_inside.md"))
+        .expect("written there");
+    assert!(body.contains("source: running\n"), "{body}");
+    assert!(store(&root).is_empty());
+    // The control: outside a session, the newest is the headless one.
+    capture(&root, &home, &["--title", "Outside"]).success();
+    assert!(root.join("notes/said/202609241500_outside.md").is_file());
 }
 
 #[test]
