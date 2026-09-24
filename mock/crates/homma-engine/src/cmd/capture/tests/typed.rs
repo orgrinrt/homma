@@ -126,6 +126,38 @@ fn the_same_words_are_the_persons_where_no_record_takes_them() {
 }
 
 #[test]
+fn a_record_whose_line_never_landed_does_not_take_the_persons_later() {
+    // The paste failed, so nothing matched at 14:00; the person's own
+    // `Continue` at 14:02 is theirs.
+    let got = events(&[typed("a", T2, "Continue")]);
+    assert_eq!(said(&without(got, &[by_tool(T0, "Continue")])), [
+        "Continue"
+    ]);
+    // The edges: at the window's end the line is the tool's, a second past it
+    // the person's.
+    let at_end = "2026-09-24T14:01:00.000Z";
+    let past = "2026-09-24T14:01:01.000Z";
+    let got = events(&[typed("a", at_end, "Continue"), typed("b", past, "Continue")]);
+    let kept = without(got, &[by_tool(T0, "Continue"), by_tool(T0, "Continue")]);
+    let lines: Vec<usize> = kept.iter().map(|e| e.line).collect();
+    assert_eq!(lines, [1]);
+}
+
+#[test]
+fn two_records_take_two_lines() {
+    // One record one line: with the same text twice, both lines are the
+    // tool's, and a third of the person's is kept.
+    let got = events(&[
+        typed("a", T0, "Continue"),
+        typed("b", T0, "Continue"),
+        typed("c", T0, "Continue"),
+    ]);
+    let kept = without(got, &[by_tool(T0, "Continue"), by_tool(T0, "Continue")]);
+    let lines: Vec<usize> = kept.iter().map(|e| e.line).collect();
+    assert_eq!(lines, [2]);
+}
+
+#[test]
 fn a_record_after_the_line_does_not_take_it() {
     let got = events(&[typed("a", T0, "Continue")]);
     assert_eq!(said(&without(got, &[by_tool(T1, "Continue")])), [

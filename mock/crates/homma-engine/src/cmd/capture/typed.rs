@@ -90,14 +90,24 @@ fn is(words: &str, text: &str) -> bool {
     words == text || unwrapped(words) == Some(text)
 }
 
+/// How long after its record a tool's line may land and still be the tool's.
+/// The record is written before the typing and nothing confirms the typing
+/// arrived, so an unbounded match would let a failed paste's record take the
+/// person's own words later.
+pub const WINDOW: jiff::SignedDuration = jiff::SignedDuration::from_secs(60);
+
 /// `events` without the said ones a tool typed: each record takes the first
 /// said event, in transcript order and not yet taken, whose words are its text
-/// and whose stamp is at or after its `at`.
+/// and whose stamp is at or after its `at` and within [`WINDOW`] of it.
 pub fn without(events: Vec<Event>, records: &[Typed]) -> Vec<Event> {
     let mut taken = vec![false; events.len()];
     for r in records {
+        let until = r.at.saturating_add(WINDOW).unwrap_or(r.at);
         let hit = events.iter().enumerate().position(|(i, e)| {
-            !taken[i] && e.at >= r.at && matches!(&e.what, Happened::Said(w) if is(w, &r.text))
+            !taken[i]
+                && e.at >= r.at
+                && e.at <= until
+                && matches!(&e.what, Happened::Said(w) if is(w, &r.text))
         });
         if let Some(i) = hit {
             taken[i] = true;

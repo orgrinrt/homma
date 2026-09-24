@@ -44,6 +44,10 @@ fn the_transcript_directory_is_the_path_with_every_other_character_a_dash() {
         "-Users-me--claude-worktrees-a-b"
     );
     assert_eq!(escaped(Path::new("/tmp/ä")), "-tmp--");
+    // Counted in UTF-16 units, as the harness counts: two for a character
+    // outside the basic plane, one for one inside it however many bytes.
+    assert_eq!(escaped(Path::new("/a/😀/b")), "-a----b");
+    assert_eq!(escaped(Path::new("/a/€/b")), "-a---b");
 }
 
 fn mark(line: usize, uuid: &str) -> Option<Mark> {

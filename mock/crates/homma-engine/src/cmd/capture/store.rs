@@ -13,13 +13,17 @@ use anyhow::{Context, Result, anyhow, bail};
 use super::transcript::Transcript;
 
 /// The directory the harness names for a workspace path: every character
-/// outside `[A-Za-z0-9]` turned into `-`. The harness escapes the real path, so
+/// outside `[A-Za-z0-9]` turned into `-`, once per UTF-16 unit as the harness
+/// counts them. The harness escapes the real path, so
 /// the caller resolves symlinks first.
 pub fn escaped(workspace: &Path) -> String {
     workspace
         .to_string_lossy()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .flat_map(|c| {
+            let (keep, n) = if c.is_ascii_alphanumeric() { (c, 1) } else { ('-', c.len_utf16()) };
+            std::iter::repeat_n(keep, n)
+        })
         .collect()
 }
 
