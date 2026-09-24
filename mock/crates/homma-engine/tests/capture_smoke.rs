@@ -54,7 +54,12 @@ fn store(root: &Path) -> Vec<String> {
 #[test]
 fn the_newest_transcript_under_home_is_read_into_the_store() {
     let dir = tempfile::tempdir().unwrap();
-    let (root, home) = workspace(dir.path());
+    let (real_root, home) = workspace(dir.path());
+    // The workspace is reached through a link made here, so the real path and
+    // the spelling the run is given always differ, whatever the platform's
+    // temporary directory is.
+    let root = dir.path().join("through-a-link");
+    std::os::unix::fs::symlink(&real_root, &root).unwrap();
     let escaped = |at: &Path| -> PathBuf {
         let name: String = at
             .to_string_lossy()
@@ -63,15 +68,13 @@ fn the_newest_transcript_under_home_is_read_into_the_store() {
             .collect();
         home.join(".claude/projects").join(name)
     };
-    // The harness names the directory for the real path, links resolved. Where
-    // the temporary directory is reached through a link, as on macOS, the
-    // spelling through the link holds a decoy that must not be read.
+    // The harness names the directory for the real path, links resolved, so
+    // the spelling through the link holds a decoy that must not be read.
     let real = escaped(&root.canonicalize().unwrap());
     let linked = escaped(&root);
-    if linked != real {
-        std::fs::create_dir_all(&linked).unwrap();
-        std::fs::write(linked.join("decoy.jsonl"), format!("{MORE}\n")).unwrap();
-    }
+    assert_ne!(linked, real);
+    std::fs::create_dir_all(&linked).unwrap();
+    std::fs::write(linked.join("decoy.jsonl"), format!("{MORE}\n")).unwrap();
     std::fs::create_dir_all(&real).unwrap();
     std::fs::write(real.join("sess.jsonl"), format!("{SAID}\n")).unwrap();
     capture(&root, &home, &["--title", "First words"])

@@ -255,8 +255,11 @@ pub enum Command {
         /// transcript the agent harness keeps for this workspace.
         #[arg(long)]
         session:  Option<String>,
-        /// Take nothing at or before this instant (RFC 3339). With the store's
-        /// own watermark as well, the later of the two wins.
+        /// Take nothing stamped at or before this instant (RFC 3339), for the
+        /// first run on a session. The store's own watermark is a line in the
+        /// transcript and applies as well; a message typed during a turn is
+        /// stamped earlier than lines written before it, so a later run passing
+        /// this loses those.
         #[arg(long)]
         since:    Option<jiff::Timestamp>,
         /// A path or repository the capture bears on, beyond those its words

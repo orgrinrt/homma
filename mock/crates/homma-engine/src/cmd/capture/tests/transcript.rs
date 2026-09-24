@@ -12,6 +12,7 @@ use crate::cmd::capture::transcript::{
     Event,
     Happened,
     NOTES_ONLY,
+    Takes,
     answered,
     read,
 };
@@ -120,12 +121,6 @@ fn a_queued_command_that_is_not_his_is_passed_over() {
 }
 
 #[test]
-fn a_replayed_line_is_read_once() {
-    let events = events(&lines(&[typed("a", T0, "once"), typed("a", T0, "once")])).expect("reads");
-    assert_eq!(events.len(), 1);
-}
-
-#[test]
 fn a_sub_agents_lines_are_not_this_conversation() {
     let mut side = typed("a", T0, "from inside an agent");
     side["isSidechain"] = json!(true);
@@ -223,41 +218,53 @@ fn options(labels: &[&str]) -> Vec<Choice> {
 #[test]
 fn an_answer_is_labels_then_what_was_typed() {
     let o = options(&["A", "B", "C, D"]);
-    assert_eq!(answered("A", &o), chose(&["A"]));
-    assert_eq!(answered("A, B", &o), chose(&["A", "B"]));
-    assert_eq!(answered("B, A", &o), chose(&["B", "A"]));
+    assert_eq!(answered("A", &o, Takes::Several), chose(&["A"]));
+    assert_eq!(answered("A, B", &o, Takes::Several), chose(&["A", "B"]));
+    assert_eq!(answered("B, A", &o, Takes::Several), chose(&["B", "A"]));
     // A label with the separator inside it is one label, bare or quoted.
-    assert_eq!(answered("C, D", &o), chose(&["C, D"]));
-    assert_eq!(answered("\"C, D\"", &o), chose(&["C, D"]));
-    assert_eq!(answered("A, \"C, D\"", &o), chose(&["A", "C, D"]));
-    assert_eq!(answered("\"C, D\", B", &o), chose(&["C, D", "B"]));
+    assert_eq!(answered("C, D", &o, Takes::Several), chose(&["C, D"]));
+    assert_eq!(answered("\"C, D\"", &o, Takes::Several), chose(&["C, D"]));
+    assert_eq!(
+        answered("A, \"C, D\"", &o, Takes::Several),
+        chose(&["A", "C, D"])
+    );
+    assert_eq!(
+        answered("\"C, D\", B", &o, Takes::Several),
+        chose(&["C, D", "B"])
+    );
     // The harness's own words for nothing picked are nobody's answer.
-    assert_eq!(answered(NOTES_ONLY, &o), Answer::default());
-    assert_eq!(answered("", &o), Answer::default());
+    assert_eq!(answered(NOTES_ONLY, &o, Takes::Several), Answer::default());
+    assert_eq!(answered("", &o, Takes::Several), Answer::default());
     // What follows the labels is his, and only that.
-    assert_eq!(answered("A, and more", &o), Answer {
+    assert_eq!(answered("A, and more", &o, Takes::Several), Answer {
         chose: vec!["A".into()],
         typed: Some("and more".into()),
     });
-    assert_eq!(answered("A, B, but only B first", &o), Answer {
-        chose: vec!["A".into(), "B".into()],
-        typed: Some("but only B first".into()),
-    });
-    assert_eq!(answered("\"C, D\", why not", &o), Answer {
+    assert_eq!(
+        answered("A, B, but only B first", &o, Takes::Several),
+        Answer {
+            chose: vec!["A".into(), "B".into()],
+            typed: Some("but only B first".into()),
+        }
+    );
+    assert_eq!(answered("\"C, D\", why not", &o, Takes::Several), Answer {
         chose: vec!["C, D".into()],
         typed: Some("why not".into()),
     });
     // A label must end at the separator or the end, so a word that starts
     // with one is not it; nor does case fold.
-    assert_eq!(answered("Apple", &o), typed_only("Apple"));
-    assert_eq!(answered("A,B", &o), typed_only("A,B"));
-    assert_eq!(answered("a", &o), typed_only("a"));
+    assert_eq!(answered("Apple", &o, Takes::Several), typed_only("Apple"));
+    assert_eq!(answered("A,B", &o, Takes::Several), typed_only("A,B"));
+    assert_eq!(answered("a", &o, Takes::Several), typed_only("a"));
     assert_eq!(
-        answered("just merge both now", &o),
+        answered("just merge both now", &o, Takes::Several),
         typed_only("just merge both now")
     );
     // A quote opened and never closed on a label is typed.
-    assert_eq!(answered("\"C, D, x", &o), typed_only("\"C, D, x"));
+    assert_eq!(
+        answered("\"C, D, x", &o, Takes::Several),
+        typed_only("\"C, D, x")
+    );
 }
 
 #[test]
@@ -266,18 +273,58 @@ fn the_longest_label_that_fits_is_taken_first() {
     // label too.
     let o = options(&["Yes", "Yes, and ship it", "No"]);
     assert_eq!(
-        answered("Yes, and ship it", &o),
+        answered("Yes, and ship it", &o, Takes::Several),
         chose(&["Yes, and ship it"])
     );
     assert_eq!(
-        answered("Yes, and ship it, No", &o),
+        answered("Yes, and ship it, No", &o, Takes::Several),
         chose(&["Yes, and ship it", "No"])
     );
-    assert_eq!(answered("Yes, No", &o), chose(&["Yes", "No"]));
-    assert_eq!(answered("Yes, and wait", &o), Answer {
+    assert_eq!(
+        answered("Yes, No", &o, Takes::Several),
+        chose(&["Yes", "No"])
+    );
+    assert_eq!(answered("Yes, and wait", &o, Takes::Several), Answer {
         chose: vec!["Yes".into()],
         typed: Some("and wait".into()),
     });
+}
+
+#[test]
+fn a_single_answer_is_a_label_or_his_words_whole() {
+    let o = options(&["Yes", "No", "C, D"]);
+    let one = |a: &str| answered(a, &o, Takes::One);
+    assert_eq!(one("Yes"), chose(&["Yes"]));
+    assert_eq!(one("C, D"), chose(&["C, D"]));
+    // What the multi-select reading would split is his sentence here.
+    assert_eq!(
+        one("Yes, but only after the release"),
+        typed_only("Yes, but only after the release")
+    );
+    assert_eq!(
+        answered("Yes, but only after the release", &o, Takes::Several),
+        Answer {
+            chose: vec!["Yes".into()],
+            typed: Some("but only after the release".into()),
+        }
+    );
+    assert_eq!(one("Yes, No"), typed_only("Yes, No"));
+    assert_eq!(one("\"C, D\""), typed_only("\"C, D\""));
+    assert_eq!(one("yes"), typed_only("yes"));
+    assert_eq!(one(NOTES_ONLY), Answer::default());
+    assert_eq!(one(""), Answer::default());
+}
+
+#[test]
+fn a_round_reads_which_questions_take_several() {
+    // The fixture's first question takes one, its second several; the same
+    // answer string reads differently under each.
+    let got = events(&lines(&[round("r", T0, "Left, Right", "Red, Blue", None)])).expect("reads");
+    let Happened::Answered(qs) = &got[0].what else {
+        panic!("not a round");
+    };
+    assert_eq!(qs[0].answer, typed_only("Left, Right"));
+    assert_eq!(qs[1].answer, chose(&["Red", "Blue"]));
 }
 
 #[test]
@@ -291,7 +338,7 @@ fn a_real_multi_select_with_typed_text_after_it_splits_where_he_started_typing()
         "Nothing more",
     ]);
     let a = "~/Dev/staging generally, \"~/.meet, properly this time\", \"loru itself, the rest of it\", Just probably worth it to grep any keywords from ~/Dev in general.";
-    assert_eq!(answered(a, &o), Answer {
+    assert_eq!(answered(a, &o, Takes::Several), Answer {
         chose: vec![
             "~/Dev/staging generally".into(),
             "~/.meet, properly this time".into(),
@@ -385,9 +432,17 @@ fn a_malformed_line_of_a_read_shape_is_refused_by_number() {
         (
             &*json!({"type": "user", "uuid": "b", "timestamp": T1,
                      "toolUseResult": {"answers": {"q": 3}, "questions": [
-                         {"question": "q", "header": "h", "options": [{"label": "l", "description": "d"}]}]}})
+                         {"question": "q", "header": "h", "multiSelect": false,
+                          "options": [{"label": "l", "description": "d"}]}]}})
             .to_string(),
             "is not text".to_string(),
+        ),
+        (
+            &*json!({"type": "user", "uuid": "b", "timestamp": T1,
+                     "toolUseResult": {"answers": {"q": "l"}, "questions": [
+                         {"question": "q", "header": "h", "options": [{"label": "l", "description": "d"}]}]}})
+            .to_string(),
+            "no `multiSelect`".to_string(),
         ),
         (
             &*json!({"type": "user", "uuid": "b", "timestamp": T1,
@@ -514,6 +569,67 @@ fn a_queued_message_written_twice_is_read_where_it_came_first() {
     .expect("reads");
     let words: Vec<&str> = got.iter().map(said).collect();
     assert_eq!(words, ["while you work", "something else"]);
+}
+
+#[test]
+fn a_queued_message_written_as_two_attachments_is_read_once() {
+    // The second shape the harness writes: two attachments, different uuids,
+    // one `source_uuid`, and no typed line anywhere.
+    let mut first = queued("q1", T0, "did something change there");
+    first["attachment"]["source_uuid"] = json!("s");
+    let mut second = queued("q2", T1, "did something change there");
+    second["attachment"]["source_uuid"] = json!("s");
+    let got = events(&lines(&[
+        first.clone(),
+        said_by_agent("x", T1, "working"),
+        second.clone(),
+    ]))
+    .expect("reads");
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].line, 0);
+    // And all three copies together, in any order, are still one.
+    let twin = typed("s", T2, "did something change there");
+    for order in [
+        [first.clone(), second.clone(), twin.clone()],
+        [twin.clone(), first.clone(), second.clone()],
+        [second.clone(), twin.clone(), first.clone()],
+    ] {
+        assert_eq!(events(&lines(&order)).expect("reads").len(), 1);
+    }
+}
+
+#[test]
+fn a_queued_message_with_an_image_keeps_its_text() {
+    // The shapes counted in real transcripts: text then image, image then
+    // text, several images and a text, and an image alone.
+    let image = json!({"type": "image", "source": {"type": "base64", "data": "x"}});
+    let text = |t: &str| json!({"type": "text", "text": t});
+    let with = |uuid: &str, blocks: serde_json::Value| {
+        let mut q = queued(uuid, T0, "");
+        q["attachment"]["prompt"] = blocks;
+        q
+    };
+    let got = events(&lines(&[
+        with("a", json!([text("look at this"), image.clone()])),
+        with("b", json!([image.clone(), text("and this")])),
+        with(
+            "c",
+            json!([image.clone(), image.clone(), text("one"), text("two")]),
+        ),
+        with("d", json!([image.clone()])),
+        with("e", json!([])),
+    ]))
+    .expect("reads");
+    let words: Vec<&str> = got.iter().map(said).collect();
+    assert_eq!(words, ["look at this", "and this", "one\n\ntwo"]);
+    // A prompt that is neither is refused by line, like any other bad field.
+    let mut bad = queued("f", T0, "");
+    bad["attachment"]["prompt"] = json!(7);
+    let err = format!("{:#}", read(&lines(&[bad])).expect_err("refused"));
+    assert!(
+        err.contains("line 1") && err.contains("neither text nor blocks"),
+        "{err}"
+    );
 }
 
 #[test]

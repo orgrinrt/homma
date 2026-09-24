@@ -119,17 +119,17 @@ impl Transcript {
 /// Every event in `text`, a whole transcript.
 ///
 /// A last line with no newline is still being written and is not read. A
-/// message the harness wrote twice, once as the queued-command attachment a
-/// running turn took it in and once as a typed line whose `uuid` is that
-/// attachment's `source_uuid`, is read where it was written first.
+/// message the harness wrote more than once, as a queued-command attachment and
+/// a typed line, or as two attachments, is tied by `source_uuid` and read where
+/// it was written first.
 pub fn read(text: &str) -> Result<Transcript> {
     let complete = text.rfind('\n').map_or("", |i| &text[..= i]);
     let mut out = Transcript::default();
     let mut before: Option<String> = None;
-    // Typed human lines, by uuid, and the uuids queued attachments name as
-    // their typed twin; whichever of a pair comes second is not read.
-    let mut typed: HashSet<String> = HashSet::new();
-    let mut queued_as: HashSet<String> = HashSet::new();
+    // The message each human line is a copy of: a typed line's own uuid, or
+    // the uuid a queued attachment names as `source_uuid`. A key met again is
+    // a copy, and is not read.
+    let mut messages: HashSet<String> = HashSet::new();
     for (at, line) in complete.lines().enumerate() {
         let n = at + 1;
         if line.trim().is_empty() {
@@ -163,10 +163,9 @@ pub fn read(text: &str) -> Result<Transcript> {
             Some("user") => {
                 let said = user(o).with_context(|| format!("transcript line {n}"))?;
                 if let (Some(Happened::Said(_)), Some(u)) = (&said, uuid) {
-                    if queued_as.contains(u) {
+                    if !messages.insert(u.to_string()) {
                         continue;
                     }
-                    typed.insert(u.to_string());
                 }
                 said
             },
@@ -174,10 +173,9 @@ pub fn read(text: &str) -> Result<Transcript> {
                 let said = queued(o).with_context(|| format!("transcript line {n}"))?;
                 if said.is_some() {
                     if let Some(s) = twin(o) {
-                        if typed.contains(s) {
+                        if !messages.insert(s.to_string()) {
                             continue;
                         }
-                        queued_as.insert(s.to_string());
                     }
                 }
                 said
@@ -242,23 +240,28 @@ fn user(o: &Map<String, Value>) -> Result<Option<Happened>> {
         .get("message")
         .and_then(|m| m.get("content"))
         .ok_or_else(|| anyhow!("a typed line with no `message.content`"))?;
+    words(content)
+        .map(|w| w.map(Happened::Said))
+        .context("a typed line whose `message.content` is neither text nor blocks")
+}
+
+/// The person's words, a string or a list of content blocks.
+///
+/// Text typed beside an image arrives as blocks. The image is not words, and
+/// the text blocks are kept as they were typed, joined by a blank line; blocks
+/// with no text in them are nothing said.
+fn words(content: &Value) -> Result<Option<String>> {
     match content {
-        Value::String(s) => Ok(Some(Happened::Said(s.clone()))),
-        // Text typed beside an image arrives as blocks. The image is not
-        // words, and the text blocks are kept as they were typed.
+        Value::String(s) => Ok(Some(s.clone())),
         Value::Array(blocks) => {
             let text: Vec<&str> = blocks
                 .iter()
                 .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
                 .filter_map(|b| b.get("text").and_then(Value::as_str))
                 .collect();
-            if text.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(Happened::Said(text.join("\n\n"))))
-            }
+            Ok((!text.is_empty()).then(|| text.join("\n\n")))
         },
-        _ => bail!("a typed line whose `message.content` is neither text nor blocks"),
+        _ => bail!("words are neither text nor blocks"),
     }
 }
 
@@ -269,11 +272,12 @@ fn queued(o: &Map<String, Value>) -> Result<Option<Happened>> {
     if a.get("type").and_then(Value::as_str) != Some("queued_command") || !human(a.get("origin")) {
         return Ok(None);
     }
-    let words = a
+    let prompt = a
         .get("prompt")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("a queued message with no `prompt` text"))?;
-    Ok(Some(Happened::Said(words.to_string())))
+        .ok_or_else(|| anyhow!("a queued message with no `prompt`"))?;
+    words(prompt)
+        .map(|w| w.map(Happened::Said))
+        .context("a queued message whose `prompt` is neither text nor blocks")
 }
 
 fn string(v: &Value, key: &str) -> Result<String> {
@@ -311,13 +315,18 @@ fn round(r: &Map<String, Value>) -> Result<Vec<Question>> {
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let takes = match q.get("multiSelect").and_then(Value::as_bool) {
+                Some(true) => Takes::Several,
+                Some(false) => Takes::One,
+                None => bail!("question {text:?} has no `multiSelect`"),
+            };
             let answer = match answers.get(&text) {
                 None => Answer::default(),
                 Some(a) => {
                     let a = a
                         .as_str()
                         .ok_or_else(|| anyhow!("the answer to {text:?} is not text"))?;
-                    answered(a, &options)
+                    answered(a, &options, takes)
                 },
             };
             let notes = notes
@@ -337,15 +346,37 @@ fn round(r: &Map<String, Value>) -> Result<Vec<Question>> {
         .collect()
 }
 
+/// How many options a question lets the person pick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Takes {
+    One,
+    Several,
+}
+
 /// An answer string split into the labels picked and what was typed after them.
 ///
-/// The harness joins picked labels with `, `, puts a label holding `, ` in
-/// double quotes, and appends the free text after the labels. So labels are
-/// taken off the front one at a time, the longest that fits first, each ending
-/// at `, ` or at the end, and what is left is the typed part.
-pub fn answered(a: &str, options: &[Choice]) -> Answer {
-    if a == NOTES_ONLY {
+/// On a question taking one answer, the answer is a label when it equals one
+/// and typed text whole otherwise, even where it starts with a label. On one
+/// taking several, the harness joins picked labels with `, `, puts a label
+/// holding `, ` in double quotes, and appends the free text after the labels.
+/// So labels are taken off the front one at a time, the longest that fits
+/// first, each ending at `, ` or at the end, and what is left is the typed part.
+pub fn answered(a: &str, options: &[Choice], takes: Takes) -> Answer {
+    if a == NOTES_ONLY || a.is_empty() {
         return Answer::default();
+    }
+    if takes == Takes::One {
+        return if options.iter().any(|c| c.label == a) {
+            Answer {
+                chose: vec![a.to_string()],
+                typed: None,
+            }
+        } else {
+            Answer {
+                chose: Vec::new(),
+                typed: Some(a.to_string()),
+            }
+        };
     }
     let mut labels: Vec<&str> = options.iter().map(|c| c.label.as_str()).collect();
     labels.sort_by_key(|l| std::cmp::Reverse(l.len()));

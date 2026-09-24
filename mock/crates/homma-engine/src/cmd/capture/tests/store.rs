@@ -138,10 +138,16 @@ fn a_long_slug_is_cut_at_a_word_and_never_past_sixty() {
 fn a_session_names_a_file_an_id_or_the_newest() {
     let dir = tempfile::tempdir().expect("a directory");
     let d = dir.path();
-    std::fs::write(d.join("old.jsonl"), "").unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    std::fs::write(d.join("new.jsonl"), "").unwrap();
-    std::fs::write(d.join("newer.txt"), "").unwrap();
+    // Times set rather than waited for, so a filesystem with coarse stamps
+    // cannot tie them; the newest file of all is not a transcript.
+    let at = |name: &str, secs: u64| {
+        let f = std::fs::File::create(d.join(name)).unwrap();
+        f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+            .unwrap();
+    };
+    at("new.jsonl", 2_000_000_000);
+    at("old.jsonl", 1_000_000_000);
+    at("newer.txt", 2_100_000_000);
     assert_eq!(transcript(d, None).unwrap(), d.join("new.jsonl"));
     assert_eq!(transcript(d, Some("old")).unwrap(), d.join("old.jsonl"));
     let by_path = d.join("old.jsonl");
