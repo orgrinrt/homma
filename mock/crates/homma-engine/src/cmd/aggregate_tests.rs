@@ -191,7 +191,7 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     );
 
     merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &settings, None).unwrap();
-    let written = fs::read_to_string(workspace.join(".claude/settings.json")).unwrap();
+    let written = fs::read_to_string(workspace.join(".claude/settings.local.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&written).unwrap();
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(arr.len(), 1);

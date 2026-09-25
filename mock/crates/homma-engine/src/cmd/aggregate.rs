@@ -17,8 +17,8 @@
 //!    wrapper is a thin scope check, and the substantive logic still lives in
 //!    the repo. The wrapper itself is in `aggregate_wrapper.rs`.
 //!
-//! 2. Merges per-repo `settings.json` hook registrations into the workspace
-//!    `.claude/settings.json`, under every event and matcher the repo gave
+//! 2. Merges per-repo `settings.json` hook registrations into the clone's
+//!    `.claude/settings.local.json`, under every event and matcher the repo gave
 //!    each hook, with each command rewritten to the workspace wrapper.
 //!    Registrations homma wrote before are swept first, so regens are
 //!    idempotent. What is homma's is decided by the mark in the file a
@@ -48,7 +48,7 @@ use anyhow::{Context, Result, anyhow};
 use homma_api::{ContainedPath, Root};
 use serde::Serialize;
 
-/// One registration destined for the workspace `settings.json`: the event it
+/// One registration destined for the clone's `settings.local.json`: the event it
 /// sits under, the tools it fires for, and the command the host runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct HookEntry {
@@ -120,7 +120,7 @@ pub(crate) struct Aggregated {
 /// so upgrades from older homma versions converge automatically.
 ///
 /// `settings_entries` accumulates per-hook registrations that
-/// [`merge_settings`] writes into the workspace `settings.json` after
+/// [`merge_settings`] writes into the clone's `settings.local.json` after
 /// the per-repo loop completes.
 pub(crate) fn aggregate_repo(
     root: &Root,
@@ -354,9 +354,9 @@ fn aggregate_hooks(
 
         // `${CLAUDE_PROJECT_DIR}` rather than the path this run happened to
         // write to. The host substitutes it for the project root "regardless of
-        // the working directory when the hook runs", which is what makes a
-        // tracked `settings.json` name this workspace's wrappers in every
-        // clone. The absolute form it replaces named the workspace that
+        // the working directory when the hook runs", so a registration stays
+        // right when the clone is moved or copied. The absolute form it
+        // replaces named the workspace that
         // generated the file, so every other clone either could not find the
         // command at all or, on the same machine, ran somebody else's copy.
         let command = format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{target_name}");

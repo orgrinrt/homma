@@ -39,7 +39,7 @@ use crate::cmd::aggregate::HookEntry;
 const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 
 /// Generate the workspace mockspace gate script and return the
-/// `settings.json` entry registering it.
+/// `settings.local.json` entry registering it.
 ///
 /// The script is written to `<workspace>/.claude/hooks/`. The returned
 /// entry is appended to `hooks.PreToolUse[]` with matcher `Bash` so it
@@ -95,8 +95,8 @@ pub(crate) fn install_workspace_gate(
     root.set_executable(&target)?;
     // `${CLAUDE_PROJECT_DIR}`, for the same reason the per-repo wrappers use
     // it: the host substitutes the project root regardless of the working
-    // directory the hook runs in, so one tracked `settings.json` names this
-    // workspace's gate in every clone.
+    // directory the hook runs in, so the registration stays right when the
+    // clone is moved or copied.
     Ok(HookEntry {
         event:   "PreToolUse".to_string(),
         matcher: "Bash".to_string(),

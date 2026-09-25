@@ -74,7 +74,8 @@ pub(crate) fn regen(ws: &Path, repo: &Path) -> (Aggregated, serde_json::Value) {
 }
 
 fn settings(ws: &Path) -> serde_json::Value {
-    serde_json::from_str(&fs::read_to_string(ws.join(".claude/settings.json")).unwrap()).unwrap()
+    serde_json::from_str(&fs::read_to_string(ws.join(".claude/settings.local.json")).unwrap())
+        .unwrap()
 }
 
 /// Every `(event, matcher, command)` a settings value registers, the matcher
@@ -115,7 +116,7 @@ pub(crate) fn reg(
 
 fn workspace_settings(ws: &Path, body: &str) {
     fs::create_dir_all(ws.join(".claude/hooks")).unwrap();
-    fs::write(ws.join(".claude/settings.json"), body).unwrap();
+    fs::write(ws.join(".claude/settings.local.json"), body).unwrap();
 }
 
 #[test]

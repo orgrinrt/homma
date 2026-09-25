@@ -309,7 +309,7 @@ workspace = "{}"
     );
     // and it wrote, rather than succeeding by finding nothing to do.
     assert!(
-        mine.join(".claude").join("settings.json").is_file(),
+        mine.join(".claude").join("settings.local.json").is_file(),
         "the pass reported success and wrote no settings: {stderr}"
     );
 }

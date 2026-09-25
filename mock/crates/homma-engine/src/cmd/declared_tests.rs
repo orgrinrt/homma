@@ -261,14 +261,14 @@ fn a_row_reaches_settings_and_leaves_it_when_it_goes() {
     plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
     fs::create_dir_all(ws.path().join(".claude")).unwrap();
     fs::write(
-        ws.path().join(".claude/settings.json"),
+        ws.path().join(".claude/settings.local.json"),
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/hand.sh"}]}]}}"#,
     )
     .unwrap();
     let root = test_root(ws.path());
     let commands = || -> Vec<String> {
         let v: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(ws.path().join(".claude/settings.json")).unwrap(),
+            &fs::read_to_string(ws.path().join(".claude/settings.local.json")).unwrap(),
         )
         .unwrap();
         v["hooks"]["PreToolUse"]
