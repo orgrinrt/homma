@@ -356,8 +356,8 @@ pub mod regen {
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
     /// repo; stage 2 aggregates per-repo rules and hooks into the
-    /// workspace `.claude/`; stage 3 merges hook entries into
-    /// workspace `settings.json`.
+    /// workspace `.claude/`; stage 3 merges hook entries into the
+    /// clone's `settings.local.json` and sweeps its own out of `settings.json`.
     pub fn run_with(
         cfg: &Config,
         repo: Option<&str>,
@@ -590,14 +590,14 @@ pub mod regen {
 
         // Stage 3: write the workspace-level mockspace gate hook and
         // merge all entries (per-repo aggregated + workspace gate) into
-        // settings.json.
+        // settings.local.json.
         if !opts.skip_aggregate {
             let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
             let visited_repos: Vec<&str> = visited.iter().map(String::as_str).collect();
             // The manifest's own `local_path`, workspace-relative, rather than
-            // the absolute form this run resolved. The gate script is tracked,
-            // so an absolute path in it names the workspace that generated it
-            // and matches nothing anywhere else.
+            // the absolute form this run resolved. An absolute path in the
+            // gate script names where the clone sat when it generated, and
+            // stops matching the moment the clone is moved or renamed.
             let repo_paths: Vec<(String, String)> = cfg
                 .repos
                 .iter()
@@ -623,7 +623,7 @@ pub mod regen {
             // run, a one-repository run included, since the merge below sweeps
             // their registrations and writes back only what it is handed.
             //
-            // **A failure here leaves `settings.json` as it was**: the merge
+            // **A failure here leaves both settings files as they were**: the merge
             // would sweep the rows' registrations and have none to write back.
             let declared_ok = match crate::cmd::declared::install_declared(
                 &root,
@@ -665,7 +665,7 @@ pub mod regen {
             if let Err(e) = merged {
                 had_failure = true;
                 results.push(RegenResult {
-                    repo:             "(settings.json)".into(),
+                    repo:             "(settings)".into(),
                     cargo_mock:       StageStatus::Skipped("not a repo".into()),
                     configs:          Vec::new(),
                     aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),

@@ -39,7 +39,7 @@ use crate::cmd::aggregate::HookEntry;
 const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 
 /// Generate the workspace mockspace gate script and return the
-/// `settings.json` entry registering it.
+/// `settings.local.json` entry registering it.
 ///
 /// The script is written to `<workspace>/.claude/hooks/`. The returned
 /// entry is appended to `hooks.PreToolUse[]` with matcher `Bash` so it
@@ -48,8 +48,8 @@ const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 ///
 /// `repos` is the list of `(repo_name, workspace_relative_path)` pairs that
 /// the gate should consider as "member repos" worth validating. Relative,
-/// because the gate script is tracked and a path naming the workspace that
-/// generated it matches nothing in any other clone. A repo declared outside
+/// because a path naming where the clone sat when it generated stops matching
+/// the moment the clone is moved or renamed. A repo declared outside
 /// the workspace has no relative form and keeps its absolute one; the script
 /// handles both.
 pub(crate) fn install_workspace_gate(
@@ -95,8 +95,8 @@ pub(crate) fn install_workspace_gate(
     root.set_executable(&target)?;
     // `${CLAUDE_PROJECT_DIR}`, for the same reason the per-repo wrappers use
     // it: the host substitutes the project root regardless of the working
-    // directory the hook runs in, so one tracked `settings.json` names this
-    // workspace's gate in every clone.
+    // directory the hook runs in, so the registration stays right when the
+    // clone is moved or copied.
     Ok(HookEntry {
         event:   "PreToolUse".to_string(),
         matcher: "Bash".to_string(),
@@ -440,9 +440,9 @@ pub(crate) mod tests {
 
     #[test]
     fn a_relative_repo_entry_resolves_against_the_workspace_the_gate_sits_in() {
-        // The gate is tracked, so its repo table travels to every clone. A
+        // The clone the gate sits in can be moved after it generated. A
         // relative entry has to be joined to the workspace the script is
-        // running from rather than to whichever one wrote it, and an absolute
+        // running from rather than to where it was written, and an absolute
         // entry, which is what a repo declared outside the workspace leaves,
         // has to be left alone.
         let probe = |raw: &str, ws: &str| -> String {

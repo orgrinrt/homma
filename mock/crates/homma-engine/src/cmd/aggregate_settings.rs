@@ -3,19 +3,32 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! The workspace `settings.json` half of aggregation: sweeping the
-//! registrations homma wrote before and writing this run's, under every event.
+//! The settings half of aggregation: sweeping the registrations homma wrote
+//! before and writing this run's, under every event.
+//!
+//! Two files, and they are treated differently. `.claude/settings.local.json`
+//! is the clone's own and takes this run's registrations. `.claude/settings.json`
+//! is shared and hand-written, and is only ever swept of registrations an earlier
+//! regen put there; when there is nothing of homma's in it, it is not written at
+//! all, so its bytes stay as somebody left them.
 
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
-use homma_api::Root;
+use homma_api::{ContainedPath, Root};
 
 use super::{HookEntry, carries_the_mark, contain, hook_file_named};
 
-/// Merge aggregated hook entries into the workspace `settings.json`,
-/// preserving non-aggregated entries.
+/// The clone's own settings, which take the registrations.
+const LOCAL: &str = ".claude/settings.local.json";
+
+/// The shared settings, which are swept and never added to.
+const SHARED: &str = ".claude/settings.json";
+
+/// Merge aggregated hook entries into the clone's `settings.local.json`, and
+/// sweep homma's own registrations out of the shared `settings.json`,
+/// preserving everything else in both.
 ///
 /// Two sets, and the difference between them is the whole of it.
 /// `visited` names the repos this run actually aggregated, and their entries
@@ -36,11 +49,15 @@ use super::{HookEntry, carries_the_mark, contain, hook_file_named};
 /// alternative deletes working guards from every workspace holding a
 /// different subset of the manifest, which is every workspace.
 ///
+/// All of that is about the local file. The shared one holds nothing homma
+/// writes, so there a registration of homma's shape is swept whichever repo it
+/// names, visited or not.
+///
 /// Every event is swept and written, not only `PreToolUse`, and a registration
 /// is swept only when it is homma's: a retired shape, or a managed name whose
 /// file is absent or carries [`MANAGED_MARK`](super::MANAGED_MARK). A file
 /// under a managed name that homma did not write keeps its registration
-/// exactly as it is.
+/// exactly as it is, in either file.
 pub(crate) fn merge_settings(
     root: &Root,
     known_repos: &[&str],
@@ -48,26 +65,6 @@ pub(crate) fn merge_settings(
     aggregated_entries: &[HookEntry],
     gate_entry: Option<&HookEntry>,
 ) -> Result<()> {
-    let settings_path = contain(root, ".claude/settings.json")?;
-    root.create_dir_all(&contain(root, ".claude")?).ok();
-
-    let mut value: serde_json::Value = match fs::read_to_string(settings_path.as_path()) {
-        Ok(s) if !s.trim().is_empty() => {
-            serde_json::from_str(&s)
-                .with_context(|| format!("parsing {}", settings_path.as_path().display()))?
-        },
-        _ => serde_json::json!({}),
-    };
-
-    let hooks = value
-        .as_object_mut()
-        .ok_or_else(|| anyhow!("settings.json root is not an object"))?
-        .entry("hooks".to_string())
-        .or_insert_with(|| serde_json::json!({}));
-    let hooks_obj = hooks
-        .as_object_mut()
-        .ok_or_else(|| anyhow!("settings.json `hooks` is not an object"))?;
-
     let hooks_dir = root.as_abs().join(".claude/hooks");
     let is_ours = |cmd: &str| -> bool {
         if is_retired_aggregated_command(cmd, known_repos) {
@@ -78,12 +75,117 @@ pub(crate) fn merge_settings(
             || crate::cmd::declared::is_declared_command(cmd);
         managed && !names_a_file_homma_did_not_write(&hooks_dir, cmd)
     };
+    // In the shared file nothing homma writes belongs at all, so a
+    // registration of its shape goes whichever repo it names. Keeping an
+    // unvisited repo's entry is the local file's business, where it brings the
+    // guard back once that repo is cloned.
+    let is_ours_anywhere = |cmd: &str| -> bool {
+        is_ours(cmd)
+            || (is_any_aggregated_command(cmd)
+                && !names_a_file_homma_did_not_write(&hooks_dir, cmd))
+    };
 
-    // Per hook rather than per entry, so a hand-written hook bundled in one
-    // entry beside a managed one survives it. An entry is dropped only when
-    // this sweep emptied it, and an event only when this sweep emptied its
-    // array: a malformed entry, an empty one, or an empty event somebody wrote
-    // are not homma's to remove.
+    // Both files are read and swept before either is written, so a file that
+    // does not parse, or is not the shape a settings file has, leaves both as
+    // they were rather than one swept and the other never given what it lost.
+    let shared = contain(root, SHARED)?;
+    let mut shared_value = read_settings(&shared)?;
+    let shared_swept = match shared_value.as_mut() {
+        Some(value) => sweep(value, SHARED, &is_ours_anywhere)?,
+        None => false,
+    };
+
+    let local = contain(root, LOCAL)?;
+    let mut value = read_settings(&local)?.unwrap_or_else(|| serde_json::json!({}));
+    sweep(&mut value, LOCAL, &is_ours)?;
+    let hooks_obj = hooks_of(&mut value, LOCAL)?;
+    for e in gate_entry.into_iter().chain(aggregated_entries) {
+        hooks_obj
+            .entry(e.event.clone())
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .ok_or_else(|| anyhow!("{LOCAL} `hooks.{}` is not an array", e.event))?
+            .push(e.to_json());
+    }
+
+    // The local file first: a failure between the two writes then leaves a
+    // registration in both files, which runs twice, rather than in neither.
+    root.create_dir_all(&contain(root, ".claude")?).ok();
+    write_settings(root, &local, &value)?;
+    if let (true, Some(value)) = (shared_swept, shared_value.as_ref()) {
+        write_settings(root, &shared, value)?;
+    }
+    Ok(())
+}
+
+/// True if a hook command runs a file of homma's aggregated shape,
+/// `<repo>--<name>` under `.claude/hooks/`, whichever repo it names. The
+/// workspace gate and the declared hooks are this shape too, under `_workspace`
+/// and `_declared`, so this is every name homma gives a wrapper.
+fn is_any_aggregated_command(cmd: &str) -> bool {
+    hook_file_named(cmd).is_some_and(|name| {
+        name.split_once("--")
+            .is_some_and(|(repo, rest)| !repo.is_empty() && !rest.is_empty())
+    })
+}
+
+/// A settings file parsed, or `None` when it is absent or holds only
+/// whitespace, which the host reads as no settings at all.
+fn read_settings(path: &ContainedPath) -> Result<Option<serde_json::Value>> {
+    match fs::read_to_string(path.as_path()) {
+        Ok(s) if !s.trim().is_empty() => {
+            serde_json::from_str(&s)
+                .map(Some)
+                .with_context(|| format!("parsing {}", path.as_path().display()))
+        },
+        _ => Ok(None),
+    }
+}
+
+fn write_settings(root: &Root, path: &ContainedPath, value: &serde_json::Value) -> Result<()> {
+    let serialised = serde_json::to_string_pretty(value)?;
+    root.write(path, serialised + "\n")
+        .with_context(|| format!("write {}", path.as_path().display()))
+}
+
+/// The `hooks` object of a settings file, made if it is missing.
+fn hooks_of<'v>(
+    value: &'v mut serde_json::Value,
+    name: &str,
+) -> Result<&'v mut serde_json::Map<String, serde_json::Value>> {
+    value
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("{name} root is not an object"))?
+        .entry("hooks".to_string())
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("{name} `hooks` is not an object"))
+}
+
+/// Take every registration `is_ours` claims out of `value`, and say whether
+/// anything went. A file with no `hooks` key is left without one.
+///
+/// Per hook rather than per entry, so a hand-written hook bundled in one entry
+/// beside a managed one survives it. An entry is dropped only when this sweep
+/// emptied it, and an event only when this sweep emptied its array: a malformed
+/// entry, an empty one, or an empty event somebody wrote are not homma's to
+/// remove.
+fn sweep(
+    value: &mut serde_json::Value,
+    name: &str,
+    is_ours: &dyn Fn(&str) -> bool,
+) -> Result<bool> {
+    let root_obj = value
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("{name} root is not an object"))?;
+    let Some(hooks) = root_obj.get_mut("hooks") else {
+        return Ok(false);
+    };
+    let hooks_obj = hooks
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("{name} `hooks` is not an object"))?;
+
+    let mut swept = false;
     let mut emptied: Vec<String> = Vec::new();
     for (event, entries) in hooks_obj.iter_mut() {
         let Some(arr) = entries.as_array_mut() else {
@@ -96,6 +198,7 @@ pub(crate) fn merge_settings(
             };
             let had = hooks.len();
             hooks.retain(|h| !is_ours(h.get("command").and_then(|c| c.as_str()).unwrap_or("")));
+            swept |= hooks.len() < had;
             !(had > 0 && hooks.is_empty())
         });
         if before > 0 && arr.is_empty() {
@@ -105,20 +208,7 @@ pub(crate) fn merge_settings(
     for event in &emptied {
         hooks_obj.remove(event);
     }
-
-    for e in gate_entry.into_iter().chain(aggregated_entries) {
-        hooks_obj
-            .entry(e.event.clone())
-            .or_insert_with(|| serde_json::json!([]))
-            .as_array_mut()
-            .ok_or_else(|| anyhow!("settings.json `hooks.{}` is not an array", e.event))?
-            .push(e.to_json());
-    }
-
-    let serialised = serde_json::to_string_pretty(&value)?;
-    root.write(&settings_path, serialised + "\n")
-        .with_context(|| format!("write {}", settings_path.as_path().display()))?;
-    Ok(())
+    Ok(swept)
 }
 
 /// Whether `cmd` runs a file under the workspace's `.claude/hooks/` that is

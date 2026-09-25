@@ -186,8 +186,8 @@ lands_in() {
 ///
 /// A wrapper sits at `<workspace>/.claude/hooks/<file>`, a fixed depth, so it
 /// finds the workspace from its own location and needs no baked prefix and no
-/// environment variable. That is what lets a tracked wrapper work in every
-/// clone rather than only in the one that generated it.
+/// environment variable. That is what keeps a wrapper working after its clone
+/// is moved or renamed.
 ///
 /// The emitted wrapper:
 /// 1. Locates the workspace from its own path and derives the repo root and the

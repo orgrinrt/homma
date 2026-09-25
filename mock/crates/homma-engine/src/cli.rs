@@ -174,6 +174,17 @@ pub enum Command {
         op: SkillsOp,
     },
 
+    /// The personas a session can dispatch: what is authored, and generating
+    /// them.
+    ///
+    /// One persona is one file, authored as `.shared/agents/<name>.md.tmpl` and
+    /// generated into `.claude/agents/<name>.md`. The name it declares is its
+    /// filename, or it is refused.
+    Agents {
+        #[command(subcommand)]
+        op: AgentsOp,
+    },
+
     /// The release: a gate run on the pushing machine, its record and commit
     /// status, and the merge, tag, changelog, forge release and registry
     /// publish that carry the working trunk onto the release line.
@@ -440,6 +451,20 @@ pub enum SkillsOp {
     /// copied with its mode, since a skill's scripts are not prose. Each
     /// skill's generated directory is rewritten whole, so editing one by hand
     /// loses the edit on the next run.
+    Render {},
+}
+
+/// `agents` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum AgentsOp {
+    /// Every persona, and the sentence saying when to reach for it.
+    List {},
+
+    /// Generate the personas a session dispatches, from the authored templates.
+    ///
+    /// Each generated persona is rewritten whole, so editing one by hand loses
+    /// the edit on the next run. A generated persona whose template is gone is
+    /// named and left where it is.
     Render {},
 }
 

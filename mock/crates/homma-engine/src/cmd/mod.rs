@@ -16,6 +16,7 @@ use homma_core::Config;
 
 use crate::cli::{
     AgentOp,
+    AgentsOp,
     Cli,
     Command,
     ConfigOp,
@@ -28,6 +29,7 @@ use crate::cli::{
 };
 
 pub mod agent;
+pub mod agents;
 pub mod aggregate;
 pub mod archive;
 pub mod capture;
@@ -391,6 +393,22 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 SkillsOp::Render {} => {
                     let cfg = load_config(&cli)?;
                     skills::render::run(&cfg, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+            }
+        },
+        Command::Agents {
+            op,
+        } => {
+            match op {
+                AgentsOp::List {} => {
+                    let cfg = load_config(&cli)?;
+                    agents::list::run(&cfg, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                AgentsOp::Render {} => {
+                    let cfg = load_config(&cli)?;
+                    agents::render::run(&cfg, cli.output)?;
                     Ok(Outcome::Ok)
                 },
             }
