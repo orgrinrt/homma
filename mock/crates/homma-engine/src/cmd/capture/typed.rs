@@ -78,9 +78,12 @@ pub fn read(transcript: &Path) -> Result<Vec<Typed>> {
 
 /// `words` as typed, or with one wrapper the harness puts round a paste taken
 /// off: `<pasted_content id="N">`, a newline, the text, a newline, and
-/// `</pasted_content id="N">`.
+/// `</pasted_content id="N">`. The harness may put line breaks outside the
+/// wrapper too, and those are taken off with it; nothing else outside it is.
 fn unwrapped(words: &str) -> Option<&str> {
-    let rest = words.strip_prefix("<pasted_content id=\"")?;
+    let rest = words
+        .trim_matches('\n')
+        .strip_prefix("<pasted_content id=\"")?;
     let (id, rest) = rest.split_once("\">\n")?;
     let inner = rest.strip_suffix(&format!("\n</pasted_content id=\"{id}\">"))?;
     Some(inner)

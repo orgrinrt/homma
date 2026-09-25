@@ -109,6 +109,37 @@ fn a_line_a_tool_typed_is_dropped_bare_or_pasted() {
 }
 
 #[test]
+fn a_paste_with_line_breaks_round_its_wrapper_is_the_tools() {
+    // The shape the injector's `/compact` landed in on 2026-09-25: two line
+    // breaks before the wrapper and one after, which the harness put there.
+    let got = events(&[
+        typed("a", T1, &format!("\n\n{}\n", pasted("3", "/compact \"x\""))),
+        typed("b", T1, &format!("{}\n", pasted("4", "Continue"))),
+        typed("c", T2, "mine"),
+    ]);
+    let kept = without(got, &[
+        by_tool(T0, "/compact \"x\""),
+        by_tool(T0, "Continue"),
+    ]);
+    assert_eq!(said(&kept), ["mine"]);
+}
+
+#[test]
+fn only_line_breaks_outside_the_wrapper_are_the_harnesss() {
+    // The control for the arm above: anything else outside the wrapper, or line
+    // breaks round a bare text, is the person's.
+    let got = events(&[
+        typed("a", T1, &format!(" {}", pasted("3", "Continue"))),
+        typed("b", T1, &format!("{}\nand more", pasted("3", "Continue"))),
+        typed("c", T1, &format!("\t{}\n", pasted("3", "Continue"))),
+        typed("d", T1, "\nContinue\n"),
+        typed("e", T1, &format!("\n{}\n", pasted("3", "Continue\n"))),
+    ]);
+    let n = got.len();
+    assert_eq!(without(got, &[by_tool(T0, "Continue")]).len(), n);
+}
+
+#[test]
 fn the_same_words_are_the_persons_where_no_record_takes_them() {
     // One record takes one line: the person typing the same words after it
     // keeps theirs, and so does a line stamped before the tool typed.
