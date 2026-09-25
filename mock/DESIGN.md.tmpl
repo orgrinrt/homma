@@ -375,7 +375,12 @@ sets and neither can take the other's away. `settings.json` stays what every
 clone shares, written by hand, and the regen writes nothing into it: a
 registration of its own that it finds there is one an earlier regen put in the
 shared file, and it is swept, whichever member it names and whether or not
-this clone holds it, while every other one is kept as it is. Nothing in
+this clone holds it, while every other one is kept as it is. A registration
+is homma's by its name: a hook under `.claude/hooks/` named `<repo>--<rest>`,
+with something on both sides, is in homma's namespace whether or not its file
+is present, and one somebody wrote by hand takes another name or another
+directory, since a file homma did not write under such a name is the only
+thing that keeps it. Nothing in
 `settings.local.json` that is not homma's is touched, since that file also
 holds what the person at that clone allowed and prefers. Both files are read
 and swept before either is written, so one that does not parse leaves both as
