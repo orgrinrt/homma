@@ -175,6 +175,9 @@ fn a_shared_file_that_does_not_parse_is_an_error_and_the_local_one_is_not_writte
     );
 }
 
+#[path = "aggregate_settings_shared_tests.rs"]
+mod shared;
+
 fn entry(matcher: &str, command: &str) -> HookEntry {
     HookEntry {
         event:   "PreToolUse".into(),

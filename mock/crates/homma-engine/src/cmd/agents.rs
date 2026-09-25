@@ -24,10 +24,13 @@ pub const AUTHORED: &str = ".shared/agents";
 /// Where the generated personas go, relative to the workspace root.
 pub const GENERATED: &str = ".claude/agents";
 
+/// The authored corpus of the workspace `cfg` resolved.
 pub fn authored_dir(cfg: &Config) -> PathBuf {
     cfg.workspace.path.join(AUTHORED)
 }
 
+/// Every persona under `dir`, with the directory named in the error when one
+/// of them does not read.
 pub fn load(dir: &Path) -> Result<Personas> {
     Personas::load(dir).with_context(|| format!("reading the agent corpus at {}", dir.display()))
 }

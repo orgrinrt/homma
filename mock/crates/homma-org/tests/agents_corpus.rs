@@ -161,19 +161,24 @@ fn a_template_that_does_not_render_is_refused_and_nothing_is_written() {
     author(&d, "reviewer.md.tmpl", REVIEWER);
     author(
         &d,
-        "broken.md.tmpl",
-        "---\nname: broken\ndescription: Names a variable nobody defines.\n---\n\n{{ nobody }}\n",
+        "zz-broken.md.tmpl",
+        "---\nname: zz-broken\ndescription: Names a variable nobody defines.\n---\n\n{{ nobody }}\n",
     );
     let corpus = Personas::load(&d.join("agents")).unwrap();
+    // The good one renders first, so a pass writing each as it went would have
+    // written it before reaching the broken one; that is what the last
+    // assertion can catch.
+    let order: Vec<_> = corpus.personas.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(order, vec!["reviewer", "zz-broken"]);
     match corpus.render(&d.join("out")) {
         Err(AgentsError::Render {
             path,
             ..
-        }) => assert!(path.ends_with("broken.md.tmpl"), "{path:?}"),
+        }) => assert!(path.ends_with("zz-broken.md.tmpl"), "{path:?}"),
         other => panic!("expected a render refusal, got {other:?}"),
     }
-    // The good one sorts after it and was rendered too; none of it was written.
     assert!(!d.join("out/reviewer.md").exists());
+    assert!(!d.join("out").exists(), "not even the directory is made");
 }
 
 #[test]
@@ -235,4 +240,117 @@ fn an_absent_corpus_is_unreadable_and_an_empty_one_renders_nothing() {
     let corpus = Personas::load(&d.join("agents")).unwrap();
     assert!(corpus.render(&d.join("out")).unwrap().is_empty());
     assert!(corpus.unclaimed(&d.join("absent")).unwrap().is_empty());
+}
+
+/// A persona whose `key` line is `line` and whose other key is plain.
+fn with_line(key: &str, line: &str) -> String {
+    match key {
+        "name" => format!("---\n{line}\ndescription: Plain.\n---\n\nbody\n"),
+        _ => format!("---\nname: odd\n{line}\n---\n\nbody\n"),
+    }
+}
+
+#[test]
+fn a_folded_or_literal_block_on_either_key_is_refused() {
+    for key in ["name", "description"] {
+        for indicator in [">", "|", ">-", "|+", ">2"] {
+            let d = dir();
+            let line = format!("{key}: {indicator}");
+            author(
+                &d,
+                "odd.md.tmpl",
+                &format!("{}  odd\n", with_line(key, &line)),
+            );
+            match Personas::load(&d.join("agents")) {
+                Err(AgentsError::BadValue {
+                    key: k,
+                    value,
+                    ..
+                }) => {
+                    assert_eq!(k, key);
+                    assert_eq!(value, indicator);
+                },
+                other => panic!("`{line}` should be refused, got {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn a_comment_after_either_key_is_refused() {
+    for key in ["name", "description"] {
+        let value = if key == "name" { "odd" } else { "Plain." };
+        for line in [
+            format!("{key}: {value} # a note"),
+            format!("{key}: \"{value}\" # a note"),
+            format!("{key}: '{value}' # a note"),
+            format!("{key}: # nothing but a note"),
+        ] {
+            let d = dir();
+            author(&d, "odd.md.tmpl", &with_line(key, &line));
+            assert!(
+                matches!(
+                    Personas::load(&d.join("agents")),
+                    Err(AgentsError::BadValue { .. })
+                ),
+                "`{line}` should be refused"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_hash_that_is_not_a_comment_is_read_as_text() {
+    // The controls for the two arms above: a `#` with no space before it, and
+    // a ` #` inside a value quoted whole, are both text.
+    for (line, read) in [
+        ("description: Reads C#, and F#.", "Reads C#, and F#."),
+        (
+            "description: \"Counts the # of rows.\"",
+            "Counts the # of rows.",
+        ),
+        (
+            "description: 'Counts the # of rows.'",
+            "Counts the # of rows.",
+        ),
+        (
+            "description: Pipes a|b and compares a>b.",
+            "Pipes a|b and compares a>b.",
+        ),
+    ] {
+        let d = dir();
+        author(&d, "odd.md.tmpl", &with_line("description", line));
+        let corpus = Personas::load(&d.join("agents")).unwrap_or_else(|e| panic!("{line}: {e}"));
+        assert_eq!(corpus.personas[0].description, read);
+    }
+}
+
+#[test]
+fn a_nested_line_shaped_like_a_bad_value_is_not_read() {
+    // Only the top level is read, so a host field's nested `description: >`
+    // is the host's business and refuses nothing.
+    let d = dir();
+    author(
+        &d,
+        "reviewer.md.tmpl",
+        "---\nname: reviewer\ndescription: Reviews.\nhooks:\n  description: >\n    folded\n  name: x # note\n---\n\nbody\n",
+    );
+    let corpus = Personas::load(&d.join("agents")).unwrap();
+    assert_eq!(corpus.personas[0].description, "Reviews.");
+}
+
+#[test]
+fn a_generated_persona_ends_in_exactly_one_newline() {
+    for tail in ["", "\n", "\n\n\n", "  \n\t\n"] {
+        let d = dir();
+        author(
+            &d,
+            "reviewer.md.tmpl",
+            &format!("---\nname: reviewer\ndescription: Reviews.\n---\n\nbody{tail}"),
+        );
+        let corpus = Personas::load(&d.join("agents")).unwrap();
+        corpus.render(&d.join("out")).unwrap();
+        let out = fs::read_to_string(d.join("out/reviewer.md")).unwrap();
+        assert!(out.ends_with("body\n"), "{tail:?} gave {out:?}");
+    }
 }

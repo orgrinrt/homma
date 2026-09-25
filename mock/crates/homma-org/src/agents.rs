@@ -19,6 +19,9 @@
 //! reader finds the file by the other, and the second because the listing says
 //! it. A file in the corpus without the `.md.tmpl` suffix is not a persona and
 //! is left alone, which is where the corpus's own readme sits.
+//!
+//! A generated persona ends in exactly one newline, whatever the template
+//! ended on, so a template's trailing blank lines never show as a change.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -48,6 +51,7 @@ pub struct Persona {
 /// Everything under one `.shared/agents/` directory.
 #[derive(Debug, Clone, Default)]
 pub struct Personas {
+    /// Every persona read, sorted by name.
     pub personas: Vec<Persona>,
 }
 
@@ -67,6 +71,13 @@ pub enum AgentsError {
     Missing {
         path: PathBuf,
         key:  &'static str,
+    },
+    /// `name` or `description` is written in a shape this does not read: a
+    /// folded or literal block, or a value with a comment after it.
+    BadValue {
+        path:  PathBuf,
+        key:   &'static str,
+        value: String,
     },
     /// The declared name and the filename disagree.
     NameMismatch {
@@ -109,6 +120,19 @@ impl std::fmt::Display for AgentsError {
                 write!(
                     f,
                     "{}: the frontmatter has no `{key}` at its top level, or it is empty",
+                    path.display()
+                )
+            },
+            Self::BadValue {
+                path,
+                key,
+                value,
+            } => {
+                write!(
+                    f,
+                    "{}: `{key}: {value}` is a folded or literal block, or carries a comment, \
+                     and only a plain or quoted value on its own line is read; write it on one \
+                     line, quoted where it holds a ` #`",
                     path.display()
                 )
             },
@@ -283,7 +307,9 @@ impl Personas {
 ///
 /// Read off the lines rather than parsed as a whole, since the host's own
 /// fields may nest and none of them is this corpus's to interpret. A line is
-/// top level when it does not start with whitespace.
+/// top level when it does not start with whitespace. Either key written as a
+/// folded or literal block, or with a comment after its value, is refused by
+/// [`plain`] rather than read as text the author did not mean.
 fn declared(source: &str, path: &Path) -> Result<(String, String), AgentsError> {
     let no_block = || {
         AgentsError::NoFrontmatter {
@@ -308,10 +334,9 @@ fn declared(source: &str, path: &Path) -> Result<(String, String), AgentsError> 
         let Some((key, value)) = line.split_once(':') else {
             continue;
         };
-        let value = unquote(value.trim());
         match key.trim() {
-            "name" => name = Some(value),
-            "description" => description = Some(value),
+            "name" => name = Some(plain(value, "name", path)?),
+            "description" => description = Some(plain(value, "description", path)?),
             _ => {},
         }
     }
@@ -327,12 +352,25 @@ fn declared(source: &str, path: &Path) -> Result<(String, String), AgentsError> 
     Ok((present(name, "name")?, present(description, "description")?))
 }
 
-/// A value with one pair of matching outer quotes taken off.
-fn unquote(v: &str) -> String {
-    for q in ['"', '\''] {
-        if let Some(inner) = v.strip_prefix(q).and_then(|s| s.strip_suffix(q)) {
-            return inner.to_string();
-        }
+/// One key's value as written after the colon, with its quotes taken off.
+///
+/// A value opening with `>` or `|` is a folded or literal block whose text is
+/// on the lines below, and a ` #` outside a quoted value starts a comment,
+/// which YAML drops and a line read would keep. Both are refused. A value
+/// quoted whole may carry a ` #`, since there it is text.
+fn plain(raw: &str, key: &'static str, path: &Path) -> Result<String, AgentsError> {
+    let v = raw.trim();
+    let quoted_whole = ['"', '\'']
+        .into_iter()
+        .any(|q| v.len() >= 2 && v.starts_with(q) && v.ends_with(q));
+    let block = v.starts_with('>') || v.starts_with('|');
+    let comment = !quoted_whole && (v.starts_with('#') || v.contains(" #"));
+    if block || comment {
+        return Err(AgentsError::BadValue {
+            path: path.to_path_buf(),
+            key,
+            value: v.to_string(),
+        });
     }
-    v.to_string()
+    Ok(homma_api::frontmatter::unquote(v))
 }

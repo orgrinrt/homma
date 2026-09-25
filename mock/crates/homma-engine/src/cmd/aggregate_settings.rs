@@ -49,11 +49,15 @@ const SHARED: &str = ".claude/settings.json";
 /// alternative deletes working guards from every workspace holding a
 /// different subset of the manifest, which is every workspace.
 ///
+/// All of that is about the local file. The shared one holds nothing homma
+/// writes, so there a registration of homma's shape is swept whichever repo it
+/// names, visited or not.
+///
 /// Every event is swept and written, not only `PreToolUse`, and a registration
 /// is swept only when it is homma's: a retired shape, or a managed name whose
 /// file is absent or carries [`MANAGED_MARK`](super::MANAGED_MARK). A file
 /// under a managed name that homma did not write keeps its registration
-/// exactly as it is.
+/// exactly as it is, in either file.
 pub(crate) fn merge_settings(
     root: &Root,
     known_repos: &[&str],
@@ -71,18 +75,27 @@ pub(crate) fn merge_settings(
             || crate::cmd::declared::is_declared_command(cmd);
         managed && !names_a_file_homma_did_not_write(&hooks_dir, cmd)
     };
+    // In the shared file nothing homma writes belongs at all, so a
+    // registration of its shape goes whichever repo it names. Keeping an
+    // unvisited repo's entry is the local file's business, where it brings the
+    // guard back once that repo is cloned.
+    let is_ours_anywhere = |cmd: &str| -> bool {
+        is_ours(cmd)
+            || (is_any_aggregated_command(cmd)
+                && !names_a_file_homma_did_not_write(&hooks_dir, cmd))
+    };
 
-    // The shared file first: read only if it is there, and written only if the
-    // sweep took something out of it.
+    // Both files are read and swept before either is written, so a file that
+    // does not parse, or is not the shape a settings file has, leaves both as
+    // they were rather than one swept and the other never given what it lost.
     let shared = contain(root, SHARED)?;
-    if let Some(mut value) = read_settings(&shared)? {
-        if sweep(&mut value, SHARED, &is_ours)? {
-            write_settings(root, &shared, &value)?;
-        }
-    }
+    let mut shared_value = read_settings(&shared)?;
+    let shared_swept = match shared_value.as_mut() {
+        Some(value) => sweep(value, SHARED, &is_ours_anywhere)?,
+        None => false,
+    };
 
     let local = contain(root, LOCAL)?;
-    root.create_dir_all(&contain(root, ".claude")?).ok();
     let mut value = read_settings(&local)?.unwrap_or_else(|| serde_json::json!({}));
     sweep(&mut value, LOCAL, &is_ours)?;
     let hooks_obj = hooks_of(&mut value, LOCAL)?;
@@ -94,7 +107,26 @@ pub(crate) fn merge_settings(
             .ok_or_else(|| anyhow!("{LOCAL} `hooks.{}` is not an array", e.event))?
             .push(e.to_json());
     }
-    write_settings(root, &local, &value)
+
+    // The local file first: a failure between the two writes then leaves a
+    // registration in both files, which runs twice, rather than in neither.
+    root.create_dir_all(&contain(root, ".claude")?).ok();
+    write_settings(root, &local, &value)?;
+    if let (true, Some(value)) = (shared_swept, shared_value.as_ref()) {
+        write_settings(root, &shared, value)?;
+    }
+    Ok(())
+}
+
+/// True if a hook command runs a file of homma's aggregated shape,
+/// `<repo>--<name>` under `.claude/hooks/`, whichever repo it names. The
+/// workspace gate and the declared hooks are this shape too, under `_workspace`
+/// and `_declared`, so this is every name homma gives a wrapper.
+fn is_any_aggregated_command(cmd: &str) -> bool {
+    hook_file_named(cmd).is_some_and(|name| {
+        name.split_once("--")
+            .is_some_and(|(repo, rest)| !repo.is_empty() && !rest.is_empty())
+    })
 }
 
 /// A settings file parsed, or `None` when it is absent or holds only

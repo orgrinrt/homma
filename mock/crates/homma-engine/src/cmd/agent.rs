@@ -595,9 +595,9 @@ pub mod regen {
             let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
             let visited_repos: Vec<&str> = visited.iter().map(String::as_str).collect();
             // The manifest's own `local_path`, workspace-relative, rather than
-            // the absolute form this run resolved. The gate script is tracked,
-            // so an absolute path in it names the workspace that generated it
-            // and matches nothing anywhere else.
+            // the absolute form this run resolved. An absolute path in the
+            // gate script names where the clone sat when it generated, and
+            // stops matching the moment the clone is moved or renamed.
             let repo_paths: Vec<(String, String)> = cfg
                 .repos
                 .iter()
