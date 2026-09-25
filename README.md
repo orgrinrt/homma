@@ -48,6 +48,7 @@ into anything that has to keep running unattended just yet.
 | `homma capture` | Copies what the person at the keyboard said to an agent session out of its transcript into the workspace's capture store, word for word, with every question put to them, its options and the answer. Only what came after the last capture from that session is taken, so a second run over the same session writes nothing, and the file is written and not committed |
 | `homma org <op>` | The registry of who works here, and standing an entry up with its directories and its own clone |
 | `homma agent <op>` | Reports which member repos carry their own template scaffolding, and drives each one's regeneration |
+| `homma agents <op>` | Lists the agent personas and what each is for, and generates them from what is authored, naming any generated one nothing authored claims |
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
 | `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored |
 | `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |
