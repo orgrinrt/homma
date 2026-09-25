@@ -9,6 +9,7 @@
 //! a session ends is a transcript; what the entry describes is still true, so
 //! starting it again restores a participant rather than creating a new one.
 
+pub mod agents;
 pub mod configs;
 pub mod generate;
 pub mod provision;
