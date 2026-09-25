@@ -255,11 +255,13 @@ fn a_folded_or_literal_block_on_either_key_is_refused() {
     for key in ["name", "description"] {
         for indicator in [">", "|", ">-", "|+", ">2"] {
             let d = dir();
+            // The block's text on the indented line below it, inside the
+            // frontmatter where a folded value puts it.
             let line = format!("{key}: {indicator}");
             author(
                 &d,
                 "odd.md.tmpl",
-                &format!("{}  odd\n", with_line(key, &line)),
+                &with_line(key, &format!("{line}\n  odd")),
             );
             match Personas::load(&d.join("agents")) {
                 Err(AgentsError::BadValue {
@@ -285,6 +287,9 @@ fn a_comment_after_either_key_is_refused() {
             format!("{key}: \"{value}\" # a note"),
             format!("{key}: '{value}' # a note"),
             format!("{key}: # nothing but a note"),
+            format!("{key}: {value}\t# a note after a tab"),
+            format!("{key}: \"{value}\" # and \""),
+            format!("{key}: '{value}' # and '"),
         ] {
             let d = dir();
             author(&d, "odd.md.tmpl", &with_line(key, &line));
@@ -317,6 +322,13 @@ fn a_hash_that_is_not_a_comment_is_read_as_text() {
             "description: Pipes a|b and compares a>b.",
             "Pipes a|b and compares a>b.",
         ),
+        // A quote escaped inside a value quoted whole does not end it, so the
+        // ` #` after it is still text.
+        (
+            "description: \"Says \\\"hi\\\" # twice.\"",
+            "Says \\\"hi\\\" # twice.",
+        ),
+        ("description: 'It''s # one.'", "It''s # one."),
     ] {
         let d = dir();
         author(&d, "odd.md.tmpl", &with_line("description", line));

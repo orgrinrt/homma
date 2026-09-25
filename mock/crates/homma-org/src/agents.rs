@@ -355,16 +355,26 @@ fn declared(source: &str, path: &Path) -> Result<(String, String), AgentsError> 
 /// One key's value as written after the colon, with its quotes taken off.
 ///
 /// A value opening with `>` or `|` is a folded or literal block whose text is
-/// on the lines below, and a ` #` outside a quoted value starts a comment,
-/// which YAML drops and a line read would keep. Both are refused. A value
-/// quoted whole may carry a ` #`, since there it is text.
+/// on the lines below, and a `#` after a space or a tab outside a quoted value
+/// starts a comment, which YAML drops and a line read would keep. Both are
+/// refused. A value quoted whole may carry one, since there it is text.
 fn plain(raw: &str, key: &'static str, path: &Path) -> Result<String, AgentsError> {
     let v = raw.trim();
-    let quoted_whole = ['"', '\'']
+    // Quoted whole only where the quote closes at the end and nowhere before
+    // it, its escaped form aside: `\"` inside double quotes, `''` inside single.
+    let quoted_whole = [('"', "\\\""), ('\'', "''")]
         .into_iter()
-        .any(|q| v.len() >= 2 && v.starts_with(q) && v.ends_with(q));
+        .any(|(q, escaped)| {
+            v.len() >= 2
+                && v.starts_with(q)
+                && v.ends_with(q)
+                && !v[1 .. v.len() - 1].replace(escaped, "").contains(q)
+        });
     let block = v.starts_with('>') || v.starts_with('|');
-    let comment = !quoted_whole && (v.starts_with('#') || v.contains(" #"));
+    let after_space = v
+        .char_indices()
+        .any(|(i, c)| c == '#' && v[.. i].ends_with(char::is_whitespace));
+    let comment = !quoted_whole && (v.starts_with('#') || after_space);
     if block || comment {
         return Err(AgentsError::BadValue {
             path: path.to_path_buf(),

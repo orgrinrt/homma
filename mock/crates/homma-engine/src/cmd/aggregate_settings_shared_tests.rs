@@ -112,6 +112,29 @@ fn an_unvisited_repos_registration_is_kept_in_the_local_file_and_swept_from_the_
 }
 
 #[test]
+fn a_hand_written_name_in_hommas_shape_with_no_file_is_swept_as_homma_s() {
+    // The design gives the `<repo>--<rest>` name under `.claude/hooks/` to
+    // homma, so a hook named that way with no file here is one of homma's
+    // left behind, whoever wrote it; the arm below is the one thing that keeps
+    // such a name.
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path();
+    seed_shared(
+        workspace,
+        r#"{"hooks":{"PreToolUse":[
+            {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/pre--commit.sh"}]},
+            {"matcher":"Bash","hooks":[{"type":"command","command":"scripts/pre--commit.sh"}]}
+        ]}}"#,
+    );
+
+    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+
+    let shared: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
+    assert_eq!(commands(&shared), vec!["scripts/pre--commit.sh"]);
+}
+
+#[test]
 fn a_file_under_hommas_shape_that_homma_did_not_write_keeps_its_shared_registration() {
     // Somebody's own hook, named the way homma names one, and two names that
     // only look like the shape: nothing before the separator, nothing after.
