@@ -10,12 +10,21 @@
 //! shape named here, and a line of such a shape with a field missing or of the
 //! wrong kind is refused by line number rather than passed over, since passing
 //! over it would drop the person's words without a trace.
+//!
+//! One line that does not parse is read all the same: the start of an object
+//! the harness left cut off, with a complete object after it, is read as the
+//! complete object, and [`Transcript::recovered`] says which line and how
+//! many bytes before the object were dropped. A line with no object ending it is
+//! still refused by number.
 
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
 use jiff::Timestamp;
 use serde_json::{Map, Value};
+
+use super::ask::{self, Answering, Calls, Unasked};
+use super::cut::{self, Recovered};
 
 /// What the harness writes as the answer when the person wrote notes and picked
 /// nothing. Its words, never theirs.
@@ -99,13 +108,18 @@ impl Event {
 #[derive(Debug, Default)]
 pub struct Transcript {
     /// Every event, in the order the lines give them.
-    pub events: Vec<Event>,
+    pub events:    Vec<Event>,
     /// The line each `uuid` was first written on, which is what a watermark
     /// is looked up in.
-    pub lines:  HashMap<String, usize>,
+    pub lines:     HashMap<String, usize>,
     /// The `uuid` of the last complete line carrying one, the watermark a
     /// capture of all of this records.
-    pub last:   Option<String>,
+    pub last:      Option<String>,
+    /// The lines read as the object that ends them, in the order they sit in
+    /// the file.
+    pub recovered: Vec<Recovered>,
+    /// The tool results whose call no earlier line holds, in file order.
+    pub unasked:   Vec<Unasked>,
 }
 
 impl Transcript {
@@ -120,7 +134,8 @@ impl Transcript {
 /// A last line with no newline is still being written and is not read. A
 /// message the harness wrote more than once, as a queued-command attachment and
 /// a typed line, or as two attachments, is tied by `source_uuid` and read where
-/// it was written first.
+/// it was written first. A line that does not parse whole is read as the
+/// object that ends it where there is one, and is in [`Transcript::recovered`].
 pub fn read(text: &str) -> Result<Transcript> {
     let complete = text.rfind('\n').map_or("", |i| &text[..= i]);
     let mut out = Transcript::default();
@@ -129,16 +144,27 @@ pub fn read(text: &str) -> Result<Transcript> {
     // the uuid a queued attachment names as `source_uuid`. A key met again is
     // a copy, and is not read.
     let mut messages: HashSet<String> = HashSet::new();
-    // The ids of the calls the agent made to ask the person something. A tool
-    // result is a round only when it answers one of these.
-    let mut asks: HashSet<String> = HashSet::new();
+    // The calls the agent made. A tool result is a round when it answers one of
+    // the asks among them, and is looked at again when it answers none.
+    let mut calls = Calls::default();
     for (at, line) in complete.lines().enumerate() {
         let n = at + 1;
         if line.trim().is_empty() {
             continue;
         }
-        let v: Value = serde_json::from_str(line)
-            .with_context(|| format!("transcript line {n} is not JSON"))?;
+        let v: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                let Some(end) = cut::ending(line) else {
+                    return Err(e).with_context(|| format!("transcript line {n} is not JSON"));
+                };
+                out.recovered.push(Recovered {
+                    line:    n,
+                    dropped: end.dropped,
+                });
+                end.object
+            },
+        };
         let Some(o) = v.as_object() else {
             bail!("transcript line {n} is not an object");
         };
@@ -160,11 +186,12 @@ pub fn read(text: &str) -> Result<Transcript> {
                 if let Some(t) = last_text(o) {
                     before = Some(t);
                 }
-                asks.extend(ask_calls(o));
+                calls.note(o);
                 None
             },
             Some("user") => {
-                let said = user(o, &asks).with_context(|| format!("transcript line {n}"))?;
+                let said = user(o, &calls, n, &mut out.unasked)
+                    .with_context(|| format!("transcript line {n}"))?;
                 if let (Some(Happened::Said(_)), Some(u)) = (&said, uuid) {
                     if !messages.insert(u.to_string()) {
                         continue;
@@ -228,58 +255,53 @@ fn last_text(o: &Map<String, Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// The tool the agent calls to put questions to the person.
-pub const ASK: &str = "AskUserQuestion";
-
-/// The ids of the ask calls on an assistant line.
-fn ask_calls(o: &Map<String, Value>) -> Vec<String> {
-    let Some(blocks) = o
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(Value::as_array)
-    else {
-        return Vec::new();
-    };
-    blocks
-        .iter()
-        .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_use"))
-        .filter(|b| b.get("name").and_then(Value::as_str) == Some(ASK))
-        .filter_map(|b| b.get("id").and_then(Value::as_str))
-        .map(str::to_string)
-        .collect()
+/// A round as something said, unless nobody answered it: the harness's timeout
+/// among them, said nothing.
+fn answered_round(qs: Vec<Question>) -> Option<Happened> {
+    qs.iter()
+        .any(|q| q.answer != Answer::default() || q.notes.is_some())
+        .then_some(Happened::Answered(qs))
 }
 
-/// Whether a user line carries the result of one of `asks`.
-fn answers_an_ask(o: &Map<String, Value>, asks: &HashSet<String>) -> bool {
-    o.get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(Value::as_array)
-        .is_some_and(|blocks| {
-            blocks.iter().any(|b| {
-                b.get("type").and_then(Value::as_str) == Some("tool_result")
-                    && b.get("tool_use_id")
-                        .and_then(Value::as_str)
-                        .is_some_and(|id| asks.contains(id))
-            })
-        })
-}
-
-fn user(o: &Map<String, Value>, asks: &HashSet<String>) -> Result<Option<Happened>> {
-    if answers_an_ask(o, asks) {
+fn user(
+    o: &Map<String, Value>,
+    calls: &Calls,
+    n: usize,
+    unasked: &mut Vec<Unasked>,
+) -> Result<Option<Happened>> {
+    let result = o.get("toolUseResult").and_then(Value::as_object);
+    match calls.answering(o) {
         // A rejected ask carries a string here rather than a round, and says
         // nothing of the person's.
-        return match o.get("toolUseResult").and_then(Value::as_object) {
-            // A round nobody answered, the harness's timeout among them, said
-            // nothing.
-            Some(r) => {
-                round(r).map(|qs| {
-                    qs.iter()
-                        .any(|q| q.answer != Answer::default() || q.notes.is_some())
-                        .then_some(Happened::Answered(qs))
-                })
-            },
-            None => Ok(None),
-        };
+        Answering::Ask => return result.map_or(Ok(None), |r| round(r).map(answered_round)),
+        // The call is on no line, which is what a cut write leaves of the line
+        // that carried the question. The answer is the person's, so a result
+        // with a round's shape is read as one, and one with its keys that
+        // cannot be read is said, not refused.
+        Answering::Unknown => {
+            if let Some(r) = result.filter(|r| ask::shaped(r)) {
+                return Ok(match round(r) {
+                    Ok(qs) => {
+                        let said = answered_round(qs);
+                        if said.is_some() {
+                            unasked.push(Unasked {
+                                line: n,
+                                read: true,
+                            });
+                        }
+                        said
+                    },
+                    Err(_) => {
+                        unasked.push(Unasked {
+                            line: n,
+                            read: false,
+                        });
+                        None
+                    },
+                });
+            }
+        },
+        Answering::Other => {},
     }
     if !human(o.get("origin")) {
         return Ok(None);

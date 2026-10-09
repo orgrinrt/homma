@@ -95,6 +95,26 @@ fn a_bad_record_is_refused_by_its_line() {
 }
 
 #[test]
+fn a_record_cut_short_is_refused_where_the_transcript_recovers() {
+    // The shape the transcript reader recovers: the start of one object and a
+    // whole one after it on the same line. Whether the tool's append can be cut
+    // that way is not known, and a record skipped would leave a tool's line
+    // quoted as the person's, so a record that will not parse stays refused by
+    // its line.
+    let whole = json!({"at": T1, "text": "Continue"}).to_string();
+    let cut = format!("{{\"at\":\"{T0}\",\"text\":\"/comp{whole}");
+    let err = format!(
+        "{:#}",
+        records(&format!("{}\n{cut}\n", json!({"at": T0, "text": "x"}))).expect_err("refused")
+    );
+    assert!(err.contains("typed-by-tools line 2 is not JSON"), "{err}");
+    // The control: with the cut line gone, the record reads.
+    assert_eq!(records(&format!("{whole}\n")).expect("reads"), [by_tool(
+        T1, "Continue"
+    )]);
+}
+
+#[test]
 fn a_line_a_tool_typed_is_dropped_bare_or_pasted() {
     let got = events(&[
         typed("a", T1, "/compact \"keep the goal\""),

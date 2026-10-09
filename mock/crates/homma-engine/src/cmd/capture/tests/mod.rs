@@ -9,11 +9,13 @@
 use serde_json::{Value, json};
 
 mod answers;
+mod cut;
 mod make;
 mod render;
 mod store;
 mod transcript;
 mod typed;
+mod unasked;
 
 /// One transcript out of lines.
 fn lines(v: &[Value]) -> String {

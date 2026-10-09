@@ -250,7 +250,7 @@ fn a_round_nobody_answered_said_nothing() {
 }
 
 #[test]
-fn only_a_result_answering_an_ask_call_is_read_as_a_round() {
+fn a_result_answering_another_tools_call_is_never_a_round() {
     // Another tool's result shaped like a round, malformed or whole, is not
     // one: `answers` without `questions`, and a whole round's shape under a
     // call to some other tool.
@@ -261,15 +261,15 @@ fn only_a_result_answering_an_ask_call_is_read_as_a_round() {
         let line = json!({"type": "user", "uuid": "b", "timestamp": T1,
             "message": {"content": [{"type": "tool_result", "tool_use_id": "t9"}]},
             "toolUseResult": result});
-        let got = events(&lines(&[other, line])).expect("another tool's result is not refused");
+        let t = read(&lines(&[other, line])).expect("another tool's result is not refused");
+        let got = t.events;
+        assert!(
+            t.unasked.is_empty(),
+            "its call is held, so nothing is said: {:?}",
+            t.unasked
+        );
         assert!(got.is_empty(), "{got:?}");
     }
-    // A round whose call the transcript never shows is not read either.
-    assert!(
-        events(&lines(&[round("r", T1, "Left", "Red", None)]))
-            .expect("reads")
-            .is_empty()
-    );
     // The control: the same result answering an ask call is a round.
     let got = events(&lines(&[asking("x"), round("x", T1, "Left", "Red", None)])).expect("reads");
     assert!(matches!(got[0].what, Happened::Answered(_)), "{got:?}");

@@ -25,6 +25,8 @@ use self::transcript::Transcript;
 use crate::cli::OutputFormat;
 use crate::output::{HumanRender, emit};
 
+pub mod ask;
+pub mod cut;
 pub mod render;
 pub mod store;
 pub mod transcript;
@@ -188,6 +190,15 @@ pub fn run(
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let mut read = transcript::read(&text)?;
+    // A line read as the object that ends it lost the bytes before it, and
+    // this is where that is said, before anything else can stop the run.
+    for r in &read.recovered {
+        eprintln!("warning: {r}");
+    }
+    // And a tool result whose question is nowhere, read by its shape or not.
+    for u in &read.unasked {
+        eprintln!("warning: {u}");
+    }
     // What a tool typed into the terminal is the tool's, not the person's.
     read.events = typed::without(std::mem::take(&mut read.events), &typed::read(&path)?);
     let mark = store::watermark(&dir, &session, &read)?;

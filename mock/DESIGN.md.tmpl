@@ -188,6 +188,27 @@ that repository's name; an id found nowhere is refused rather than replaced by
 another session. A last line with no newline is still being written and is not
 read.
 
+A write to the harness's file is sometimes left cut off inside a string, and the
+next line is written straight after it before any newline: one line of the file
+then holds the start of an object and a complete object after it. The file does
+not say what made the write stop, and nothing else in it holds the rest. Such a
+line is read as the complete object that ends it, taken from the first `{` on
+the line from which the rest of it is one object, and the bytes before that are
+dropped. What the cut write held is lost with them, and the run says so on
+stderr, once for each line it
+recovered, naming the line by its number and the bytes dropped, so the loss is
+in the output of every run that meets the line while the report on stdout stays
+what something parses. The recovered object is an ordinary line from then on,
+with its own `uuid` for the watermark and its own place in the order. A line is
+read this way only when the bytes before the object begin with `{` and the
+parser reaches the end of them with the object it began still open, which is
+what a cut write is. Any other line that does not parse is refused by its
+number, as any line of a read shape with a field missing is: one with no object
+running to its end, one with text before the object that is not the start of
+one, and complete lines run together, whether two, or three, or one beside a
+cut write, since reading only the last would drop a complete record without a
+word.
+
 The words are copied out of the transcript's structured fields and never
 rewritten, so every quoted span equals a string the transcript holds. A line is
 the person's when the harness marks its origin as human, since hook output,
@@ -205,7 +226,10 @@ first that fits, so the person typing the same words later is still the person.
 A tool writes its record before typing and nothing confirms the typing landed,
 so the bound is what keeps a failed paste's record from taking the person's own
 words later; a tool's line landing past it is quoted as the person's, which is
-visible in the file. A
+visible in the file. A line of the record that does not parse is refused by its
+number and nothing on it is recovered, since a record skipped would leave a
+tool's line quoted as the person's, and the tool appends one short object a
+call. A
 message typed while a turn runs is read where it landed: as a typed line once the
 turn ended, or as the queued-command attachment the running turn took it in. The
 harness can write one message more than once, as an attachment and a typed line
@@ -218,9 +242,18 @@ answered question is read whole off its tool result, which carries the
 questions, their options, the answers and the notes. A tool result is an ask
 round when the `tool_use_id` on its content block names a call the agent made to
 `AskUserQuestion`, found on an earlier assistant line with that id and that
-`name`, and only then; any other tool's result is not read, whatever keys it
-has. A round in which no question has an answer or a note, the harness's own
-timeout among them, said nothing and is not read either.
+`name`; a result naming the call of any other tool is not read, whatever keys it
+has. A result naming a call that no earlier line holds, which is what a cut
+write leaves of the line that carried the question, is read as a round all the
+same when its own `toolUseResult` has a round's shape, the `questions` and the
+`answers` the harness writes into it, and the run says so on stderr naming the
+line, since an answer is the person's words and losing the line that asked must
+not lose them. One that has `questions` or `answers` and cannot be read as a
+round is not read and is not a refusal, and the run says on stderr which line
+holds it and that what it says is not in the capture, so the loss is in the
+output. One with neither is nobody's words and passes without a word. A round in
+which no question has an answer or a note, the harness's own timeout among them,
+said nothing and is not read either.
 
 Only the person's words are blockquotes in the file. The voice tool reads every
 blockquote in a capture as one of their remarks, so the agent's text around them,
