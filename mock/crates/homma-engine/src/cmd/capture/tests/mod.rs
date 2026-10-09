@@ -15,6 +15,7 @@ mod render;
 mod store;
 mod transcript;
 mod typed;
+mod unasked;
 
 /// One transcript out of lines.
 fn lines(v: &[Value]) -> String {

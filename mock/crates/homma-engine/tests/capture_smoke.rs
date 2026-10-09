@@ -398,6 +398,67 @@ fn a_transcript_line_left_cut_off_is_recovered_and_said_so() {
 }
 
 #[test]
+fn an_answer_without_its_question_is_said_on_stderr() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    // A round answered with no call to `AskUserQuestion` on any line, as when
+    // the line that held the call was cut away.
+    let round = |questions: serde_json::Value| {
+        serde_json::json!({
+            "type": "user", "uuid": "r", "timestamp": "2026-09-24T14:30:00Z",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "ask-gone"}]},
+            "toolUseResult": {
+                "questions": questions,
+                "answers": {"Which way?": "the long way round"},
+            },
+        })
+        .to_string()
+    };
+    let whole = serde_json::json!([{
+        "question": "Which way?", "header": "Way", "multiSelect": false,
+        "options": [{"label": "Left", "description": "Go left."}],
+    }]);
+    std::fs::write(&t, format!("{SAID}\n{}\n", round(whole))).unwrap();
+    capture(&root, &home, &[
+        "--title",
+        "Read",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stdout(predicate::str::contains("1 said, 1 asked"))
+    .stderr(predicate::str::contains(
+        "warning: transcript line 2 carries the result of a question the transcript does not \
+         hold, read as a round by its own shape",
+    ));
+    let names = store(&root);
+    let body = std::fs::read_to_string(root.join(".data/op-responses").join(&names[0])).unwrap();
+    assert!(body.contains("> the long way round\n"), "{body}");
+
+    // One that cannot be read as a round is said, and is not a refusal.
+    let broken = serde_json::json!([{"question": "Which way?", "options": []}]);
+    std::fs::write(&t, format!("{SAID}\n{}\n", round(broken))).unwrap();
+    let into = dir.path().join("second");
+    capture(&root, &home, &[
+        "--title",
+        "Said",
+        "--session",
+        t.to_str().unwrap(),
+        "--into",
+        into.to_str().unwrap(),
+    ])
+    .success()
+    .stdout(predicate::str::contains("1 said, 0 asked"))
+    .stderr(predicate::str::contains(
+        "warning: transcript line 2 carries the result of a question the transcript does not \
+         hold, and it could not be read as a round, so what it says is not in the capture",
+    ));
+    let body = std::fs::read_to_string(into.join("202609241400_said.md")).unwrap();
+    assert!(!body.contains("the long way round"), "{body}");
+}
+
+#[test]
 fn a_session_by_path_and_a_store_by_flag() {
     let dir = tempfile::tempdir().unwrap();
     let (root, home) = workspace(dir.path());

@@ -23,6 +23,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use jiff::Timestamp;
 use serde_json::{Map, Value};
 
+use super::ask::Unasked;
 use super::cut::{self, Recovered};
 
 /// What the harness writes as the answer when the person wrote notes and picked
@@ -117,6 +118,8 @@ pub struct Transcript {
     /// The lines read as the object that ends them, in the order they sit in
     /// the file.
     pub recovered: Vec<Recovered>,
+    /// The tool results whose call no earlier line holds, in file order.
+    pub unasked:   Vec<Unasked>,
 }
 
 impl Transcript {

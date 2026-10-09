@@ -199,7 +199,7 @@ fn every_recovered_line_is_reported_by_number_and_bytes() {
         )
     );
     // One byte is a byte.
-    let one = format!("x{}", whole("e", T1, "y"));
+    let one = format!("{{{}", whole("e", T1, "y"));
     let t = read(&around(&one)).expect("reads");
     assert_eq!(
         t.recovered[0].to_string(),
@@ -208,4 +208,63 @@ fn every_recovered_line_is_reported_by_number_and_bytes() {
     // The control: a transcript with nothing cut has nothing to report.
     let clean = read(&around(&whole("b", T1, "one"))).expect("reads");
     assert!(clean.recovered.is_empty());
+}
+
+#[test]
+fn a_line_that_is_not_a_cut_write_is_refused_by_number() {
+    // A cut write is the start of an object, ended by the end of the input.
+    // Each of these puts something else before the last whole object, and
+    // reading only that object would drop what is before it.
+    let one = whole("b", T1, "one");
+    let two = whole("d", T1, "two");
+    let three = whole("e", T1, "three");
+    let cases = [
+        (
+            "three whole lines run together",
+            format!("{one}{two}{three}"),
+        ),
+        (
+            "a whole line, a cut write, a whole line",
+            format!("{one}{HEAD}{three}"),
+        ),
+        (
+            "a cut write, then two whole lines",
+            format!("{HEAD}{one}{two}"),
+        ),
+        (
+            "a whole line, text, a whole line",
+            format!("{one}and some text{two}"),
+        ),
+        (
+            "text that is not an object's start before the object",
+            format!("x{one}"),
+        ),
+        (
+            "an object's start the parser refuses before it ends",
+            format!("{{ this is not json {one}"),
+        ),
+    ];
+    let read_anyway: Vec<&str> = cases
+        .iter()
+        .filter(|(_, line)| events(&around(line)).is_ok())
+        .map(|(name, _)| *name)
+        .collect();
+    assert!(
+        read_anyway.is_empty(),
+        "read when it should have been refused: {read_anyway:?}"
+    );
+    for (name, line) in &cases {
+        let err = refused(line);
+        assert!(
+            err.contains("transcript line 2 is not JSON"),
+            "{name}: {err}"
+        );
+    }
+    // The control: a cut write before one whole line is still read.
+    assert_eq!(
+        events(&around(&format!("{HEAD}{two}")))
+            .expect("reads")
+            .len(),
+        3
+    );
 }

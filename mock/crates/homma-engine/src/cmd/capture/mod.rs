@@ -25,6 +25,7 @@ use self::transcript::Transcript;
 use crate::cli::OutputFormat;
 use crate::output::{HumanRender, emit};
 
+pub mod ask;
 pub mod cut;
 pub mod render;
 pub mod store;
