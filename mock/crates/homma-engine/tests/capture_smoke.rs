@@ -343,6 +343,61 @@ fn what_a_tool_typed_beside_the_transcript_is_left_out() {
 }
 
 #[test]
+fn a_transcript_line_cut_by_a_second_writer_is_recovered_and_said_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    // The start of one object, cut inside a string, and a whole one after it
+    // on the same line: line 2 of the file.
+    let head = r#"{"parentUuid":"p0","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"a long reply that stops"#;
+    std::fs::write(&t, format!("{SAID}\n{head}{MORE}\n")).unwrap();
+    let said = capture(&root, &home, &[
+        "--title",
+        "Cut",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stdout(predicate::str::contains("2 said, 0 asked"));
+    // The loss is in the output: which line, and how many bytes before the
+    // object went.
+    let notice = format!(
+        "transcript line 2 does not parse whole: read the object that ends it and dropped {} bytes before it",
+        head.len()
+    );
+    said.stderr(predicate::str::contains(notice.as_str()));
+    let names = store(&root);
+    assert_eq!(names.len(), 1, "{names:?}");
+    let body = std::fs::read_to_string(root.join(".data/op-responses").join(&names[0])).unwrap();
+    assert!(
+        body.contains("> hello there\n") && body.contains("> and more\n"),
+        "{body}"
+    );
+    // Nothing new on a second run, and the line is still said so, since it is
+    // still in the file.
+    capture(&root, &home, &[
+        "--title",
+        "Again",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stdout(predicate::str::contains("nothing in s after b"))
+    .stderr(predicate::str::contains(notice.as_str()));
+    assert_eq!(store(&root).len(), 1);
+    // The control: a file with no cut line says nothing on stderr.
+    std::fs::write(&t, format!("{SAID}\n{MORE}\n")).unwrap();
+    capture(&root, &home, &[
+        "--title",
+        "Clean",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stderr(predicate::str::is_empty());
+}
+
+#[test]
 fn a_session_by_path_and_a_store_by_flag() {
     let dir = tempfile::tempdir().unwrap();
     let (root, home) = workspace(dir.path());

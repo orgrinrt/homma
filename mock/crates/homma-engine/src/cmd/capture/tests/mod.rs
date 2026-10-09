@@ -9,6 +9,7 @@
 use serde_json::{Value, json};
 
 mod answers;
+mod cut;
 mod make;
 mod render;
 mod store;
