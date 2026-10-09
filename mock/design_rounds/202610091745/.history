@@ -1,0 +1,50 @@
+122a3d6 chore: lock the source changelist on cut lines and lost answers
+c1ae562 docs: record what the defect round on cut lines verified
+0aafa4a fix: recover only cut writes and read answers whose question was cut
+e323377 test: cover lines that are not a cut write and answers whose question was cut
+be52a9b docs: open the source changelist on cut lines and lost answers
+c4621c7 chore: lock the doc changelist on cut lines and lost answers
+5ab2e47 docs: recover only a cut write, and read an answer whose question was cut
+fc7b147 docs: open the doc changelist on cut lines and lost answers
+559e979 docs: open a defect round on cut lines and answers lost with their question
+4ecee2a docs: re-file the two topics the close swept
+580ed6b chore: close design round 202610091645
+26bbf95 chore: lock the source changelist on cut transcript lines
+b9608ea docs: drop the unproven cause from the cut line comments and test name
+8cf45f7 docs: open the source changelist again on cut transcript lines
+5d38858 chore: lock the doc changelist on cut transcript lines again
+e22de08 docs: describe the cut write without naming a cause the file lacks
+0120ccc chore: unlock the round to correct the cause the design text names
+289beae docs: record what the cut transcript line round verified
+5e5638c fix: read the object that ends a cut transcript line
+1afa82c test: cover a transcript line left cut off
+be2a3ea docs: open the source changelist on cut transcript lines
+9788e59 chore: lock the doc changelist on cut transcript lines
+ba82470 docs: read the object that ends a cut transcript line, and say so
+2c36bd2 docs: open the doc changelist on cut transcript lines
+ba46efc docs: open a round on transcript lines left cut off
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+b4e9548 fix: read the request body in the stub forges before answering
+6dd0a1c fix: check the readme's launcher commands against the launcher
+20384f2 feat: carry every agent hook at its event and drop none
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
+fc70a3d refactor: split the gate tests into a module per concern
+bfb2260 fix: clear the thirteen clippy findings the engine workspace carried
+30302a7 feat: the pre-push gate leaves a poster and gates a tag's commit once
+5055158 feat: the release gate holds the description to the readme tagline
+eb26e80 feat: one entrypoint per git event, read off a hooks table
+c853079 feat: read a repo's kind off root markers declared in homma.toml
+69e8765 docs: drop the coding-agents notice from the readme
+3390cf0 feat: build a crate on its declared feature sets alone
+a6c16b5 feat: gate commits on the shared tool configs and widen homma status
+da84833 fix: the hook takes git's two arguments, and a worktree finds its clone
+c6ab612 fix: hook install refuses a tracked hooks dir and a hook not its own
+d9615ab fix: the release's gate, plan, sweep and hook after the first merge
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
