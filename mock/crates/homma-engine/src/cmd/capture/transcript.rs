@@ -12,8 +12,8 @@
 //! over it would drop the person's words without a trace.
 //!
 //! One line that does not parse is read all the same: the start of an object
-//! cut by the harness's second writer, with a complete object after it, is read
-//! as the complete object, and [`Transcript::recovered`] says which line and how
+//! the harness left cut off, with a complete object after it, is read as the
+//! complete object, and [`Transcript::recovered`] says which line and how
 //! many bytes before the object were dropped. A line with no object ending it is
 //! still refused by number.
 

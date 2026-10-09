@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! A transcript line the harness's second writer cut: the start of one object
-//! with a complete one after it. Shaped as the four lines of a real long
+//! A transcript line the harness left cut off: the start of one object with a
+//! complete one after it. Shaped as the four lines of a real long
 //! session were, a cut inside a string and then `{"parentUuid"`.
 
 use std::path::Path;

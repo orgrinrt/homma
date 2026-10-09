@@ -97,10 +97,10 @@ fn a_bad_record_is_refused_by_its_line() {
 #[test]
 fn a_record_cut_short_is_refused_where_the_transcript_recovers() {
     // The shape the transcript reader recovers: the start of one object and a
-    // whole one after it on the same line. The record has one writer
-    // appending one short object, so this is not a thing it does, and a record
-    // skipped would leave a tool's line quoted as the person's. It stays
-    // refused by its line.
+    // whole one after it on the same line. Whether the tool's append can be cut
+    // that way is not known, and a record skipped would leave a tool's line
+    // quoted as the person's, so a record that will not parse stays refused by
+    // its line.
     let whole = json!({"at": T1, "text": "Continue"}).to_string();
     let cut = format!("{{\"at\":\"{T0}\",\"text\":\"/comp{whole}");
     let err = format!(

@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! A transcript line the harness's second writer cut.
+//! A transcript line the harness left cut off.
 //!
-//! The harness appends to its file from more than one writer and its lines run
-//! to megabytes, so a write is sometimes cut off inside a string and a whole
-//! line lands after it before any newline. One line of the file is then the
-//! start of an object with a complete object behind it. What the cut write held
-//! is not in the file, so the complete object is all there is to read, and the
-//! bytes before it are dropped and counted.
+//! A write to the harness's file is sometimes left cut off inside a string, and
+//! the next line is written straight after it before any newline. One line of
+//! the file is then the start of an object with a complete object behind it. The
+//! file does not say what made the write stop, and what the cut write held is
+//! not in it, so the complete object is all there is to read, and the bytes
+//! before it are dropped and counted.
 
 use std::fmt;
 

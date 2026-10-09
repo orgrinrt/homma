@@ -343,7 +343,7 @@ fn what_a_tool_typed_beside_the_transcript_is_left_out() {
 }
 
 #[test]
-fn a_transcript_line_cut_by_a_second_writer_is_recovered_and_said_so() {
+fn a_transcript_line_left_cut_off_is_recovered_and_said_so() {
     let dir = tempfile::tempdir().unwrap();
     let (root, home) = workspace(dir.path());
     let t = dir.path().join("s.jsonl");
