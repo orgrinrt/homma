@@ -195,6 +195,10 @@ pub fn run(
     for r in &read.recovered {
         eprintln!("warning: {r}");
     }
+    // And a tool result whose question is nowhere, read by its shape or not.
+    for u in &read.unasked {
+        eprintln!("warning: {u}");
+    }
     // What a tool typed into the terminal is the tool's, not the person's.
     read.events = typed::without(std::mem::take(&mut read.events), &typed::read(&path)?);
     let mark = store::watermark(&dir, &session, &read)?;

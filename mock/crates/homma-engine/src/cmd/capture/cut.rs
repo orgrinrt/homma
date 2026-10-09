@@ -14,6 +14,7 @@
 
 use std::fmt;
 
+use serde::de::IgnoredAny;
 use serde_json::Value;
 
 /// The object that ends a line, and the bytes before it.
@@ -46,20 +47,33 @@ impl fmt::Display for Recovered {
 
 /// The object that ends `line`, a line that did not parse whole.
 ///
-/// It is the one starting at the first `{` after the line's first byte from
-/// which the rest of the line is a single object. Nothing when there is none,
-/// which is a line that is simply not JSON, and nothing when the bytes before
-/// the object are a whole value themselves: that is two complete lines run
-/// together, and reading the second alone would drop a complete record.
+/// A cut write is the start of an object that stopped where the input did, so
+/// the line has to begin with `{` and the bytes before the object have to fail
+/// as an object left open: `Error::is_eof()`. Complete lines run together fail
+/// with trailing characters instead, and text that is not an object's start
+/// fails sooner, and none of those is a cut write, since reading only the last
+/// object would drop what comes before it. The object is the one starting at
+/// the first `{` after the line's first byte from which the rest of the line
+/// is a single object. Nothing when there is none, or when the bytes before it
+/// are not a cut write.
+///
+/// Each candidate is checked with [`IgnoredAny`], which validates and keeps
+/// nothing, and only the chosen object is parsed into a [`Value`].
 pub fn ending(line: &str) -> Option<Ending> {
-    line.match_indices('{')
+    if !line.starts_with('{') {
+        return None;
+    }
+    let (at, _) = line
+        .match_indices('{')
         .filter(|(at, _)| *at > 0)
-        .find_map(|(at, _)| {
-            let object = serde_json::from_str::<Value>(&line[at ..]).ok()?;
-            Some(Ending {
-                object,
-                dropped: at,
-            })
-        })
-        .filter(|e| serde_json::from_str::<Value>(&line[.. e.dropped]).is_err())
+        .find(|(at, _)| serde_json::from_str::<IgnoredAny>(&line[*at ..]).is_ok())?;
+    let before = serde_json::from_str::<IgnoredAny>(&line[.. at]).err()?;
+    if !before.is_eof() {
+        return None;
+    }
+    let object = serde_json::from_str::<Value>(&line[at ..]).ok()?;
+    Some(Ending {
+        object,
+        dropped: at,
+    })
 }
