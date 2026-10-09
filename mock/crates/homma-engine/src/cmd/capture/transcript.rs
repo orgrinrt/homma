@@ -10,12 +10,20 @@
 //! shape named here, and a line of such a shape with a field missing or of the
 //! wrong kind is refused by line number rather than passed over, since passing
 //! over it would drop the person's words without a trace.
+//!
+//! One line that does not parse is read all the same: the start of an object
+//! cut by the harness's second writer, with a complete object after it, is read
+//! as the complete object, and [`Transcript::recovered`] says which line and how
+//! many bytes before the object were dropped. A line with no object ending it is
+//! still refused by number.
 
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow, bail};
 use jiff::Timestamp;
 use serde_json::{Map, Value};
+
+use super::cut::{self, Recovered};
 
 /// What the harness writes as the answer when the person wrote notes and picked
 /// nothing. Its words, never theirs.
@@ -99,13 +107,16 @@ impl Event {
 #[derive(Debug, Default)]
 pub struct Transcript {
     /// Every event, in the order the lines give them.
-    pub events: Vec<Event>,
+    pub events:    Vec<Event>,
     /// The line each `uuid` was first written on, which is what a watermark
     /// is looked up in.
-    pub lines:  HashMap<String, usize>,
+    pub lines:     HashMap<String, usize>,
     /// The `uuid` of the last complete line carrying one, the watermark a
     /// capture of all of this records.
-    pub last:   Option<String>,
+    pub last:      Option<String>,
+    /// The lines read as the object that ends them, in the order they sit in
+    /// the file.
+    pub recovered: Vec<Recovered>,
 }
 
 impl Transcript {
@@ -120,7 +131,8 @@ impl Transcript {
 /// A last line with no newline is still being written and is not read. A
 /// message the harness wrote more than once, as a queued-command attachment and
 /// a typed line, or as two attachments, is tied by `source_uuid` and read where
-/// it was written first.
+/// it was written first. A line that does not parse whole is read as the
+/// object that ends it where there is one, and is in [`Transcript::recovered`].
 pub fn read(text: &str) -> Result<Transcript> {
     let complete = text.rfind('\n').map_or("", |i| &text[..= i]);
     let mut out = Transcript::default();
@@ -137,8 +149,19 @@ pub fn read(text: &str) -> Result<Transcript> {
         if line.trim().is_empty() {
             continue;
         }
-        let v: Value = serde_json::from_str(line)
-            .with_context(|| format!("transcript line {n} is not JSON"))?;
+        let v: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                let Some(end) = cut::ending(line) else {
+                    return Err(e).with_context(|| format!("transcript line {n} is not JSON"));
+                };
+                out.recovered.push(Recovered {
+                    line:    n,
+                    dropped: end.dropped,
+                });
+                end.object
+            },
+        };
         let Some(o) = v.as_object() else {
             bail!("transcript line {n} is not an object");
         };

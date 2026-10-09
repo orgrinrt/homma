@@ -13,6 +13,7 @@ use jiff::tz::TimeZone;
 use serde_json::json;
 
 use super::*;
+use crate::cmd::capture::cut::Recovered;
 use crate::cmd::capture::transcript::{Event, Happened, read};
 use crate::cmd::capture::{Ask, make};
 
@@ -166,4 +167,45 @@ fn the_recovered_object_is_read_as_an_ordinary_line() {
     let got: Vec<&str> = t.events.iter().map(said).collect();
     assert_eq!(got, ["last"]);
     assert_eq!(t.line_of("r"), Some(0));
+}
+
+#[test]
+fn every_recovered_line_is_reported_by_number_and_bytes() {
+    let second = r#"{"parentUuid":"p9","isSidechain":false,"message":{"role":"assistant","content":[{"type":"text","text":"half a reply"#;
+    let text = format!(
+        "{}\n{HEAD}{}\n{}\n{second}{}\n",
+        typed("a", T0, "first"),
+        whole("b", T1, "one"),
+        typed("c", T1, "between"),
+        whole("d", T2, "two"),
+    );
+    let t = read(&text).expect("reads");
+    assert_eq!(t.recovered, [
+        Recovered {
+            line:    2,
+            dropped: HEAD.len(),
+        },
+        Recovered {
+            line:    4,
+            dropped: second.len(),
+        },
+    ]);
+    assert_eq!(
+        t.recovered[0].to_string(),
+        format!(
+            "transcript line 2 does not parse whole: read the object that ends it and dropped {} \
+             bytes before it",
+            HEAD.len()
+        )
+    );
+    // One byte is a byte.
+    let one = format!("x{}", whole("e", T1, "y"));
+    let t = read(&around(&one)).expect("reads");
+    assert_eq!(
+        t.recovered[0].to_string(),
+        "transcript line 2 does not parse whole: read the object that ends it and dropped 1 byte before it"
+    );
+    // The control: a transcript with nothing cut has nothing to report.
+    let clean = read(&around(&whole("b", T1, "one"))).expect("reads");
+    assert!(clean.recovered.is_empty());
 }
