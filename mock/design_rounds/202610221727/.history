@@ -1,0 +1,3 @@
+5b60740 feat: list build directories other than the workspace one in `status`
+74f92bb docs: describe the stray build directories section of `status`
+61f07b1 fix: read the object that ends a cut transcript line
