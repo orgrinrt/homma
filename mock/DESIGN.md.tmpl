@@ -522,9 +522,21 @@ The narrower verbs are unchanged and stay the place to see one population
 entirely, healthy entries included. With the plain status there is no need to
 know which of them to reach for.
 
+A workspace builds into one `target/` at its root. A second build directory, a
+worktree's own or one a test wrote under a crate, costs another copy of every
+dependency and is a state worth reporting, so the status walks the workspace for
+them and lists each with its size. A directory counts when it is called `target`
+and holds a `CACHEDIR.TAG`, a `.rustc_info.json`, or a `debug` or `release`
+directory, so a source directory with that name is left out. The walk goes six
+levels down and does not enter a build directory it found, `.git` or
+`node_modules`, and follows no link. The human output prints the section only
+where there is something in it, and the document carries the list always, empty
+where there is nothing. Nothing is deleted.
+
 Covered: the workspace and its forges, what this clone of it is for, the agent
 surfaces including whether the repository's git hooks are wired at all, the
-shared tool configs, and the working tree. The doc surfaces are deliberately not, being a survey of what a repository
+shared tool configs, the working tree, and the build directories under the
+workspace other than its one `target/`. The doc surfaces are deliberately not, being a survey of what a repository
 has rather than a report of anything being wrong, and nothing offline is left
 out for cost. Nothing here reaches the network, which is what makes it the
 command to run first.
