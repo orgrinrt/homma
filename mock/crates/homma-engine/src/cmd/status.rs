@@ -32,6 +32,7 @@ use serde::Serialize;
 use crate::cli::OutputFormat;
 use crate::cmd::agent::status::RepoAgentState;
 use crate::cmd::config::ConfigReport;
+use crate::cmd::stray_targets::{self, StrayTarget};
 use crate::cmd::{Outcome, config, util};
 use crate::output::{HumanRender, emit};
 
@@ -61,6 +62,10 @@ pub struct StatusReport {
     pub configs:        ConfigReport,
     /// The working tree, per repo.
     pub worktrees:      Vec<WorktreeLine>,
+    /// Build directories other than the workspace's one `target/`, with their
+    /// sizes. Empty is the healthy state, and it is the one thing here that
+    /// is walked from the disk rather than read from a repository.
+    pub stray_targets:  Vec<StrayTarget>,
 }
 
 #[derive(Debug, Serialize)]
@@ -129,6 +134,7 @@ pub fn run(
     let configs = config::collect(cfg, None)?;
     let worktrees = worktrees(cfg);
     let mut report = build_report(cfg, injected, agent, configs, worktrees);
+    report.stray_targets = stray_targets::collect(&cfg.workspace.path);
     report.carry_local(local);
     // The human rendering summarises and the document does not, so the flag
     // reaches only the first. A machine handed a document with the healthy
@@ -233,6 +239,7 @@ fn build_report(
         agent,
         configs,
         worktrees,
+        stray_targets: Vec::new(),
     }
 }
 
@@ -319,6 +326,7 @@ impl StatusReport {
         self.render_agent(out, full)?;
         self.render_configs(out, full)?;
         self.render_worktrees(out, full)?;
+        self.render_stray_targets(out)?;
 
         for block in &self.injected {
             writeln!(out)?;
@@ -402,6 +410,21 @@ impl StatusReport {
                 out,
                 "  run `homma repo config init` to place what is missing"
             )?;
+        }
+        Ok(())
+    }
+
+    fn render_stray_targets(&self, out: &mut dyn Write) -> std::io::Result<()> {
+        if self.stray_targets.is_empty() {
+            return Ok(());
+        }
+        writeln!(out)?;
+        writeln!(
+            out,
+            "build directories other than the workspace's one target/:"
+        )?;
+        for s in &self.stray_targets {
+            writeln!(out, "  {}  {}", stray_targets::human(s.bytes), s.path)?;
         }
         Ok(())
     }

@@ -51,6 +51,7 @@ pub mod rules;
 pub mod skills;
 pub mod stand;
 pub mod status;
+pub mod stray_targets;
 pub(crate) mod util;
 pub mod verify;
 
