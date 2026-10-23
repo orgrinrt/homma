@@ -20,6 +20,11 @@ use serde::{Deserialize, Serialize};
 /// The file's name, beside the manifest.
 pub const LOCAL_FILE: &str = "homma.local.toml";
 
+/// Where the stored configs sit, from the workspace root: one `<work>.toml`
+/// per body of work, each a whole `homma.local.toml` holding what is declared
+/// and none of what a tool records.
+pub const STORE_DIR: &str = ".shared/local";
+
 /// The line `init` makes sure the workspace's `.gitignore` carries.
 const IGNORE_LINE: &str = "/homma.local.toml";
 
@@ -155,6 +160,77 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
     Ok(out)
 }
 
+/// Add to the file's text every key the stored config has and the file lacks.
+///
+/// Returns the new text and the dotted path of each key added. A key the file
+/// already has is left exactly as it is, whatever the stored value says: the
+/// file is the clone's own and a tool or a person may have changed it since it
+/// was installed, so the store only fills what is missing. Lists are values and
+/// are never merged into, and a table is entered whether it is written as a
+/// `[table]` or inline. A result that would not load is refused.
+pub fn fill(existing: &str, stored: &str) -> Result<(String, Vec<String>), LocalError> {
+    let mut doc: toml_edit::DocumentMut = existing.parse().map_err(LocalError::Edit)?;
+    let from: toml_edit::DocumentMut = stored.parse().map_err(LocalError::Edit)?;
+    let mut added = Vec::new();
+    fill_table(doc.as_table_mut(), from.as_table(), "", &mut added);
+    let out = doc.to_string();
+    Local::parse(&out).map_err(LocalError::Refused)?;
+    Ok((out, added))
+}
+
+fn fill_table(
+    into: &mut dyn toml_edit::TableLike,
+    from: &dyn toml_edit::TableLike,
+    at: &str,
+    added: &mut Vec<String>,
+) {
+    for (key, item) in from.iter() {
+        let path = if at.is_empty() { key.to_owned() } else { format!("{at}.{key}") };
+        match into.get_mut(key) {
+            None => {
+                into.insert(key, item.clone());
+                leaves(item, &path, added);
+            },
+            Some(have) => {
+                if let (Some(have), Some(item)) = (have.as_table_like_mut(), item.as_table_like()) {
+                    fill_table(have, item, &path, added);
+                }
+            },
+        }
+    }
+}
+
+fn leaves(item: &toml_edit::Item, path: &str, out: &mut Vec<String>) {
+    match item.as_table_like() {
+        Some(t) => {
+            for (key, inner) in t.iter() {
+                leaves(inner, &format!("{path}.{key}"), out);
+            }
+        },
+        None => out.push(path.to_owned()),
+    }
+}
+
+/// Parse a stored config and check it is the one its name says.
+///
+/// The name of a stored file is the work it is for, because that is the only
+/// thing the installed file carries to say which config it came from.
+pub fn parse_stored(path: &Path, name: &str, text: &str) -> Result<Local, LocalError> {
+    let parsed = Local::parse(text).map_err(|source| {
+        LocalError::Parse {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    if parsed.instance.work != name {
+        return Err(LocalError::StoredWork {
+            name: name.to_owned(),
+            work: parsed.instance.work,
+        });
+    }
+    Ok(parsed)
+}
+
 /// Make sure the workspace's `.gitignore` in `root` names the file and its
 /// leftovers, appending each line where none does. `true` when it wrote.
 pub fn ensure_ignored(root: &Path) -> std::io::Result<bool> {
@@ -209,6 +285,11 @@ pub enum LocalError {
     Edit(toml_edit::TomlError),
     /// The value would leave a file that does not load.
     Refused(toml::de::Error),
+    /// A stored config whose `instance.work` is not its file's name.
+    StoredWork {
+        name: String,
+        work: String,
+    },
 }
 
 impl std::fmt::Display for LocalError {
@@ -232,6 +313,15 @@ impl std::fmt::Display for LocalError {
             },
             Self::Edit(_) => write!(f, "{LOCAL_FILE} is not TOML"),
             Self::Refused(_) => write!(f, "that value would leave {LOCAL_FILE} unable to load"),
+            Self::StoredWork {
+                name,
+                work,
+            } => {
+                write!(
+                    f,
+                    "the stored config `{name}` says its work is `{work}`; the two must be the same"
+                )
+            },
         }
     }
 }
@@ -250,6 +340,9 @@ impl std::error::Error for LocalError {
             Self::Key(_) => None,
             Self::Edit(e) => Some(e),
             Self::Refused(e) => Some(e),
+            Self::StoredWork {
+                ..
+            } => None,
         }
     }
 }
