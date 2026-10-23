@@ -71,3 +71,55 @@ pub fn set_hooks_path(dir: &Path, value: &str) {
     body.push_str(&format!("[core]\n\thooksPath = {value}\n"));
     std::fs::write(at, body).expect("the repository's own config is writable");
 }
+
+/// The four variables git reads an identity from before it reads any config key.
+///
+/// One list, because the same four names were written out in three test files.
+pub const GIT_IDENTITY_ENV: [&str; 4] = [
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+];
+
+/// Take the machine's identity variables out of a `git` a test spawns.
+///
+/// For a test about something other than the identity: one that asks what a
+/// configuration holds, or builds a repository to look at. A git author or
+/// committer variable outranks every config key, so a machine exporting them
+/// would answer in place of the configuration under test. A test about the
+/// identity itself does not use this, it uses [`hostile_git_identity_env`].
+pub fn without_git_identity_env(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    for k in GIT_IDENTITY_ENV {
+        cmd.env_remove(k);
+    }
+    cmd
+}
+
+/// Put somebody else's identity in a `git`'s environment, at both tiers above the
+/// configuration files: the four identity variables, and a `GIT_CONFIG_COUNT`
+/// triple naming all six keys a provisioned clone's configuration holds.
+///
+/// What `hostile_config` does for the files, so a test of an identity fails on
+/// every machine and not only on the ones that export these. All six keys, so a
+/// defence covering part of them cannot pass unseen.
+pub fn hostile_git_identity_env(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    const KEYS: [(&str, &str); 6] = [
+        ("user.name", "Env Config User"),
+        ("user.email", "env-config-user@example.invalid"),
+        ("author.name", "Env Config Author"),
+        ("author.email", "env-config-author@example.invalid"),
+        ("committer.name", "Env Config Committer"),
+        ("committer.email", "env-config-committer@example.invalid"),
+    ];
+    cmd.env("GIT_AUTHOR_NAME", "Env Author")
+        .env("GIT_AUTHOR_EMAIL", "env-author@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Env Committer")
+        .env("GIT_COMMITTER_EMAIL", "env-committer@example.invalid")
+        .env("GIT_CONFIG_COUNT", KEYS.len().to_string());
+    for (i, (key, value)) in KEYS.iter().enumerate() {
+        cmd.env(format!("GIT_CONFIG_KEY_{i}"), key)
+            .env(format!("GIT_CONFIG_VALUE_{i}"), value);
+    }
+    cmd
+}

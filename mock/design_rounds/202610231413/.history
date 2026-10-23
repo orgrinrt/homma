@@ -1,0 +1,50 @@
+df60251 chore: lock the source changelist for the env tier
+3f6c590 fix: set the environment hostile in `provisioned_commit` and catalogue it
+fd9d83c chore: lock the doc changelist and open the src one for the env tier
+8358ed2 docs: open a round on the red test `provisioned_commit` hid
+6111d1b Merge remote-tracking branch 'origin/dev' into fix/pin-git-env-in-tests
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+d98b0c0 chore: re-file the two topics the round swept
+e7d712f chore: close design round 202610231252
+7c81df7 chore: lock the source changelist for the git environment tests
+9ea11d1 fix: pin git's identity and default branch in the tests that run it
+9593700 docs: open the source changelist for the git environment tests
+45afeb7 chore: lock the doc changelist for the git environment tests
+b9294b1 docs: open a round on tests that inherit the git environment
+4d66f8b chore: re-file the two topics the round swept
+05660e2 chore: close design round 202610231245
+5d927ca chore: lock the source changelist for the org type names
+e5c2ba7 fix: name the org registry, remote and finding apart from the core
+82e0e29 docs: open the source changelist for the org type names
+0585e99 chore: lock the doc changelist for the org type names
+d9931ea docs: name the org crate types apart from the core ones
+d645372 docs: open a round on the org crate type names
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+b4e9548 fix: read the request body in the stub forges before answering
+6dd0a1c fix: check the readme's launcher commands against the launcher
+20384f2 feat: carry every agent hook at its event and drop none
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
+fc70a3d refactor: split the gate tests into a module per concern
+bfb2260 fix: clear the thirteen clippy findings the engine workspace carried
+30302a7 feat: the pre-push gate leaves a poster and gates a tag's commit once
+5055158 feat: the release gate holds the description to the readme tagline
+eb26e80 feat: one entrypoint per git event, read off a hooks table
+c853079 feat: read a repo's kind off root markers declared in homma.toml
+69e8765 docs: drop the coding-agents notice from the readme
+3390cf0 feat: build a crate on its declared feature sets alone
+a6c16b5 feat: gate commits on the shared tool configs and widen homma status
+da84833 fix: the hook takes git's two arguments, and a worktree finds its clone
+c6ab612 fix: hook install refuses a tracked hooks dir and a hook not its own
+d9615ab fix: the release's gate, plan, sweep and hook after the first merge
+6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
+47978c0 feat: carry the workspace's own tools' output in homma status
+d83f286 chore: regenerate .taplo.toml

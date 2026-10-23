@@ -402,7 +402,11 @@ mod tests {
 
         std::fs::write(repo.join("a"), "x").unwrap();
         let run = |args: &[&str]| {
-            let out = std::process::Command::new("git")
+            let mut git = std::process::Command::new("git");
+            // This asks what `GixGit` writes into a configuration, which an
+            // exported author variable would answer in its place.
+            crate::testing::without_git_identity_env(&mut git);
+            let out = git
                 .args(args)
                 .current_dir(&repo)
                 .env("GIT_CONFIG_GLOBAL", &hostile)
