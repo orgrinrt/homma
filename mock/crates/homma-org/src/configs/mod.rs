@@ -228,7 +228,7 @@ fn push(
 
 /// What was found for one config in one repo.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Finding {
+pub enum ConfigFinding {
     /// It is there and is the canonical copy.
     Matches(String),
     /// It is there and is something else. Left alone, because the difference
@@ -248,7 +248,7 @@ pub enum Finding {
     Failed(String, String),
 }
 
-impl Finding {
+impl ConfigFinding {
     /// The config this is about.
     pub fn file_name(&self) -> &str {
         match self {
@@ -291,7 +291,7 @@ impl Finding {
     }
 }
 
-impl std::fmt::Display for Finding {
+impl std::fmt::Display for ConfigFinding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Matches(n) => write!(f, "{n} matches"),
@@ -320,7 +320,7 @@ impl std::fmt::Display for Finding {
 /// routinely somewhere nobody had in mind. A gate that ran on every commit and
 /// wrote into the tree it inspects would hand somebody that at the worst
 /// possible moment.
-pub fn inspect(repo_dir: &Path, templates: &[Template]) -> Vec<Finding> {
+pub fn inspect(repo_dir: &Path, templates: &[Template]) -> Vec<ConfigFinding> {
     let mut findings = Vec::new();
     for t in templates {
         let found = t.found_at(repo_dir);
@@ -329,13 +329,13 @@ pub fn inspect(repo_dir: &Path, templates: &[Template]) -> Vec<Finding> {
             // template with no home is a question about every repo equally and
             // the operator is looking at a per-repo table.
             if found.is_none() {
-                findings.push(Finding::CannotInfer(t.file_name.clone()));
+                findings.push(ConfigFinding::CannotInfer(t.file_name.clone()));
             }
             continue;
         }
         let Some(severity) = t.severity_for(repo_dir) else {
             if found.is_none() && t.is_a_near_miss(repo_dir) {
-                findings.push(Finding::NoVariantFits(
+                findings.push(ConfigFinding::NoVariantFits(
                     t.file_name.clone(),
                     "it is tagged for a narrower set of repos than this one is in".into(),
                 ));
@@ -345,12 +345,12 @@ pub fn inspect(repo_dir: &Path, templates: &[Template]) -> Vec<Finding> {
         findings.push(match found {
             Some(at) => {
                 match std::fs::read(&at) {
-                    Ok(have) if have == t.body => Finding::Matches(t.file_name.clone()),
-                    Ok(_) => Finding::Differs(t.file_name.clone()),
-                    Err(e) => Finding::Failed(t.file_name.clone(), e.to_string()),
+                    Ok(have) if have == t.body => ConfigFinding::Matches(t.file_name.clone()),
+                    Ok(_) => ConfigFinding::Differs(t.file_name.clone()),
+                    Err(e) => ConfigFinding::Failed(t.file_name.clone(), e.to_string()),
                 }
             },
-            None => Finding::Missing(t.file_name.clone(), severity),
+            None => ConfigFinding::Missing(t.file_name.clone(), severity),
         });
     }
     findings
@@ -363,22 +363,22 @@ pub fn inspect(repo_dir: &Path, templates: &[Template]) -> Vec<Finding> {
 ///
 /// Built on [`inspect`] rather than beside it, so the two cannot come to
 /// different answers about what a repo is missing.
-pub fn ensure(root: &Root, repo_dir: &ContainedPath, templates: &[Template]) -> Vec<Finding> {
+pub fn ensure(root: &Root, repo_dir: &ContainedPath, templates: &[Template]) -> Vec<ConfigFinding> {
     inspect(repo_dir.as_path(), templates)
         .into_iter()
         .map(|f| {
             match f {
-                Finding::Missing(name, _) => {
+                ConfigFinding::Missing(name, _) => {
                     let Some(t) = templates.iter().find(|t| t.file_name == name) else {
-                        return Finding::Failed(name, "no such template".into());
+                        return ConfigFinding::Failed(name, "no such template".into());
                     };
                     let placed = root
                         .contain_under(repo_dir, &name)
                         .map_err(|e| e.to_string())
                         .and_then(|p| root.write(&p, &t.body).map_err(|e| e.to_string()));
                     match placed {
-                        Ok(()) => Finding::Placed(name),
-                        Err(e) => Finding::Failed(name, e),
+                        Ok(()) => ConfigFinding::Placed(name),
+                        Err(e) => ConfigFinding::Failed(name, e),
                     }
                 },
                 other => other,

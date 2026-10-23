@@ -13,7 +13,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use homma_api::{Identity, Role, Staffing, Workspace};
-use homma_org::Registry;
+use homma_org::OrgRegistry;
 
 /// The standing instruction every generated definition carries.
 ///
@@ -72,7 +72,7 @@ pub struct Line {
 }
 
 pub fn list(ws: &Workspace) -> Vec<Line> {
-    let registry = Registry::new(ws);
+    let registry = OrgRegistry::new(ws);
     registry
         .all()
         .into_iter()
