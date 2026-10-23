@@ -411,3 +411,132 @@ fn the_leftovers_line_ignores_exactly_what_set_leaves_behind() {
         assert_eq!(out.status.success(), ignored, "{path}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// filling an installed file from the stored config
+// ---------------------------------------------------------------------------
+
+const STORED: &str = "# the stored one\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n";
+
+#[test]
+fn fill_adds_every_key_the_file_lacks_and_names_each() {
+    let (out, added) = fill("[instance]\nwork = \"k\"\n", STORED).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.instance.title.as_deref(), Some("stored title"));
+    assert_eq!(l.instance.repos, vec!["a".to_owned()]);
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
+    assert_eq!(added, [
+        "instance.title",
+        "instance.repos",
+        "tools.goal.active",
+        "tools.goal.objective",
+        "tools.msg.as"
+    ]);
+}
+
+#[test]
+fn fill_never_changes_a_key_the_file_has() {
+    let have = "[instance]\nwork = \"k\"\ntitle = \"mine\"\nrepos = []\n\n[tools.goal]\nactive = \"true\"\n";
+    let (out, added) = fill(have, STORED).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.instance.title.as_deref(), Some("mine"));
+    assert!(
+        l.instance.repos.is_empty(),
+        "a list is a value, not merged into"
+    );
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, ["tools.goal.objective", "tools.msg.as"]);
+}
+
+#[test]
+fn fill_keeps_what_a_tool_recorded_and_the_store_never_held() {
+    let have = "[instance]\nwork = \"k\"\n\n[tools.dashboard]\npublished = \"abc\"\nurl = \"u\"\n";
+    let (out, _) = fill(have, STORED).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["dashboard"]["published"].as_str(), Some("abc"));
+    assert_eq!(l.tools["dashboard"]["url"].as_str(), Some("u"));
+}
+
+#[test]
+fn fill_keeps_the_files_own_comments() {
+    let have = "# mine\n[instance]\nwork = \"k\" # why\n";
+    let (out, _) = fill(have, STORED).unwrap();
+    assert!(out.starts_with("# mine\n"), "{out}");
+    assert!(out.contains("work = \"k\" # why"), "{out}");
+}
+
+#[test]
+fn fill_of_a_complete_file_adds_nothing_and_changes_no_byte() {
+    let (once, _) = fill("[instance]\nwork = \"k\"\n", STORED).unwrap();
+    let (twice, added) = fill(&once, STORED).unwrap();
+    assert!(added.is_empty(), "{added:?}");
+    assert_eq!(once, twice);
+}
+
+#[test]
+fn fill_enters_an_inline_table_in_the_file_and_adds_the_key_it_lacks() {
+    let have = "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"true\" }\n";
+    let (out, added) = fill(have, STORED).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, [
+        "instance.title",
+        "instance.repos",
+        "tools.goal.objective",
+        "tools.msg.as"
+    ]);
+}
+
+#[test]
+fn fill_names_each_key_of_an_inline_stored_table_that_the_file_lacks() {
+    let stored =
+        "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"false\", objective = \"o\" }\n";
+    let (out, added) = fill("[instance]\nwork = \"k\"\n", stored).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, ["tools.goal.active", "tools.goal.objective"]);
+    let (again, added) = fill(&out, stored).unwrap();
+    assert!(added.is_empty(), "{added:?}");
+    assert_eq!(out, again);
+}
+
+#[test]
+fn fill_enters_an_inline_stored_table_over_a_file_that_writes_it_as_a_table() {
+    let stored =
+        "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"false\", objective = \"o\" }\n";
+    let have = "[instance]\nwork = \"k\"\n\n[tools.goal]\nactive = \"true\"\n";
+    let (out, added) = fill(have, stored).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, ["tools.goal.objective"]);
+}
+
+#[test]
+fn fill_refuses_text_that_is_not_toml() {
+    assert!(matches!(fill("[[", STORED), Err(LocalError::Edit(_))));
+    assert!(matches!(
+        fill("[instance]\nwork = \"k\"\n", "[["),
+        Err(LocalError::Edit(_))
+    ));
+}
+
+#[test]
+fn a_stored_config_is_the_one_its_name_says() {
+    let p = Path::new("/store/k.toml");
+    assert_eq!(parse_stored(p, "k", STORED).unwrap().instance.work, "k");
+    match parse_stored(p, "other", STORED) {
+        Err(LocalError::StoredWork {
+            name,
+            work,
+        }) => assert_eq!((name.as_str(), work.as_str()), ("other", "k")),
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        parse_stored(p, "k", "[instance]\n"),
+        Err(LocalError::Parse { .. })
+    ));
+}
