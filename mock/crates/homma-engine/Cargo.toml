@@ -6,7 +6,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-rust-version.workspace = true
+# `renki` is linked here for its extension api, and it declares 1.88, which is the engine's floor too.
+rust-version = "1.88"
 publish = false
 
 # Named for the package rather than for the command. The command is `homma` and
@@ -31,6 +32,12 @@ anyhow = "1"
 jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
+# The host half of renki's extension api: a tool's descriptor is read, checked, located and run by
+# `renki::extension`. `renki-dirs` and `notko` are what the cache root that api fetches into is read
+# with, since `renki` keeps its own resolution of that root to itself.
+renki = "0.0.3"
+renki-dirs = "0.0.1"
+notko = { version = "0.0.1", default-features = false }
 
 [dev-dependencies]
 assert_cmd = "2"

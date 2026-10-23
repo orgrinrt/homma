@@ -8,7 +8,7 @@
 //! The content repository carries tools of its own under `tools/<name>/`, each described by a
 //! `tool.toml`. They are found by reading, listed by `homma tools`, and run by replacing homma with the
 //! command the descriptor names. The built-in commands win over a tool of the same name, except that the
-//! groups in [`MERGED`] hand the verbs they do not know to the tool.
+//! groups in [`groups::groups`] hand the verbs they do not know to the tool.
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -22,15 +22,13 @@ use crate::cli::{Cli, OutputFormat};
 use crate::cmd::Outcome;
 use crate::output::{HumanRender, emit};
 
+pub mod cache;
 pub mod descriptor;
 pub mod dispatch;
+pub mod groups;
 
 use descriptor::{Entry, discover};
 use dispatch::{Asked, exec, plan};
-
-/// The built-in groups whose unknown verbs go to the tool of the same name. Each has an external
-/// subcommand in [`crate::cli`], and a test holds this list to that.
-pub const MERGED: &[&str] = &["rules"];
 
 /// The workspace root: where the manifest is, or the working directory when there is no `--dir`.
 pub fn root(config: &Path) -> PathBuf {
@@ -48,13 +46,13 @@ pub fn root(config: &Path) -> PathBuf {
 /// Whatever [`plan`] refuses, or a process that could not be started.
 pub fn run_tool(root: &Path, name: &str, words: &[OsString], asked: Asked) -> Result<Outcome> {
     let entries = discover(root);
-    let p = plan(&entries, name, words, asked)?;
+    let c = plan(&entries, name, words, asked, root, &cache::root)?;
     // Everything homma has printed is out before the tool's own output follows it.
     let _ = std::io::stdout().flush();
-    match exec(&p, root)? {}
+    match exec(c)? {}
 }
 
-/// `homma rules <word> ...` for a word the built-in does not know: the tool's, when there is one.
+/// `homma <group> <word> ...` for a word the built-in group does not know: the tool's, when there is one.
 ///
 /// # Errors
 ///
@@ -69,10 +67,17 @@ pub fn run_merged(root: &Path, group: &str, words: &[OsString]) -> Result<Outcom
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    match plan(&entries, group, words, Asked::AsSubcommand) {
-        Ok(p) => {
+    match plan(
+        &entries,
+        group,
+        words,
+        Asked::AsSubcommand,
+        root,
+        &cache::root,
+    ) {
+        Ok(c) => {
             let _ = std::io::stdout().flush();
-            match exec(&p, root)? {}
+            match exec(c)? {}
         },
         Err(e) => {
             bail!(
@@ -81,6 +86,16 @@ pub fn run_merged(root: &Path, group: &str, words: &[OsString]) -> Result<Outcom
             )
         },
     }
+}
+
+/// `homma <group> <word> ...` as [`groups::parse`] handed it over.
+///
+/// # Errors
+///
+/// As [`run_merged`].
+pub fn run_handed(h: groups::Handed) -> Result<Outcome> {
+    let manifest = crate::cmd::manifest_path(h.config.as_deref(), h.dir.as_deref());
+    run_merged(&root(&manifest), &h.group, &h.words)
 }
 
 /// One tool, as listed.
@@ -103,7 +118,7 @@ pub struct ToolsReport {
 
 fn builtin_relation(name: &str) -> Option<&'static str> {
     Cli::command().find_subcommand(name)?;
-    Some(if MERGED.contains(&name) { "merged" } else { "shadowed" })
+    Some(if groups::groups().iter().any(|g| g == name) { "merged" } else { "shadowed" })
 }
 
 /// The listing for the tools under `root`.
@@ -115,7 +130,7 @@ pub fn report(root: &Path) -> ToolsReport {
             Entry::Tool(t) => {
                 tools.push(ToolLine {
                     builtin: builtin_relation(&t.name),
-                    verbs:   t.verbs.iter().map(|v| v.name.clone()).collect(),
+                    verbs:   t.commands.iter().map(|c| c.name.clone()).collect(),
                     name:    t.name,
                     summary: t.summary,
                     promote: t.promote,
@@ -209,6 +224,8 @@ pub fn check(root: &Path, format: OutputFormat) -> Result<Outcome> {
     Ok(Outcome::Ok)
 }
 
+#[cfg(test)]
+mod cache_tests;
 #[cfg(test)]
 mod descriptor_tests;
 #[cfg(test)]

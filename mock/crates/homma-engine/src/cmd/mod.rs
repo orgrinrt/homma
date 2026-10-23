@@ -370,9 +370,6 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             op,
         } => {
             match op {
-                RulesOp::External(words) => {
-                    tools::run_merged(&tools::root(&config_path(&cli)), "rules", words)
-                },
                 RulesOp::About {
                     query,
                 } => {
@@ -455,10 +452,18 @@ pub fn run(cli: Cli) -> Result<Outcome> {
 /// carried its own copy and would have kept reading `./homma.toml` while every
 /// other command honoured `--dir`.
 pub(crate) fn config_path(cli: &Cli) -> std::path::PathBuf {
-    if let Some(path) = &cli.config {
-        return path.clone();
+    manifest_path(cli.config.as_deref(), cli.dir.as_deref())
+}
+
+/// [`config_path`] over the two flags themselves, for a command line that did not parse into a [`Cli`].
+pub(crate) fn manifest_path(
+    config: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
+) -> std::path::PathBuf {
+    if let Some(path) = config {
+        return path.to_path_buf();
     }
-    match &cli.dir {
+    match dir {
         Some(dir) => dir.join("homma.toml"),
         None => std::path::PathBuf::from("homma.toml"),
     }

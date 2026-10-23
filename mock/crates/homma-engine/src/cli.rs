@@ -488,11 +488,6 @@ pub enum RulesOp {
     /// Writes `.claude/rules/<name>.md` per rule. Those are generated output
     /// and editing one by hand loses the edit on the next run.
     Render {},
-
-    /// Any other word is the tool `rules`'s verb, when the content repository has
-    /// that tool: `homma rules show <name>` prints a rule's elaboration.
-    #[command(external_subcommand)]
-    External(Vec<OsString>),
 }
 
 /// `skills` subcommands.
