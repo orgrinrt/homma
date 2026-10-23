@@ -163,6 +163,7 @@ homma sauna    correspondence and work
 homma serve    the daemon and its surfaces
 homma release  the gate, the run record, and dev onto main as a release
 homma capture  what the person said to a session, copied into the capture store
+homma tools    the content repository's tools, and the promoted ones as commands
 ```
 
 `homma capture --title <title>` reads an agent session's transcript and writes
@@ -387,6 +388,48 @@ The gate asks homma rather than deciding for itself, so the rule that says what
 a repository owes exists once. It refuses when it cannot ask at all, for the
 same reason it refuses when it cannot read its input: a check that could not run
 must never be indistinguishable from one that ran and found nothing.
+
+## The workspace's tools
+
+The content repository carries tools of its own under `tools/<name>/`, each
+described by a `tool.toml` in the format renki defines: a `name` that is the
+directory's own, a one line `summary`, `tags`, a `backend`, a `source`, a
+`promote` flag and one `[[tool.commands]]` table for each verb, with a `summary`
+and a `run` that is a path inside the tool and never a shell string. homma is
+the host that descriptor is written for. It reads `tools/*/tool.toml` under the
+workspace root, which is where the manifest sits, and nothing else is a tool.
+
+`homma tools` lists every tool it finds, one line each: the name, the summary,
+the verbs, and whether the tool is promoted. A descriptor that cannot be read is
+listed by its directory's name with the reason, where a reader sees it, and
+`homma tools check` exits non-zero while any is. Only a tool whose backend is
+`local`, which is a tool that sits in the workspace, is run by homma. Another
+backend is fetched by renki's host, so a tool with one is listed and a run of it
+is refused saying so.
+
+A promoted tool is a subcommand: `homma msg kaski board` runs the tool `msg`.
+The first word after the tool's name is a verb when the descriptor names a
+command that way, and that command gets the rest. When it does not, and the
+descriptor names a command with the tool's own name, that command is the tool's
+default and gets everything after the tool's name, which is how a tool whose
+first argument is not a verb works. A word that is neither is refused with the
+tool's verbs listed. The command is run from the workspace root and replaces
+homma, so its input, its output and its exit status are the tool's own, and it
+is told where the workspace is in `HOMMA_WORKSPACE`.
+
+`homma tools run <name> <verb> ...` does the same for a tool that is not
+promoted, and for one whose name a built-in command already holds.
+
+A built-in command wins over a tool of the same name, except that a built-in
+group hands the verbs it does not know to the tool. `rules` is one: `homma rules
+about` and `homma rules render` are the built-in's, and `homma rules show` is the
+tool's, so the cards' pointer to the elaboration is a command that answers. A
+word that neither the built-in group nor the tool knows is refused naming both
+sets of verbs.
+
+A name that is no built-in and no promoted tool is refused saying so, and that
+`homma tools` lists what there is, where clap would have said only that the
+subcommand is unrecognised.
 
 ## The agent hooks
 
