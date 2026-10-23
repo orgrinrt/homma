@@ -10,19 +10,26 @@
 
 use std::process::ExitCode;
 
-use clap::Parser;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::cli::Cli;
+use crate::cmd::tools::groups::{Parsed, parse};
 
 mod cli;
 mod cmd;
 mod output;
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    init_logging(cli.verbosity);
-    match cmd::run(cli) {
+    let outcome = match parse() {
+        Parsed::Cli(cli) => {
+            init_logging(cli.verbosity);
+            cmd::run(*cli)
+        },
+        Parsed::Handed(h) => {
+            init_logging(h.verbosity);
+            cmd::tools::run_handed(h)
+        },
+    };
+    match outcome {
         Ok(cmd::Outcome::Ok) => ExitCode::SUCCESS,
         Ok(cmd::Outcome::ReportedFailure) => ExitCode::FAILURE,
         // `2`, not `FAILURE`, and the distinction is the whole contract a

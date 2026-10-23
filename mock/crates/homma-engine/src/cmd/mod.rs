@@ -26,6 +26,7 @@ use crate::cli::{
     RepoOp,
     RulesOp,
     SkillsOp,
+    ToolsOp,
 };
 
 pub mod agent;
@@ -52,6 +53,7 @@ pub mod skills;
 pub mod stand;
 pub mod status;
 pub mod stray_targets;
+pub mod tools;
 pub(crate) mod util;
 pub mod verify;
 
@@ -382,6 +384,27 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 },
             }
         },
+        Command::Tools {
+            op,
+        } => {
+            let root = tools::root(&config_path(&cli));
+            match op {
+                None | Some(ToolsOp::List {}) => tools::list(&root, cli.output),
+                Some(ToolsOp::Check {}) => tools::check(&root, cli.output),
+                Some(ToolsOp::Run {
+                    name,
+                    words,
+                }) => tools::run_tool(&root, name, words, tools::Asked::ByName),
+            }
+        },
+        Command::External(words) => {
+            let root = tools::root(&config_path(&cli));
+            let Some((name, rest)) = words.split_first() else {
+                anyhow::bail!("no command given");
+            };
+            let name = name.to_string_lossy();
+            tools::run_tool(&root, &name, rest, tools::Asked::AsSubcommand)
+        },
         Command::Skills {
             op,
         } => {
@@ -429,10 +452,18 @@ pub fn run(cli: Cli) -> Result<Outcome> {
 /// carried its own copy and would have kept reading `./homma.toml` while every
 /// other command honoured `--dir`.
 pub(crate) fn config_path(cli: &Cli) -> std::path::PathBuf {
-    if let Some(path) = &cli.config {
-        return path.clone();
+    manifest_path(cli.config.as_deref(), cli.dir.as_deref())
+}
+
+/// [`config_path`] over the two flags themselves, for a command line that did not parse into a [`Cli`].
+pub(crate) fn manifest_path(
+    config: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
+) -> std::path::PathBuf {
+    if let Some(path) = config {
+        return path.to_path_buf();
     }
-    match &cli.dir {
+    match dir {
         Some(dir) => dir.join("homma.toml"),
         None => std::path::PathBuf::from("homma.toml"),
     }

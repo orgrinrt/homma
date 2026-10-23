@@ -10,6 +10,7 @@
 //! global options (`--config`, `--output`, `-v / -vv / -vvv`) sit on the
 //! root [`Cli`] and apply to every subcommand.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -282,6 +283,35 @@ pub enum Command {
         /// `[paths]` in the manifest, `.data/op-responses/` when it is absent.
         #[arg(long)]
         into:     Option<PathBuf>,
+    },
+    /// The content repository's own tools.
+    ///
+    /// Each is a directory `tools/<name>/` with a `tool.toml`. `homma tools`
+    /// lists them with their verbs and says which descriptors are broken; a tool
+    /// with `promote = true` is also reached as `homma <name> <verb>`.
+    Tools {
+        #[command(subcommand)]
+        op: Option<ToolsOp>,
+    },
+    /// A promoted tool of the content repository, `homma <tool> <verb> ...`.
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
+}
+
+/// `tools` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum ToolsOp {
+    /// Every tool, its verbs, and the descriptors that cannot be used.
+    List {},
+    /// Print the descriptors that cannot be used, and exit non-zero while there are any.
+    Check {},
+    /// Run a tool by name, promoted or not, and whatever built-in holds the name.
+    Run {
+        /// The tool.
+        name:  String,
+        /// Its verb and the words it is given.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        words: Vec<OsString>,
     },
 }
 
@@ -927,13 +957,11 @@ mod tests {
     }
 
     #[test]
-    fn cli_rejects_unknown_subcommand() {
-        let err = Cli::try_parse_from(["homma", "nope"]).unwrap_err();
-        let s = err.to_string();
-        assert!(
-            s.contains("unrecognized") || s.contains("invalid"),
-            "got: {s}"
-        );
+    fn an_unknown_subcommand_is_handed_to_the_tool_dispatch_which_refuses_it_by_name() {
+        // clap no longer refuses it: a promoted tool of the content repository may be what it names. The
+        // refusal, with the wording, is the dispatch's and is held in `tests/tools_dispatch.rs`.
+        let cli = Cli::try_parse_from(["homma", "nope"]).unwrap();
+        assert!(matches!(cli.command, Command::External(ref w) if w == &["nope"]));
     }
 }
 
