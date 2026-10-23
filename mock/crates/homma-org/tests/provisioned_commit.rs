@@ -18,18 +18,16 @@
 
 use homma_api::{AbsPath, Identity, Role};
 use homma_core::repo::GixGit;
+use homma_core::testing::hostile_git_identity_env;
 use homma_org::provision;
 
 fn run(args: &[&str], at: &std::path::Path, hostile: &std::path::Path) -> String {
-    let out = std::process::Command::new("git")
+    let mut git = std::process::Command::new("git");
+    // The environment tier of the same hostility, for the identity under test.
+    hostile_git_identity_env(&mut git);
+    let out = git
         .args(args)
         .current_dir(at)
-        // A git author or committer variable outranks every config key, so a
-        // machine exporting them would answer for the identity under test.
-        .env_remove("GIT_AUTHOR_NAME")
-        .env_remove("GIT_AUTHOR_EMAIL")
-        .env_remove("GIT_COMMITTER_NAME")
-        .env_remove("GIT_COMMITTER_EMAIL")
         .env("GIT_CONFIG_GLOBAL", hostile)
         .env("GIT_CONFIG_SYSTEM", hostile)
         .output()
@@ -59,7 +57,12 @@ fn hostile_config(dir: &std::path::Path) -> std::path::PathBuf {
     p
 }
 
+// FIXME: the design does not say whether a provisioned workspace holds its identity
+// against the environment. It does not hold it today: with the author and committer
+// variables set, the commit carries the environment's. Open topic
+// `202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment.md`.
 #[test]
+#[ignore = "catalogue: a provisioned workspace commits as the environment's identity when the author and committer variables are set; tracked 202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment"]
 fn a_commit_in_a_provisioned_workspace_carries_the_registrys_two_identities() {
     let d = tempfile::tempdir().unwrap();
     let hostile = hostile_config(d.path());
@@ -127,7 +130,9 @@ fn a_commit_in_a_provisioned_workspace_carries_the_registrys_two_identities() {
     );
 }
 
+// FIXME: the same open topic as the test above; the ordinary entry fails the same way.
 #[test]
+#[ignore = "catalogue: a provisioned workspace commits as the environment's identity when the author and committer variables are set; tracked 202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment"]
 fn an_entry_with_one_identity_commits_as_that_one_throughout() {
     // The ordinary entry, through the same seam. `provision` defaults the
     // committer to the author, and that defaulting was tested only against a

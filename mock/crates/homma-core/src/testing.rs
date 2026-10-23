@@ -71,3 +71,43 @@ pub fn set_hooks_path(dir: &Path, value: &str) {
     body.push_str(&format!("[core]\n\thooksPath = {value}\n"));
     std::fs::write(at, body).expect("the repository's own config is writable");
 }
+
+/// The four variables git reads an identity from before it reads any config key.
+///
+/// One list, because the same four names were written out in three test files.
+pub const GIT_IDENTITY_ENV: [&str; 4] = [
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+];
+
+/// Take the machine's identity variables out of a `git` a test spawns.
+///
+/// For a test about something other than the identity: one that asks what a
+/// configuration holds, or builds a repository to look at. A git author or
+/// committer variable outranks every config key, so a machine exporting them
+/// would answer in place of the configuration under test. A test about the
+/// identity itself does not use this, it uses [`hostile_git_identity_env`].
+pub fn without_git_identity_env(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    for k in GIT_IDENTITY_ENV {
+        cmd.env_remove(k);
+    }
+    cmd
+}
+
+/// Put somebody else's identity in a `git`'s environment, at both tiers above the
+/// configuration files: the four identity variables, and a `GIT_CONFIG_COUNT`
+/// entry naming an `author.name`.
+///
+/// What `hostile_config` does for the files, so a test of an identity fails on
+/// every machine and not only on the ones that export these.
+pub fn hostile_git_identity_env(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    cmd.env("GIT_AUTHOR_NAME", "Env Author")
+        .env("GIT_AUTHOR_EMAIL", "env-author@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Env Committer")
+        .env("GIT_COMMITTER_EMAIL", "env-committer@example.invalid")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "author.name")
+        .env("GIT_CONFIG_VALUE_0", "Env Config Author")
+}

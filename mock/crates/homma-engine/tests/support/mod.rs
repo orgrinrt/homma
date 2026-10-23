@@ -23,14 +23,7 @@ pub use homma_core::testing::global_configs_now;
 /// own identity on a commit the test configured another for.
 pub fn git() -> std::process::Command {
     let mut c = std::process::Command::new("git");
-    for k in [
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ] {
-        c.env_remove(k);
-    }
+    homma_core::testing::without_git_identity_env(&mut c);
     c
 }
 

@@ -402,15 +402,13 @@ mod tests {
 
         std::fs::write(repo.join("a"), "x").unwrap();
         let run = |args: &[&str]| {
-            let out = std::process::Command::new("git")
+            let mut git = std::process::Command::new("git");
+            // This asks what `GixGit` writes into a configuration, which an
+            // exported author variable would answer in its place.
+            crate::testing::without_git_identity_env(&mut git);
+            let out = git
                 .args(args)
                 .current_dir(&repo)
-                // A git author or committer variable outranks every config key, so a
-                // machine exporting them would answer for the identity under test.
-                .env_remove("GIT_AUTHOR_NAME")
-                .env_remove("GIT_AUTHOR_EMAIL")
-                .env_remove("GIT_COMMITTER_NAME")
-                .env_remove("GIT_COMMITTER_EMAIL")
                 .env("GIT_CONFIG_GLOBAL", &hostile)
                 .env("GIT_CONFIG_SYSTEM", &hostile)
                 .output()
