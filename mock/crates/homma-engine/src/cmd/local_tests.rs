@@ -271,3 +271,290 @@ fn concurrent_writers_all_land_and_no_reader_sees_a_half() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// the stored configs
+// ---------------------------------------------------------------------------
+
+const KASKI: &str = "# stored\n[instance]\nwork = \"kaski\"\ntitle = \"the colony sim\"\nrepos = []\n\n[tools.goal]\nactive = \"false\"\n\n[tools.msg]\nas = \"coord\"\n";
+const KENNO: &str = "[instance]\nwork = \"kenno\"\n";
+
+fn store(d: &tempfile::TempDir, files: &[(&str, &str)]) {
+    let dir = d.path().join(local::STORE_DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, text) in files {
+        std::fs::write(dir.join(format!("{name}.toml")), text).unwrap();
+    }
+}
+
+fn file(d: &tempfile::TempDir) -> String {
+    std::fs::read_to_string(d.path().join(LOCAL_FILE)).unwrap()
+}
+
+#[test]
+fn install_copies_the_stored_config_byte_for_byte_where_there_is_no_file() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    assert_eq!(
+        install(d.path(), "kaski", false).unwrap(),
+        Installed::Written
+    );
+    assert_eq!(file(&d), KASKI);
+    assert!(
+        !std::fs::symlink_metadata(d.path().join(LOCAL_FILE))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
+fn install_ignores_the_file_it_made() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    let ignore = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
+    assert!(ignore.lines().any(|l| l == "/homma.local.toml"), "{ignore}");
+}
+
+#[test]
+fn install_leaves_no_lock_or_temporary_file_behind() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    let mut names: Vec<_> = std::fs::read_dir(d.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, [
+        ".gitignore",
+        ".shared",
+        "homma.local.toml",
+        "homma.toml"
+    ]);
+}
+
+#[test]
+fn what_a_tool_records_after_the_install_never_reaches_the_store() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    set(d.path(), "tools.dashboard.published", "abc").unwrap();
+    set(d.path(), "tools.console.deployed", "c42e0a9").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(local::STORE_DIR).join("kaski.toml")).unwrap(),
+        KASKI
+    );
+    assert!(file(&d).contains("published = \"abc\""));
+}
+
+#[test]
+fn a_link_does_not_survive_the_first_write_which_is_why_install_copies() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    let stored = d.path().join(local::STORE_DIR).join("kaski.toml");
+    std::os::unix::fs::symlink(&stored, d.path().join(LOCAL_FILE)).unwrap();
+    set(d.path(), "tools.dashboard.published", "abc").unwrap();
+    let meta = std::fs::symlink_metadata(d.path().join(LOCAL_FILE)).unwrap();
+    assert!(!meta.file_type().is_symlink());
+    assert_eq!(std::fs::read_to_string(&stored).unwrap(), KASKI);
+}
+
+#[test]
+fn install_over_the_same_work_adds_what_is_missing_and_changes_nothing_else() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    std::fs::write(
+        d.path().join(LOCAL_FILE),
+        "[instance]\nwork = \"kaski\"\n\n[tools.goal]\nactive = \"true\"\n\n[tools.dashboard]\npublished = \"abc\"\n",
+    )
+    .unwrap();
+    match install(d.path(), "kaski", false).unwrap() {
+        Installed::Filled(added) => {
+            assert_eq!(added, ["instance.title", "instance.repos", "tools.msg.as"]);
+        },
+        other => panic!("{other:?}"),
+    }
+    let l = Local::load(d.path()).unwrap().unwrap();
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["dashboard"]["published"].as_str(), Some("abc"));
+    assert_eq!(l.instance.title.as_deref(), Some("the colony sim"));
+}
+
+#[test]
+fn installing_twice_is_the_same_as_once() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    let once = file(&d);
+    assert_eq!(
+        install(d.path(), "kaski", false).unwrap(),
+        Installed::Filled(vec![])
+    );
+    assert_eq!(file(&d), once);
+}
+
+#[test]
+fn install_over_another_work_refuses_and_touches_nothing() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    install(d.path(), "kenno", false).unwrap();
+    let before = file(&d);
+    let err = install(d.path(), "kaski", false).unwrap_err().to_string();
+    assert!(
+        err.contains("`kenno`") && err.contains("`kaski`") && err.contains("--replace"),
+        "{err}"
+    );
+    assert_eq!(file(&d), before);
+    assert!(!d.path().join("homma.local.toml.replaced").exists());
+}
+
+#[test]
+fn replace_moves_the_old_file_aside_whole_and_installs_the_stored_one() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    install(d.path(), "kenno", false).unwrap();
+    set(d.path(), "tools.dashboard.published", "abc").unwrap();
+    let before = file(&d);
+    match install(d.path(), "kaski", true).unwrap() {
+        Installed::Replaced(aside) => {
+            assert_eq!(aside, d.path().join("homma.local.toml.replaced"));
+            assert_eq!(std::fs::read_to_string(aside).unwrap(), before);
+        },
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(file(&d), KASKI);
+}
+
+#[test]
+fn replace_refuses_to_overwrite_an_earlier_replaced_file() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    install(d.path(), "kenno", false).unwrap();
+    std::fs::write(d.path().join("homma.local.toml.replaced"), "older").unwrap();
+    assert!(install(d.path(), "kaski", true).is_err());
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("homma.local.toml.replaced")).unwrap(),
+        "older"
+    );
+    assert!(file(&d).contains("kenno"));
+}
+
+#[test]
+fn install_over_a_link_refuses_until_replace_and_then_leaves_the_target_alone() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    let stored = d.path().join(local::STORE_DIR).join("kaski.toml");
+    std::os::unix::fs::symlink(&stored, d.path().join(LOCAL_FILE)).unwrap();
+    assert!(install(d.path(), "kaski", false).is_err());
+    assert!(
+        std::fs::symlink_metadata(d.path().join(LOCAL_FILE))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(matches!(
+        install(d.path(), "kaski", true).unwrap(),
+        Installed::Replaced(_)
+    ));
+    assert!(
+        !std::fs::symlink_metadata(d.path().join(LOCAL_FILE))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read_to_string(&stored).unwrap(), KASKI);
+}
+
+#[test]
+fn install_over_a_file_that_does_not_parse_refuses_without_replace() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    std::fs::write(d.path().join(LOCAL_FILE), "[instance]\n").unwrap();
+    assert!(install(d.path(), "kaski", false).is_err());
+    assert_eq!(file(&d), "[instance]\n");
+    assert!(matches!(
+        install(d.path(), "kaski", true).unwrap(),
+        Installed::Replaced(_)
+    ));
+}
+
+#[test]
+fn an_unknown_name_is_refused_with_the_names_there_are() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    let err = install(d.path(), "nope", false).unwrap_err().to_string();
+    assert!(err.contains("kaski, kenno"), "{err}");
+    assert!(!d.path().join(LOCAL_FILE).exists());
+}
+
+#[test]
+fn a_name_that_could_leave_the_store_is_refused() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    std::fs::write(
+        d.path().join("outside.toml"),
+        "[instance]\nwork = \"../../outside\"\n",
+    )
+    .unwrap();
+    for name in ["../../outside", "a/b", "", ".hidden", "k k"] {
+        assert!(install(d.path(), name, false).is_err(), "{name:?}");
+    }
+    assert!(!d.path().join(LOCAL_FILE).exists());
+}
+
+#[test]
+fn a_stored_file_whose_work_is_not_its_name_is_refused() {
+    let d = ws();
+    store(&d, &[("kenno", KASKI)]);
+    let err = install(d.path(), "kenno", false).unwrap_err().to_string();
+    assert!(err.contains("`kenno`") && err.contains("`kaski`"), "{err}");
+    assert!(!d.path().join(LOCAL_FILE).exists());
+}
+
+#[test]
+fn install_without_a_manifest_refuses() {
+    let d = tempfile::tempdir().unwrap();
+    store(&d, &[("kaski", KASKI)]);
+    assert!(install(d.path(), "kaski", false).is_err());
+    assert!(!d.path().join(LOCAL_FILE).exists());
+}
+
+#[test]
+fn list_names_the_stored_configs_sorted_and_marks_the_installed_one() {
+    let d = ws();
+    store(&d, &[("kenno", KENNO), ("kaski", KASKI)]);
+    std::fs::write(d.path().join(local::STORE_DIR).join("README.md"), "x").unwrap();
+    install(d.path(), "kenno", false).unwrap();
+    let (entries, installed) = list(d.path()).unwrap().unwrap();
+    let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["kaski", "kenno"]);
+    assert_eq!(installed.as_deref(), Some("kenno"));
+    assert_eq!(entries[0].title.as_deref(), Some("the colony sim"));
+}
+
+#[test]
+fn list_with_nothing_installed_marks_none_and_without_a_store_is_none() {
+    let d = ws();
+    assert!(list(d.path()).unwrap().is_none());
+    store(&d, &[("kaski", KASKI)]);
+    assert_eq!(list(d.path()).unwrap().unwrap().1, None);
+}
+
+#[test]
+fn list_shows_an_unusable_stored_file_instead_of_hiding_it() {
+    let d = ws();
+    store(&d, &[
+        ("kaski", KASKI),
+        ("broken", "[instance]\n"),
+        ("kenno", KASKI),
+    ]);
+    let (entries, _) = list(d.path()).unwrap().unwrap();
+    let bad: Vec<_> = entries
+        .iter()
+        .filter(|e| e.error.is_some())
+        .map(|e| e.name.as_str())
+        .collect();
+    assert_eq!(bad, ["broken", "kenno"]);
+}

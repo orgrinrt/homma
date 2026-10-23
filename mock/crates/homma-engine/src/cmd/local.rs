@@ -49,6 +49,69 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
             }
             Ok(Outcome::Ok)
         },
+        LocalOp::List => {
+            let Some((entries, installed)) = list(&dir)? else {
+                println!("no store at {}", dir.join(local::STORE_DIR).display());
+                return Ok(Outcome::ReportedFailure);
+            };
+            match cli.output {
+                OutputFormat::Human => {
+                    for e in &entries {
+                        let mut line = e.name.clone();
+                        if installed.as_deref() == Some(e.name.as_str()) {
+                            line.push_str("  installed");
+                        }
+                        if let Some(err) = &e.error {
+                            line.push_str(&format!("  unusable: {err}"));
+                        }
+                        println!("{line}");
+                    }
+                },
+                OutputFormat::Json => {
+                    let rows: Vec<_> = entries
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "name": e.name,
+                                "installed": installed.as_deref() == Some(e.name.as_str()),
+                                "title": e.title,
+                                "error": e.error,
+                            })
+                        })
+                        .collect();
+                    let mut out = std::io::stdout().lock();
+                    serde_json::to_writer_pretty(&mut out, &rows)?;
+                    writeln!(out)?;
+                },
+            }
+            Ok(Outcome::Ok)
+        },
+        LocalOp::Install {
+            name,
+            replace,
+        } => {
+            let path = dir.join(LOCAL_FILE);
+            match install(&dir, name, *replace)? {
+                Installed::Written => println!("wrote {} from the stored {name}", path.display()),
+                Installed::Filled(added) if added.is_empty() => {
+                    println!(
+                        "{} already holds everything the stored {name} has",
+                        path.display()
+                    );
+                },
+                Installed::Filled(added) => {
+                    println!("added to {}: {}", path.display(), added.join(", "));
+                },
+                Installed::Replaced(aside) => {
+                    println!(
+                        "wrote {} from the stored {name}; the file it replaced is {}",
+                        path.display(),
+                        aside.display()
+                    );
+                },
+            }
+            Ok(Outcome::Ok)
+        },
         LocalOp::Set {
             key,
             value,
@@ -82,6 +145,212 @@ pub fn init(dir: &Path, work: &str) -> Result<bool> {
     std::fs::write(&path, local::skeleton(work))
         .with_context(|| format!("writing {}", path.display()))?;
     local::ensure_ignored(dir).context("adding the file to .gitignore")
+}
+
+/// What `install` did.
+#[derive(Debug, PartialEq)]
+pub enum Installed {
+    /// There was no file; the stored one was copied.
+    Written,
+    /// There was a file for the same work; these keys, possibly none, were
+    /// added to it.
+    Filled(Vec<String>),
+    /// The old file was moved here and the stored one copied.
+    Replaced(PathBuf),
+}
+
+/// One stored config, as `list` shows it.
+#[derive(Debug, PartialEq)]
+pub struct Stored {
+    pub name:  String,
+    pub title: Option<String>,
+    /// Why it cannot be installed, where it cannot.
+    pub error: Option<String>,
+}
+
+/// A stored name is a file stem and nothing that could leave the store.
+fn check_name(name: &str) -> Result<()> {
+    let ok = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !ok {
+        bail!("`{name}` is not a stored name: letters, digits, `-` and `_` only");
+    }
+    Ok(())
+}
+
+/// The stored configs, sorted, and the work of the installed file where it
+/// loads. `None` where the store does not exist.
+pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
+    let store = dir.join(local::STORE_DIR);
+    let read = match std::fs::read_dir(&store) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", store.display())),
+    };
+    let mut entries = Vec::new();
+    for item in read {
+        let path = item?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|s| s.to_str()).map(str::to_owned) else {
+            continue;
+        };
+        let checked = std::fs::read_to_string(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))
+            .and_then(|text| {
+                local::parse_stored(&path, &name, &text).map_err(|e| {
+                    use std::error::Error;
+                    match e.source() {
+                        Some(s) => format!("{e}: {s}"),
+                        None => e.to_string(),
+                    }
+                })
+            });
+        entries.push(match checked {
+            Ok(l) => {
+                Stored {
+                    name,
+                    title: l.instance.title,
+                    error: None,
+                }
+            },
+            Err(error) => {
+                Stored {
+                    name,
+                    title: None,
+                    error: Some(error),
+                }
+            },
+        });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let installed = Local::load(dir).ok().flatten().map(|l| l.instance.work);
+    Ok(Some((entries, installed)))
+}
+
+/// Put the stored config `name` in place as the clone's own file.
+///
+/// A copy, not a link: a tool's `set` renames a temporary file over the path,
+/// which ends a link at the first write, and writes through one would be edits
+/// of a tracked file. Under the lock `set` takes, so neither lands on the
+/// other's half.
+pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
+    if !dir.join("homma.toml").is_file() {
+        bail!(
+            "no homma.toml in {}; the file sits beside the manifest",
+            dir.display()
+        );
+    }
+    check_name(name)?;
+    let stored_path = dir.join(local::STORE_DIR).join(format!("{name}.toml"));
+    let stored = match std::fs::read_to_string(&stored_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let names = list(dir)?
+                .map(|(es, _)| {
+                    es.into_iter()
+                        .map(|e| e.name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            bail!(
+                "no stored config `{name}` in {}; the names are: {}",
+                dir.join(local::STORE_DIR).display(),
+                if names.is_empty() { "none".to_owned() } else { names }
+            );
+        },
+        Err(e) => return Err(e).with_context(|| format!("reading {}", stored_path.display())),
+    };
+    local::parse_stored(&stored_path, name, &stored)?;
+
+    let path = dir.join(LOCAL_FILE);
+    let _lock = Lock::take(dir.join(format!("{LOCAL_FILE}.lock")), LOCK_WAIT)?;
+    let done = match std::fs::symlink_metadata(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            write_atomic(dir, &path, &stored)?;
+            Installed::Written
+        },
+        Err(e) => return Err(e).with_context(|| format!("looking at {}", path.display())),
+        Ok(meta) if meta.file_type().is_symlink() => {
+            if !replace {
+                bail!(
+                    "{} is a link; a tool's write replaces a link with a plain file, and writes through \
+                     one would edit what it points at. `--replace` moves it aside and \
+                     installs a copy",
+                    path.display()
+                );
+            }
+            Installed::Replaced(move_aside(dir, &path)?).and_write(dir, &path, &stored)?
+        },
+        Ok(_) => {
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            let have = Local::parse(&text).map(|l| l.instance.work);
+            if have.as_deref().ok() == Some(name) {
+                let (out, added) = local::fill(&text, &stored)?;
+                if !added.is_empty() {
+                    write_atomic(dir, &path, &out)?;
+                }
+                Installed::Filled(added)
+            } else if replace {
+                Installed::Replaced(move_aside(dir, &path)?).and_write(dir, &path, &stored)?
+            } else {
+                match have {
+                    Ok(work) => {
+                        bail!(
+                            "{} is for `{work}`, not `{name}`; `--replace` moves it aside and \
+                         installs `{name}`",
+                            path.display()
+                        )
+                    },
+                    Err(e) => {
+                        bail!(
+                            "{} does not parse ({e}); fix it, or `--replace` moves it aside \
+                         and installs `{name}`",
+                            path.display()
+                        )
+                    },
+                }
+            }
+        },
+    };
+    local::ensure_ignored(dir).context("adding the file to .gitignore")?;
+    Ok(done)
+}
+
+impl Installed {
+    /// Write the stored text, then answer with `self`.
+    fn and_write(self, dir: &Path, path: &Path, text: &str) -> Result<Self> {
+        write_atomic(dir, path, text)?;
+        Ok(self)
+    }
+}
+
+/// Rename the file to `homma.local.toml.replaced`, refusing to overwrite one.
+fn move_aside(dir: &Path, path: &Path) -> Result<PathBuf> {
+    let aside = dir.join(format!("{LOCAL_FILE}.replaced"));
+    if std::fs::symlink_metadata(&aside).is_ok() {
+        bail!(
+            "{} is already there, an earlier replaced file; remove it first",
+            aside.display()
+        );
+    }
+    std::fs::rename(path, &aside).with_context(|| format!("moving {} aside", path.display()))?;
+    Ok(aside)
+}
+
+/// Write through a temporary file in the same directory renamed over `path`.
+fn write_atomic(dir: &Path, path: &Path, text: &str) -> Result<()> {
+    let tmp = dir.join(format!("{LOCAL_FILE}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("replacing {}", path.display())
+    })
 }
 
 /// The file parsed and as written, or `None` where there is none.
@@ -155,12 +424,7 @@ fn set_waiting(dir: &Path, key: &str, value: &str, wait: std::time::Duration) ->
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
     let out = local::set(&text, key, value)?;
-    let tmp = dir.join(format!("{LOCAL_FILE}.{}.tmp", std::process::id()));
-    std::fs::write(&tmp, out).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).with_context(|| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("replacing {}", path.display())
-    })
+    write_atomic(dir, &path, &out)
 }
 
 #[cfg(test)]
