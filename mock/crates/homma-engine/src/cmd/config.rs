@@ -133,7 +133,7 @@ pub fn init(cfg: &Config, repo: Option<&str>, format: OutputFormat) -> Result<Ou
                 continue;
             },
         };
-        blocked |= findings.iter().any(configs::Finding::blocks);
+        blocked |= findings.iter().any(configs::ConfigFinding::blocks);
         repos.push(RepoConfigState {
             repo:       name,
             local_path: local.display().to_string(),
@@ -169,7 +169,7 @@ pub fn collect(cfg: &Config, repo: Option<&str>) -> Result<ConfigReport> {
     let mut blocked = false;
     for (name, local) in members(cfg, repo)? {
         let findings = configs::inspect(&local, &templates);
-        let this_blocks = findings.iter().any(configs::Finding::blocks);
+        let this_blocks = findings.iter().any(configs::ConfigFinding::blocks);
         blocked |= this_blocks;
         repos.push(RepoConfigState {
             repo:       name,
@@ -190,10 +190,10 @@ pub fn collect(cfg: &Config, repo: Option<&str>) -> Result<ConfigReport> {
 /// A match is dropped, because a report listing every config that is fine is a
 /// report nobody reads to the end, and the whole point of this being on the
 /// commit path is that somebody reads it.
-fn interesting(findings: &[configs::Finding]) -> Vec<String> {
+fn interesting(findings: &[configs::ConfigFinding]) -> Vec<String> {
     findings
         .iter()
-        .filter(|f| !matches!(f, configs::Finding::Matches(_)))
+        .filter(|f| !matches!(f, configs::ConfigFinding::Matches(_)))
         .map(ToString::to_string)
         .collect()
 }
@@ -245,14 +245,14 @@ mod tests {
         // The summary exists to be read on a commit path, so what it drops
         // matters as much as what it keeps.
         let all = [
-            configs::Finding::Matches("a".into()),
-            configs::Finding::Differs("b".into()),
-            configs::Finding::Missing("c".into(), configs::Severity::Required),
-            configs::Finding::Missing("d".into(), configs::Severity::Suggested),
-            configs::Finding::Placed("e".into()),
-            configs::Finding::CannotInfer("f".into()),
-            configs::Finding::NoVariantFits("g".into(), "why".into()),
-            configs::Finding::Failed("h".into(), "why".into()),
+            configs::ConfigFinding::Matches("a".into()),
+            configs::ConfigFinding::Differs("b".into()),
+            configs::ConfigFinding::Missing("c".into(), configs::Severity::Required),
+            configs::ConfigFinding::Missing("d".into(), configs::Severity::Suggested),
+            configs::ConfigFinding::Placed("e".into()),
+            configs::ConfigFinding::CannotInfer("f".into()),
+            configs::ConfigFinding::NoVariantFits("g".into(), "why".into()),
+            configs::ConfigFinding::Failed("h".into(), "why".into()),
         ];
         let kept = interesting(&all);
         assert_eq!(kept.len(), all.len() - 1, "exactly the match should drop");
@@ -261,7 +261,7 @@ mod tests {
             "a matching config reached the summary: {kept:?}"
         );
         // The control: a report of nothing but matches has nothing to say.
-        assert!(interesting(&[configs::Finding::Matches("a".into())]).is_empty());
+        assert!(interesting(&[configs::ConfigFinding::Matches("a".into())]).is_empty());
     }
 
     #[test]

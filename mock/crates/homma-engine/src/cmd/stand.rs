@@ -12,7 +12,7 @@
 
 use anyhow::{Context, Result};
 use homma_api::{AbsPath, ContainedPath, Git, Staffing, Workspace};
-use homma_org::{Layout, Registry, prepare, provision, write_definitions};
+use homma_org::{Layout, OrgRegistry, prepare, provision, write_definitions};
 
 use super::org::DISCIPLINE;
 
@@ -68,7 +68,7 @@ pub struct StoodUp {
 /// definition it generated told the Hand it committed under an identity nothing
 /// had set. Every test passed, because each tested a function nothing called.
 pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -> Result<StoodUp> {
-    let registry = Registry::new(ws);
+    let registry = OrgRegistry::new(ws);
     let id = registry
         .get(handle)
         .with_context(|| format!("no identity `{handle}` in the registry"))?;

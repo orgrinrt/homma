@@ -11,7 +11,7 @@
 
 /// A remote, reduced to what identifies the repository it points at.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Remote {
+pub enum ParsedRemote {
     /// A repository on a host, which is what nearly every remote is.
     Hosted {
         host:  String,
@@ -35,7 +35,7 @@ pub fn same_repo(a: &str, b: &str) -> bool {
 }
 
 /// What a remote points at.
-pub fn parse(url: &str) -> Remote {
+pub fn parse(url: &str) -> ParsedRemote {
     let trimmed = url.trim().trim_end_matches('/');
 
     // A `file://` URL is a path wearing a URL. Treating it as a host made
@@ -71,7 +71,7 @@ pub fn parse(url: &str) -> Remote {
 /// Resolved because two spellings of one directory are one directory; left as
 /// written where it does not exist, so a path not yet created still compares to
 /// itself.
-fn local(path: &str) -> Remote {
+fn local(path: &str) -> ParsedRemote {
     // **Not stripped before resolving.** `/srv/content.git` is a bare
     // repository and `/srv/content` is a working tree beside it; they are two
     // repositories, and stripping first made them one, which fails open.
@@ -79,10 +79,10 @@ fn local(path: &str) -> Remote {
     // local path still compares to its own working tree.
     let as_written = std::path::PathBuf::from(path);
     if as_written.exists() {
-        return Remote::Local(std::fs::canonicalize(&as_written).unwrap_or(as_written));
+        return ParsedRemote::Local(std::fs::canonicalize(&as_written).unwrap_or(as_written));
     }
     let stripped = std::path::PathBuf::from(strip_git_suffix(path));
-    Remote::Local(std::fs::canonicalize(&stripped).unwrap_or(stripped))
+    ParsedRemote::Local(std::fs::canonicalize(&stripped).unwrap_or(stripped))
 }
 
 /// Exactly one trailing `.git`.
@@ -94,7 +94,7 @@ fn strip_git_suffix(s: &str) -> &str {
     s.strip_suffix(".git").unwrap_or(s)
 }
 
-fn hosted(authority: &str, path: &str) -> Remote {
+fn hosted(authority: &str, path: &str) -> ParsedRemote {
     // Credentials are not the identity, and neither is the port: the same
     // repository reached on an explicit 22 or 443 is the same repository.
     let host = authority.rsplit('@').next().unwrap_or(authority);
@@ -108,7 +108,7 @@ fn hosted(authority: &str, path: &str) -> Remote {
     let path = strip_git_suffix(path.trim_matches('/'));
     match path.rsplit_once('/') {
         Some((owner, name)) => {
-            Remote::Hosted {
+            ParsedRemote::Hosted {
                 host:  host.to_ascii_lowercase(),
                 // A forge treats an owner case-insensitively, so two spellings of
                 // one owner are one owner.
@@ -121,7 +121,7 @@ fn hosted(authority: &str, path: &str) -> Remote {
         },
         // A host and a bare name, with nobody owning it.
         None => {
-            Remote::Hosted {
+            ParsedRemote::Hosted {
                 host:  host.to_ascii_lowercase(),
                 owner: String::new(),
                 name:  path.to_ascii_lowercase(),
@@ -285,14 +285,14 @@ mod tests {
 
     #[test]
     fn a_windows_drive_letter_is_a_path_and_not_a_host() {
-        assert!(matches!(parse("C:/src/content"), Remote::Local(_)));
+        assert!(matches!(parse("C:/src/content"), ParsedRemote::Local(_)));
     }
 
     #[test]
     fn a_path_of_more_than_two_segments_keeps_only_the_owner_and_the_name() {
         assert_eq!(
             parse("https://git.example.org/group/sub/thing.git"),
-            Remote::Hosted {
+            ParsedRemote::Hosted {
                 host:  "git.example.org".into(),
                 owner: "group/sub".into(),
                 name:  "thing".into(),
