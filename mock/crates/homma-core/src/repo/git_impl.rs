@@ -405,6 +405,12 @@ mod tests {
             let out = std::process::Command::new("git")
                 .args(args)
                 .current_dir(&repo)
+                // A git author or committer variable outranks every config key, so a
+                // machine exporting them would answer for the identity under test.
+                .env_remove("GIT_AUTHOR_NAME")
+                .env_remove("GIT_AUTHOR_EMAIL")
+                .env_remove("GIT_COMMITTER_NAME")
+                .env_remove("GIT_COMMITTER_EMAIL")
                 .env("GIT_CONFIG_GLOBAL", &hostile)
                 .env("GIT_CONFIG_SYSTEM", &hostile)
                 .output()

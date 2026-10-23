@@ -18,6 +18,22 @@ use std::path::{Path, PathBuf};
 use assert_cmd::Command;
 pub use homma_core::testing::global_configs_now;
 
+/// A `git` that answers for nothing the machine exports: the author and committer
+/// variables outrank every config key, so a container carrying them would put its
+/// own identity on a commit the test configured another for.
+pub fn git() -> std::process::Command {
+    let mut c = std::process::Command::new("git");
+    for k in [
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ] {
+        c.env_remove(k);
+    }
+    c
+}
+
 pub fn bin() -> Command {
     Command::cargo_bin("homma-engine").expect("binary built")
 }
@@ -58,7 +74,7 @@ pub fn clone_at(root: &Path, name: &str, url: Option<&str>) {
     let path = root.join(name);
     std::fs::create_dir_all(&path).unwrap();
     let run = |args: &[&str]| {
-        let out = std::process::Command::new("git")
+        let out = git()
             .arg("-C")
             .arg(&path)
             .args(args)
@@ -66,7 +82,7 @@ pub fn clone_at(root: &Path, name: &str, url: Option<&str>) {
             .expect("git runs");
         assert!(out.status.success(), "git {args:?}: {out:?}");
     };
-    run(&["init", "-q"]);
+    run(&["init", "-q", "-b", "main"]);
     if let Some(url) = url {
         run(&["remote", "add", "origin", url]);
     }
@@ -87,22 +103,12 @@ pub fn committed_crate(root: &Path, name: &str) {
         vec!["add", "."],
         vec!["commit", "-qm", "feat: first"],
     ] {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&path)
-            .args(&args)
-            .output()
-            .unwrap();
+        let out = git().arg("-C").arg(&path).args(&args).output().unwrap();
         assert!(out.status.success(), "git {args:?}: {out:?}");
     }
 }
 
 pub fn git_in(root: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .unwrap();
+    let out = git().arg("-C").arg(root).args(args).output().unwrap();
     assert!(out.status.success(), "git {args:?}: {out:?}");
 }
