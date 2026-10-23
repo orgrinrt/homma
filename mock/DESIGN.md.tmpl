@@ -410,6 +410,13 @@ sits, and nothing else is a tool. Two checks are homma's own, because renki does
 not make them: the descriptor's name is its directory's, and a verb is named
 once.
 
+renki builds on unix only, so the tools are a part of homma that exists on unix
+only. Off unix the engine builds without them, and every command that would
+reach a tool, `homma tools`, `homma tools check`, `homma tools run`, a built-in
+group's word handed on and `homma <tool>`, is refused saying that renki, which
+the tools run on, is unix only. No feature turns them off on a platform that can
+carry them.
+
 `homma tools` lists every tool it finds, one line each: the name, the summary,
 the verbs, and whether the tool is promoted. A descriptor that cannot be read is
 listed by its directory's name with the reason, where a reader sees it, and
