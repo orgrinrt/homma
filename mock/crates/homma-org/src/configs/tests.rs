@@ -103,7 +103,7 @@ fn a_repo_missing_a_config_gets_it_and_the_bytes_are_the_templates() {
     let f = Fixture::new(&[("rust_required", "deny.toml", DENY)]);
     let repo = f.repo("arvo", true);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Placed("deny.toml".into())
+        ConfigFinding::Placed("deny.toml".into())
     ]);
     assert_eq!(
         std::fs::read_to_string(repo.as_path().join("deny.toml")).unwrap(),
@@ -121,7 +121,7 @@ fn a_repo_whose_copy_matches_is_reported_and_not_rewritten() {
         .modified()
         .unwrap();
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Matches("deny.toml".into())
+        ConfigFinding::Matches("deny.toml".into())
     ]);
     assert_eq!(
         std::fs::metadata(repo.as_path().join("deny.toml"))
@@ -146,7 +146,7 @@ fn a_repo_whose_copy_differs_keeps_its_own_and_is_only_reported() {
         "[bans]\nmultiple-versions = \"warn\"\n",
     );
     let found = ensure(&f.root, &repo, &f.templates());
-    assert_eq!(found, vec![Finding::Differs("deny.toml".into())]);
+    assert_eq!(found, vec![ConfigFinding::Differs("deny.toml".into())]);
     assert_eq!(
         std::fs::read_to_string(repo.as_path().join("deny.toml")).unwrap(),
         "[bans]\nmultiple-versions = \"warn\"\n",
@@ -167,7 +167,7 @@ fn a_repo_that_is_not_in_the_set_does_not_get_the_template() {
     ]);
     let repo = f.repo("viola-grammar-ts", false);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Placed("editorconfig".into())
+        ConfigFinding::Placed("editorconfig".into())
     ]);
     assert!(
         !repo.as_path().join("deny.toml").exists(),
@@ -184,7 +184,7 @@ fn a_rust_repo_under_mock_is_recognised_too() {
     let repo = f.repo("homma", false);
     f.put("homma", "mock/Cargo.toml", "[workspace]\n");
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Placed("deny.toml".into())
+        ConfigFinding::Placed("deny.toml".into())
     ]);
 }
 
@@ -198,7 +198,7 @@ fn a_config_under_mock_satisfies_the_template() {
     f.put("vehje", "mock/Cargo.toml", "[workspace]\n");
     f.put("vehje", "mock/rust-toolchain.toml", NIGHTLY);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Matches("rust-toolchain.toml".into())
+        ConfigFinding::Matches("rust-toolchain.toml".into())
     ]);
     assert!(
         !repo.as_path().join("rust-toolchain.toml").exists(),
@@ -208,7 +208,7 @@ fn a_config_under_mock_satisfies_the_template() {
     // The control, so the pass above is not a check that always says satisfied.
     let bare = f.repo("tassu", true);
     assert_eq!(ensure(&f.root, &bare, &f.templates()), vec![
-        Finding::Placed("rust-toolchain.toml".into())
+        ConfigFinding::Placed("rust-toolchain.toml".into())
     ]);
 }
 
@@ -225,7 +225,7 @@ fn a_differing_copy_under_mock_is_read_from_there() {
         "[toolchain]\nchannel = \"nightly\"\n",
     );
     assert_eq!(inspect(repo.as_path(), &f.templates()), vec![
-        Finding::Differs("rust-toolchain.toml".into())
+        ConfigFinding::Differs("rust-toolchain.toml".into())
     ]);
 }
 
@@ -234,7 +234,9 @@ fn a_template_nobody_has_placed_is_reported_rather_than_spread_everywhere() {
     let f = Fixture::new(&[("", "mystery.toml", "?\n")]);
     let repo = f.repo("arvo", true);
     let found = ensure(&f.root, &repo, &f.templates());
-    assert_eq!(found, vec![Finding::CannotInfer("mystery.toml".into())]);
+    assert_eq!(found, vec![ConfigFinding::CannotInfer(
+        "mystery.toml".into()
+    )]);
     assert!(
         found[0].needs_a_human(),
         "an unplaceable config must reach somebody"
@@ -306,7 +308,7 @@ fn a_suggested_config_is_reported_and_does_not_block() {
     let f = Fixture::new(&[("rust_suggested", "clippy.toml", "a\n")]);
     let repo = f.repo("arvo", true);
     let found = inspect(repo.as_path(), &f.templates());
-    assert_eq!(found, vec![Finding::Missing(
+    assert_eq!(found, vec![ConfigFinding::Missing(
         "clippy.toml".into(),
         Severity::Suggested
     )]);
@@ -325,13 +327,13 @@ fn the_strongest_severity_among_the_sets_a_repo_is_in_wins() {
     let both = f.repo("hybrid", true);
     f.put("hybrid", "deno.json", "{}\n");
     assert_eq!(inspect(both.as_path(), &f.templates()), vec![
-        Finding::Missing("shared.json".into(), Severity::Required)
+        ConfigFinding::Missing("shared.json".into(), Severity::Required)
     ]);
     // Only deno: the weaker claim is the only one that applies.
     let deno = f.repo("scripts", false);
     f.put("scripts", "deno.json", "{}\n");
     assert_eq!(inspect(deno.as_path(), &f.templates()), vec![
-        Finding::Missing("shared.json".into(), Severity::Suggested)
+        ConfigFinding::Missing("shared.json".into(), Severity::Suggested)
     ]);
     // Neither: nothing to say at all.
     let other = f.repo("plain", false);
@@ -349,9 +351,9 @@ fn several_templates_are_each_answered_and_the_order_is_stable() {
     f.put("arvo", "deny.toml", "b\n");
     f.put("arvo", "editorconfig", "different\n");
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Placed("clippy.toml".into()),
-        Finding::Matches("deny.toml".into()),
-        Finding::Differs("editorconfig".into()),
+        ConfigFinding::Placed("clippy.toml".into()),
+        ConfigFinding::Matches("deny.toml".into()),
+        ConfigFinding::Differs("editorconfig".into()),
     ]);
 }
 
@@ -370,7 +372,10 @@ fn a_rust_repo_on_stable_is_told_no_variant_fits_rather_than_given_the_wrong_one
     let found = ensure(&f.root, &repo, &f.templates());
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].file_name(), "rustfmt.toml");
-    assert!(matches!(found[0], Finding::NoVariantFits(..)), "{found:?}");
+    assert!(
+        matches!(found[0], ConfigFinding::NoVariantFits(..)),
+        "{found:?}"
+    );
     assert!(found[0].needs_a_human());
     assert!(
         !found[0].blocks(),
@@ -424,7 +429,7 @@ fn a_pin_under_mock_counts_the_same_as_one_at_the_root() {
     f.put("hilavitkutin", "mock/Cargo.toml", "[workspace]\n");
     assert!(matches!(
         ensure(&f.root, &repo, &f.templates())[0],
-        Finding::NoVariantFits(..)
+        ConfigFinding::NoVariantFits(..)
     ));
     f.put(
         "hilavitkutin",
@@ -432,7 +437,7 @@ fn a_pin_under_mock_counts_the_same_as_one_at_the_root() {
         "[toolchain]\nchannel = \"nightly\"\n",
     );
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
-        Finding::Placed("rustfmt.toml".into())
+        ConfigFinding::Placed("rustfmt.toml".into())
     ]);
 }
 
@@ -441,14 +446,20 @@ fn only_a_missing_required_config_blocks() {
     // Asserted over every variant rather than over the one a fix happens to
     // produce, so a variant added later cannot quietly start or stop blocking.
     let cases = [
-        (Finding::Matches("x".into()), false),
-        (Finding::Differs("x".into()), false),
-        (Finding::Missing("x".into(), Severity::Required), true),
-        (Finding::Missing("x".into(), Severity::Suggested), false),
-        (Finding::Placed("x".into()), false),
-        (Finding::CannotInfer("x".into()), false),
-        (Finding::NoVariantFits("x".into(), "why".into()), false),
-        (Finding::Failed("x".into(), "why".into()), false),
+        (ConfigFinding::Matches("x".into()), false),
+        (ConfigFinding::Differs("x".into()), false),
+        (ConfigFinding::Missing("x".into(), Severity::Required), true),
+        (
+            ConfigFinding::Missing("x".into(), Severity::Suggested),
+            false,
+        ),
+        (ConfigFinding::Placed("x".into()), false),
+        (ConfigFinding::CannotInfer("x".into()), false),
+        (
+            ConfigFinding::NoVariantFits("x".into(), "why".into()),
+            false,
+        ),
+        (ConfigFinding::Failed("x".into(), "why".into()), false),
     ];
     for (finding, want) in cases {
         assert_eq!(finding.blocks(), want, "{finding:?}");
@@ -461,14 +472,14 @@ fn everything_that_blocks_also_needs_a_human() {
     // stops a commit and is reported to nobody is a stop with no explanation
     // attached.
     for finding in [
-        Finding::Matches("x".into()),
-        Finding::Differs("x".into()),
-        Finding::Missing("x".into(), Severity::Required),
-        Finding::Missing("x".into(), Severity::Suggested),
-        Finding::Placed("x".into()),
-        Finding::CannotInfer("x".into()),
-        Finding::NoVariantFits("x".into(), "why".into()),
-        Finding::Failed("x".into(), "why".into()),
+        ConfigFinding::Matches("x".into()),
+        ConfigFinding::Differs("x".into()),
+        ConfigFinding::Missing("x".into(), Severity::Required),
+        ConfigFinding::Missing("x".into(), Severity::Suggested),
+        ConfigFinding::Placed("x".into()),
+        ConfigFinding::CannotInfer("x".into()),
+        ConfigFinding::NoVariantFits("x".into(), "why".into()),
+        ConfigFinding::Failed("x".into(), "why".into()),
     ] {
         if finding.blocks() {
             assert!(
@@ -489,7 +500,9 @@ fn inspect_writes_nothing() {
     let found = inspect(repo.as_path(), &f.templates());
     assert_eq!(f.listing("arvo"), before, "inspect wrote into the repo");
     assert!(
-        found.iter().any(|x| matches!(x, Finding::Missing(..))),
+        found
+            .iter()
+            .any(|x| matches!(x, ConfigFinding::Missing(..))),
         "the case that would have been written was not exercised: {found:?}"
     );
 
@@ -518,12 +531,12 @@ fn ensure_and_inspect_agree_on_what_is_missing() {
     let seen = inspect(repo.as_path(), &f.templates());
     let missing: Vec<_> = seen
         .iter()
-        .filter(|x| matches!(x, Finding::Missing(..)))
+        .filter(|x| matches!(x, ConfigFinding::Missing(..)))
         .map(|x| x.file_name().to_string())
         .collect();
     let placed: Vec<_> = ensure(&f.root, &repo, &f.templates())
         .into_iter()
-        .filter(|x| matches!(x, Finding::Placed(_)))
+        .filter(|x| matches!(x, ConfigFinding::Placed(_)))
         .map(|x| x.file_name().to_string())
         .collect();
     assert_eq!(missing, placed);
