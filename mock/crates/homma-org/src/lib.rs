@@ -25,11 +25,11 @@ pub use remote::{repo_name, same_repo};
 pub use workspace::{Layout, Prepared, prepare};
 
 /// The registry, read from a workspace's configuration.
-pub struct Registry<'a> {
+pub struct OrgRegistry<'a> {
     workspace: &'a Workspace,
 }
 
-impl<'a> Registry<'a> {
+impl<'a> OrgRegistry<'a> {
     pub fn new(workspace: &'a Workspace) -> Self {
         Self {
             workspace,
@@ -128,7 +128,7 @@ handle = "proof"
     #[test]
     fn a_role_lists_only_its_own() {
         let w = ws();
-        let r = Registry::new(&w);
+        let r = OrgRegistry::new(&w);
         let hands: Vec<_> = r
             .in_role(Role::Hand)
             .iter()
@@ -142,7 +142,7 @@ handle = "proof"
     #[test]
     fn an_incomplete_entry_is_reported_with_what_it_lacks() {
         let w = ws();
-        let r = Registry::new(&w);
+        let r = OrgRegistry::new(&w);
         let gaps = r.incomplete();
         assert_eq!(gaps.len(), 1, "only the one hand that cannot stand up");
         assert_eq!(gaps[0].0.handle, "nameless");
@@ -155,7 +155,7 @@ handle = "proof"
         // way turns a roster of drawn boundaries into a roster of mistakes, and
         // a report that is wrong once per mapped domain is one nobody reads.
         let w = ws();
-        let r = Registry::new(&w);
+        let r = OrgRegistry::new(&w);
         assert!(
             r.incomplete().iter().all(|(i, _)| i.handle != "rendering"),
             "a domain mapped on purpose is not a gap"
@@ -169,7 +169,7 @@ handle = "proof"
     #[test]
     fn a_consultant_is_never_incomplete_because_it_owns_no_workspace() {
         let w = ws();
-        let r = Registry::new(&w);
+        let r = OrgRegistry::new(&w);
         assert!(r.incomplete().iter().all(|(i, _)| i.handle != "proof"));
         // Nor mapped, which is a statement about a workspace it could have had.
         assert!(r.mapped().iter().all(|i| i.handle != "proof"));

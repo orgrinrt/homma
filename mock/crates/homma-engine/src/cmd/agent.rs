@@ -522,7 +522,7 @@ pub mod regen {
                         for f in homma_org::configs::ensure(&root, &contained, &templates) {
                             if f.needs_a_human() {
                                 needs_a_human.push(format!("{name}: {f}"));
-                            } else if matches!(f, homma_org::configs::Finding::Differs(_)) {
+                            } else if matches!(f, homma_org::configs::ConfigFinding::Differs(_)) {
                                 diverged.push(format!("{name}: {f}"));
                             }
                             config_findings.push(f.to_string());
