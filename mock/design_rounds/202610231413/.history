@@ -1,17 +1,24 @@
-b7e2ceb chore: lock the source changelist for the org type names
-ce74ed7 fix: name the org crate's registry, remote and finding apart from the core's
-0b2668c docs: open the source changelist for the org type names again
-deeba5a chore: lock the doc changelist again
-1d22245 docs: name the org registry by its new name in the crate design
-40f65e1 docs: open the source changelist for the org type names
-9a7e403 chore: lock the doc changelist for the org type names
-dca3f4e docs: name the org crate's types apart from the core's
-98b0fc0 chore: close the round for the workspace tools
-d1a800a chore: lock the source changelist for the workspace tools
-6971f00 feat: dispatch the content repository's tools as homma subcommands
-c4e50bd docs: open the source changelist for the workspace tools
-2391e2d chore: lock the doc changelist for the workspace tools
-0575c94 docs: describe the content repository's tools as homma subcommands
+df60251 chore: lock the source changelist for the env tier
+3f6c590 fix: set the environment hostile in `provisioned_commit` and catalogue it
+fd9d83c chore: lock the doc changelist and open the src one for the env tier
+8358ed2 docs: open a round on the red test `provisioned_commit` hid
+6111d1b Merge remote-tracking branch 'origin/dev' into fix/pin-git-env-in-tests
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+d98b0c0 chore: re-file the two topics the round swept
+e7d712f chore: close design round 202610231252
+7c81df7 chore: lock the source changelist for the git environment tests
+9ea11d1 fix: pin git's identity and default branch in the tests that run it
+9593700 docs: open the source changelist for the git environment tests
+45afeb7 chore: lock the doc changelist for the git environment tests
+b9294b1 docs: open a round on tests that inherit the git environment
+4d66f8b chore: re-file the two topics the round swept
+05660e2 chore: close design round 202610231245
+5d927ca chore: lock the source changelist for the org type names
+e5c2ba7 fix: name the org registry, remote and finding apart from the core
+82e0e29 docs: open the source changelist for the org type names
+0585e99 chore: lock the doc changelist for the org type names
+d9931ea docs: name the org crate types apart from the core ones
+d645372 docs: open a round on the org crate type names
 98a9e10 feat: list build directories other than the workspace one in status
 61f07b1 fix: read the object that ends a cut transcript line
 7093371 feat: write generated hooks per clone and render the personas
@@ -41,10 +48,3 @@ d9615ab fix: the release's gate, plan, sweep and hook after the first merge
 6b05830 feat: `homma release`, the gate, merge, tag and publish off one command
 47978c0 feat: carry the workspace's own tools' output in homma status
 d83f286 chore: regenerate .taplo.toml
-9695777 fix: the launcher can reach its own engine
-f2b0c4e feat!: detect workspace members rather than declaring them
-4abf397 docs: rewrite the readme, and fix what checking it turned up
-9db7e53 chore: take renki from crates.io, and publish what compiles
-6e970ad chore: every source file carries its notice
-22aee22 feat: run homma from its own launcher over renki
-14d6ad2 feat: a forge credential can come from whatever holds it

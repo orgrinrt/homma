@@ -435,6 +435,27 @@ pub enum LocalOp {
     },
     /// Print the file. Exit 1 where there is none.
     Show,
+    /// The stored configs by name, and which one is installed. Exit 1 where
+    /// there is no store.
+    ///
+    /// The store is `.shared/local/` under the workspace root. A name is
+    /// installed where the file's `instance.work` is that name.
+    List,
+    /// Put a stored config in place as this clone's `homma.local.toml`.
+    ///
+    /// A copy, which the clone then owns: what tools record goes into it and
+    /// never back into the store. Where no file exists it is written. Where
+    /// one exists for the same work it gains the keys it lacks and no key it
+    /// has is changed, so running it again is safe. Where it is for another
+    /// work, or is a link, it is refused unless `--replace` is given, which
+    /// moves the old file aside to `homma.local.toml.replaced`.
+    Install {
+        /// The stored name, which is the work it is for.
+        name:    String,
+        /// Move a file for another work, or a link, aside and install over it.
+        #[arg(long)]
+        replace: bool,
+    },
     /// Write one string at `instance.<key>` or `tools.<name>.<key>`.
     ///
     /// Keeps every comment, and refuses a value that would leave the file
