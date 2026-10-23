@@ -415,7 +415,9 @@ only. Off unix the engine builds without them, and every command that would
 reach a tool, `homma tools`, `homma tools check`, `homma tools run`, a built-in
 group's word handed on and `homma <tool>`, is refused saying that renki, which
 the tools run on, is unix only. No feature turns them off on a platform that can
-carry them.
+carry them. On 23 October 2026 op waived the feature half of the per-target and
+per-feature gate for these tools, choosing that over a default-off `tools` feature
+that workspace builds would turn on.
 
 `homma tools` lists every tool it finds, one line each: the name, the summary,
 the verbs, and whether the tool is promoted. A descriptor that cannot be read is
