@@ -166,7 +166,8 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
 /// already has is left exactly as it is, whatever the stored value says: the
 /// file is the clone's own and a tool or a person may have changed it since it
 /// was installed, so the store only fills what is missing. Lists are values and
-/// are never merged into. A result that would not load is refused.
+/// are never merged into, and a table is entered whether it is written as a
+/// `[table]` or inline. A result that would not load is refused.
 pub fn fill(existing: &str, stored: &str) -> Result<(String, Vec<String>), LocalError> {
     let mut doc: toml_edit::DocumentMut = existing.parse().map_err(LocalError::Edit)?;
     let from: toml_edit::DocumentMut = stored.parse().map_err(LocalError::Edit)?;
@@ -178,8 +179,8 @@ pub fn fill(existing: &str, stored: &str) -> Result<(String, Vec<String>), Local
 }
 
 fn fill_table(
-    into: &mut toml_edit::Table,
-    from: &toml_edit::Table,
+    into: &mut dyn toml_edit::TableLike,
+    from: &dyn toml_edit::TableLike,
     at: &str,
     added: &mut Vec<String>,
 ) {
@@ -191,7 +192,7 @@ fn fill_table(
                 leaves(item, &path, added);
             },
             Some(have) => {
-                if let (Some(have), Some(item)) = (have.as_table_mut(), item.as_table()) {
+                if let (Some(have), Some(item)) = (have.as_table_like_mut(), item.as_table_like()) {
                     fill_table(have, item, &path, added);
                 }
             },
@@ -200,7 +201,7 @@ fn fill_table(
 }
 
 fn leaves(item: &toml_edit::Item, path: &str, out: &mut Vec<String>) {
-    match item.as_table() {
+    match item.as_table_like() {
         Some(t) => {
             for (key, inner) in t.iter() {
                 leaves(inner, &format!("{path}.{key}"), out);

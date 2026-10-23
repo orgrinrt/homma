@@ -99,3 +99,17 @@ fn list_without_a_store_reports_and_exits_one() {
     std::fs::write(d.path().join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
     homma(d.path(), &["list"]).code(1);
 }
+
+#[test]
+fn list_without_a_store_prints_an_empty_list_in_the_document_and_exits_one() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
+    let out = bin()
+        .arg("--dir")
+        .arg(d.path())
+        .args(["--output", "json", "local", "list"])
+        .assert()
+        .code(1);
+    let rows: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(rows, serde_json::json!([]));
+}

@@ -558,3 +558,67 @@ fn list_shows_an_unusable_stored_file_instead_of_hiding_it() {
         .collect();
     assert_eq!(bad, ["broken", "kenno"]);
 }
+
+#[test]
+fn list_shows_a_name_that_install_would_refuse_with_the_reason() {
+    let d = ws();
+    store(&d, &[
+        ("kaski", KASKI),
+        ("a.b", "[instance]\nwork = \"a.b\"\n"),
+    ]);
+    let (entries, _) = list(d.path()).unwrap().unwrap();
+    let by = |n: &str| entries.iter().find(|e| e.name == n).unwrap();
+    assert_eq!(by("kaski").error, None);
+    let reason = by("a.b").error.as_deref().expect("listed with its reason");
+    assert!(reason.contains("not a stored name"), "{reason}");
+    // The control: what `install` says of the same name is what `list` shows.
+    let refused = install(d.path(), "a.b", false).unwrap_err().to_string();
+    assert!(refused.contains("not a stored name"), "{refused}");
+}
+
+#[cfg(unix)]
+#[test]
+fn list_shows_a_file_whose_name_is_not_utf8_instead_of_skipping_it() {
+    use std::os::unix::ffi::OsStrExt;
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    let odd = std::ffi::OsStr::from_bytes(b"a\xffb.toml");
+    std::fs::write(
+        d.path().join(local::STORE_DIR).join(odd),
+        "[instance]\nwork = \"x\"\n",
+    )
+    .unwrap();
+    let (entries, _) = list(d.path()).unwrap().unwrap();
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    let bad = entries.iter().find(|e| e.error.is_some()).unwrap();
+    assert!(
+        bad.name.contains("a") && bad.name.contains("b"),
+        "{}",
+        bad.name
+    );
+    assert!(
+        bad.error.as_deref().unwrap().contains("UTF-8"),
+        "{:?}",
+        bad.error
+    );
+}
+
+#[test]
+fn a_replace_whose_write_fails_leaves_the_old_file_where_it_was() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    install(d.path(), "kenno", false).unwrap();
+    let before = file(&d);
+    // A directory where the temporary file goes, so writing it fails.
+    std::fs::create_dir(
+        d.path()
+            .join(format!("{LOCAL_FILE}.{}.tmp", std::process::id())),
+    )
+    .unwrap();
+    assert!(install(d.path(), "kaski", true).is_err());
+    assert_eq!(file(&d), before, "the old file is still the file");
+    assert!(
+        !d.path().join("homma.local.toml.replaced").exists(),
+        "nothing was moved aside for a write that did not happen"
+    );
+}

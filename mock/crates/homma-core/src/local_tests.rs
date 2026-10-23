@@ -476,6 +476,46 @@ fn fill_of_a_complete_file_adds_nothing_and_changes_no_byte() {
 }
 
 #[test]
+fn fill_enters_an_inline_table_in_the_file_and_adds_the_key_it_lacks() {
+    let have = "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"true\" }\n";
+    let (out, added) = fill(have, STORED).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, [
+        "instance.title",
+        "instance.repos",
+        "tools.goal.objective",
+        "tools.msg.as"
+    ]);
+}
+
+#[test]
+fn fill_names_each_key_of_an_inline_stored_table_that_the_file_lacks() {
+    let stored =
+        "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"false\", objective = \"o\" }\n";
+    let (out, added) = fill("[instance]\nwork = \"k\"\n", stored).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, ["tools.goal.active", "tools.goal.objective"]);
+    let (again, added) = fill(&out, stored).unwrap();
+    assert!(added.is_empty(), "{added:?}");
+    assert_eq!(out, again);
+}
+
+#[test]
+fn fill_enters_an_inline_stored_table_over_a_file_that_writes_it_as_a_table() {
+    let stored =
+        "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"false\", objective = \"o\" }\n";
+    let have = "[instance]\nwork = \"k\"\n\n[tools.goal]\nactive = \"true\"\n";
+    let (out, added) = fill(have, stored).unwrap();
+    let l = Local::parse(&out).unwrap();
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(added, ["tools.goal.objective"]);
+}
+
+#[test]
 fn fill_refuses_text_that_is_not_toml() {
     assert!(matches!(fill("[[", STORED), Err(LocalError::Edit(_))));
     assert!(matches!(

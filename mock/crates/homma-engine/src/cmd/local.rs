@@ -51,7 +51,12 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
         },
         LocalOp::List => {
             let Some((entries, installed)) = list(&dir)? else {
-                println!("no store at {}", dir.join(local::STORE_DIR).display());
+                match cli.output {
+                    OutputFormat::Human => {
+                        println!("no store at {}", dir.join(local::STORE_DIR).display());
+                    },
+                    OutputFormat::Json => println!("[]"),
+                }
                 return Ok(Outcome::ReportedFailure);
             };
             match cli.output {
@@ -195,9 +200,22 @@ pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let Some(name) = path.file_stem().and_then(|s| s.to_str()).map(str::to_owned) else {
-            continue;
+        // A name `install` would refuse, and one that is not UTF-8, are listed with
+        // the reason rather than as usable or left out.
+        let stem = path.file_stem().unwrap_or_default();
+        let name = stem.to_string_lossy().into_owned();
+        let refused = match stem.to_str() {
+            Some(s) => check_name(s).err().map(|e| e.to_string()),
+            None => Some("the file name is not UTF-8".to_owned()),
         };
+        if refused.is_some() {
+            entries.push(Stored {
+                name,
+                title: None,
+                error: refused,
+            });
+            continue;
+        }
         let checked = std::fs::read_to_string(&path)
             .map_err(|e| format!("{}: {e}", path.display()))
             .and_then(|text| {
@@ -284,7 +302,7 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
                     path.display()
                 );
             }
-            Installed::Replaced(move_aside(dir, &path)?).and_write(dir, &path, &stored)?
+            replace_with(dir, &path, &stored)?
         },
         Ok(_) => {
             let text = std::fs::read_to_string(&path)
@@ -297,7 +315,7 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
                 }
                 Installed::Filled(added)
             } else if replace {
-                Installed::Replaced(move_aside(dir, &path)?).and_write(dir, &path, &stored)?
+                replace_with(dir, &path, &stored)?
             } else {
                 match have {
                     Ok(work) => {
@@ -322,12 +340,26 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
     Ok(done)
 }
 
-impl Installed {
-    /// Write the stored text, then answer with `self`.
-    fn and_write(self, dir: &Path, path: &Path, text: &str) -> Result<Self> {
-        write_atomic(dir, path, text)?;
-        Ok(self)
+/// Install `text` over an existing file, keeping the old one aside.
+///
+/// The new text is written to its temporary file first, so a write that fails
+/// leaves the old file at its path and nothing aside. Only then is the old file
+/// moved aside, and the temporary file renamed into its place; if that last
+/// rename fails the old file is moved back.
+fn replace_with(dir: &Path, path: &Path, text: &str) -> Result<Installed> {
+    let tmp = stage(dir, text)?;
+    let aside = match move_aside(dir, path) {
+        Ok(aside) => aside,
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        },
+    };
+    if let Err(e) = commit(&tmp, path) {
+        let _ = std::fs::rename(&aside, path);
+        return Err(e);
     }
+    Ok(Installed::Replaced(aside))
 }
 
 /// Rename the file to `homma.local.toml.replaced`, refusing to overwrite one.
@@ -343,14 +375,24 @@ fn move_aside(dir: &Path, path: &Path) -> Result<PathBuf> {
     Ok(aside)
 }
 
-/// Write through a temporary file in the same directory renamed over `path`.
-fn write_atomic(dir: &Path, path: &Path, text: &str) -> Result<()> {
+/// Write the text to a temporary file in `dir`, which `commit` renames into place.
+fn stage(dir: &Path, text: &str) -> Result<PathBuf> {
     let tmp = dir.join(format!("{LOCAL_FILE}.{}.tmp", std::process::id()));
     std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| {
-        let _ = std::fs::remove_file(&tmp);
+    Ok(tmp)
+}
+
+/// Rename a staged file over `path`, removing it where that fails.
+fn commit(tmp: &Path, path: &Path) -> Result<()> {
+    std::fs::rename(tmp, path).with_context(|| {
+        let _ = std::fs::remove_file(tmp);
         format!("replacing {}", path.display())
     })
+}
+
+/// Write through a temporary file in the same directory renamed over `path`.
+fn write_atomic(dir: &Path, path: &Path, text: &str) -> Result<()> {
+    commit(&stage(dir, text)?, path)
 }
 
 /// The file parsed and as written, or `None` where there is none.
