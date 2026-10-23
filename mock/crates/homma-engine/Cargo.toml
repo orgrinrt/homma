@@ -32,9 +32,12 @@ anyhow = "1"
 jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
+
 # The host half of renki's extension api: a tool's descriptor is read, checked, located and run by
 # `renki::extension`. `renki-dirs` and `notko` are what the cache root that api fetches into is read
-# with, since `renki` keeps its own resolution of that root to itself.
+# with, since `renki` keeps its own resolution of that root to itself. renki builds on unix only, and
+# so the engine reaches all three there only; elsewhere the tools are refused.
+[target.'cfg(unix)'.dependencies]
 renki = "0.0.3"
 renki-dirs = "0.0.1"
 notko = { version = "0.0.1", default-features = false }

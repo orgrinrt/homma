@@ -15,6 +15,7 @@ use std::process::Command;
 use anyhow::Result;
 use renki::extension::{BUILTIN, Descriptor, Registry, cache_key};
 
+use super::Asked;
 use super::descriptor::{Entry, discover};
 use super::dispatch::*;
 

@@ -394,7 +394,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 Some(ToolsOp::Run {
                     name,
                     words,
-                }) => tools::run_tool(&root, name, words, tools::dispatch::Asked::ByName),
+                }) => tools::run_tool(&root, name, words, tools::Asked::ByName),
             }
         },
         Command::External(words) => {
@@ -403,7 +403,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 anyhow::bail!("no command given");
             };
             let name = name.to_string_lossy();
-            tools::run_tool(&root, &name, rest, tools::dispatch::Asked::AsSubcommand)
+            tools::run_tool(&root, &name, rest, tools::Asked::AsSubcommand)
         },
         Command::Skills {
             op,

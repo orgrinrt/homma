@@ -39,6 +39,11 @@ fn env_name() -> Result<String, String> {
     }
 }
 
+// FIXME: this is a copy of renki 0.0.3's `pub(crate)` `cache_root` (its `cache.rs`, `root_of` and
+// `root_from`), kept because the host half of renki's extension api resolves no cache of its own. The
+// upstream change that removes it is renki exposing the cache root to a host, or `extension::locate`
+// taking the host's short name and namespace and resolving the cache itself. Until then a change to
+// renki's precedence is a change this must follow by hand.
 /// [`root`] over the three values it reads, so it is testable without setting the environment.
 ///
 /// # Errors

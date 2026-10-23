@@ -21,6 +21,7 @@ use std::process::Command;
 use anyhow::{Result, anyhow, bail};
 use renki::extension::{BUILTIN, Descriptor, Registry, command, locate};
 
+use super::Asked;
 use super::descriptor::Entry;
 
 /// The backends renki ships, `local` and `git`. A tool naming another is refused with these listed.
@@ -28,15 +29,6 @@ pub static REGISTRY: Registry = Registry::new(BUILTIN);
 
 /// The host's short name, which the variables the process is told are named for.
 const SHORT: &str = "homma";
-
-/// How the tool was asked for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Asked {
-    /// As a subcommand of homma, which only a promoted tool answers.
-    AsSubcommand,
-    /// By `homma tools run`, which any tool in the workspace answers.
-    ByName,
-}
 
 fn verbs_of(tool: &Descriptor) -> String {
     let names: Vec<&str> = tool.commands.iter().map(|c| c.name.as_str()).collect();
