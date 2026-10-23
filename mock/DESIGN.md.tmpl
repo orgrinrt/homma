@@ -399,16 +399,26 @@ described by a `tool.toml` in the format renki defines: a `name` that is the
 directory's own, a one line `summary`, `tags`, a `backend`, a `source`, a
 `promote` flag and one `[[tool.commands]]` table for each verb, with a `summary`
 and a `run` that is a path inside the tool and never a shell string. homma is
-the host that descriptor is written for. It reads `tools/*/tool.toml` under the
-workspace root, which is where the manifest sits, and nothing else is a tool.
+the host that descriptor is written for, and it is renki's host: a descriptor is
+read and checked by `renki::extension`, a tool is found by its `locate` and a
+command is built by its `command`, so homma holds no second reading of the
+format. What renki refuses, homma refuses for the same reason: a `rev` that is
+not a full object name, a url git would read as a flag, a `run` that leaves the
+tool, and a command whose file resolves outside the tool through a symlink. It
+reads `tools/*/tool.toml` under the workspace root, which is where the manifest
+sits, and nothing else is a tool. Two checks are homma's own, because renki does
+not make them: the descriptor's name is its directory's, and a verb is named
+once.
 
 `homma tools` lists every tool it finds, one line each: the name, the summary,
 the verbs, and whether the tool is promoted. A descriptor that cannot be read is
 listed by its directory's name with the reason, where a reader sees it, and
-`homma tools check` exits non-zero while any is. Only a tool whose backend is
-`local`, which is a tool that sits in the workspace, is run by homma. Another
-backend is fetched by renki's host, so a tool with one is listed and a run of it
-is refused saying so.
+`homma tools check` exits non-zero while any is. Listing reads descriptors and
+fetches nothing. Running a tool is what finds it, and every backend renki ships
+is run: a `local` tool is run from where its `source` names, a path relative to
+the workspace root, and a `git` tool is fetched by renki's git backend into the
+shared cache once for each revision and run from there. A backend renki has no
+row for is refused, and the refusal names the ones it has.
 
 A promoted tool is a subcommand: `homma msg kaski board` runs the tool `msg`.
 The first word after the tool's name is a verb when the descriptor names a
@@ -418,17 +428,23 @@ default and gets everything after the tool's name, which is how a tool whose
 first argument is not a verb works. A word that is neither is refused with the
 tool's verbs listed. The command is run from the workspace root and replaces
 homma, so its input, its output and its exit status are the tool's own, and it
-is told where the workspace is in `HOMMA_WORKSPACE`.
+is told where the workspace is in `HOMMA_WORKSPACE` and where the tool's own
+files are in `HOMMA_TOOL_ROOT`. A file the command names that is not an
+executable file is refused saying which.
 
 `homma tools run <name> <verb> ...` does the same for a tool that is not
 promoted, and for one whose name a built-in command already holds.
 
 A built-in command wins over a tool of the same name, except that a built-in
-group hands the verbs it does not know to the tool. `rules` is one: `homma rules
-about` and `homma rules render` are the built-in's, and `homma rules show` is the
-tool's, so the cards' pointer to the elaboration is a command that answers. A
-word that neither the built-in group nor the tool knows is refused naming both
-sets of verbs.
+group hands the verbs it does not know to the tool of its name. A group is every
+built-in command that takes verbs, `org`, `repo`, `forge`, `agent`, `docs`,
+`local`, `rules`, `skills`, `agents`, `release` and `hook`, and none is
+singled out. `rules` shows it: `homma rules about` and `homma rules render` are
+the built-in's, and `homma rules show` is the tool's, so the cards' pointer to
+the elaboration is a command that answers. A word that neither the built-in
+group nor the tool knows is refused naming both sets of verbs. `tools` is not a
+group in this sense, since `homma tools run <name>` is how any tool is named,
+whatever a built-in holds.
 
 A name that is no built-in and no promoted tool is refused saying so, and that
 `homma tools` lists what there is, where clap would have said only that the
