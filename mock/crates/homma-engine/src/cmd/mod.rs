@@ -26,6 +26,7 @@ use crate::cli::{
     RepoOp,
     RulesOp,
     SkillsOp,
+    ToolsOp,
 };
 
 pub mod agent;
@@ -52,6 +53,7 @@ pub mod skills;
 pub mod stand;
 pub mod status;
 pub mod stray_targets;
+pub mod tools;
 pub(crate) mod util;
 pub mod verify;
 
@@ -368,6 +370,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             op,
         } => {
             match op {
+                RulesOp::External(words) => {
+                    tools::run_merged(&tools::root(&config_path(&cli)), "rules", words)
+                },
                 RulesOp::About {
                     query,
                 } => {
@@ -381,6 +386,27 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     Ok(Outcome::Ok)
                 },
             }
+        },
+        Command::Tools {
+            op,
+        } => {
+            let root = tools::root(&config_path(&cli));
+            match op {
+                None | Some(ToolsOp::List {}) => tools::list(&root, cli.output),
+                Some(ToolsOp::Check {}) => tools::check(&root, cli.output),
+                Some(ToolsOp::Run {
+                    name,
+                    words,
+                }) => tools::run_tool(&root, name, words, tools::dispatch::Asked::ByName),
+            }
+        },
+        Command::External(words) => {
+            let root = tools::root(&config_path(&cli));
+            let Some((name, rest)) = words.split_first() else {
+                anyhow::bail!("no command given");
+            };
+            let name = name.to_string_lossy();
+            tools::run_tool(&root, &name, rest, tools::dispatch::Asked::AsSubcommand)
         },
         Command::Skills {
             op,
