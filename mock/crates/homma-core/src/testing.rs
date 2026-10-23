@@ -98,16 +98,28 @@ pub fn without_git_identity_env(cmd: &mut std::process::Command) -> &mut std::pr
 
 /// Put somebody else's identity in a `git`'s environment, at both tiers above the
 /// configuration files: the four identity variables, and a `GIT_CONFIG_COUNT`
-/// entry naming an `author.name`.
+/// triple naming all six keys a provisioned clone's configuration holds.
 ///
 /// What `hostile_config` does for the files, so a test of an identity fails on
-/// every machine and not only on the ones that export these.
+/// every machine and not only on the ones that export these. All six keys, so a
+/// defence covering part of them cannot pass unseen.
 pub fn hostile_git_identity_env(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    const KEYS: [(&str, &str); 6] = [
+        ("user.name", "Env Config User"),
+        ("user.email", "env-config-user@example.invalid"),
+        ("author.name", "Env Config Author"),
+        ("author.email", "env-config-author@example.invalid"),
+        ("committer.name", "Env Config Committer"),
+        ("committer.email", "env-config-committer@example.invalid"),
+    ];
     cmd.env("GIT_AUTHOR_NAME", "Env Author")
         .env("GIT_AUTHOR_EMAIL", "env-author@example.invalid")
         .env("GIT_COMMITTER_NAME", "Env Committer")
         .env("GIT_COMMITTER_EMAIL", "env-committer@example.invalid")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "author.name")
-        .env("GIT_CONFIG_VALUE_0", "Env Config Author")
+        .env("GIT_CONFIG_COUNT", KEYS.len().to_string());
+    for (i, (key, value)) in KEYS.iter().enumerate() {
+        cmd.env(format!("GIT_CONFIG_KEY_{i}"), key)
+            .env(format!("GIT_CONFIG_VALUE_{i}"), value);
+    }
+    cmd
 }

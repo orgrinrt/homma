@@ -18,13 +18,39 @@
 
 use homma_api::{AbsPath, Identity, Role};
 use homma_core::repo::GixGit;
-use homma_core::testing::hostile_git_identity_env;
+use homma_core::testing::{hostile_git_identity_env, without_git_identity_env};
 use homma_org::provision;
 
-fn run(args: &[&str], at: &std::path::Path, hostile: &std::path::Path) -> String {
+/// Which tier of the identity a test puts under attack.
+///
+/// The configuration tier is what `homma-org/DESIGN.md.tmpl` settles: six keys in
+/// the clone's own configuration, against a hostile global configuration. The
+/// environment tier is what it does not, and a test of it is a catalogue red, kept
+/// apart so that a regression in the first is never hidden behind the second.
+#[derive(Clone, Copy)]
+enum Tier {
+    /// The four identity variables are taken out, so the configuration answers.
+    Configuration,
+    /// The four variables and the `GIT_CONFIG_COUNT` keys name somebody else.
+    Environment,
+}
+
+impl Tier {
+    fn apply(self, git: &mut std::process::Command) {
+        match self {
+            Tier::Configuration => {
+                without_git_identity_env(git);
+            },
+            Tier::Environment => {
+                hostile_git_identity_env(git);
+            },
+        }
+    }
+}
+
+fn run(args: &[&str], at: &std::path::Path, hostile: &std::path::Path, tier: Tier) -> String {
     let mut git = std::process::Command::new("git");
-    // The environment tier of the same hostility, for the identity under test.
-    hostile_git_identity_env(&mut git);
+    tier.apply(&mut git);
     let out = git
         .args(args)
         .current_dir(at)
@@ -57,39 +83,57 @@ fn hostile_config(dir: &std::path::Path) -> std::path::PathBuf {
     p
 }
 
-// FIXME: the design does not say whether a provisioned workspace holds its identity
-// against the environment. It does not hold it today: with the author and committer
-// variables set, the commit carries the environment's. Open topic
-// `202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment.md`.
-#[test]
-#[ignore = "catalogue: a provisioned workspace commits as the environment's identity when the author and committer variables are set; tracked 202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment"]
-fn a_commit_in_a_provisioned_workspace_carries_the_registrys_two_identities() {
-    let d = tempfile::tempdir().unwrap();
-    let hostile = hostile_config(d.path());
-
-    // Something to clone from, so `provision` takes its cloning path.
-    let src = d.path().join("content");
+/// A repository to clone from, so `provision` takes its cloning path.
+fn content_repo(
+    dir: &std::path::Path,
+    hostile: &std::path::Path,
+    tier: Tier,
+) -> std::path::PathBuf {
+    let src = dir.join("content");
     std::fs::create_dir_all(&src).unwrap();
-    run(&["init", "-q", "-b", "main"], &src, &hostile);
-    run(&["config", "user.name", "src"], &src, &hostile);
+    run(&["init", "-q", "-b", "main"], &src, hostile, tier);
+    run(&["config", "user.name", "src"], &src, hostile, tier);
     run(
         &["config", "user.email", "src@example.invalid"],
         &src,
-        &hostile,
+        hostile,
+        tier,
     );
     std::fs::write(src.join("README.md"), "content").unwrap();
-    run(&["add", "README.md"], &src, &hostile);
+    run(&["add", "README.md"], &src, hostile, tier);
     run(
         &["commit", "-q", "-m", "initial", "--no-gpg-sign"],
         &src,
-        &hostile,
+        hostile,
+        tier,
     );
+    src
+}
 
-    let ws = d.path().join("crew").join("vouti");
+/// Provision `id` at `ws`, commit a file there, and hand back the workspace.
+fn commit_in_provisioned(
+    id: &Identity,
+    ws: &std::path::Path,
+    src: &std::path::Path,
+    hostile: &std::path::Path,
+    tier: Tier,
+) {
     std::fs::create_dir_all(ws.parent().unwrap()).unwrap();
-    let ws_abs = AbsPath::new(&ws).unwrap();
+    let ws_abs = AbsPath::new(ws).unwrap();
+    provision(id, &ws_abs, src.to_str().unwrap(), &GixGit).expect("provisioning succeeds");
 
-    // The registry entry, with the two identities the record settles for Vouti.
+    std::fs::write(ws.join("a"), "x").unwrap();
+    run(&["add", "a"], ws, hostile, tier);
+    run(
+        &["commit", "-q", "-m", "one", "--no-gpg-sign"],
+        ws,
+        hostile,
+        tier,
+    );
+}
+
+/// The registry entry with the two identities the record settles for Vouti.
+fn vouti(ws: &std::path::Path) -> Identity {
     let mut id = Identity::new(Role::Hand, "onni");
     id.staffed = true;
     id.workspace = Some(ws.to_string_lossy().into_owned());
@@ -97,93 +141,97 @@ fn a_commit_in_a_provisioned_workspace_carries_the_registrys_two_identities() {
     id.git_email = Some("ort@hiisi.digital".into());
     id.committer_name = Some("Vouti".into());
     id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
-
-    provision(&id, &ws_abs, src.to_str().unwrap(), &GixGit).expect("provisioning succeeds");
-
-    std::fs::write(ws.join("a"), "x").unwrap();
-    run(&["add", "a"], &ws, &hostile);
-    run(
-        &["commit", "-q", "-m", "one", "--no-gpg-sign"],
-        &ws,
-        &hostile,
-    );
-
-    assert_eq!(
-        run(&["log", "-1", "--format=%an"], &ws, &hostile),
-        "Onni Armas",
-        "the author's name travels from the registry to the commit"
-    );
-    assert_eq!(
-        run(&["log", "-1", "--format=%ae"], &ws, &hostile),
-        "ort@hiisi.digital",
-        "the author stays op, per the record"
-    );
-    assert_eq!(
-        run(&["log", "-1", "--format=%cn"], &ws, &hostile),
-        "Vouti",
-        "and the committer's name is the registry's, not the author's"
-    );
-    assert_eq!(
-        run(&["log", "-1", "--format=%ce"], &ws, &hostile),
-        "orgrinrt+vouti@ikiuni.dev",
-        "and the committer address is what distinguishes the crew's writes"
-    );
+    id
 }
 
-// FIXME: the same open topic as the test above; the ordinary entry fails the same way.
-#[test]
-#[ignore = "catalogue: a provisioned workspace commits as the environment's identity when the author and committer variables are set; tracked 202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment"]
-fn an_entry_with_one_identity_commits_as_that_one_throughout() {
-    // The ordinary entry, through the same seam. `provision` defaults the
-    // committer to the author, and that defaulting was tested only against a
-    // fake.
-    let d = tempfile::tempdir().unwrap();
-    let hostile = hostile_config(d.path());
-
-    let src = d.path().join("content");
-    std::fs::create_dir_all(&src).unwrap();
-    run(&["init", "-q", "-b", "main"], &src, &hostile);
-    run(&["config", "user.name", "src"], &src, &hostile);
-    run(
-        &["config", "user.email", "src@example.invalid"],
-        &src,
-        &hostile,
-    );
-    std::fs::write(src.join("README.md"), "content").unwrap();
-    run(&["add", "README.md"], &src, &hostile);
-    run(
-        &["commit", "-q", "-m", "initial", "--no-gpg-sign"],
-        &src,
-        &hostile,
-    );
-
-    let ws = d.path().join("crew").join("paja");
-    std::fs::create_dir_all(ws.parent().unwrap()).unwrap();
-    let ws_abs = AbsPath::new(&ws).unwrap();
-
+/// The ordinary entry, with one identity and no committer of its own.
+fn paja(ws: &std::path::Path) -> Identity {
     let mut id = Identity::new(Role::Hand, "paja");
     id.staffed = true;
     id.workspace = Some(ws.to_string_lossy().into_owned());
     id.git_name = Some("Vaino Pajanen".into());
     id.git_email = Some("vaino.pajanen@hiisi.digital".into());
+    id
+}
 
-    provision(&id, &ws_abs, src.to_str().unwrap(), &GixGit).expect("provisioning succeeds");
+fn two_identities_travel_to_the_commit(tier: Tier) {
+    let d = tempfile::tempdir().unwrap();
+    let hostile = hostile_config(d.path());
+    let src = content_repo(d.path(), &hostile, tier);
+    let ws = d.path().join("crew").join("vouti");
 
-    std::fs::write(ws.join("a"), "x").unwrap();
-    run(&["add", "a"], &ws, &hostile);
-    run(
-        &["commit", "-q", "-m", "one", "--no-gpg-sign"],
-        &ws,
-        &hostile,
+    commit_in_provisioned(&vouti(&ws), &ws, &src, &hostile, tier);
+
+    assert_eq!(
+        run(&["log", "-1", "--format=%an"], &ws, &hostile, tier),
+        "Onni Armas",
+        "the author's name travels from the registry to the commit"
     );
+    assert_eq!(
+        run(&["log", "-1", "--format=%ae"], &ws, &hostile, tier),
+        "ort@hiisi.digital",
+        "the author stays op, per the record"
+    );
+    assert_eq!(
+        run(&["log", "-1", "--format=%cn"], &ws, &hostile, tier),
+        "Vouti",
+        "and the committer's name is the registry's, not the author's"
+    );
+    assert_eq!(
+        run(&["log", "-1", "--format=%ce"], &ws, &hostile, tier),
+        "orgrinrt+vouti@ikiuni.dev",
+        "and the committer address is what distinguishes the crew's writes"
+    );
+}
+
+/// The ordinary entry, through the same seam. `provision` defaults the committer
+/// to the author, and that defaulting was tested only against a fake.
+fn one_identity_commits_throughout(tier: Tier) {
+    let d = tempfile::tempdir().unwrap();
+    let hostile = hostile_config(d.path());
+    let src = content_repo(d.path(), &hostile, tier);
+    let ws = d.path().join("crew").join("paja");
+
+    commit_in_provisioned(&paja(&ws), &ws, &src, &hostile, tier);
 
     for format in ["--format=%an", "--format=%cn"] {
-        assert_eq!(run(&["log", "-1", format], &ws, &hostile), "Vaino Pajanen");
+        assert_eq!(
+            run(&["log", "-1", format], &ws, &hostile, tier),
+            "Vaino Pajanen"
+        );
     }
     for format in ["--format=%ae", "--format=%ce"] {
         assert_eq!(
-            run(&["log", "-1", format], &ws, &hostile),
+            run(&["log", "-1", format], &ws, &hostile, tier),
             "vaino.pajanen@hiisi.digital"
         );
     }
+}
+
+#[test]
+fn a_commit_in_a_provisioned_workspace_carries_the_registrys_two_identities() {
+    two_identities_travel_to_the_commit(Tier::Configuration);
+}
+
+#[test]
+fn an_entry_with_one_identity_commits_as_that_one_throughout() {
+    one_identity_commits_throughout(Tier::Configuration);
+}
+
+// FIXME: the design does not say whether a provisioned workspace holds its identity
+// against the environment. It does not hold it today: with the author and committer
+// variables set, the commit carries the environment's. Open topic
+// `202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment.md`.
+#[test]
+#[ignore = "catalogue: a provisioned workspace commits as the environment's identity when the author and committer variables are set; tracked 202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment"]
+fn a_commit_in_a_provisioned_workspace_carries_the_registrys_two_identities_against_the_environment()
+ {
+    two_identities_travel_to_the_commit(Tier::Environment);
+}
+
+// FIXME: the same open topic as the test above; the ordinary entry fails the same way.
+#[test]
+#[ignore = "catalogue: a provisioned workspace commits as the environment's identity when the author and committer variables are set; tracked 202610231408_topic.how-a-provisioned-workspace-defends-its-identity-against-the-environment"]
+fn an_entry_with_one_identity_commits_as_that_one_throughout_against_the_environment() {
+    one_identity_commits_throughout(Tier::Environment);
 }
