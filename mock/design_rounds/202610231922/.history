@@ -1,0 +1,50 @@
+25524f0 chore: lock the round for the tools gate waiver
+d3c931a docs: regenerate the design doc for the tools gate waiver
+c433351 docs: record op's waiver of the feature gate for homma tools
+48ed841 chore: close the round for gating the tools to unix
+ffef740 chore: lock the source changelist for gating the tools to unix
+92a97cb feat: build the tool dispatch on unix only and refuse it elsewhere
+77614fc chore: lock the doc changelist for gating the tools to unix
+e7a9eb3 docs: say the tools exist on unix only
+8f50bff docs: open the topic for gating the tool dispatch to unix
+32f41d1 chore: close the round for the tool dispatch on renki
+f968d0a chore: lock the source changelist for the tool dispatch on renki
+e721465 feat: run the tools on renki's host side and merge every group
+41a8ea9 chore: lock the doc changelist for the tool dispatch on renki
+f5554cd docs: describe the tool dispatch as renki's host and every group as merged
+d3078f2 docs: open the topic for the tool dispatch on renki's host side
+f557710 chore: merge `origin/dev` into the tool dispatch branch
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)
+7500149 chore: track the generated merge attributes (#77)
+a5dc5d9 feat: install a stored local config by name (#73)
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+6accc24 chore: re-file the two topics the org type names close swept
+cca0489 chore: close the round for the org type names
+b7e2ceb chore: lock the source changelist for the org type names
+ce74ed7 fix: name the org crate's registry, remote and finding apart from the core's
+0b2668c docs: open the source changelist for the org type names again
+deeba5a chore: lock the doc changelist again
+1d22245 docs: name the org registry by its new name in the crate design
+40f65e1 docs: open the source changelist for the org type names
+9a7e403 chore: lock the doc changelist for the org type names
+dca3f4e docs: name the org crate's types apart from the core's
+98b0fc0 chore: close the round for the workspace tools
+d1a800a chore: lock the source changelist for the workspace tools
+6971f00 feat: dispatch the content repository's tools as homma subcommands
+c4e50bd docs: open the source changelist for the workspace tools
+2391e2d chore: lock the doc changelist for the workspace tools
+0575c94 docs: describe the content repository's tools as homma subcommands
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+b4e9548 fix: read the request body in the stub forges before answering
+6dd0a1c fix: check the readme's launcher commands against the launcher
+20384f2 feat: carry every agent hook at its event and drop none
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
