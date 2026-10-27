@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use super::super::doc::{Doc, Gap, Gathered, Kind};
 
 /// How long one repository's listing may take.
-const LIMIT: Duration = Duration::from_secs(60);
+pub(super) const LIMIT: Duration = Duration::from_secs(60);
 
 /// The repositories to ask: those directly under the root with a `mockspace.toml`, within `scope`
 /// where it is not empty.
@@ -35,10 +35,29 @@ pub fn repos(root: &Path, scope: &[String]) -> Vec<String> {
 }
 
 pub fn gather(root: &Path, scope: &[String]) -> Gathered {
+    let names = repos(root, scope);
+    // One listing for each repository, side by side: the slowest decides how long the source takes.
+    let listed: Vec<(String, Result<String, String>)> = std::thread::scope(|s| {
+        let handles: Vec<_> = names
+            .iter()
+            .map(|repo| {
+                let dir = root.join(repo);
+                s.spawn(move || list("cargo", &dir, LIMIT))
+            })
+            .collect();
+        names
+            .iter()
+            .cloned()
+            .zip(handles.into_iter().map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err("the listing panicked".to_string()))
+            }))
+            .collect()
+    });
     let mut out = Gathered::default();
     let mut builtins_done = false;
-    for repo in repos(root, scope) {
-        match list(&root.join(&repo)) {
+    for (repo, result) in listed {
+        match result {
             Ok(text) => {
                 for mut d in parse(&text, &repo) {
                     if d.tags.iter().any(|t| t == "builtin") {
@@ -63,32 +82,61 @@ pub fn gather(root: &Path, scope: &[String]) -> Gathered {
     out
 }
 
+/// Read a pipe to its end on a thread of its own, so a child that writes more than the pipe holds is
+/// never left waiting for a reader that is waiting for the child.
+fn drain<R: std::io::Read + Send + 'static>(r: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut r) = r {
+            let _ = r.read_to_end(&mut buf);
+        }
+        buf
+    })
+}
+
+/// End the child and what it started: its process group where there is one.
+fn end(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-KILL", "--", &format!("-{}", child.id())])
+            .output();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// What `cargo mock tools` prints in `dir`.
-fn list(dir: &Path) -> Result<String, String> {
-    let mut child = Command::new("cargo")
-        .args(["mock", "tools"])
+pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String> {
+    let mut cmd = Command::new(program);
+    cmd.args(["mock", "tools"])
         .current_dir(dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("cargo mock could not start: {e}"))?;
+    let out = drain(child.stdout.take());
+    let err = drain(child.stderr.take());
     let start = Instant::now();
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if start.elapsed() > LIMIT => {
-                let _ = child.kill();
-                let _ = child.wait();
+            Ok(Some(st)) => break st,
+            Ok(None) if start.elapsed() > limit => {
+                end(&mut child);
                 return Err("cargo mock tools took longer than a minute".to_string());
             },
             Ok(None) => std::thread::sleep(Duration::from_millis(40)),
             Err(e) => return Err(e.to_string()),
         }
-    }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
+    };
+    let out = out.join().unwrap_or_default();
+    let err = err.join().unwrap_or_default();
+    if !status.success() {
+        let err = String::from_utf8_lossy(&err);
         let line = err
             .lines()
             .rev()
@@ -96,7 +144,7 @@ fn list(dir: &Path) -> Result<String, String> {
             .unwrap_or("it exited non-zero");
         return Err(format!("cargo mock tools failed: {}", line.trim()));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
 /// The commands in a listing: `    mock <usage>  [<kind>  ]<summary>` under a heading in capitals.

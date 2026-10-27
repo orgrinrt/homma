@@ -63,6 +63,9 @@ pub fn gather(root: &Path) -> Gathered {
     }
 }
 
+/// Extensions of a file that is a script whether or not it is marked executable.
+const EXTENSIONS: &[&str] = &["sh", "bash", "py", "ts", "js", "cjs"];
+
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
@@ -70,34 +73,39 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in read.flatten() {
         let p = e.path();
         let name = e.file_name().to_string_lossy().into_owned();
-        if p.is_dir() {
+        // `file_type` does not follow a link, so a link to a directory is neither walked nor read.
+        let Ok(t) = e.file_type() else {
+            continue;
+        };
+        if t.is_dir() {
             if !SKIPPED.contains(&name.as_str()) {
                 walk(&p, out);
             }
-        } else if is_script(&p, &name) {
+        } else if t.is_file() && is_script(&p, &name) {
             out.push(p);
         }
     }
 }
 
-/// An executable that is not a test, a fixture or the runner of a suite.
+/// An executable, or a file with a script extension, that is not a test, a fixture or the runner of a suite.
 fn is_script(p: &Path, name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name);
     if name.contains("_test") || name.contains("_fixture") || stem == "test" {
         return false;
     }
-    executable(p)
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+    executable(p) || EXTENSIONS.contains(&ext)
 }
 
 #[cfg(unix)]
 fn executable(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(not(unix))]
-fn executable(p: &Path) -> bool {
-    p.is_file()
+fn executable(_p: &Path) -> bool {
+    false
 }
 
 fn describe(root: &Path, file: &Path, rel: &Path) -> Option<Doc> {

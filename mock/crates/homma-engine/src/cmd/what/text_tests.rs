@@ -57,12 +57,37 @@ fn words_split_at_everything_that_is_not_a_letter_or_a_digit() {
 }
 
 #[test]
-fn grades_come_strongest_first() {
+fn a_better_match_is_worth_more() {
+    let order = [Grade::Same, Grade::Synonym, Grade::Prefix, Grade::Fuzzy];
     assert!(
-        Grade::Same > Grade::Synonym
-            && Grade::Synonym > Grade::Prefix
-            && Grade::Prefix > Grade::Fuzzy
+        order.windows(2).all(|w| w[0].worth() > w[1].worth()),
+        "worth must fall with the grade"
     );
+    assert!(
+        order.windows(2).all(|w| w[0] > w[1]),
+        "and the grades are ordered the same way"
+    );
+}
+
+#[test]
+fn no_word_is_in_two_synonym_groups_once_stemmed() {
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, g) in super::text::SYNONYMS.iter().enumerate() {
+        for w in *g {
+            if let Some(j) = seen.insert(stem(w), i) {
+                assert_eq!(
+                    j, i,
+                    "`{w}` stems to a word already in group {j}, and it is in group {i}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn ending_is_not_finishing() {
+    assert_eq!(grade(&stem("stop"), &stem("end")), Some(Grade::Synonym));
+    assert_eq!(grade(&stem("end"), &stem("finished")), None);
 }
 
 #[test]
@@ -116,7 +141,10 @@ fn a_short_word_is_only_forgiven_a_swap() {
 
 #[test]
 fn two_edits_are_too_many_below_eight_letters() {
-    assert_eq!(grade("branch", "bunker"), None);
+    assert_eq!(edit_distance("branch", "brunck"), 2);
+    assert_eq!(grade("branch", "brunck"), None);
+    assert_eq!(edit_distance("branch", "brunch"), 1);
+    assert_eq!(grade("branch", "brunch"), Some(Grade::Fuzzy));
 }
 
 #[test]

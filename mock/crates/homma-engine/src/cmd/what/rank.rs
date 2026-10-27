@@ -5,7 +5,7 @@
 
 //! Scoring the things read against a query's terms, and naming what sits beside a match.
 //!
-//! A term is looked for in six places, each with its own weight, and the best way it matches in the
+//! A term is looked for in seven places, each with its own weight, and the best way it matches in the
 //! best place is what it is worth. A term is worth more the fewer things carry it, so a word that names
 //! half the tooling does not decide an answer. A thing scores the sum over the terms, scaled by how many
 //! of them it matched, and a thing that matched too few of them is not an answer.
@@ -58,7 +58,7 @@ impl Field {
 /// A thing lower than this share of the best score is dropped.
 const CUT: f64 = 0.2;
 /// How close two things must be, as the cosine of their weighted words, to be named beside each other.
-const CLOSE: f64 = 0.12;
+const CLOSE: f64 = 0.125;
 
 /// How one term matched in one thing.
 #[derive(Debug, Clone, PartialEq, Serialize)]

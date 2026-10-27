@@ -43,7 +43,7 @@ pub fn skills(root: &Path) -> Gathered {
                         Doc::new(
                             Kind::Skill,
                             &k.name,
-                            &format!("the `{}` skill", k.name),
+                            &format!("/{}", k.name),
                             &k.meta.description,
                         )
                     })

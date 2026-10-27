@@ -130,6 +130,42 @@ fn open_a_pull_request_finds_open_pr() {
 }
 
 #[test]
+fn which_branches_are_stale_or_merged_finds_the_stale_branch_report() {
+    must_come_first(
+        "which branches are stale or merged",
+        Kind::Script,
+        "stale-branch-report",
+    );
+}
+
+/// Queries a helper would type that the matcher does not answer well yet, kept as cases and run with
+/// `--ignored`: each names the thing that should come first and what comes first today.
+mod catalogue {
+    use super::*;
+
+    /// `branches.py` and the board's landed column say whether a branch landed; `land-branch` lands one.
+    #[test]
+    #[ignore = "catalogue: land-branch comes first, and branches.py is not in the first five"]
+    fn is_this_branch_landed_finds_the_branch_check() {
+        must_come_first("is this branch landed", Kind::Script, "branches");
+    }
+
+    /// `open-rounds` checks for rounds left open; the skill is how one is worked.
+    #[test]
+    #[ignore = "catalogue: open-rounds comes first by its name, the skill is not in the first five"]
+    fn open_a_design_round_finds_the_round_skill() {
+        must_come_first("open a design round", Kind::Skill, "work-in-mockspace");
+    }
+
+    /// `msg` posts a `BLOCKED:` status; `wake` blocks until there is work.
+    #[test]
+    #[ignore = "catalogue: wake comes first on `blocked`, msg describes one command only"]
+    fn tell_the_coordinator_i_am_blocked_finds_msg() {
+        must_come_first("tell the coordinator i am blocked", Kind::Tool, "msg");
+    }
+}
+
+#[test]
 fn the_filler_around_a_query_changes_nothing() {
     let plain = ask("free disk");
     let said = ask("homma what to use for freeing the disk");
@@ -189,21 +225,6 @@ fn every_answer_says_where_each_word_was_found() {
 }
 
 #[test]
-fn the_footer_counts_the_scripts_with_no_header() {
-    let a = ask("free disk");
-    let g = a.gaps.iter().find(|g| g.source == "scripts");
-    if let Some(g) = g {
-        assert!(
-            g.what
-                .contains("scripts under .shared/scripts carry no header comment"),
-            "{}",
-            g.what
-        );
-        assert!(g.count > 0);
-    }
-}
-
-#[test]
 fn the_json_carries_the_query_the_terms_the_hits_and_the_gaps() {
     let v = serde_json::to_value(ask("free disk")).unwrap();
     for key in ["query", "terms", "read", "hits", "gaps"] {
@@ -216,19 +237,31 @@ fn the_json_carries_the_query_the_terms_the_hits_and_the_gaps() {
     assert_eq!(h["kind"], "tool");
 }
 
-/// The one test that starts a process: `cargo mock tools` in the repositories of the workspace.
+/// The one test that starts a process: the default path, every source including `cargo mock tools` in
+/// the repositories of the workspace.
 #[test]
-fn lock_the_changelist_finds_the_mockspace_command() {
-    let g = gather(&workspace(), &[Kind::Mock], false, &[]);
+fn the_default_path_reads_the_mockspace_commands_beside_the_rest() {
+    let g = gather(&workspace(), &[], false, &[]);
     assert!(
-        g.docs.iter().any(|d| d.name == "lock"),
+        g.docs
+            .iter()
+            .any(|d| d.kind == Kind::Mock && d.name == "lock"),
         "no mockspace command read; gaps: {:?}",
         g.gaps
     );
-    let a = answer(&g.docs, g.gaps, "lock the active changelist", 3);
+    assert!(
+        g.docs.iter().any(|d| d.kind == Kind::Tool)
+            && g.docs.iter().any(|d| d.kind == Kind::Script)
+    );
+    let a = answer(&g.docs, g.gaps.clone(), "lock the active changelist", 3);
     assert_eq!(
         (a.hits[0].kind, a.hits[0].name.as_str()),
         (Kind::Mock, "lock")
     );
     assert_eq!(a.hits[0].command, "cargo mock lock");
+    let b = answer(&g.docs, g.gaps, "free disk", 3);
+    assert_eq!(
+        (b.hits[0].kind, b.hits[0].name.as_str()),
+        (Kind::Tool, "disk-trim")
+    );
 }

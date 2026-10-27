@@ -409,7 +409,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             no_mock,
         } => {
             let root = tools::root(&config_path(&cli));
-            what::run(&root, words, *limit, kinds, *no_mock, cli.output)
+            what::run(&root, words, *limit as usize, kinds, *no_mock, cli.output)
         },
         Command::External(words) => {
             let root = tools::root(&config_path(&cli));

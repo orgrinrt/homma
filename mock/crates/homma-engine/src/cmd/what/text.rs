@@ -83,9 +83,9 @@ const FILLER: &[&str] = &[
 
 /// Groups of words that mean the same in this tooling. A vocabulary and not a list of tools: no tool
 /// is named here, and a group is added with a test beside it.
-const SYNONYMS: &[&[&str]] = &[
+pub(super) const SYNONYMS: &[&[&str]] = &[
     &["land", "integrate", "ship"],
-    &["done", "finished", "finish", "complete", "completed", "ended", "over"],
+    &["done", "finished", "finish", "complete", "completed"],
     &["disk", "space", "storage"],
     &[
         "free", "reclaim", "trim", "clean", "cleanup", "purge", "prune", "reap", "sweep", "gc",
@@ -101,7 +101,7 @@ const SYNONYMS: &[&[&str]] = &[
         "stuck",
         "hung",
     ],
-    &["end", "stop", "kill", "terminate", "halt"],
+    &["end", "ended", "stop", "kill", "terminate", "halt"],
     &["message", "msg", "mail", "dm", "send", "post", "notify", "tell", "channel"],
     &["helper", "helpers", "session", "sessions", "worker", "wrapper"],
     &["open", "start", "begin", "create", "new"],

@@ -97,10 +97,16 @@ fn json_is_one_document_with_the_hits_and_the_gaps() {
 fn a_kind_restricts_the_answer() {
     what(&["--kind", "skill", "mockspace", "round"])
         .success()
-        .stdout(predicate::str::contains(
-            "skill  the `work-in-mockspace` skill",
-        ))
+        .stdout(predicate::str::contains("skill  /work-in-mockspace"))
         .stdout(predicate::str::contains("script ").not());
+}
+
+#[test]
+fn a_limit_of_nothing_is_refused_rather_than_reported_as_no_answer() {
+    what(&["--limit", "0", "free", "disk"])
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("--limit"));
 }
 
 #[test]

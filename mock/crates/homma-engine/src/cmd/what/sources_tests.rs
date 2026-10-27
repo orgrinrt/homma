@@ -111,21 +111,146 @@ fn tests_and_fixtures_are_not_scripts() {
     assert!(g.docs.iter().all(|d| d.name != "test"));
 }
 
+fn plant(root: &std::path::Path, rel: &str, text: &str, exec: bool) {
+    let p = root.join(".shared/scripts").join(rel);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(&p, text).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = if exec { 0o755 } else { 0o644 };
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+}
+
 #[test]
 fn the_scripts_without_a_header_are_counted_in_the_footer() {
-    let g = scripts::gather(&workspace());
-    match g.gaps.first() {
-        Some(gap) => {
-            assert_eq!(gap.source, "scripts");
-            assert!(
-                gap.what
-                    .starts_with(&format!("{} scripts under .shared/scripts", gap.count)),
-                "{}",
-                gap.what
-            );
-        },
-        None => assert!(!g.docs.is_empty()),
-    }
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    plant(
+        dir.path(),
+        "a/two.py",
+        "#!/usr/bin/env python3\n\"\"\"two: does two.\"\"\"\n",
+        false,
+    );
+    plant(dir.path(), "a/bare", "#!/bin/sh\necho hi\n", true);
+    plant(dir.path(), "b/bare2.sh", "echo hi\n", false);
+    plant(dir.path(), "b/notes.txt", "not a script\n", false);
+    plant(dir.path(), "b/one_test.sh", "echo test\n", true);
+    let g = scripts::gather(dir.path());
+    let mut names: Vec<&str> = g.docs.iter().map(|d| d.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["one", "two"],
+        "a non-executable script with an extension is read"
+    );
+    assert_eq!(g.gaps.len(), 1);
+    assert_eq!(
+        g.gaps[0].count, 2,
+        "the bare executable and the bare .sh are counted, the test and the text are not"
+    );
+    assert_eq!(
+        g.gaps[0].what,
+        "2 scripts under .shared/scripts carry no header comment, so they cannot be found by what they do"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_directory_is_not_followed_so_it_cannot_loop() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    let a = dir.path().join(".shared/scripts/a");
+    std::os::unix::fs::symlink("..", a.join("up")).unwrap();
+    std::os::unix::fs::symlink("..", a.join("up2")).unwrap();
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.len(),
+        1,
+        "{:?}",
+        g.docs.iter().map(|d| &d.name).collect::<Vec<_>>()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_out_of_the_workspace_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    plant(
+        outside.path(),
+        "x/secret",
+        "#!/bin/sh\n# secret - outside\n",
+        true,
+    );
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    let a = dir.path().join(".shared/scripts/a");
+    std::os::unix::fs::symlink(outside.path().join(".shared/scripts/x"), a.join("ext")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join(".shared/scripts/x/secret"),
+        a.join("linked"),
+    )
+    .unwrap();
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["one"]
+    );
+}
+
+#[cfg(unix)]
+fn fake_cargo(dir: &std::path::Path, body: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let p = dir.join("fake-cargo");
+    std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    p.to_string_lossy().into_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_listing_that_writes_more_than_a_pipe_holds_is_read_and_does_not_deadlock() {
+    let dir = tempfile::tempdir().unwrap();
+    let prog = fake_cargo(
+        dir.path(),
+        "head -c 400000 /dev/zero | tr '\\0' x >&2\nprintf '    mock lock  seal\\n'",
+    );
+    let t = std::time::Instant::now();
+    let out =
+        mock::list(&prog, dir.path(), std::time::Duration::from_secs(30)).expect("the listing");
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(20),
+        "it waited out its limit"
+    );
+    assert!(out.contains("mock lock"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_listing_that_overruns_is_ended_with_what_it_started() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("child-pid");
+    let prog = fake_cargo(
+        dir.path(),
+        &format!("sleep 300 &\necho $! > {}\nwait", marker.display()),
+    );
+    let err = mock::list(&prog, dir.path(), std::time::Duration::from_millis(600)).unwrap_err();
+    assert!(err.contains("took longer"), "{err}");
+    let pid = std::fs::read_to_string(&marker).unwrap().trim().to_string();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    // A killed child nobody has reaped yet is a zombie, which is dead.
+    let state = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|t| {
+            t.rsplit(')')
+                .next()
+                .and_then(|r| r.split_whitespace().next().map(str::to_string))
+        });
+    assert!(
+        matches!(state.as_deref(), None | Some("Z")),
+        "the child {pid} outlived the listing: {state:?}"
+    );
 }
 
 #[test]

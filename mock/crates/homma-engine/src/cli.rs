@@ -313,8 +313,8 @@ pub enum Command {
         #[arg(required = true, num_args = 1..)]
         words:   Vec<String>,
         /// How many answers to give.
-        #[arg(long, default_value_t = 5)]
-        limit:   usize,
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u32).range(1..))]
+        limit:   u32,
         /// Only things of this kind. Repeatable.
         #[arg(long = "kind", value_enum)]
         kinds:   Vec<crate::cmd::what::doc::Kind>,

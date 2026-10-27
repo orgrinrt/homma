@@ -89,14 +89,41 @@ fn a_rule_ranks_below_a_tool_that_says_the_same() {
 }
 
 #[test]
-fn a_thing_far_behind_the_best_is_dropped() {
-    let mut docs = vec![doc(Kind::Tool, "land-branch", "land a finished branch", &[
-        "land",
-    ])];
-    docs.push(doc(Kind::Script, "far", &"x ".repeat(3), &["land"]));
-    docs.extend((0 .. 30).map(|i| doc(Kind::Script, &format!("pad{i}"), "nothing", &[])));
-    let r = rank(&docs, &terms("land branch"));
-    assert!(r.iter().all(|h| h.score >= r[0].score * 0.2));
+fn a_thing_under_a_fifth_of_the_best_is_dropped_and_one_above_it_is_kept() {
+    // Both match one of the two terms only through a summary; `strong` also matches in its name and tag.
+    let mut docs = vec![
+        doc(Kind::Tool, "alpha-beta", "alpha beta together", &[
+            "alpha", "beta",
+        ]),
+        doc(Kind::Tool, "weak", "mentions alpha once", &[]),
+        doc(Kind::Tool, "middling", "alpha beta here", &[]),
+    ];
+    docs.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
+    let r = rank(&docs, &terms("alpha beta"));
+    let top = r[0].score;
+    let name = |h: &super::rank::Hit| docs[h.doc].name.clone();
+    assert_eq!(name(&r[0]), "alpha-beta");
+    let kept: Vec<String> = r.iter().map(name).collect();
+    assert!(kept.contains(&"middling".to_string()), "{kept:?}");
+    assert!(
+        r.iter().all(|h| h.score >= top * 0.2),
+        "nothing under a fifth is kept"
+    );
+    // A thing that would score under the cut: one matching a single rare term among many weighty ones.
+    let many = terms("alpha beta gamma delta epsilon zeta");
+    let mut docs2 = vec![
+        doc(Kind::Tool, "all", "alpha beta gamma delta epsilon zeta", &[
+            "alpha", "beta", "gamma",
+        ]),
+        doc(Kind::Tool, "faint", "zeta", &[]),
+    ];
+    docs2.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
+    let r2 = rank(&docs2, &many);
+    assert_eq!(
+        r2.len(),
+        1,
+        "faint matched one of six terms, under the third a long query needs"
+    );
 }
 
 #[test]
