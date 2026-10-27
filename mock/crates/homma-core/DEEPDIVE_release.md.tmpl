@@ -282,7 +282,11 @@ With a repository it exits non-zero for an event with no entrypoint, where
 there is no hooks path, as for one a hooks path does not reach, and as for one
 where the file in git's own directory is somebody else's hook: with no hooks
 path git runs that file in place of the entrypoint, so it is reached only when
-the file is exactly the text homma writes. While a named overlay cannot be read, every verb that
+the file is exactly the text homma writes. The same file decides a hooks path
+that is mockspace's: its gate chains to git's own directory and runs nothing
+there that is missing or not homma's, so the chain counts as reached only when
+that file is exactly the text homma writes, and is otherwise reported as not
+installed or as somebody else's hook. While a named overlay cannot be read, every verb that
 would act on the merged table refuses and names the file: `hook install`,
 `hook run` and `agent regen`, the last because it writes back only the rows it
 has and a layer missing from them would remove that layer's guards from the
