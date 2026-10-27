@@ -412,7 +412,9 @@ Two more belong with it. The launcher locates its config by scanning the root
 and every immediate subdirectory and treats two as an error, where homma looks
 at the root and `mock/` and lets the root win. And the status tells a repository
 that has the toml and no pin to run `homma agent regen`, which runs `cargo mock`,
-which refuses without a pin.
+which refuses without a pin. And the toml that does not parse: the status counts
+it as adopting, with the default mock directory and no pin, so the gate refuses
+it for a missing pin even where a pin line is there.
 
 The gate asks homma rather than deciding for itself, so the rule that says what
 a repository owes exists once. It refuses when it cannot ask at all, for the
