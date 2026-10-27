@@ -115,8 +115,12 @@ fn is_this_red_test_red_on_dev_too_finds_red_check() {
 }
 
 #[test]
-fn set_up_a_fresh_container_finds_the_bootstrap() {
-    must_come_first("set up a fresh container", Kind::Script, "bootstrap");
+fn stand_a_fresh_cloud_container_up_finds_the_bootstrap() {
+    must_come_first(
+        "stand a fresh cloud container up",
+        Kind::Script,
+        "bootstrap",
+    );
 }
 
 #[test]
@@ -150,6 +154,32 @@ mod catalogue {
         must_come_first("is this branch landed", Kind::Script, "branches");
     }
 
+    /// `asked-before` scores any question against what op answered; `storage.py` is about storage.
+    #[test]
+    #[ignore = "catalogue: the subject word `storage` outweighs the intent, storage.py comes first"]
+    fn what_did_op_say_about_storage_finds_asked_before() {
+        must_come_first(
+            "what did op say about storage",
+            Kind::Script,
+            "asked-before",
+        );
+    }
+
+    /// The voice record is `vibecheck`; the skill and the rule about it come first on `voice`.
+    #[test]
+    #[ignore = "catalogue: the write-in-ops-voice skill is named by the query's words and comes first"]
+    fn ops_voice_corpus_finds_the_voice_record() {
+        must_come_first("op's voice corpus", Kind::Script, "vibecheck");
+    }
+
+    /// `cargo mock already-said` is in no listing of a repository cloned here: the repositories that
+    /// carry it are not in this workspace, so the matcher has nothing to find.
+    #[test]
+    #[ignore = "catalogue: no mockspace repository in this workspace lists already-said"]
+    fn which_canon_rows_carry_a_word_finds_already_said() {
+        must_come_first("which canon rows carry a word", Kind::Mock, "already-said");
+    }
+
     /// `open-rounds` checks for rounds left open; the skill is how one is worked.
     #[test]
     #[ignore = "catalogue: open-rounds comes first by its name, the skill is not in the first five"]
@@ -163,6 +193,26 @@ mod catalogue {
     fn tell_the_coordinator_i_am_blocked_finds_msg() {
         must_come_first("tell the coordinator i am blocked", Kind::Tool, "msg");
     }
+}
+
+#[test]
+fn has_op_answered_this_before_finds_asked_before() {
+    must_come_first("has op answered this before", Kind::Script, "asked-before");
+    must_come_first("what did op already answer", Kind::Script, "asked-before");
+}
+
+#[test]
+fn query_the_data_with_sql_finds_the_data_index() {
+    must_come_first("query the data with sql", Kind::Script, "index");
+    assert_eq!(
+        first("query the data with sql").2,
+        ".shared/scripts/watch/index.py"
+    );
+}
+
+#[test]
+fn how_op_writes_finds_the_voice_record() {
+    must_come_first("how op writes", Kind::Script, "vibecheck");
 }
 
 #[test]

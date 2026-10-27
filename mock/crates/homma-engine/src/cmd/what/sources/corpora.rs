@@ -83,6 +83,7 @@ pub fn rules(root: &Path) -> Gathered {
                             &r.meta.fires,
                         );
                         d.tags.clone_from(&r.meta.topics);
+                        d.body.clone_from(&r.card);
                         d
                     })
                     .collect(),

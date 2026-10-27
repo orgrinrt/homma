@@ -36,7 +36,7 @@ pub fn gather(root: &Path) -> Gathered {
         };
     }
     let mut files = Vec::new();
-    walk(&base, &mut files);
+    walk(&base, false, &mut files);
     files.sort();
     let mut docs = Vec::new();
     let mut missing = 0;
@@ -63,10 +63,14 @@ pub fn gather(root: &Path) -> Gathered {
     }
 }
 
+/// Directories of a program's own source: what is in them is run by the program, and counts as a script
+/// only where it is marked executable.
+const LIBRARY: &[&str] = &["src", "lib", "tests", "test"];
+
 /// Extensions of a file that is a script whether or not it is marked executable.
 const EXTENSIONS: &[&str] = &["sh", "bash", "py", "ts", "js", "cjs"];
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+fn walk(dir: &Path, library: bool, out: &mut Vec<PathBuf>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -79,22 +83,22 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         };
         if t.is_dir() {
             if !SKIPPED.contains(&name.as_str()) {
-                walk(&p, out);
+                walk(&p, library || LIBRARY.contains(&name.as_str()), out);
             }
-        } else if t.is_file() && is_script(&p, &name) {
+        } else if t.is_file() && is_script(&p, &name, library) {
             out.push(p);
         }
     }
 }
 
 /// An executable, or a file with a script extension, that is not a test, a fixture or the runner of a suite.
-fn is_script(p: &Path, name: &str) -> bool {
+fn is_script(p: &Path, name: &str, library: bool) -> bool {
     let stem = name.split('.').next().unwrap_or(name);
     if name.contains("_test") || name.contains("_fixture") || stem == "test" {
         return false;
     }
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-    executable(p) || EXTENSIONS.contains(&ext)
+    executable(p) || (!library && EXTENSIONS.contains(&ext))
 }
 
 #[cfg(unix)]
