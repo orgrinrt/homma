@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "flavour": "",
+  "member": "homma-engine",
+  "green": null,
+  "tests": {},
+  "bins": {
+    "homma-engine::bin/homma-engine": "737efb4e4bef7db88348a10d50a5d46d438beb9cded64011286197dd2f04e033",
+    "homma-engine::capture_smoke": "7fd69893f7655f551c214d60ddd9ea294dd3b69f8ecdc19dd2a498b0fe06b940",
+    "homma-engine::cli_milestone": "7e4b03a0d031fd81b14cf535131d85b26e04e16bf3578c17cb417aa0bffab1b1",
+    "homma-engine::cli_smoke": "24f4f254c1c6680a27dd8b604827b65a8110c3d6bfeeee8f07b9d130814c7518",
+    "homma-engine::config_exit_code_smoke": "558aedbde1e8e09cb0f90b53f527a4f507e97cb189bd64172ef9bf58bac4975d",
+    "homma-engine::containment_smoke": "3850722efcca025da472b755e59d52ac8eb324972793c8c1876ad9cbbc282d63",
+    "homma-engine::derived_paths_smoke": "19712a846780799469d084c86b8df47a257228cd087e05c86bb4153fb3d44215",
+    "homma-engine::generated_paths_are_ignored": "f398b4504597e9d24894e259b8fca7bab764939ecb94e5026084f0d1c7533de4",
+    "homma-engine::local_install_smoke": "fb421923d77f46e5ed755ffb2715914be23347cc7b987fff6a6b6974a397f201",
+    "homma-engine::local_smoke": "e61c3679cf9c416992b22c45b2e3e0a4d750509ce906d2bad31cf19960367661",
+    "homma-engine::org_smoke": "bdb4f2c9936d2bed85b5f4536742aa44937c5834533ff166b8a2f4a8d13f350a",
+    "homma-engine::regen_writes_smoke": "5ccb49aaf1758ea26fababd821c572162ec8199a054cf0cc9a1697c8c18d6dc9",
+    "homma-engine::registry_writes_smoke": "34d63264f52a54eda18644d59c82063e2b465e77b10ad5551044fdb21473ee4e",
+    "homma-engine::renki_is_unix_only": "35710818a60773abb8520aed3acfe68fa1ab3ab1fdc64ff7b041cddbbde275bd",
+    "homma-engine::runs_from_anywhere": "a198fa38e107f5a288d70b3870f326e552a58dc0aefa351b8842bf1574ac35bc",
+    "homma-engine::status_carries_injected_tools": "83e170533ad50c70a9c643e137d2b35becac5690ea005f26d122b40e56cadfd1",
+    "homma-engine::status_lists_stray_targets": "8a7174ae19828e8d262f8a99951276e272c7fb20f987e168ea2566b017cc6cae",
+    "homma-engine::the_readme_examples_are_real": "6fd220a250b8d06269e19c556e52052555351d07509cd7ed6ad1365f80e27756",
+    "homma-engine::tools_dispatch": "3fed5b534fe98c0977b71f5737edf2a97264c81d6adfe94688324d95d6ba1fe7"
+  }
+}
