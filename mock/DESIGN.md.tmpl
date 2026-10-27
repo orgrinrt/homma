@@ -520,7 +520,9 @@ tool.
   interpreter the line names followed by the path. A file with neither is a
   library and is not an answer, whatever its extension, and neither is one whose
   header has a sentence beginning `Sourced`, which is how the hygiene directory's
-  convention has a file say that another file sources it. A test is not a script: a
+  convention has a file say that another file sources it. So is a file that is not
+  executable and that another script sources, with `source`, `.` or a `shellcheck source=`
+  line, or lists as a module in a `lib.nut`, since the workspace says it there. A test is not a script: a
   name with `_test`, `_fixture` or `_catalogue` in it or starting `test_`, a `test` runner beside
   its suite, and anything under a `tests` or `test` directory. A program's own
   source, under a `src` or `lib` directory, is a script only where it is
@@ -531,7 +533,7 @@ tool.
   read in place. The block is the run of comment lines after the shebang, in
   whichever spelling the language gives it: `#` lines, a `"""` docstring or a
   `/** */` block or `//` lines. Its first line of prose is the summary, with a leading
-  `<name> - `, `<name>: ` or `<name>` and an em-dash taken off; a line that is only rules (`====`) is
+  `<name> - `, `<name>: ` or `<name>` and an em-dash taken off; a line that is only rules (`====`) or only the script's own name is
   skipped. A line after that one which begins with the script's own name is a usage line,
   and its second word, when it is a plain lowercase word set off by a single space
   and not by a column gap, names a verb the script takes. A `shellcheck` line is not part of the block. A line `tags: a, b` in the block adds tags. The directory the script
@@ -605,9 +607,12 @@ run.
 Related things are the other tools, scripts, verbs and mockspace commands that
 sit with a match, or the other skills and rules where the match is advice: those
 whose words are closest to its own, the cosine of the two bags of words (name,
-tags, place, summary and verb names, weighted the same way) being at least an
-eighth (0.125), so a tool is named beside `disk-trim` for being about the same thing and
-not for sharing a tag every tool carries. Up to three are named under each of the
+tags, place, summary and verb names, weighted the same way) being at least
+0.225, so a tool is named beside `disk-trim` for being about the same thing and
+not for sharing a tag every tool carries. The figure is set on a catalogue of pairs of the
+workspace that must be named together and pairs that must not, kept in the `calibration` test
+of the acceptance set: it lies above the nearest pair that must not be named together (0.216)
+and at or below the nearest that must (0.233), and the test fails when a pair crosses it. Up to three are named under each of the
 first three answers, never one that is already an answer.
 
 The synonym table is a vocabulary of the tooling, a list of groups of words, and

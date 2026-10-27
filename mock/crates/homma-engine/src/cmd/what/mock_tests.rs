@@ -129,3 +129,19 @@ fn a_grandchild_holding_the_pipe_after_the_child_exits_does_not_hold_the_listing
     );
     assert!(out.contains("mock lock"));
 }
+
+#[test]
+fn the_builtins_are_listed_once_whatever_the_number_of_repositories() {
+    let docs = mock::merge(vec![
+        ("homma".to_string(), Ok(LISTING.to_string())),
+        ("muisti".to_string(), Ok(LISTING.to_string())),
+    ])
+    .docs;
+    let count = |name: &str| docs.iter().filter(|d| d.name == name).count();
+    assert_eq!(count("lock"), 1, "a builtin listed twice");
+    assert_eq!(
+        count("ask"),
+        2,
+        "a project tool belongs to each repository that has it"
+    );
+}

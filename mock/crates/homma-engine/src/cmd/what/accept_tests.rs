@@ -406,3 +406,68 @@ fn post_a_stand_up_finds_the_stand_up_script_with_its_post_verb() {
         ".shared/scripts/remote/stand-up post"
     );
 }
+
+fn find(docs: &[super::doc::Doc], name: &str) -> usize {
+    docs.iter()
+        .position(|d| d.name == name || d.command.ends_with(name))
+        .unwrap_or_else(|| panic!("`{name}` is not among the things read"))
+}
+
+/// Pairs of things of this workspace that sit with each other, and pairs that only share a common word.
+/// The cut for related things is set between the two, and these are what it is calibrated on.
+const BESIDE: &[(&str, &str)] = &[
+    ("disk-trim", "stray-targets.sh"),
+    ("disk-trim", "build-sweep"),
+    ("land-branch", "land-pure-additions.sh"),
+    ("land-branch", "land-order"),
+    ("land-branch", "merge-dev"),
+    ("sessions", "helper-prompt"),
+    ("stray-runs", "stray-targets.sh"),
+];
+const APART: &[(&str, &str)] = &[
+    ("stray-runs", "skills"),
+    ("stray-runs", "rules"),
+    ("stray-runs", "bootstrap"),
+    ("disk-trim", "wake"),
+    ("land-branch", "stray-runs"),
+    ("asked-before.sh", "build-guard"),
+];
+
+#[test]
+fn calibration_the_cut_for_related_things_lies_between_what_sits_beside_and_what_does_not() {
+    let (docs, _) = everything();
+    let c = super::rank::Closeness::new(docs);
+    let cos = |&(a, b): &(&str, &str)| c.cos(find(docs, a), find(docs, b));
+    let nearest_apart = APART.iter().map(cos).fold(f64::MIN, f64::max);
+    let farthest_beside = BESIDE.iter().map(cos).fold(f64::MAX, f64::min);
+    assert!(
+        nearest_apart < super::rank::CLOSE,
+        "a pair that only shares common words is named together: {nearest_apart:.3}"
+    );
+    assert!(
+        farthest_beside >= super::rank::CLOSE,
+        "a pair that sits together is not named: {farthest_beside:.3}"
+    );
+}
+
+#[test]
+fn no_shell_library_is_offered_as_a_command() {
+    let (docs, _) = everything();
+    for lib in [
+        "browse.sh",
+        "retry.sh",
+        "routes.sh",
+        "playwright.sh",
+        "resolve.sh",
+        "judge.sh",
+        "sourcers.sh",
+        "bootstrap_workspace.sh",
+    ] {
+        assert!(
+            !docs
+                .iter()
+                .any(|d| d.kind == Kind::Script && d.command.ends_with(&format!("/{lib}"))),
+            "{lib} is a library and was offered"
+        );
+    }
+}

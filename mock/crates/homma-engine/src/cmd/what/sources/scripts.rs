@@ -57,11 +57,19 @@ pub fn gather(root: &Path) -> Gathered {
     let mut files = Vec::new();
     walk(&base, false, &mut files);
     files.sort();
+    let texts: Vec<(PathBuf, bool, Option<String>)> = files
+        .into_iter()
+        .map(|(f, library)| {
+            let text = std::fs::read_to_string(&f).ok();
+            (f, library, text)
+        })
+        .collect();
+    let sourced = sourced_names(&texts);
     let mut docs = Vec::new();
     let mut missing = 0;
-    for (f, library) in files {
+    for (f, library, text) in texts {
         let rel = f.strip_prefix(&base).unwrap_or(&f);
-        match describe(root, &f, rel, library) {
+        match describe(root, &f, rel, library, text, &sourced) {
             Read::Script(d) => docs.push(*d),
             Read::Bare => missing += 1,
             Read::Skip => {},
@@ -156,12 +164,19 @@ pub fn says_sourced(text: &str) -> bool {
     })
 }
 
-fn describe(root: &Path, file: &Path, rel: &Path, library: bool) -> Read {
+fn describe(
+    root: &Path,
+    file: &Path,
+    rel: &Path,
+    library: bool,
+    text: Option<String>,
+    sourced: &std::collections::HashSet<String>,
+) -> Read {
     let exec = executable(file);
     if library && !exec {
         return Read::Skip;
     }
-    let Ok(text) = std::fs::read_to_string(file) else {
+    let Some(text) = text else {
         return Read::Skip;
     };
     if says_sourced(&text) {
@@ -170,6 +185,10 @@ fn describe(root: &Path, file: &Path, rel: &Path, library: bool) -> Read {
     let Some(name) = file.file_name().map(|n| n.to_string_lossy().into_owned()) else {
         return Read::Skip;
     };
+    // A file nobody runs, that another script sources or lists as a module, is a library.
+    if !exec && sourced.contains(&name) {
+        return Read::Skip;
+    }
     let path = file
         .strip_prefix(root)
         .unwrap_or(file)
@@ -281,6 +300,9 @@ pub fn parse(name: &str, path: &str, text: &str) -> Option<Doc> {
             }
             continue;
         }
+        if t == name || t == stem {
+            continue;
+        }
         if summary.is_none() {
             summary = Some(strip_name(t, name, stem));
         } else {
@@ -340,4 +362,35 @@ fn usage(name: &str, stem: &str, path: &str, t: &str) -> Option<Verb> {
         summary,
         command: format!("{path} {verb}"),
     })
+}
+
+/// The base names of the files other scripts source: a `source` or `.` line, a `# shellcheck source=`
+/// line, or a row of a `lib.nut` module list (the name a `use` writes, then the file).
+pub fn sourced_names(
+    files: &[(PathBuf, bool, Option<String>)],
+) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let mut add = |token: &str| {
+        let t = token.trim_matches(|c| c == '"' || c == '\'');
+        if let Some(base) = t.rsplit('/').next().filter(|b| !b.is_empty()) {
+            out.insert(base.to_string());
+        }
+    };
+    for (path, _, text) in files {
+        let Some(text) = text else {
+            continue;
+        };
+        let modules = path.file_name().is_some_and(|n| n == "lib.nut");
+        for l in text.lines() {
+            let t = l.trim();
+            if let Some(rest) = t.strip_prefix("# shellcheck source=") {
+                add(rest.split_whitespace().next().unwrap_or(""));
+            } else if let Some(rest) = t.strip_prefix("source ").or_else(|| t.strip_prefix(". ")) {
+                add(rest.split_whitespace().next().unwrap_or(""));
+            } else if modules && !t.is_empty() && !t.starts_with('#') {
+                add(t.split_whitespace().last().unwrap_or(""));
+            }
+        }
+    }
+    out
 }

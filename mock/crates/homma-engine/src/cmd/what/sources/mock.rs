@@ -64,6 +64,12 @@ pub fn gather(root: &Path, scope: &[String]) -> Gathered {
             }))
             .collect()
     });
+    merge(listed)
+}
+
+/// The listings of the repositories as one source: the builtins, which every repository lists alike, once,
+/// and a repository where the listing failed named in the footer.
+pub fn merge(listed: Vec<(String, Result<String, String>)>) -> Gathered {
     let mut out = Gathered::default();
     let mut builtins_done = false;
     for (repo, result) in listed {

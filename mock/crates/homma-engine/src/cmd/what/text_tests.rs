@@ -168,3 +168,10 @@ fn a_word_whose_stem_is_filler_keeps_its_subject() {
     let kept: Vec<String> = pairs("note taking").into_iter().map(|(w, _)| w).collect();
     assert_eq!(kept, ["note", "taking"]);
 }
+
+#[test]
+fn a_swap_is_allowed_in_a_word_of_three_letters_and_no_other_slip_is() {
+    assert_eq!(grade("tsr", "str"), Some(Grade::Fuzzy));
+    assert_eq!(grade("sat", "sit"), None);
+    assert_eq!(grade("ab", "ba"), None, "two letters is too few to swap");
+}

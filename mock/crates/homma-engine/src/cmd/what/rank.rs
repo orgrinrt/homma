@@ -58,7 +58,7 @@ impl Field {
 /// A thing lower than this share of the best score is dropped.
 const CUT: f64 = 0.2;
 /// How close two things must be, as the cosine of their weighted words, to be named beside each other.
-const CLOSE: f64 = 0.125;
+pub const CLOSE: f64 = 0.225;
 
 /// How one term matched in one thing.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -276,40 +276,67 @@ fn bag(d: &Doc) -> Vec<String> {
     k
 }
 
-/// For each of the first `of` answers, up to `each` other things that sit with it: those whose words,
-/// weighted by how few things carry each, are closest to its own (the cosine of the two), at least
-/// [`CLOSE`] close, and never one that is itself an answer.
-pub fn related(docs: &[Doc], hits: &[Hit], of: usize, each: usize) -> Vec<Vec<usize>> {
-    use std::collections::HashMap;
-    let bags: Vec<Vec<String>> = docs.iter().map(bag).collect();
-    let mut df: HashMap<&str, usize> = HashMap::new();
-    for b in &bags {
-        for w in b {
-            *df.entry(w).or_default() += 1;
+/// How near the words of two things are: the cosine of their bags, each word weighted by how few things
+/// carry it.
+pub struct Closeness {
+    bags:  Vec<Vec<String>>,
+    norms: Vec<f64>,
+    n:     f64,
+    df:    std::collections::HashMap<String, usize>,
+}
+
+impl Closeness {
+    pub fn new(docs: &[Doc]) -> Self {
+        let bags: Vec<Vec<String>> = docs.iter().map(bag).collect();
+        let mut df: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for b in &bags {
+            for w in b {
+                *df.entry(w.clone()).or_default() += 1;
+            }
         }
+        let mut c = Self {
+            norms: Vec::new(),
+            n: docs.len() as f64,
+            bags,
+            df,
+        };
+        c.norms = c
+            .bags
+            .iter()
+            .map(|b| b.iter().map(|w| c.weight(w).powi(2)).sum::<f64>().sqrt())
+            .collect();
+        c
     }
-    let n = docs.len() as f64;
-    let weight = |w: &str| (1.0 + n / df.get(w).copied().unwrap_or(1) as f64).ln();
-    let norm = |b: &[String]| b.iter().map(|w| weight(w).powi(2)).sum::<f64>().sqrt();
-    let norms: Vec<f64> = bags.iter().map(|b| norm(b)).collect();
+
+    fn weight(&self, w: &str) -> f64 {
+        (1.0 + self.n / self.df.get(w).copied().unwrap_or(1) as f64).ln()
+    }
+
+    /// The cosine of the words of thing `a` and thing `b`.
+    pub fn cos(&self, a: usize, b: usize) -> f64 {
+        let dot: f64 = self.bags[a]
+            .iter()
+            .filter(|w| self.bags[b].contains(w))
+            .map(|w| self.weight(w).powi(2))
+            .sum();
+        dot / (self.norms[a] * self.norms[b]).max(f64::EPSILON)
+    }
+}
+
+/// For each of the first `of` answers, up to `each` other things that sit with it: those whose words
+/// are closest to its own (see [`Closeness`]), at least [`CLOSE`] close, and never one that is itself an
+/// answer.
+pub fn related(docs: &[Doc], hits: &[Hit], of: usize, each: usize) -> Vec<Vec<usize>> {
+    let close = Closeness::new(docs);
     let shown: Vec<usize> = hits.iter().map(|h| h.doc).collect();
     hits.iter()
         .take(of)
         .map(|h| {
-            let mut scored: Vec<(usize, f64)> = bags
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| {
+            let mut scored: Vec<(usize, f64)> = (0 .. docs.len())
+                .filter(|i| {
                     *i != h.doc && !shown.contains(i) && alike(docs[h.doc].kind, docs[*i].kind)
                 })
-                .map(|(i, theirs)| {
-                    let dot: f64 = bags[h.doc]
-                        .iter()
-                        .filter(|w| theirs.contains(w))
-                        .map(|w| weight(w).powi(2))
-                        .sum();
-                    (i, dot / (norms[h.doc] * norms[i]).max(f64::EPSILON))
-                })
+                .map(|i| (i, close.cos(h.doc, i)))
                 .filter(|(_, c)| *c >= CLOSE)
                 .collect();
             scored.sort_by(|a, b| {

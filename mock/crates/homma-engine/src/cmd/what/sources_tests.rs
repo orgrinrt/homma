@@ -425,3 +425,108 @@ fn a_catalogue_suite_is_not_a_script() {
         ["one"]
     );
 }
+
+#[test]
+fn a_file_another_script_sources_is_a_library_and_one_nobody_sources_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(
+        dir.path(),
+        "m/main",
+        "#!/bin/sh\n# main - the command\n# shellcheck source=lib-a.sh\n. \"$here/lib-a.sh\"\nsource \"$here/sub/lib-b.sh\"\n",
+        true,
+    );
+    plant(
+        dir.path(),
+        "m/lib-a.sh",
+        "#!/bin/sh\n# Functions the command uses.\nf() { :; }\n",
+        false,
+    );
+    plant(
+        dir.path(),
+        "m/sub/lib-b.sh",
+        "#!/bin/sh\n# More functions.\ng() { :; }\n",
+        false,
+    );
+    plant(
+        dir.path(),
+        "m/lib-c.sh",
+        "#!/bin/sh\n# lib-c - nobody sources this one\n",
+        false,
+    );
+    plant(dir.path(), "n/lib.nut", "mod::one   one.sh\n", false);
+    plant(
+        dir.path(),
+        "n/one.sh",
+        "#!/bin/sh\n# A module.\nh() { :; }\n",
+        false,
+    );
+    let g = scripts::gather(dir.path());
+    let mut names: Vec<&str> = g.docs.iter().map(|d| d.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["lib-c", "main"]);
+}
+
+#[test]
+fn a_shellcheck_line_is_not_the_summary() {
+    let d = scripts::parse(
+        "x",
+        "x",
+        "#!/bin/sh\n# shellcheck source=lib.sh\n# x - does the thing\n",
+    )
+    .unwrap();
+    assert_eq!(d.summary, "does the thing");
+}
+
+#[test]
+fn a_slash_comment_block_is_a_header() {
+    let d = scripts::parse(
+        "run.ts",
+        "run.ts",
+        "#!/usr/bin/env -S deno run\n// run.ts - runs the thing\n// more about it\nconsole.log(1)\n",
+    )
+    .unwrap();
+    assert_eq!(d.summary, "runs the thing");
+}
+
+#[test]
+fn an_env_shebang_gives_the_interpreter_without_its_flags() {
+    assert_eq!(
+        scripts::interpreter("#!/usr/bin/env -S deno run").as_deref(),
+        Some("deno run")
+    );
+    assert_eq!(
+        scripts::interpreter("#!/usr/bin/env python3").as_deref(),
+        Some("python3")
+    );
+    assert_eq!(scripts::interpreter("#!/bin/bash").as_deref(), Some("bash"));
+}
+
+#[test]
+fn the_directories_that_hold_no_tools_are_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    for skipped in ["probes", ".git", ".venv", "node_modules", "__pycache__"] {
+        plant(
+            dir.path(),
+            &format!("a/{skipped}/hidden"),
+            "#!/bin/sh\n# hidden - not a tool\n",
+            true,
+        );
+    }
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["one"]
+    );
+}
+
+#[test]
+fn a_header_line_that_is_only_the_name_is_not_the_summary() {
+    let d = scripts::parse(
+        "word-frequency.sh",
+        "word-frequency.sh",
+        "#!/bin/sh\n# word-frequency.sh\n# Counts the words of a text.\n",
+    )
+    .unwrap();
+    assert_eq!(d.summary, "Counts the words of a text.");
+}
