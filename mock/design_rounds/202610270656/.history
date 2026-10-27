@@ -1,0 +1,50 @@
+e4418bf chore: lock src changelist for 202610270700
+04e2d8e chore: write the replacement src changelist
+b0a3fd0 chore: relock doc changelist for 202610270656
+74d0c5e chore: unlock the round to replace a stray changelist
+6c82615 fix: drive regen in its tests and probe the declared agent dir
+fa7de5d chore: lock doc changelist for 202610270656
+f61a33a docs: fold the round files into one
+fb635ae docs: open the round for the regen stage tests
+7c3d1e9 docs: regenerate the design and org documents
+cbb0244 chore: close design round 202610270605
+9f7a777 chore: lock src changelist for 202610270606
+cc4ed9a fix: test the regen skip and correct the state rustdoc
+cf0627a chore: lock doc changelist for 202610270605
+2d49522 docs: name where the deprecated agent field probes
+fbfd422 chore: close design round 202610270542
+2b9e425 chore: lock src changelist for 202610270544
+e323875 fix: make adoption the toml and keep the status fields
+8425009 chore: lock doc changelist for 202610270542
+23173a2 docs: make adoption the toml and keep the status fields
+e283e6e chore: close design round 202610270525
+2ecf18b chore: lock the source changelist
+3f3126c test: keep the status summary silent on a repo with no mockspace
+e27b2b3 chore: lock the doc changelist
+c85e3e6 docs: record why the status smoke test changes
+765bd9d chore: regenerate the docs and the merge attributes
+435abfe chore: close design round 202610270505
+71c9616 chore: lock the source changelist
+588b481 fix: ask an adopted repo only for the surfaces it owes
+be062f4 chore: lock the doc changelist and open the source window
+263ac98 docs: state what the agent surfaces ask of a repository
+23f9b94 chore: regenerate the structure graph
+7e4139f feat: dispatch the content repository's tools as homma subcommands (#74)
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)
+7500149 chore: track the generated merge attributes (#77)
+a5dc5d9 feat: install a stored local config by name (#73)
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+b4e9548 fix: read the request body in the stub forges before answering
+6dd0a1c fix: check the readme's launcher commands against the launcher
+20384f2 feat: carry every agent hook at its event and drop none
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
