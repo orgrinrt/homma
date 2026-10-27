@@ -8,8 +8,17 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use super::branches::{Call, branches};
-use super::range::{PartitionKind, ROOT_UNIT, kind_of, marker_of, partition, stand_ins, unit_of};
+use super::branches::{Call, Merged, Related, branches, merged, read, related};
+use super::range::{
+    PartitionKind,
+    ROOT_UNIT,
+    is_read,
+    kind_of,
+    marker_of,
+    partition,
+    stand_ins,
+    unit_of,
+};
 use super::record::{RECORD_PATH, Source, base, mark, marks};
 use super::{MilestoneError, commit};
 
@@ -52,6 +61,12 @@ impl Fx {
         self.git(&["commit", "-qm", &format!("edit {path}")]);
         self.git(&["rev-parse", "HEAD"])
     }
+
+    /// Commit the record on the current branch, as the caller of `mark` does.
+    fn commit_record(&self) {
+        self.git(&["add", RECORD_PATH]);
+        self.git(&["commit", "-qm", "edit the record"]);
+    }
 }
 
 #[test]
@@ -62,6 +77,15 @@ fn a_mark_is_appended_with_the_commits_own_date_and_base_reads_the_last() {
     let m = mark(fx.root(), "dev", &first, false).unwrap();
     assert_eq!(m.sha, first);
     assert_eq!(m.at, fx.git(&["show", "-s", "--format=%cs", &first]));
+    // the record is a file and nothing was committed for it
+    assert!(fx.root().join(RECORD_PATH).is_file());
+    assert_eq!(fx.git(&["status", "--porcelain"]), "?? .homma/");
+    // base reads what the trunk commits, so an uncommitted mark is not yet one
+    assert!(matches!(
+        base(fx.root(), "dev"),
+        Err(MilestoneError::NoMilestone)
+    ));
+    fx.commit_record();
     assert_eq!(
         base(fx.root(), "dev").unwrap(),
         (first.clone(), Source::Record)
@@ -72,10 +96,24 @@ fn a_mark_is_appended_with_the_commits_own_date_and_base_reads_the_last() {
         first.as_str(),
         second.as_str()
     ]);
+    assert_eq!(base(fx.root(), "dev").unwrap().0, first);
+    fx.commit_record();
     assert_eq!(base(fx.root(), "dev").unwrap().0, second);
-    // the record is a file and nothing was committed for it
-    assert!(fx.root().join(RECORD_PATH).is_file());
-    assert_eq!(fx.git(&["status", "--porcelain"]), "?? .homma/");
+}
+
+#[test]
+fn base_answers_as_the_trunk_does_from_a_clone_checked_out_on_another_branch() {
+    let fx = Fx::new();
+    let first = fx.commit("a.txt", "one\n");
+    let second = fx.commit("a.txt", "two\n");
+    mark(fx.root(), "dev", &first, false).unwrap();
+    fx.commit_record();
+    fx.git(&["switch", "-qc", "side"]);
+    mark(fx.root(), "dev", &second, false).unwrap();
+    fx.commit_record();
+    // the side branch's record names two marks, the trunk's names one
+    assert_eq!(marks(fx.root()).unwrap().len(), 2);
+    assert_eq!(base(fx.root(), "dev").unwrap(), (first, Source::Record));
 }
 
 #[test]
@@ -120,6 +158,7 @@ fn a_tagged_mark_makes_the_tag_and_a_repo_with_only_the_tag_is_answered_by_it() 
     );
     // the record, once there, wins over the tag
     mark(fx.root(), "dev", &second, false).unwrap();
+    fx.commit_record();
     assert_eq!(base(fx.root(), "dev").unwrap(), (second, Source::Record));
 }
 
@@ -264,6 +303,10 @@ fn a_marker_is_found_by_the_first_in_the_order_and_case_folds_only_where_declare
         Some("relaxed")
     );
     assert_eq!(marker_of(" * a relaxed assertion"), Some("relaxed"));
+    // a continuation is `* ` and text; a dereference at the start of a line is code
+    assert_eq!(marker_of("*self.relaxed = true;"), None);
+    assert_eq!(marker_of("    *stand_in = 1;"), None);
+    assert_eq!(marker_of(" *"), None);
     assert_eq!(marker_of("let s = \"relaxed\";"), None);
     assert_eq!(marker_of("// fixme: lowercase is not the marker"), None);
     assert_eq!(marker_of("let todos = 1;"), None);
@@ -417,7 +460,6 @@ fn stand_ins_are_read_in_source_only_and_a_memory_ordering_is_not_one() {
         "FIXME in a note\nTODO in a note\n",
     );
     fx.commit("docs/guide.md", "// relaxed in a page\n");
-    fx.commit("data/rows.json", "{\"a\": \"stand-in\"}\n");
     fx.commit(
         "src/lib.rs",
         "use std::sync::atomic::Ordering;\nfn n() { c.load(Ordering::Relaxed); }\n// FIXME: real\n",
@@ -431,16 +473,74 @@ fn stand_ins_are_read_in_source_only_and_a_memory_ordering_is_not_one() {
 }
 
 #[test]
-fn a_users_diff_configuration_changes_neither_the_partitions_nor_the_stand_ins() {
+fn a_placeholder_in_data_and_config_is_read_and_one_in_notes_patches_and_histories_is_not() {
+    let fx = Fx::new();
+    let start = fx.commit("seed.txt", "x\n");
+    let line = "knob = 1 # FIXME(stand-in): tune later\n";
+    fx.commit("content/x.toml", line);
+    fx.commit("mock/research/n/x.toml", line);
+    fx.commit("mock/design_rounds/202610270000/y.toml", line);
+    fx.commit("crates/c/mock/research/z.toml", line);
+    fx.commit("mock/research/n/fix.patch", "+// FIXME: quoted\n");
+    fx.commit("mock/design_rounds/r/.history", "FIXME in a history\n");
+    fx.commit("tools/app.js", "// TODO: code is source\n");
+    // a data line with no comment opener is no soft marker, whatever it says
+    fx.commit(
+        "data/rows.json",
+        "{\"a\": \"stand-in\", \"b\": \"relaxed\"}\n",
+    );
+    let found = stand_ins(fx.root(), &start, "dev").unwrap();
+    let rows: Vec<_> = found
+        .iter()
+        .map(|s| (s.file.as_str(), s.marker.as_str()))
+        .collect();
+    assert_eq!(rows, [
+        ("content/x.toml", "FIXME"),
+        ("tools/app.js", "TODO")
+    ]);
+}
+
+#[test]
+fn the_places_stand_ins_are_not_read_in_are_named_by_path_alone() {
+    for yes in [
+        "src/lib.rs",
+        "content/x.toml",
+        "a.json",
+        "x.tsv",
+        "t.js",
+        "mock/crates/c/src/a.rs",
+    ] {
+        assert!(is_read(yes), "{yes}");
+    }
+    for no in [
+        "mock/research/a.toml",
+        "mock/design_rounds/a/b.rs",
+        "k/mock/research/a.toml",
+        "a.patch",
+        "x/.history",
+        "docs/a.toml",
+        "README.md",
+        "a.md.tmpl",
+    ] {
+        assert!(!is_read(no), "{no}");
+    }
+    // a directory that merely ends in the same words is not the place
+    assert!(is_read("notmock/research/a.toml"));
+}
+
+#[test]
+fn a_users_diff_configuration_changes_no_stand_in() {
     let fx = Fx::new();
     let start = fx.commit("seed.txt", "x\n");
     fx.git(&["config", "diff.noprefix", "true"]);
     fx.git(&["config", "diff.mnemonicPrefix", "true"]);
+    // an external driver that cannot run: without `--no-ext-diff` the diff fails
+    fx.git(&["config", "diff.external", "no-such-differ-anywhere"]);
     fx.commit("src/lib.rs", "// FIXME: still found\n");
     let found = stand_ins(fx.root(), &start, "dev").unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].file, "src/lib.rs");
-    assert_eq!(partition(fx.root(), &start, "dev").unwrap().len(), 1);
+    assert_eq!(found[0].line, 1);
 }
 
 #[test]
@@ -478,7 +578,7 @@ fn a_branch_that_changes_only_a_binary_file_is_not_empty() {
 }
 
 #[test]
-fn two_binary_edits_of_one_file_never_end_the_report_whatever_git_says_of_them() {
+fn two_binary_edits_of_one_file_conflict_on_that_file_and_the_report_goes_on() {
     let fx = Fx::new();
     std::fs::write(fx.root().join("b.bin"), [0u8, 1, 2]).unwrap();
     fx.git(&["add", "b.bin"]);
@@ -490,21 +590,60 @@ fn two_binary_edits_of_one_file_never_end_the_report_whatever_git_says_of_them()
     std::fs::write(fx.root().join("b.bin"), [0u8, 7, 7, 7, 7]).unwrap();
     fx.git(&["commit", "-qam", "trunk"]);
     fx.commit("after.txt", "a\n");
-    fx.git(&["switch", "-qc", "plain"]);
-    fx.git(&["switch", "-q", "dev"]);
     fx.git(&["switch", "-qc", "right"]);
     fx.commit("right.txt", "r\n");
     fx.git(&["switch", "-q", "dev"]);
     let found = branches(fx.root(), "dev", "main").unwrap();
     let left = found.iter().find(|b| b.name == "left").unwrap();
-    // git names the conflict or refuses; either way it is this branch's call
-    assert!(
-        matches!(left.call, Call::MergeTrunk | Call::Unreadable),
-        "{left:?}"
-    );
-    if left.call == Call::Unreadable {
-        assert!(left.reason.as_deref().is_some_and(|r| !r.is_empty()));
-    }
+    assert_eq!(left.call, Call::MergeTrunk, "{left:?}");
+    assert_eq!(left.conflicts, ["b.bin"]);
+    assert_eq!(left.reason, None);
     let right = found.iter().find(|b| b.name == "right").unwrap();
     assert_eq!(right.call, Call::Land);
+}
+
+#[test]
+fn only_exit_one_of_merge_base_is_no_common_history_and_any_other_failure_is_unreadable() {
+    assert_eq!(related(Some(0), "", "abc\n"), Related::Yes);
+    assert_eq!(related(Some(1), "", ""), Related::No);
+    assert_eq!(
+        related(Some(128), "fatal: Not a valid object name zz\n", ""),
+        Related::Unknown("fatal: Not a valid object name zz".to_string())
+    );
+    // killed by a signal: no exit code at all
+    assert_eq!(
+        related(None, "", ""),
+        Related::Unknown("git gave no reason".to_string())
+    );
+    // git's output stands in where its error stream is empty
+    assert_eq!(
+        related(Some(2), "  \n", "\nwords on stdout\nmore"),
+        Related::Unknown("words on stdout".to_string())
+    );
+}
+
+#[test]
+fn a_branch_whose_tip_git_cannot_read_is_unreadable_with_its_reason() {
+    let fx = Fx::new();
+    fx.commit("a.txt", "one\n");
+    let ghost = "0123456789abcdef0123456789abcdef01234567";
+    let b = read(fx.root(), "dev", "ghost".to_string(), ghost.to_string());
+    assert_eq!(b.call, Call::Unreadable);
+    assert_eq!(b.commits, 0);
+    assert_eq!(b.changed, 0);
+    assert!(b.conflicts.is_empty());
+    let why = b.reason.expect("a reason");
+    assert!(why.contains("git") && why.contains(ghost), "{why}");
+}
+
+#[test]
+fn a_merge_git_refuses_to_make_is_refused_with_its_words_and_not_a_conflict() {
+    let fx = Fx::new();
+    fx.commit("a.txt", "one\n");
+    let ghost = "0123456789abcdef0123456789abcdef01234567";
+    match merged(fx.root(), "dev", ghost).unwrap() {
+        Merged::Refused(why) => assert!(!why.is_empty()),
+        Merged::Clean(t) => panic!("clean {t}"),
+        Merged::Conflicted(f) => panic!("conflicted {f:?}"),
+    }
 }

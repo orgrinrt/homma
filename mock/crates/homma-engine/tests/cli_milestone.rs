@@ -59,6 +59,13 @@ fn milestone_is_listed_and_a_mark_is_quiet_while_base_prints_the_sha() {
         .assert()
         .success()
         .stdout(predicate::str::is_empty());
+    // base reads what the trunk commits, so the caller's commit comes first
+    bin()
+        .args(["-c", &cfg, "milestone", "base", "x"])
+        .assert()
+        .failure();
+    git_in(&root, &["add", ".homma/milestones.toml"]);
+    git_in(&root, &["commit", "-qm", "test: record the milestone"]);
     bin()
         .args(["-c", &cfg, "milestone", "base", "x"])
         .assert()
@@ -151,4 +158,60 @@ fn branches_prints_each_branch_the_trunk_lacks_with_its_conflicts_and_call() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"call\": \"merge-trunk\""));
+}
+
+/// A directory holding a `git` that fails `merge-base` the way a broken
+/// repository does, exit 128, and hands every other call to the real one.
+#[cfg(unix)]
+fn git_that_cannot_find_a_merge_base(dir: &Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let real = std::process::Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .unwrap();
+    let real = String::from_utf8(real.stdout).unwrap().trim().to_string();
+    let shim = dir.join("git");
+    std::fs::write(
+        &shim,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = merge-base ] && [ \"$2\" != --is-ancestor ]; then\n  echo 'fatal: shim refuses merge-base' >&2\n  exit 128\nfi\nexec {real} \"$@\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    format!(
+        "{}:{}",
+        dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn a_branch_git_cannot_compare_is_listed_unreadable_with_its_reason_shown() {
+    let (dir, cfg) = workspace();
+    let root = dir.path().join("x");
+    commit_file(&root, "shared.txt", "line\n");
+    git_in(&root, &["switch", "-qc", "side"]);
+    commit_file(&root, "s.txt", "a\n");
+    git_in(&root, &["switch", "-q", "main"]);
+    let shims = tempfile::tempdir().unwrap();
+    let path = git_that_cannot_find_a_merge_base(shims.path());
+    bin()
+        .env("PATH", &path)
+        .args(["-c", &cfg, "milestone", "branches", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "side  unreadable  0 lines  1 commits  reason: fatal: shim refuses merge-base",
+        ));
+    bin()
+        .env("PATH", &path)
+        .args(["-c", &cfg, "--output", "json", "milestone", "branches", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"call\": \"unreadable\""))
+        .stdout(predicate::str::contains(
+            "\"reason\": \"fatal: shim refuses merge-base\"",
+        ));
 }

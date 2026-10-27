@@ -38,7 +38,8 @@ struct File {
     milestone: Vec<Mark>,
 }
 
-/// The marks in the record, oldest first; none where there is no file.
+/// The marks in the working tree's record, oldest first; none where there is
+/// no file. `mark` appends to this one.
 pub fn marks(root: &Path) -> Result<Vec<Mark>, MilestoneError> {
     let path = root.join(RECORD_PATH);
     let text = match std::fs::read_to_string(&path) {
@@ -46,14 +47,36 @@ pub fn marks(root: &Path) -> Result<Vec<Mark>, MilestoneError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(MilestoneError::Record(e.to_string())),
     };
-    let file: File = toml::from_str(&text).map_err(|e| MilestoneError::Record(e.to_string()))?;
+    parse(&text)
+}
+
+fn parse(text: &str) -> Result<Vec<Mark>, MilestoneError> {
+    let file: File = toml::from_str(text).map_err(|e| MilestoneError::Record(e.to_string()))?;
     Ok(file.milestone)
 }
 
-/// The current milestone: the last mark, or the newest `milestone/*` tag the
-/// trunk contains where the record has none.
+/// The marks in the record as the trunk commits it, oldest first; none where
+/// the trunk has no file. A clone checked out on a branch answers as the trunk.
+pub fn trunk_marks(root: &Path, trunk_ref: &str) -> Result<Vec<Mark>, MilestoneError> {
+    let spec = format!("{trunk_ref}:{RECORD_PATH}");
+    let listing = git(root, &[
+        "ls-tree",
+        "--name-only",
+        trunk_ref,
+        "--",
+        RECORD_PATH,
+    ])?;
+    if listing.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    parse(&git(root, &["show", &spec])?)
+}
+
+/// The current milestone: the last mark in the trunk's committed record, or
+/// the newest `milestone/*` tag the trunk contains where the record has none.
 pub fn base(root: &Path, trunk: &str) -> Result<(String, Source), MilestoneError> {
-    if let Some(last) = marks(root)?.pop() {
+    let trunk_ref = trunk_here(root, trunk);
+    if let Some(last) = trunk_marks(root, &trunk_ref)?.pop() {
         return Ok((last.sha, Source::Record));
     }
     let listing = git(root, &[
@@ -61,7 +84,7 @@ pub fn base(root: &Path, trunk: &str) -> Result<(String, Source), MilestoneError
         "--list",
         "milestone/*",
         "--merged",
-        &trunk_here(root, trunk),
+        &trunk_ref,
         "--sort=-version:refname",
     ])?;
     match listing.lines().next() {

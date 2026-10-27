@@ -92,6 +92,18 @@ pub fn kind_of(path: &str) -> PartitionKind {
     }
 }
 
+/// Whether stand-ins are read in a path. Notes, design round histories and
+/// patches quote other people's lines and are never read; a document is not
+/// read; every other file is, data and configuration included.
+pub fn is_read(path: &str) -> bool {
+    let under = |dir: &str| path.starts_with(dir) || path.contains(&format!("/{dir}"));
+    !(under("mock/research/")
+        || under("mock/design_rounds/")
+        || path.ends_with(".patch")
+        || path.ends_with(".history"))
+        && kind_of(path) == PartitionKind::Source
+}
+
 /// Resolve both ends and refuse a base the head does not contain.
 fn resolve(root: &Path, base: &str, head: &str) -> Result<(String, String), MilestoneError> {
     let b = commit(root, base)?;
@@ -154,10 +166,13 @@ pub fn partition(root: &Path, base: &str, head: &str) -> Result<Vec<Partition>, 
 }
 
 /// The text of a line after its comment opener: `//`, `/*`, `#` and a space, or
-/// `<!--`, or the whole of a block comment's continuation line.
+/// `<!--`, or the text of a block comment's continuation line, `* ` and text.
 fn comment_of(line: &str) -> Option<&str> {
-    if line.trim_start().starts_with('*') {
-        return Some(line);
+    // a continuation is `*` and a space and then text; `*self` is code
+    if let Some(rest) = line.trim_start().strip_prefix("* ") {
+        if !rest.trim().is_empty() {
+            return Some(rest);
+        }
     }
     ["//", "/*", "# ", "<!--"]
         .iter()
@@ -211,10 +226,8 @@ pub fn stand_ins(root: &Path, base: &str, head: &str) -> Result<Vec<StandIn>, Mi
             line = hunk_start(rest);
         } else if in_hunk && l.starts_with('+') {
             let text = &l[1 ..];
-            let source = file
-                .as_deref()
-                .is_some_and(|f| kind_of(f) == PartitionKind::Source);
-            if let (Some(f), Some(m), true) = (&file, marker_of(text), source) {
+            let read = file.as_deref().is_some_and(is_read);
+            if let (Some(f), Some(m), true) = (&file, marker_of(text), read) {
                 found.push(StandIn {
                     file: f.clone(),
                     line,

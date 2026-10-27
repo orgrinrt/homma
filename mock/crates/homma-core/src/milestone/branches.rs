@@ -58,7 +58,7 @@ pub struct Branch {
 }
 
 /// What merging a branch into the trunk came to.
-enum Merged {
+pub(crate) enum Merged {
     /// No conflict; the tree the merge made.
     Clean(String),
     /// The files in conflict.
@@ -67,7 +67,7 @@ enum Merged {
     Refused(String),
 }
 
-fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, MilestoneError> {
+pub(crate) fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, MilestoneError> {
     let out = git_status(root, &[
         "merge-tree",
         "--write-tree",
@@ -77,6 +77,10 @@ fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, MilestoneError>
     ])?;
     Ok(match out.status {
         Some(0) => Merged::Clean(out.stdout.lines().next().unwrap_or_default().to_string()),
+        // a merge git cannot make also exits 1, with no tree on its first line
+        Some(1) if !starts_with_tree(&out.stdout) => {
+            Merged::Refused(first_words(&out.stderr, &out.stdout))
+        },
         Some(1) => {
             Merged::Conflicted(
                 out.stdout
@@ -89,6 +93,33 @@ fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, MilestoneError>
         },
         _ => Merged::Refused(first_words(&out.stderr, &out.stdout)),
     })
+}
+
+/// Whether the first line of `merge-tree` output is the tree it wrote.
+fn starts_with_tree(stdout: &str) -> bool {
+    let first = stdout.lines().next().unwrap_or_default();
+    matches!(first.len(), 40 | 64) && first.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// What `git merge-base` said of a branch and the trunk.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Related {
+    /// A merge base exists.
+    Yes,
+    /// Git says there is none: exit 1, and only that.
+    No,
+    /// Git failed some other way, and its words.
+    Unknown(String),
+}
+
+/// Read the exit of `git merge-base`. Only 1 is "no common history"; a fatal
+/// 128, a signal or anything else is git failing, not a finding about history.
+pub(crate) fn related(status: Option<i32>, stderr: &str, stdout: &str) -> Related {
+    match status {
+        Some(0) => Related::Yes,
+        Some(1) => Related::No,
+        _ => Related::Unknown(first_words(stderr, stdout)),
+    }
 }
 
 /// The first non-empty line git said, from its error stream or else its output.
@@ -104,7 +135,7 @@ fn first_words(stderr: &str, stdout: &str) -> String {
 
 /// Read one branch against the trunk. A git failure here is this branch's
 /// call and never the report's.
-fn read(root: &Path, trunk: &str, name: String, tip: String) -> Branch {
+pub(crate) fn read(root: &Path, trunk: &str, name: String, tip: String) -> Branch {
     let mut branch = Branch {
         name,
         tip: tip.clone(),
@@ -120,9 +151,18 @@ fn read(root: &Path, trunk: &str, name: String, tip: String) -> Branch {
             .trim()
             .parse()
             .unwrap_or(0);
-        if !git_status(root, &["merge-base", trunk, &tip])?.ok() {
-            branch.call = Call::Unrelated;
-            return Ok(());
+        let base = git_status(root, &["merge-base", trunk, &tip])?;
+        match related(base.status, &base.stderr, &base.stdout) {
+            Related::Yes => {},
+            Related::No => {
+                branch.call = Call::Unrelated;
+                return Ok(());
+            },
+            Related::Unknown(why) => {
+                branch.call = Call::Unreadable;
+                branch.reason = Some(why);
+                return Ok(());
+            },
         }
         let sym = format!("{trunk}...{tip}");
         branch.changed = numstat(root, &[&sym])?.iter().map(|(_, a, d)| a + d).sum();
