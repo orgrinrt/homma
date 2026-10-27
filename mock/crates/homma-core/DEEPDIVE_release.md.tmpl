@@ -242,7 +242,9 @@ directory, one `homma hook run <event>` entry for every event the merged
 table names, and runs `git shook install --yes`, which reads that manifest
 beside any tracked `shook.toml` and registers both. The operator running the
 verb is the consent git-shook asks for, so nothing is left for a second
-command. The manifest is generated from the layers below, so an event
+command. Nothing forces this path: the install never takes `core.hooksPath` to
+git-shook from a repository where it is not already git-shook's, since that key
+is the other tool's to hold and homma never contends for it. The manifest is generated from the layers below, so an event
 declared in any layer has its entry and a hook added to a toml needs nothing
 else; the tracked `shook.toml` homma carries for `pre-commit` and `pre-push`
 stays the declaration a plain `git shook install` finds, under the same
@@ -260,7 +262,12 @@ overlay that is absent is skipped, one that does not parse is an error naming
 the file, and an overlay other than `homma.local.toml` carrying any table but
 those two is refused naming the table, since nothing else reads it.
 `homma hook doctor` names every `homma.*.toml` in the root as read or as
-present and not named.
+present and not named. While a named overlay cannot be read, every verb that
+would act on the merged table refuses and names the file: `hook install`,
+`hook run` and `agent regen`, the last because it writes back only the rows it
+has and a layer missing from them would remove that layer's guards from the
+clone with no error. `homma local` and `hook doctor` still run, since they are
+how the file is repaired and found.
 
 It refuses one thing, reported
 the same way so a sweep across a workspace goes on to the next repo: a hook
@@ -397,6 +404,7 @@ homma release run [<repo>] --level <l>    the release, or every unreleased repo
 homma release badges <repo>               rewrite the badges branch from the newest record
 homma hook install <repo>                 write one entrypoint per event, or refuse and say why
 homma hook run <event> [args...]          what an entrypoint calls: the event's entries, in order
+homma hook doctor [<repo>]                the overlay files read, absent and never read, and with a repository how git reaches each event
 ```
 
 Every subcommand prints for a human when a terminal is attached and its result
