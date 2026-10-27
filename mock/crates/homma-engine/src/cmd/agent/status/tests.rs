@@ -227,3 +227,21 @@ fn a_repo_with_a_cargo_manifest_and_no_mockspace_is_not_configured() {
     fs::write(repo.join("Cargo.toml"), b"[package]\nname = \"r\"\n").unwrap();
     assert!(matches!(probe("r", &repo).state, AgentState::NotConfigured));
 }
+
+#[test]
+fn the_agent_dir_is_probed_under_the_declared_mock_dir() {
+    // `linux/agent` with a `mock_dir = "linux"` toml is the agent directory;
+    // a probe for the literal `mock/agent` reports it absent.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("r");
+    fs::create_dir_all(repo.join("linux/agent")).unwrap();
+    fs::write(repo.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
+    assert!(probe("r", &repo).surfaces.mock_agent_dir);
+
+    // The control: a literal `mock/agent` is not it when the toml says
+    // `linux`.
+    let other = dir.path().join("s");
+    fs::create_dir_all(other.join("mock/agent")).unwrap();
+    fs::write(other.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
+    assert!(!probe("s", &other).surfaces.mock_agent_dir);
+}

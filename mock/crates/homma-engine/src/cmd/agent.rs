@@ -181,12 +181,11 @@ pub mod status {
     /// A repo without a `mockspace.toml` has not adopted mockspace, which
     /// several repos here decided on purpose, and mockspace's own tree has a
     /// mock directory and no toml, so it is not configured rather than partly
-    /// so. The rendered surfaces, and the
-    /// wiring that makes the hooks fire, are asked of an adopted repo only.
-    /// `mock/agent/` is not one of them: the builtin rules ship inside
-    /// mockspace, and that directory holds only what a repo adds itself. The
-    /// `cargo mock` alias is not either, since the launcher answers `cargo
-    /// mock` from where it is installed.
+    /// so. The rendered surfaces, and the wiring that makes the hooks fire,
+    /// are asked of an adopted repo only. `mock/agent/` is not one of them:
+    /// the builtin rules ship inside mockspace, and that directory holds only
+    /// what a repo adds itself. The `cargo mock` alias is not either, since
+    /// the launcher answers `cargo mock` from where it is installed.
     fn roll_up(local: &Path, s: &Surfaces) -> AgentState {
         if !local.exists() {
             return AgentState::Missing;
@@ -424,8 +423,11 @@ pub mod regen {
             // Stage 1: cargo mock.
             let cargo_mock = if opts.skip_cargo_mock {
                 StageStatus::Skipped("--skip-cargo-mock".into())
-            } else if let Some(why) = nothing_to_run(&local) {
-                StageStatus::Skipped(why.into())
+            } else if status::mockspace_toml_path(&local).is_none() {
+                // Adoption is the toml: mockspace's own tree has a mock
+                // directory and no toml, and `cargo mock` answers "no
+                // mockspace.toml found" there.
+                StageStatus::Skipped("no mockspace.toml".into())
             } else {
                 match invoke_cargo_mock(&local) {
                     Ok(()) => StageStatus::Success,
@@ -632,16 +634,6 @@ pub mod regen {
             needs_a_human,
             hooks_not_carried,
         })
-    }
-
-    /// Why `cargo mock` has nothing to run in this repo, when it has not.
-    /// Adoption is the `mockspace.toml`, so a mock directory alone is no
-    /// reason to run it: mockspace's own tree has one and answers "no
-    /// mockspace.toml found".
-    fn nothing_to_run(local: &Path) -> Option<&'static str> {
-        status::mockspace_toml_path(local)
-            .is_none()
-            .then_some("no mockspace.toml")
     }
 
     /// Run `cargo mock` from the repo root. Errors carry the exit status +
