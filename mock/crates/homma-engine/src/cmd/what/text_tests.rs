@@ -159,3 +159,12 @@ fn the_filler_is_dropped_as_it_is_and_once_stemmed() {
             .all(|(w, _)| w != "scripts")
     );
 }
+
+#[test]
+fn a_word_whose_stem_is_filler_keeps_its_subject() {
+    for w in ["note", "notes", "noted", "noting"] {
+        assert!(!is_filler(w), "{w} was dropped as the filler `not`");
+    }
+    let kept: Vec<String> = pairs("note taking").into_iter().map(|(w, _)| w).collect();
+    assert_eq!(kept, ["note", "taking"]);
+}

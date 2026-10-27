@@ -397,3 +397,12 @@ fn a_two_word_query_about_nothing_the_tooling_does_returns_nothing() {
         );
     }
 }
+
+#[test]
+fn post_a_stand_up_finds_the_stand_up_script_with_its_post_verb() {
+    must_come_first("post a stand-up", Kind::Script, "stand-up");
+    assert_eq!(
+        first("post a stand-up").2,
+        ".shared/scripts/remote/stand-up post"
+    );
+}

@@ -4,7 +4,7 @@
 //--------------------------------------------------------------------------------------------------
 
 use super::doc::{Doc, Kind, Verb};
-use super::rank::{rank, related, required};
+use super::rank::{Field, rank, related, required};
 use super::text::pairs;
 
 fn terms(q: &str) -> Vec<String> {
@@ -266,4 +266,73 @@ fn a_thing_under_a_fifth_of_the_best_is_dropped_by_the_cut_and_one_above_it_is_k
     assert_eq!(kept[0], "alpha-beta-gamma");
     assert!(kept.contains(&"middling".to_string()), "{kept:?}");
     assert!(!kept.contains(&"weak".to_string()), "{kept:?}");
+}
+
+/// A tool that carries `zap` in the one field `field` names, and nowhere else.
+fn in_field(field: Field, name: &str) -> Doc {
+    let mut d = doc(Kind::Tool, name, "unrelated", &[]);
+    match field {
+        Field::Name => d.name = format!("{name}-zap"),
+        Field::Tag => d.tags = vec!["zap".to_string()],
+        Field::VerbName => {
+            d.verbs = vec![Verb {
+                name:    "zap".into(),
+                summary: String::new(),
+                command: "x zap".into(),
+            }];
+        },
+        Field::Summary => d.summary = "zap".to_string(),
+        Field::VerbSummary => {
+            d.verbs = vec![Verb {
+                name:    "other".into(),
+                summary: "zap".into(),
+                command: "x other".into(),
+            }];
+        },
+        Field::Place => d.place = vec!["zap".to_string()],
+        Field::Body => d.body = "zap".to_string(),
+    }
+    d
+}
+
+#[test]
+fn each_field_outweighs_the_next_one_down() {
+    let order = [
+        Field::Name,
+        Field::Tag,
+        Field::VerbName,
+        Field::Summary,
+        Field::VerbSummary,
+        Field::Place,
+        Field::Body,
+    ];
+    for pair in order.windows(2) {
+        // The weaker one sorts first by name, so only its weight can put the other ahead.
+        let docs = vec![in_field(pair[1], "a-low"), in_field(pair[0], "z-high")];
+        let got = names(&docs, "zap");
+        assert_eq!(
+            got[0],
+            if pair[0] == Field::Name { "z-high-zap" } else { "z-high" },
+            "{:?} must outweigh {:?}: {got:?}",
+            pair[0],
+            pair[1]
+        );
+    }
+}
+
+#[test]
+fn each_match_grade_outweighs_the_next_one_down() {
+    // One word of the summary for each grade of `land`, the weakest sorted first by name.
+    let docs = vec![
+        doc(Kind::Tool, "a-fuzzy", "lnad", &[]),
+        doc(Kind::Tool, "b-prefix", "landscape", &[]),
+        doc(Kind::Tool, "c-synonym", "ship", &[]),
+        doc(Kind::Tool, "d-same", "land", &[]),
+    ];
+    assert_eq!(names(&docs, "land"), [
+        "d-same",
+        "c-synonym",
+        "b-prefix",
+        "a-fuzzy"
+    ]);
 }

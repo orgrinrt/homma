@@ -139,9 +139,9 @@ pub fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether a word is filler, as it is or once stemmed, so `scripts` goes where `script` does.
+/// Whether a word is filler, as it is or with its plural off, so `scripts` goes where `script` does and `noted` stays.
 pub fn is_filler(w: &str) -> bool {
-    FILLER.contains(&w) || FILLER.contains(&stem(w).as_str())
+    FILLER.contains(&w) || FILLER.contains(&unplural(w).as_str())
 }
 
 /// The words of a query that carry a subject, each with its stem, each stem once, in the order given.
@@ -159,9 +159,8 @@ pub fn pairs(query: &str) -> Vec<(String, String)> {
     out
 }
 
-/// The stem of a lowercase word: a plural comes off first, then `ing` or `ed`, so a root that ends in
-/// one of them (`speed`) is cut the same way whether it arrives bare or as `speeds`.
-pub fn stem(w: &str) -> String {
+/// The word with its plural taken off.
+pub fn unplural(w: &str) -> String {
     let mut s = w.to_string();
     let n = s.chars().count();
     if n > 4 && s.ends_with("ies") {
@@ -174,6 +173,13 @@ pub fn stem(w: &str) -> String {
     } else if n > 3 && s.ends_with('s') && !s.ends_with("ss") && !s.ends_with("us") {
         s.pop();
     }
+    s
+}
+
+/// The word with its plural, then `ing` or `ed`, taken off and its final `e` kept, so a root that ends in
+/// one of them (`speed`) is cut the same way whether it arrives bare or as `speeds`.
+pub fn strip(w: &str) -> String {
+    let mut s = unplural(w);
     let n = s.chars().count();
     if n > 5 && s.ends_with("ing") {
         s.truncate(s.len() - 3);
@@ -182,6 +188,12 @@ pub fn stem(w: &str) -> String {
         s.truncate(s.len() - 2);
         undouble(&mut s);
     }
+    s
+}
+
+/// The stem of a lowercase word: [`strip`] and then the final `e` off.
+pub fn stem(w: &str) -> String {
+    let mut s = strip(w);
     if s.chars().count() > 3 && s.ends_with('e') {
         s.pop();
     }
