@@ -110,7 +110,7 @@ fn the_json_keeps_its_deprecated_fields_with_their_probe_values() {
 }
 
 #[test]
-fn not_configured_when_mock_absent() {
+fn not_configured_when_there_is_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("r");
     fs::create_dir_all(&repo).unwrap();
@@ -244,4 +244,46 @@ fn the_agent_dir_is_probed_under_the_declared_mock_dir() {
     fs::create_dir_all(other.join("mock/agent")).unwrap();
     fs::write(other.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
     assert!(!probe("s", &other).surfaces.mock_agent_dir);
+}
+
+#[test]
+fn every_surface_is_asked_of_an_adopted_repo_on_its_own() {
+    // The roll-up is a conjunction. With everything else present and one
+    // surface absent the repo is partial, for each surface in turn, so a
+    // surface dropped from the conjunction is caught by its own case.
+    for absent in ["mock dir", ".claude", ".github/instructions", "git hooks"] {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("r");
+        fs::create_dir_all(&repo).unwrap();
+        every_surface_but_hooks(&repo);
+        if absent != "git hooks" {
+            wire_the_hooks(&repo);
+        }
+        match absent {
+            "mock dir" => fs::remove_dir_all(repo.join("mock")).unwrap(),
+            ".claude" => fs::remove_dir_all(repo.join(".claude")).unwrap(),
+            ".github/instructions" => fs::remove_dir_all(repo.join(".github")).unwrap(),
+            _ => {},
+        }
+        let state = probe("r", &repo);
+        assert!(
+            matches!(state.state, AgentState::Partial),
+            "without {absent} the repo reported as {:?}",
+            state.state
+        );
+    }
+}
+
+#[test]
+fn a_toml_that_does_not_parse_still_counts_as_adopting_and_names_the_default_dir() {
+    // The status says what it can see. A toml it cannot parse is still a toml,
+    // so the repo has adopted mockspace, and the mock directory is the default
+    // rather than a guess.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("r");
+    fs::create_dir_all(repo.join("mock")).unwrap();
+    fs::write(repo.join("mockspace.toml"), b"mock_dir = [unclosed\n").unwrap();
+    let state = probe("r", &repo);
+    assert!(state.surfaces.mockspace_toml);
+    assert_eq!(state.surfaces.mock_dir_name, "mock");
 }

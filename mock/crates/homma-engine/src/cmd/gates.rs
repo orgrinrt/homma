@@ -19,10 +19,11 @@
 //!    not look like `git commit` or `git push` (out-of-scope call).
 //! 3. Resolves the active repo from `tool_input.cwd` (or `$PWD` as
 //!    fallback); exits 0 silently if no member repo's tree covers it.
-//! 4. Verifies the repo has `mock/`, a config marker (a launcher pin in
-//!    `mockspace.toml`, or the legacy `cargo mock` alias in
-//!    `.cargo/config.toml`), and a `core.hooksPath` set so per-repo git
-//!    hooks fire.
+//! 4. Skips the drift check if the repo has no `mockspace.toml`, which is what
+//!    adopting mockspace is. Otherwise it verifies the mock directory the
+//!    toml declares, a config marker (a launcher pin in `mockspace.toml`, or
+//!    the legacy `cargo mock` alias in `.cargo/config.toml`), and a
+//!    `core.hooksPath` set so per-repo git hooks fire.
 //! 5. If healthy: silent allow. If anything is missing: structured deny
 //!    with a hookSpecificOutput payload pointing at the fix.
 //!
@@ -222,7 +223,7 @@ if [ "$match_name" = "mockspace" ] \
 fi
 
 # Decide whether the repo has *partially* adopted mockspace.
-# A repo with NO mockspace surface (no mock/, no alias, no
+# A repo with NO mockspace surface (no mock dir, no alias, no
 # core.hooksPath) has not adopted mockspace at all; the gate stays
 # out of the way to avoid enforcing adoption on unrelated repos.
 # Only flag repos where some surfaces exist but others are missing,
@@ -232,12 +233,18 @@ has_alias=0
 has_pin=0
 has_hooks_path=0
 
-# The mock directory is the one `mockspace.toml` declares as `mock_dir`, and
-# `mock` only when it declares none: sodapop's is `linux`.
+# Adoption is the `mockspace.toml`, at the root or under the mock dir. A repo
+# without one has not adopted mockspace, whatever else it shows, and the
+# command the drift deny would name has nothing to run there, so only the
+# shared config check below still applies to it. The mock directory is
+# the one the toml declares as `mock_dir`, `mock` only when it declares none:
+# sodapop's is `linux`. Either quote of a TOML string is read.
 mock_dir_name=mock
+has_toml=0
 for cfg in "$match_path/mockspace.toml" "$match_path/mock/mockspace.toml"; do
     [ -f "$cfg" ] || continue
-    declared=$(awk -F'"' '
+    has_toml=1
+    declared=$(awk -F"[\"']" '
         /^\[/ {{ exit }}
         /^[[:space:]]*mock_dir[[:space:]]*=/ {{ print $2; exit }}
     ' "$cfg")
@@ -302,7 +309,7 @@ fix=""
 
 # Zero adoption is a repo that never opted in and full adoption is one with
 # nothing to say. Anything between the two is drift.
-if [ "$adoption" -ne 0 ] && [ "$adoption" -ne 3 ]; then
+if [ "$has_toml" -eq 1 ] && [ "$adoption" -ne 0 ] && [ "$adoption" -ne 3 ]; then
     [ "$has_mock_dir" -eq 0 ] && \
         problems+=("$match_path/$mock_dir_name/ is missing but other mockspace surfaces are present")
     [ "$has_config" -eq 0 ] && \
@@ -828,9 +835,47 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn gate_e2e_a_mock_dir_with_no_toml_is_left_alone() {
+        // mockspace's own tree shape: `mock/` and nothing else. Without a
+        // `mockspace.toml` it has not adopted mockspace, and a deny naming
+        // `homma agent regen` sends somebody to a command that skips it.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, false);
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "no toml means no adoption; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_a_single_quoted_mock_dir_is_read() {
+        // A TOML literal string is as valid as a basic one, and the status
+        // probe parses real TOML, so the two must agree on the same file.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "sodapop", false, AliasShape::None, true);
+        fs::create_dir_all(repo.join("linux")).unwrap();
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mock_dir = 'linux'\nmockspace_branch = \"dev\"\n",
+        )
+        .unwrap();
+        let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "a literal-string mock dir is the mock dir; got: {out}",
+        );
+    }
+
+    #[test]
     fn gate_e2e_partial_adoption_emits_deny() {
         let dir = tempfile::tempdir().unwrap();
         let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, false);
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let out = run_gate(&repos, &input);
@@ -908,6 +953,7 @@ pub(crate) mod tests {
         // so a repository carrying that and nothing else is still drift.
         let dir = tempfile::tempdir().unwrap();
         let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, true);
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let out = run_gate(&repos, &input);
@@ -933,6 +979,7 @@ pub(crate) mod tests {
             AliasShape::UnderOtherSection,
             true,
         );
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let out = run_gate(&repos, &input);
@@ -1157,8 +1204,9 @@ pub(crate) mod tests {
         let hooks = ws.join(".claude").join("hooks");
         fs::create_dir_all(&hooks).unwrap();
         fs::write(ws.join("homma.toml"), "content_repo = \"x\"\n").unwrap();
-        // Partial adoption: mock/ present, no alias, no hooksPath.
+        // Partial adoption: a toml and mock/ present, no pin, no hooksPath.
         let repo = fake_repo(&ws, "arvo", true, AliasShape::None, false);
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
 
         let script = hooks.join("gate.sh");
         fs::write(

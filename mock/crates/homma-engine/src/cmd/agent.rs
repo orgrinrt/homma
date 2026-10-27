@@ -7,7 +7,7 @@
 //!
 //! Each member repo renders its own `.claude/` + `.github/instructions/` +
 //! `.github/skills/` with `cargo mock`, from the builtin rules mockspace
-//! ships and whatever `mock/agent/` templates the repo adds. A repo without a
+//! ships and whatever `agent/` templates it adds under its mock directory. A repo without a
 //! `mockspace.toml` has not adopted mockspace and is not asked for any of it.
 //! `homma agent` is the workspace-level orchestrator: it discovers per-repo
 //! state (`status`) or drives the per-repo regen end-to-end (`regen`).
@@ -72,8 +72,9 @@ pub mod status {
         /// The directory `mockspace.toml` declares as `mock_dir`, `mock` when
         /// it declares none.
         pub mock_dir_name:       String,
+        /// Whether the directory named by `mock_dir_name` exists.
         pub mock_dir:            bool,
-        /// Deprecated: nothing asks a repo for `mock/agent/`, since the
+        /// Deprecated: nothing asks a repo for its mock directory's `agent/`, since the
         /// builtin rules ship inside mockspace. Kept so the document only
         /// grows, and carries what its probe finds.
         pub mock_agent_dir:      bool,
@@ -156,7 +157,8 @@ pub mod status {
 
     /// Where a repo's `mockspace.toml` is: at the root, or under the mock
     /// directory, which is where ikiuni keeps it and where the commit gate
-    /// looks as well.
+    /// looks as well. Only those two places are looked in: a toml under any
+    /// other directory is missed, and the root one wins where both exist.
     pub(super) fn mockspace_toml_path(local: &Path) -> Option<std::path::PathBuf> {
         ["mockspace.toml", "mock/mockspace.toml"]
             .iter()

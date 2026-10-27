@@ -384,7 +384,7 @@ impl StatusReport {
             if missing.is_empty() {
                 writeln!(out, "  {} ok", a.repo)?;
             } else {
-                short = true;
+                short = matches!(a.state, AgentState::Partial) || short;
                 writeln!(out, "  {} missing {}", a.repo, missing.join(", "))?;
             }
         }
@@ -858,6 +858,20 @@ mod tests {
         ));
         assert!(text.contains("agent surfaces:"), "{text}");
         assert!(text.contains("kamu missing git-hooks"), "{text}");
+        assert!(text.contains("run `homma agent regen`"), "{text}");
+    }
+
+    #[test]
+    fn a_repo_not_on_disk_is_not_told_to_regenerate() {
+        // `regen` skips a path that does not exist, so the line naming it
+        // would send somebody to a command that does nothing for that repo.
+        let text = rendered(&with(
+            vec![agent_state("kamu", AgentState::Missing, false)],
+            empty_configs(),
+            Vec::new(),
+        ));
+        assert!(text.contains("kamu missing"), "{text}");
+        assert!(!text.contains("homma agent regen"), "{text}");
     }
 
     #[test]
