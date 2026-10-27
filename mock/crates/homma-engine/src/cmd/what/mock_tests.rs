@@ -118,7 +118,14 @@ fn a_repository_where_the_listing_fails_is_named_in_the_footer() {
 #[test]
 fn a_grandchild_holding_the_pipe_after_the_child_exits_does_not_hold_the_listing() {
     let dir = tempfile::tempdir().unwrap();
-    let prog = fake_cargo(dir.path(), "(sleep 20 &)\nprintf '    mock lock  seal\\n'");
+    let marker = dir.path().join("grandchild-pid");
+    let prog = fake_cargo(
+        dir.path(),
+        &format!(
+            "(sleep 20 & echo $! > {})\nprintf '    mock lock  seal\\n'",
+            marker.display()
+        ),
+    );
     let t = std::time::Instant::now();
     let out =
         mock::list(&prog, dir.path(), std::time::Duration::from_secs(30)).expect("the listing");
@@ -128,6 +135,17 @@ fn a_grandchild_holding_the_pipe_after_the_child_exits_does_not_hold_the_listing
         t.elapsed()
     );
     assert!(out.contains("mock lock"));
+    let pid = std::fs::read_to_string(&marker).unwrap().trim().to_string();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let state = Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    assert!(
+        state.is_empty() || state.starts_with('Z'),
+        "the grandchild {pid} outlived the listing: {state:?}"
+    );
 }
 
 #[test]

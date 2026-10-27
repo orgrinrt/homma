@@ -381,6 +381,9 @@ pub fn sourced_names(
             continue;
         };
         let modules = path.file_name().is_some_and(|n| n == "lib.nut");
+        if !(modules || text.starts_with("#!") || executable(path)) {
+            continue;
+        }
         for l in text.lines() {
             let t = l.trim();
             if let Some(rest) = t.strip_prefix("# shellcheck source=") {

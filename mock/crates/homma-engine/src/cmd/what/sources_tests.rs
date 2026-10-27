@@ -530,3 +530,48 @@ fn a_header_line_that_is_only_the_name_is_not_the_summary() {
     .unwrap();
     assert_eq!(d.summary, "Counts the words of a text.");
 }
+
+#[test]
+fn a_readme_row_that_begins_with_source_does_not_hide_a_script() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(
+        dir.path(),
+        "w/README.md",
+        "# w\n\nsource    parts.py     the parts\n",
+        false,
+    );
+    plant(
+        dir.path(),
+        "w/parts.py",
+        "#!/usr/bin/env python3\n\"\"\"parts - the parts\"\"\"\n",
+        false,
+    );
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["parts"]
+    );
+}
+
+#[test]
+fn a_header_that_says_sourced_makes_a_library_by_line_and_by_sentence() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    plant(
+        dir.path(),
+        "a/exec-lib",
+        "#!/bin/sh\n# Sourced by nothing here.\n",
+        true,
+    );
+    plant(
+        dir.path(),
+        "a/sentence-lib.sh",
+        "#!/bin/sh\n# The helpers of the thing. Sourced by the thing.\n",
+        false,
+    );
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["one"]
+    );
+}

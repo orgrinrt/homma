@@ -519,9 +519,9 @@ tool.
   executable, or it starts with a shebang line, in which case its command is the
   interpreter the line names followed by the path. A file with neither is a
   library and is not an answer, whatever its extension, and neither is one whose
-  header has a sentence beginning `Sourced`, which is how the hygiene directory's
+  header has a line or a sentence beginning `Sourced`, which is how the hygiene directory's
   convention has a file say that another file sources it. So is a file that is not
-  executable and that another script sources, with `source`, `.` or a `shellcheck source=`
+  executable and that another script (one that is executable or opens with a shebang) sources, with `source`, `.` or a `shellcheck source=`
   line, or lists as a module in a `lib.nut`, since the workspace says it there. A test is not a script: a
   name with `_test`, `_fixture` or `_catalogue` in it or starting `test_`, a `test` runner beside
   its suite, and anything under a `tests` or `test` directory. A program's own
