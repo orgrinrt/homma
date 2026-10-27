@@ -1,0 +1,18 @@
+ce7e9a8 chore: lock the src changelist
+d312273 fix: name the partition kind apart from the api's
+1f8a280 chore: lock the doc changelist
+15f9cee docs: open the round for the partition kind name
+7e8126b chore: close design round 202610270428
+9e65dbf chore: lock the src changelist
+6df60b2 test: record the suite runs
+d060649 fix: name the milestone group in the readme and the groups test
+b3cf2b4 chore: lock the doc changelist
+711587c docs: open the round for the groups test
+672bc8d chore: re-file the three open topics the close archived
+c5b7519 chore: close design round 202610270410
+8c31bb3 chore: lock the src changelist
+16e635c feat: add the milestone command family
+b9f4099 chore: track the append merge attributes
+5f2d13e chore: lock the doc changelist
+f08b030 docs: design the milestone command family
+23f9b94 chore: regenerate the structure graph
