@@ -19,6 +19,7 @@ pub mod forge;
 pub mod hooks;
 pub mod inject;
 pub mod local;
+pub mod milestone;
 pub mod release;
 pub mod repo;
 pub mod testing;

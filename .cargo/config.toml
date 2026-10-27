@@ -1,0 +1,7 @@
+# The tests run on any machine, and git copies the machine's template directory into
+# every repository `git init` and `git clone` make. An empty value outranks
+# `init.templateDir`, so a test repository begins with no hooks. `force` is what makes
+# it outrank a `GIT_TEMPLATE_DIR` the machine already exports, which cargo leaves alone
+# otherwise. Only what cargo starts is affected.
+[env]
+GIT_TEMPLATE_DIR = { value = "", force = true }

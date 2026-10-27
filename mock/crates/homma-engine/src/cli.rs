@@ -195,6 +195,14 @@ pub enum Command {
         op: ReleaseOp,
     },
 
+    /// The milestone: where the current one began, and what the range since
+    /// holds: its review partitions, the stand-ins it added and the branches
+    /// the trunk does not yet contain.
+    Milestone {
+        #[command(subcommand)]
+        op: MilestoneOp,
+    },
+
     /// The git hooks: one entrypoint per event in the repository's own hooks
     /// directory, running the entries `[hooks]` in `homma.toml` names, the
     /// release gate on `pre-push` among them whether or not the table is
@@ -588,6 +596,44 @@ pub enum ReleaseOp {
     /// Rewrite the `badges` branch from the newest recorded run and the
     /// current version.
     Badges {
+        repo: String,
+    },
+}
+
+/// `milestone` subcommands: one record and four reports over a range.
+#[derive(Debug, Subcommand)]
+pub enum MilestoneOp {
+    /// Print the sha of the current milestone, the last one marked.
+    Base {
+        /// The repository's directory name under the workspace root.
+        repo: String,
+    },
+    /// Record a milestone in `.homma/milestones.toml`, committing nothing.
+    Mark {
+        /// The repository's directory name under the workspace root.
+        repo: String,
+        /// A commit the trunk contains.
+        sha:  String,
+        /// Also make the annotated tag `milestone/<n>` here, for where a push
+        /// of tags works.
+        #[arg(long)]
+        tag:  bool,
+    },
+    /// The range split by crate and by document, with changed lines each.
+    Partition {
+        repo: String,
+        base: String,
+        head: String,
+    },
+    /// Every FIXME, relaxed assertion and marked stand-in the range added.
+    StandIns {
+        repo: String,
+        base: String,
+        head: String,
+    },
+    /// Every branch the trunk does not contain, with its changed lines, its
+    /// conflicts against the trunk and its call.
+    Branches {
         repo: String,
     },
 }

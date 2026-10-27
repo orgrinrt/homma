@@ -8,5 +8,6 @@
 /mock/test-history/**/*.json merge=mockspace-test-history
 
 # mockspace: files that only grow keep both sides' additions, see the append merge driver
+/.homma/milestones.toml merge=mockspace-append
 /mock/crates/*/BACKLOG.md.tmpl merge=mockspace-append
 /mock/crates/*/SHAME.md.tmpl merge=mockspace-append

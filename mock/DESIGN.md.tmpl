@@ -79,7 +79,9 @@ split that a later round dissolves, and it is where the release lives: the gate
 that measures a commit, the run record and commit status it leaves, and the
 merge, tag, changelog, GitHub release and registry publish that carry `dev`
 onto `main`. `homma release` in `homma-engine` is its surface, and
-`CORE_RELEASE.md` is the whole of it.
+`CORE_RELEASE.md` is the whole of it. `homma milestone` is the sibling that tells where
+the current milestone began and reports on the range since, and `CORE_MILESTONE.md` is the
+whole of that.
 
 ## The rule corpus
 
@@ -157,16 +159,17 @@ listing is offered to every session until somebody says so.
 ## The command surface
 
 ```
-homma org      who exists
-homma work     workspaces and what is in them
-homma rules    the corpus: what governs a subject, and generating the cards
-homma skills   what is authored, and generating the tree a session finds
-homma agents   the personas: what is authored, and generating the ones a session dispatches
-homma sauna    correspondence and work
-homma serve    the daemon and its surfaces
-homma release  the gate, the run record, and dev onto main as a release
-homma capture  what the person said to a session, copied into the capture store
-homma tools    the content repository's tools, and the promoted ones as commands
+homma org        who exists
+homma work       workspaces and what is in them
+homma rules      the corpus: what governs a subject, and generating the cards
+homma skills     what is authored, and generating the tree a session finds
+homma agents     the personas: what is authored, and generating the ones a session dispatches
+homma sauna      correspondence and work
+homma serve      the daemon and its surfaces
+homma release    the gate, the run record, and dev onto main as a release
+homma milestone  where the current milestone began, and the reports over the range since
+homma capture    what the person said to a session, copied into the capture store
+homma tools      the content repository's tools, and the promoted ones as commands
 ```
 
 `homma capture --title <title>` reads an agent session's transcript and writes
@@ -452,7 +455,7 @@ promoted, and for one whose name a built-in command already holds.
 A built-in command wins over a tool of the same name, except that a built-in
 group hands the verbs it does not know to the tool of its name. A group is every
 built-in command that takes verbs, `org`, `repo`, `forge`, `agent`, `docs`,
-`local`, `rules`, `skills`, `agents`, `release` and `hook`, and none is
+`local`, `rules`, `skills`, `agents`, `release`, `milestone` and `hook`, and none is
 singled out. `rules` shows it: `homma rules about` and `homma rules render` are
 the built-in's, and `homma rules show` is the tool's, so the cards' pointer to
 the elaboration is a command that answers. A word that neither the built-in
