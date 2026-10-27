@@ -75,7 +75,7 @@ pub fn clone_at(root: &Path, name: &str, url: Option<&str>) {
             .expect("git runs");
         assert!(out.status.success(), "git {args:?}: {out:?}");
     };
-    run(&["init", "-q", "-b", "main"]);
+    run(&["init", "-q", "--template=", "-b", "main"]);
     if let Some(url) = url {
         run(&["remote", "add", "origin", url]);
     }

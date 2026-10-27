@@ -298,7 +298,7 @@ mod tests {
 
     fn repo() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
-        let out = sh::run(d.path(), "git", &["init", "--quiet", "-b", "main"]).unwrap();
+        let out = sh::run(d.path(), "git", &["init", "--quiet", "--template=", "-b", "main"]).unwrap();
         assert!(out.ok());
         d
     }
