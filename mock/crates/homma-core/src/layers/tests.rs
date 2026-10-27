@@ -169,11 +169,12 @@ fn the_survey_names_what_is_read_what_is_absent_and_what_is_never_read() {
         "[[hooks.pre-commit]]\nrun = \"x\"\n",
     );
     write(d.path(), "homma.local.toml.replaced", "");
+    write(d.path(), "homma.local.old.toml", "");
     write(d.path(), "other.toml", "");
     let s = survey(d.path(), &layers(&["homma.local.toml", "homma.team.toml"])).unwrap();
     assert_eq!(s.read, vec!["homma.local.toml"]);
     assert_eq!(s.absent, vec!["homma.team.toml"]);
-    assert_eq!(s.strays, vec!["homma.stray.toml"]);
+    assert_eq!(s.strays, vec!["homma.local.old.toml", "homma.stray.toml"]);
     // and a stray is not read: its hook is nowhere in the merged table
     let mut hooks = Hooks::default();
     let mut agent = AgentHooks::default();

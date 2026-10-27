@@ -159,6 +159,18 @@ pub fn install_with(
         if std::fs::read(&stale).is_ok_and(|bytes| bytes == script(event).as_bytes()) {
             std::fs::remove_file(&stale)?;
         }
+        // And the copy git-shook made of it when it adopted the hook: its
+        // `00-existing` entry runs the table beside the registered one. Both
+        // go when the kept file is exactly that text, and neither otherwise.
+        let registry = common_dir(root)?.join("shook");
+        let kept = registry.join("kept").join(event);
+        if std::fs::read(&kept).is_ok_and(|bytes| bytes == script(event).as_bytes()) {
+            std::fs::remove_file(&kept)?;
+            let adopted = registry.join("entries").join(event).join("00-existing");
+            if adopted.is_file() {
+                std::fs::remove_file(&adopted)?;
+            }
+        }
     }
     Ok(Installed {
         written,

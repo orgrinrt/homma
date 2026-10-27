@@ -134,6 +134,43 @@ fn registering_removes_the_entrypoint_this_tool_wrote_and_nobody_elses() {
 }
 
 #[test]
+fn the_copy_git_shook_kept_of_the_entrypoint_goes_too_and_a_foreign_one_stays() {
+    let d = repo();
+    let bin = tempfile::tempdir().unwrap();
+    fake_shook(bin.path(), &bin.path().join("log"));
+    let registry = d.path().canonicalize().unwrap().join(".git/shook");
+    // what git-shook leaves when it adopts a hook: the copy and the entry that
+    // runs it. Ours at post-merge, somebody else's at pre-push.
+    for (event, text) in [
+        ("post-merge", crate::hooks::script("post-merge")),
+        ("pre-push", "#!/bin/sh\necho theirs\n".to_string()),
+    ] {
+        std::fs::create_dir_all(registry.join("kept")).unwrap();
+        std::fs::create_dir_all(registry.join("entries").join(event)).unwrap();
+        std::fs::write(registry.join("kept").join(event), text).unwrap();
+        std::fs::write(
+            registry.join("entries").join(event).join("00-existing"),
+            "x",
+        )
+        .unwrap();
+    }
+
+    install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).unwrap();
+
+    assert!(!registry.join("kept/post-merge").exists());
+    assert!(!registry.join("entries/post-merge/00-existing").exists());
+    assert!(
+        registry.join("entries/post-merge/homma").is_file(),
+        "the registered entry itself stays"
+    );
+    assert!(
+        registry.join("kept/pre-push").is_file(),
+        "a foreign kept hook stays"
+    );
+    assert!(registry.join("entries/pre-push/00-existing").is_file());
+}
+
+#[test]
 fn install_routes_to_git_shook_only_where_it_holds_the_hooks_path() {
     let d = repo();
     let bin = tempfile::tempdir().unwrap();

@@ -16,7 +16,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use homma_api::layers::{DEFAULT_LAYER, MANIFEST, is_layer_name};
+use homma_api::layers::{DEFAULT_LAYER, MANIFEST};
 use homma_api::{AgentHooks, Hooks, Layers};
 
 /// What one overlay file declares.
@@ -227,7 +227,9 @@ pub struct Survey {
     pub read:   Vec<String>,
     /// Named and not there.
     pub absent: Vec<String>,
-    /// Present, shaped like an overlay, and not named: never read.
+    /// Present as `homma.<anything>.toml`, and not named: never read. An
+    /// editor's copy with a dotted middle is one, since it is the file most
+    /// likely to be mistaken for a layer.
     pub strays: Vec<String>,
 }
 
@@ -247,7 +249,8 @@ pub fn survey(dir: &Path, layers: &Layers) -> std::io::Result<Survey> {
             continue;
         };
         if name != MANIFEST
-            && is_layer_name(&name)
+            && name.starts_with("homma.")
+            && name.ends_with(".toml")
             && !layers.names_file(&name)
             && entry.path().is_file()
         {

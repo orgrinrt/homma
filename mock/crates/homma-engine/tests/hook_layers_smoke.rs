@@ -97,6 +97,39 @@ fn a_broken_layer_is_listed_once_with_the_readers_reason() {
 }
 
 #[test]
+fn a_parse_cause_quoting_another_layer_does_not_hide_that_layers_read_line() {
+    let (_d, root, _member) = workspace(&format!(
+        "layers = [\"homma.a.toml\", \"homma.b.toml\"]\n{MANIFEST}"
+    ));
+    // the offending line is quoted in the reader's reason, and it names b
+    std::fs::write(
+        root.join("homma.a.toml"),
+        "[[hooks.post-merge]]\nrun = homma.b.toml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("homma.b.toml"),
+        "[[hooks.post-merge]]\nrun = \"b\"\n",
+    )
+    .unwrap();
+
+    let out = homma(&root)
+        .args(["hook", "doctor"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8_lossy(&out);
+    assert!(
+        text.contains("2 | run = homma.b.toml"),
+        "control: the cause really quotes the other layer: {text}"
+    );
+    assert!(text.contains("read      homma.b.toml"), "{text}");
+    assert!(!text.contains("read      homma.a.toml"), "{text}");
+}
+
+#[test]
 fn a_hook_declared_only_in_the_clones_own_file_is_installed_and_runs() {
     let (_d, root, member) = workspace(MANIFEST);
     std::fs::write(
