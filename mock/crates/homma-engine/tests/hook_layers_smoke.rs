@@ -97,6 +97,29 @@ fn a_broken_layer_is_listed_once_with_the_readers_reason() {
 }
 
 #[test]
+fn the_clones_own_file_is_a_note_and_not_a_failure_when_layers_does_not_name_it() {
+    let (_d, root, _member) = workspace(&format!("layers = [\"homma.team.toml\"]\n{MANIFEST}"));
+    std::fs::write(root.join("homma.local.toml"), "[instance]\nwork = \"x\"\n").unwrap();
+
+    let out = homma(&root)
+        .args(["hook", "doctor"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8_lossy(&out);
+    assert!(
+        text.contains("note      homma.local.toml is not named in `layers`"),
+        "{text}"
+    );
+    assert!(!text.contains("stray"), "{text}");
+    // a file that is nobody's still fails, which is the control
+    std::fs::write(root.join("homma.other.toml"), "").unwrap();
+    homma(&root).args(["hook", "doctor"]).assert().failure();
+}
+
+#[test]
 fn a_parse_cause_quoting_another_layer_does_not_hide_that_layers_read_line() {
     let (_d, root, _member) = workspace(&format!(
         "layers = [\"homma.a.toml\", \"homma.b.toml\"]\n{MANIFEST}"

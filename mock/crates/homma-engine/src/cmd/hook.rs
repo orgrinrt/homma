@@ -105,6 +105,12 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     for name in &survey.absent {
         lines.push(format!("absent    {name} (named, and not there)"));
     }
+    if survey.own_unlisted {
+        lines.push(format!(
+            "note      {} is not named in `layers`, so its hooks tables are not read; its own tables still are, so it stays",
+            homma_api::layers::DEFAULT_LAYER
+        ));
+    }
     for name in &survey.strays {
         ok = false;
         lines.push(format!(

@@ -190,6 +190,19 @@ fn the_survey_names_what_is_read_what_is_absent_and_what_is_never_read() {
     assert!(hooks.entries("pre-commit").is_empty());
 }
 
+#[test]
+fn the_clones_own_file_is_unlisted_and_never_a_stray() {
+    let d = tempfile::tempdir().unwrap();
+    write(d.path(), "homma.local.toml", "[instance]\nwork = \"x\"\n");
+    let s = survey(d.path(), &layers(&["homma.team.toml"])).unwrap();
+    assert!(s.own_unlisted);
+    assert!(s.strays.is_empty(), "{:?}", s.strays);
+    // named, it is read and is neither, which is the control
+    let s = survey(d.path(), &layers(&["homma.local.toml"])).unwrap();
+    assert!(!s.own_unlisted);
+    assert_eq!(s.read, vec!["homma.local.toml"]);
+}
+
 mod through_the_config {
     use super::*;
     use crate::Config;

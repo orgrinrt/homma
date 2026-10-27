@@ -224,13 +224,16 @@ pub fn apply(
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Survey {
     /// Named and present, in the order applied.
-    pub read:   Vec<String>,
+    pub read:         Vec<String>,
     /// Named and not there.
-    pub absent: Vec<String>,
+    pub absent:       Vec<String>,
     /// Present as `homma.<anything>.toml`, and not named: never read. An
     /// editor's copy with a dotted middle is one, since it is the file most
     /// likely to be mistaken for a layer.
-    pub strays: Vec<String>,
+    pub strays:       Vec<String>,
+    /// The clone's own file is there and `layers` does not name it. Its hooks
+    /// tables are not read, its own tables still are, so it is not a stray.
+    pub own_unlisted: bool,
 }
 
 /// Survey `dir` against `layers`.
@@ -254,7 +257,11 @@ pub fn survey(dir: &Path, layers: &Layers) -> std::io::Result<Survey> {
             && !layers.names_file(&name)
             && entry.path().is_file()
         {
-            out.strays.push(name);
+            if name == DEFAULT_LAYER {
+                out.own_unlisted = true;
+            } else {
+                out.strays.push(name);
+            }
         }
     }
     out.strays.sort();
