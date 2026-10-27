@@ -160,6 +160,21 @@ fn a_repo_whose_copy_differs_keeps_its_own_and_is_only_reported() {
 }
 
 #[test]
+fn a_difference_names_what_a_repo_does_about_it() {
+    // The line prints at every session start for as long as the difference
+    // stands, so it has to say what ends it. A reader told only that the copy
+    // was left alone has nothing to do, and learns to skip the line.
+    let line = ConfigFinding::Differs("deny.toml".into()).to_string();
+    assert!(line.contains("left as it is"), "{line}");
+    assert!(line.contains("put the shared copy back"), "{line}");
+    assert!(
+        line.contains("carries something the shared one lacks"),
+        "{line}"
+    );
+    assert!(line.contains("variant"), "{line}");
+}
+
+#[test]
 fn a_repo_that_is_not_in_the_set_does_not_get_the_template() {
     let f = Fixture::new(&[
         ("rust_required", "deny.toml", "x\n"),

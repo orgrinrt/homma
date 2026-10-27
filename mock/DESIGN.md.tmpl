@@ -369,9 +369,21 @@ naming the command that fixes it where there is one. Where the check could not
 run it says that instead, and names the workspace manifest, because sending
 somebody to a command that fails the same way is worse than saying nothing.
 
-What it means by incomplete is a repository showing some of mockspace's
-surfaces and not others, since none of them is a repository that never opted
-in and all of them is one with nothing to say. `core.hooksPath` being set was
+What it means by incomplete is a repository that has adopted mockspace, which
+is whether it carries a `mockspace.toml`, showing some of mockspace's surfaces
+and not others. A repository without the toml has not adopted it, whatever
+else it shows, and this check leaves it alone, since the command it would name
+has nothing to run there; the shared config check below still applies to it.
+Of one that has, none of the surfaces is a repository that never finished
+opting in and all of them is one with nothing to say. The mock directory it
+looks for is the one the toml declares. Whether the toml is there, which
+directory it declares, whether that exists and whether it carries the launcher
+pin are asked of `homma agent status`, whose probe reads the toml as a toml, so
+the gate holds no reader of its own for a file that two readers would parse
+differently. The surfaces it counts are that directory, the launcher pin and the
+hooks path; the `cargo mock` alias is not one, since the launcher answers that
+command. A missing pin is answered by adding the pin, because `homma agent
+regen` runs `cargo mock`, which refuses without one. `core.hooksPath` being set was
 one of those surfaces on the reading that mockspace is what sets it, and that
 reading is no longer safe: git-shook points the same setting at a dispatcher
 directory of its own, in repositories that may never have heard of mockspace,
@@ -389,6 +401,20 @@ git's own directory is the one place both reach, and homma writes there and
 nowhere else. The workspace hook stays one file in one place beside that,
 which matters because the per-repository wiring is exactly the thing that can
 be quietly absent.
+
+An open question for the lead designer: the gate and the status check different
+sets of surfaces. The gate counts the mock directory, the launcher pin and the
+hooks path; the status asks an adopted repository for the mock directory,
+`.claude/`, `.github/instructions/` and the hooks. A repository with a toml and
+nothing else is partial in the status and allowed by the gate. Neither set is
+declared the right one here, and the two are not unified until he says which.
+Three more belong with it. The launcher locates its config by scanning the root
+and every immediate subdirectory and treats two as an error, where homma looks
+at the root and `mock/` and lets the root win. The status tells a repository
+that has the toml and no pin to run `homma agent regen`, which runs `cargo mock`,
+which refuses without a pin. A toml that does not parse is counted by the status
+as adopting, with the default mock directory and no pin, so the gate refuses it
+for a missing pin even where a pin line is there.
 
 The gate asks homma rather than deciding for itself, so the rule that says what
 a repository owes exists once. It refuses when it cannot ask at all, for the
@@ -615,11 +641,31 @@ has rather than a report of anything being wrong, and nothing offline is left
 out for cost. Nothing here reaches the network, which is what makes it the
 command to run first.
 
-The machine-readable document grows fields rather than changing shape, so what
-reads it today keeps working and simply ignores what it does not know. It is
-never summarised, whatever the human output is doing: a document that quietly
-omitted the healthy members would be misdescribing the population to the one
-reader with no way to notice.
+What the agent surfaces ask of a repository depends on whether it has adopted
+mockspace, which is whether it carries a `mockspace.toml`, at its root or under
+`mock/`, and by that alone. A repository with a mock directory and no
+`mockspace.toml`, mockspace's own tree among them, has not adopted it, any more
+than one with neither has. Neither is short of anything: each is named as having
+no mockspace under `--full` and nowhere else, and `homma agent regen` skips the
+`cargo mock` stage for each, since `cargo mock` has nothing to run there. The
+shared configs are still compared and placed for every repository, adopted or
+not. One that has adopted is asked for its mock directory, as its
+`mockspace.toml` declares it with `mock` as the default, for the rendered
+`.claude/` and `.github/instructions/`, and for the wiring that makes its git
+hooks fire. It is not asked for an `agent/` directory under its mock directory,
+because the builtin rules ship inside mockspace and that directory holds only
+what the repository adds, and it is not asked for a `cargo mock` alias, because
+the launcher answers that command from where it is installed. A line about a
+missing surface names `homma agent regen`, which renders them. A repository
+that is not on disk is named as not being there, with no surfaces listed and no
+command to run.
+
+The machine-readable document carries one probe per surface that is asked for,
+among them whether the toml carries the launcher pin, which the commit gate
+asks and the summary does not, and none for a surface that is not, so it has no field for the agent directory
+under the mock directory or for the `cargo mock` alias. The document is never
+summarised, whatever the human output is doing: a document that quietly omitted the healthy members would be
+misdescribing the population to the one reader with no way to notice.
 
 ## What a clone is for
 

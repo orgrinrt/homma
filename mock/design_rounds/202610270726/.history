@@ -1,0 +1,50 @@
+a04977b chore: lock src changelist for 202610270726
+4b17d57 fix: hold the gate fixtures to the toml and update the help
+2615697 chore: lock doc changelist for 202610270726
+5495e12 docs: open the round for the fixtures and the help
+4c87977 docs: regenerate the design document
+125d0d1 chore: close design round 202610270716
+8a0cfbd chore: lock src changelist for 202610270717
+0f5b7da fix: name an absent repo and hold the toml lookup in the gate
+7eacd40 chore: lock doc changelist for 202610270716
+e08442b docs: say what regen and the gate do for an unadopted repo
+9cf9db4 docs: regenerate the design document
+13cc9dc chore: close design round 202610270707
+ccf1620 chore: lock src changelist for 202610270708
+2dbc82f fix: follow the toml in the gate and hold every surface
+3496396 chore: lock doc changelist for 202610270707
+3466291 docs: make the gate follow the toml
+8d851e3 chore: close design round 202610270656
+e4418bf chore: lock src changelist for 202610270700
+04e2d8e chore: write the replacement src changelist
+b0a3fd0 chore: relock doc changelist for 202610270656
+74d0c5e chore: unlock the round to replace a stray changelist
+6c82615 fix: drive regen in its tests and probe the declared agent dir
+fa7de5d chore: lock doc changelist for 202610270656
+f61a33a docs: fold the round files into one
+fb635ae docs: open the round for the regen stage tests
+7c3d1e9 docs: regenerate the design and org documents
+cbb0244 chore: close design round 202610270605
+9f7a777 chore: lock src changelist for 202610270606
+cc4ed9a fix: test the regen skip and correct the state rustdoc
+cf0627a chore: lock doc changelist for 202610270605
+2d49522 docs: name where the deprecated agent field probes
+fbfd422 chore: close design round 202610270542
+2b9e425 chore: lock src changelist for 202610270544
+e323875 fix: make adoption the toml and keep the status fields
+8425009 chore: lock doc changelist for 202610270542
+23173a2 docs: make adoption the toml and keep the status fields
+e283e6e chore: close design round 202610270525
+2ecf18b chore: lock the source changelist
+3f3126c test: keep the status summary silent on a repo with no mockspace
+e27b2b3 chore: lock the doc changelist
+c85e3e6 docs: record why the status smoke test changes
+765bd9d chore: regenerate the docs and the merge attributes
+435abfe chore: close design round 202610270505
+71c9616 chore: lock the source changelist
+588b481 fix: ask an adopted repo only for the surfaces it owes
+be062f4 chore: lock the doc changelist and open the source window
+263ac98 docs: state what the agent surfaces ask of a repository
+23f9b94 chore: regenerate the structure graph
+7e4139f feat: dispatch the content repository's tools as homma subcommands (#74)
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)

@@ -6,10 +6,11 @@
 //! `homma agent ...`: workspace-level mockspace agent-template orchestration.
 //!
 //! Each member repo renders its own `.claude/` + `.github/instructions/` +
-//! `.github/skills/` from `mock/agent/` templates via `cargo mock` (the
-//! mockspace bootstrap-installed alias). `homma agent` is the workspace-
-//! level orchestrator: it discovers per-repo state (`status`) or drives
-//! the per-repo regen end-to-end (`regen`).
+//! `.github/skills/` with `cargo mock`, from the builtin rules mockspace
+//! ships and whatever `agent/` templates it adds under its mock directory. A repo without a
+//! `mockspace.toml` has not adopted mockspace and is not asked for any of it.
+//! `homma agent` is the workspace-level orchestrator: it discovers per-repo
+//! state (`status`) or drives the per-repo regen end-to-end (`regen`).
 //!
 //! The mockspace generator itself stays the source of truth for what each
 //! repo's agent surface looks like; homma only sequences the invocation.
@@ -48,12 +49,14 @@ pub mod status {
     #[derive(Debug, Clone, Copy, Serialize)]
     #[serde(rename_all = "snake_case")]
     pub enum AgentState {
-        /// `mock/agent/` templates present and rendered into both `.claude/`
-        /// and `.github/`, plus the `cargo mock` alias is configured.
+        /// The mock directory is there and rendered into both `.claude/` and
+        /// `.github/instructions/`, and the git hooks are wired.
         Configured,
-        /// Some surfaces exist but not all. Worth running `homma agent regen`.
+        /// Adopted, but some surfaces are missing. Worth running `homma agent
+        /// regen`.
         Partial,
-        /// No `mock/` directory at all. The repo has not adopted mockspace yet.
+        /// No `mockspace.toml`. The repo has not adopted mockspace, whether or
+        /// not it has a mock directory.
         NotConfigured,
         /// `local_path` does not exist on the filesystem.
         Missing,
@@ -62,11 +65,20 @@ pub mod status {
     /// Individual surface probes.
     #[derive(Debug, Serialize)]
     pub struct Surfaces {
+        /// Whether the repo carries a `mockspace.toml`, which is what adopting
+        /// mockspace means. A repo without one has not adopted it, and nothing
+        /// else here is asked of it.
+        pub mockspace_toml:      bool,
+        /// The directory `mockspace.toml` declares as `mock_dir`, `mock` when
+        /// it declares none.
+        pub mock_dir_name:       String,
+        /// Whether the directory named by `mock_dir_name` exists.
         pub mock_dir:            bool,
-        pub mock_agent_dir:      bool,
+        /// Whether the toml carries a launcher pin at its top level. The commit
+        /// gate counts it; the summary and the roll-up do not ask for it.
+        pub launcher_pin:        bool,
         pub claude_dir:          bool,
         pub github_instructions: bool,
-        pub cargo_mock_alias:    bool,
         /// Whether `core.hooksPath` is set, which is whether any per-repo git
         /// hook fires at all.
         ///
@@ -108,14 +120,16 @@ pub mod status {
         Ok(out)
     }
 
-    fn probe(name: &str, local: &Path) -> RepoAgentState {
+    pub(crate) fn probe(name: &str, local: &Path) -> RepoAgentState {
+        let mock_dir_name = declared_mock_dir(local);
         let surfaces = Surfaces {
-            mock_dir:            local.join("mock").is_dir(),
-            mock_agent_dir:      local.join("mock/agent").is_dir(),
-            claude_dir:          local.join(".claude").is_dir(),
+            mockspace_toml: mockspace_toml_path(local).is_some(),
+            mock_dir: local.join(&mock_dir_name).is_dir(),
+            mock_dir_name,
+            launcher_pin: has_launcher_pin(local),
+            claude_dir: local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
-            cargo_mock_alias:    has_cargo_mock_alias(local),
-            git_hooks_path:      homma_core::repo::hooks_are_wired(local),
+            git_hooks_path: homma_core::repo::hooks_are_wired(local),
         };
         let state = roll_up(local, &surfaces);
         RepoAgentState {
@@ -126,30 +140,65 @@ pub mod status {
         }
     }
 
+    /// Where a repo's `mockspace.toml` is: at the root, or under `mock/`,
+    /// which is where ikiuni keeps it and where the commit gate
+    /// looks as well. Only those two places are looked in: a toml under any
+    /// other directory is missed, and the root one wins where both exist.
+    pub(super) fn mockspace_toml_path(local: &Path) -> Option<std::path::PathBuf> {
+        ["mockspace.toml", "mock/mockspace.toml"]
+            .iter()
+            .map(|p| local.join(p))
+            .find(|p| p.is_file())
+    }
+
+    /// The directory a repo's `mockspace.toml` names as `mock_dir`, `mock`
+    /// when the file or the key is absent. Only the default is a name worth
+    /// hard-coding: sodapop declares `linux`.
+    fn declared_mock_dir(local: &Path) -> String {
+        read_mockspace_toml(local)
+            .and_then(|t| {
+                t.get("mock_dir")
+                    .and_then(|v| v.as_str().map(str::to_string))
+            })
+            .unwrap_or_else(|| "mock".to_string())
+    }
+
+    /// Whether the toml carries a launcher pin, a top-level `mockspace_version`,
+    /// `mockspace_branch`, `mockspace_rev` or `mockspace_tag` with a string value,
+    /// the only value the launcher reads. A toml that does
+    /// not parse carries none, and a key under a table is not a pin.
+    fn has_launcher_pin(local: &Path) -> bool {
+        read_mockspace_toml(local).is_some_and(|t| {
+            ["mockspace_version", "mockspace_branch", "mockspace_rev", "mockspace_tag"]
+                .iter()
+                .any(|k| t.get(*k).is_some_and(toml::Value::is_str))
+        })
+    }
+
+    /// The repo's `mockspace.toml` parsed as a toml, `None` where there is no
+    /// file or it does not parse.
+    fn read_mockspace_toml(local: &Path) -> Option<toml::Table> {
+        let text = std::fs::read_to_string(mockspace_toml_path(local)?).ok()?;
+        text.parse::<toml::Table>().ok()
+    }
+
+    /// A repo without a `mockspace.toml` has not adopted mockspace, which
+    /// several repos here decided on purpose, and mockspace's own tree has a
+    /// mock directory and no toml, so it is not configured rather than partly
+    /// so. The rendered surfaces, and the wiring that makes the hooks fire,
+    /// are asked of an adopted repo only. `mock/agent/` is not one of them:
+    /// the builtin rules ship inside mockspace, and that directory holds only
+    /// what a repo adds itself. The `cargo mock` alias is not either, since
+    /// the launcher answers `cargo mock` from where it is installed.
     fn roll_up(local: &Path, s: &Surfaces) -> AgentState {
         if !local.exists() {
             return AgentState::Missing;
         }
-        if !s.mock_dir {
+        if !s.mockspace_toml {
             return AgentState::NotConfigured;
         }
-        let core = s.mock_agent_dir
-            && s.claude_dir
-            && s.github_instructions
-            && s.cargo_mock_alias
-            && s.git_hooks_path;
+        let core = s.mock_dir && s.claude_dir && s.github_instructions && s.git_hooks_path;
         if core { AgentState::Configured } else { AgentState::Partial }
-    }
-
-    /// Lightweight check: does `.cargo/config.toml` contain a `mock` alias?
-    /// A real `[alias]` parse would be cleaner but adds a toml dep at this
-    /// layer; substring is enough for discovery purposes.
-    fn has_cargo_mock_alias(local: &Path) -> bool {
-        let path = local.join(".cargo/config.toml");
-        match std::fs::read_to_string(&path) {
-            Ok(s) => s.contains("mock = ") || s.contains("mock=\""),
-            Err(_) => false,
-        }
     }
 
     impl HumanRender for AgentStatusReport {
@@ -160,13 +209,11 @@ pub mod status {
                 writeln!(out, "  path: {}", r.local_path)?;
                 writeln!(
                     out,
-                    "  mock={} mock/agent={} .claude={} .github/instructions={} \
-                     cargo-mock-alias={} git-hooks={}",
+                    "  {}/={} .claude={} .github/instructions={} git-hooks={}",
+                    r.surfaces.mock_dir_name,
                     yn(r.surfaces.mock_dir),
-                    yn(r.surfaces.mock_agent_dir),
                     yn(r.surfaces.claude_dir),
                     yn(r.surfaces.github_instructions),
-                    yn(r.surfaces.cargo_mock_alias),
                     yn(r.surfaces.git_hooks_path),
                 )?;
             }
@@ -178,7 +225,7 @@ pub mod status {
         match s {
             AgentState::Configured => "configured",
             AgentState::Partial => "partial",
-            AgentState::NotConfigured => "not configured",
+            AgentState::NotConfigured => "no mockspace",
             AgentState::Missing => "missing",
         }
     }
@@ -188,110 +235,7 @@ pub mod status {
     }
 
     #[cfg(test)]
-    mod tests {
-        use std::fs;
-
-        use super::*;
-
-        /// A repo with every surface but the hooks wiring.
-        ///
-        /// The wiring cannot be faked by writing files, because it is a git
-        /// config setting, so a test wanting it present makes a real
-        /// repository and sets it.
-        fn every_surface_but_hooks(repo: &Path) {
-            fs::create_dir_all(repo.join("mock/agent")).unwrap();
-            fs::create_dir_all(repo.join(".claude")).unwrap();
-            fs::create_dir_all(repo.join(".github/instructions")).unwrap();
-            fs::create_dir_all(repo.join(".cargo")).unwrap();
-            fs::write(
-                repo.join(".cargo/config.toml"),
-                b"[alias]\nmock = \"run\"\n",
-            )
-            .unwrap();
-        }
-
-        fn wire_the_hooks(repo: &Path) {
-            homma_core::testing::init_repo(repo);
-            homma_core::testing::set_hooks_path(repo, "mock/target/hooks");
-        }
-
-        #[test]
-        fn configured_when_all_surfaces_present_including_the_hooks_wiring() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            every_surface_but_hooks(&repo);
-            wire_the_hooks(&repo);
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Configured));
-            assert!(state.surfaces.git_hooks_path);
-        }
-
-        #[test]
-        fn a_repo_with_every_surface_but_no_hooks_wiring_is_partial() {
-            // The state that went unreported: the files are all there, so the
-            // tree looks adopted, and git invokes none of the hooks. It read as
-            // configured until the wiring became a surface.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            every_surface_but_hooks(&repo);
-            let state = probe("r", &repo);
-            assert!(!state.surfaces.git_hooks_path);
-            assert!(
-                matches!(state.state, AgentState::Partial),
-                "a repo whose hooks never fire reported as {:?}",
-                state.state
-            );
-        }
-
-        #[test]
-        fn partial_when_mock_present_but_render_missing() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(repo.join("mock/agent")).unwrap();
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Partial));
-        }
-
-        #[test]
-        fn not_configured_when_mock_absent() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::NotConfigured));
-        }
-
-        #[test]
-        fn missing_when_local_path_absent() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("does-not-exist");
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Missing));
-        }
-
-        #[test]
-        fn cargo_alias_detected_via_substring() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(repo.join(".cargo")).unwrap();
-            fs::write(
-                repo.join(".cargo/config.toml"),
-                b"[alias]\nmock = \"run --manifest-path ...\"\n",
-            )
-            .unwrap();
-            assert!(has_cargo_mock_alias(&repo));
-        }
-
-        #[test]
-        fn cargo_alias_absent_when_no_config() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            assert!(!has_cargo_mock_alias(&repo));
-        }
-    }
+    mod tests;
 }
 
 pub mod regen {
@@ -355,9 +299,11 @@ pub mod regen {
     }
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
-    /// repo; stage 2 aggregates per-repo rules and hooks into the
-    /// workspace `.claude/`; stage 3 merges hook entries into the
-    /// clone's `settings.local.json` and sweeps its own out of `settings.json`.
+    /// repo; stage 2 compares and places the shared tool configs; stage 3
+    /// aggregates per-repo rules and hooks into the workspace `.claude/`.
+    /// After the per-repo loop it writes the workspace gate and merges the hook
+    /// entries into the clone's `settings.local.json`, sweeping its own out of
+    /// `settings.json`.
     pub fn run_with(
         cfg: &Config,
         repo: Option<&str>,
@@ -483,8 +429,11 @@ pub mod regen {
             // Stage 1: cargo mock.
             let cargo_mock = if opts.skip_cargo_mock {
                 StageStatus::Skipped("--skip-cargo-mock".into())
-            } else if !local.join("mock").is_dir() {
-                StageStatus::Skipped("no mock/ directory".into())
+            } else if status::mockspace_toml_path(&local).is_none() {
+                // Adoption is the toml: mockspace's own tree has a mock
+                // directory and no toml, and `cargo mock` answers "no
+                // mockspace.toml found" there.
+                StageStatus::Skipped("no mockspace.toml".into())
             } else {
                 match invoke_cargo_mock(&local) {
                     Ok(()) => StageStatus::Success,
@@ -588,7 +537,7 @@ pub mod regen {
             }
         }
 
-        // Stage 3: write the workspace-level mockspace gate hook and
+        // After the loop: write the workspace-level mockspace gate hook and
         // merge all entries (per-repo aggregated + workspace gate) into
         // settings.local.json.
         if !opts.skip_aggregate {
@@ -790,46 +739,8 @@ pub mod regen {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn last_meaningful_line_picks_last_nonempty() {
-            let s = "first\nsecond\n\n   \nthird\n";
-            assert_eq!(last_meaningful_line(s), Some("third"));
-        }
-
-        #[test]
-        fn last_meaningful_line_empty_input_is_none() {
-            assert_eq!(last_meaningful_line(""), None);
-            assert_eq!(last_meaningful_line("\n\n   \n"), None);
-        }
-
-        #[test]
-        fn truncate_short_is_unchanged() {
-            assert_eq!(truncate("hello".into(), 16), "hello");
-        }
-
-        #[test]
-        fn truncate_long_clipped_with_ellipsis() {
-            let s = "abcdefghij".to_string();
-            let out = truncate(s, 5);
-            assert_eq!(out, "abcde...");
-        }
-
-        #[test]
-        fn truncate_walks_back_to_char_boundary() {
-            // Two-byte chars; cutting at 3 lands mid-char.
-            let s = "ééé".to_string(); // 6 bytes
-            let out = truncate(s, 3);
-            // Walks back to byte 2 (between first and second char).
-            assert!(out.ends_with("..."));
-            assert!(out.is_char_boundary(out.len() - 3));
-        }
-    }
+    mod tests;
 }
-
-// Tests for `status::probe` live inside the `status` module (see above).
 
 /// The places this pass may not aggregate into.
 ///
