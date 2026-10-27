@@ -206,7 +206,7 @@ fn query_the_data_with_sql_finds_the_data_index() {
     must_come_first("query the data with sql", Kind::Script, "index");
     assert_eq!(
         first("query the data with sql").2,
-        ".shared/scripts/watch/index.py"
+        "python3 .shared/scripts/watch/index.py"
     );
 }
 

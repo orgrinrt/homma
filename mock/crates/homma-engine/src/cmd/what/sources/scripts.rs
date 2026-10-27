@@ -23,28 +23,48 @@ pub const DIR: &str = ".shared/scripts";
 /// Directories whose contents are not tools.
 const SKIPPED: &[&str] = &[".venv", "node_modules", "__pycache__", "probes", ".git"];
 
+/// What the walk made of a file.
+enum Read {
+    /// Not something that is run: a library, or unreadable. Not counted.
+    Skip,
+    /// Run, with no header to describe it.
+    Bare,
+    /// Run, and described.
+    Script(Box<Doc>),
+}
+
 pub fn gather(root: &Path) -> Gathered {
     let base = root.join(DIR);
-    if !base.is_dir() {
-        return Gathered {
+    let gap = |what: String| {
+        Gathered {
             docs: Vec::new(),
             gaps: vec![Gap {
                 source: "scripts",
-                count:  0,
-                what:   format!("no {DIR} here: scripts not searched"),
+                count: 0,
+                what,
             }],
-        };
+        }
+    };
+    match std::fs::symlink_metadata(&base) {
+        Ok(m) if m.file_type().is_symlink() => {
+            return gap(format!(
+                "{DIR} is a link and is not followed: scripts not searched"
+            ));
+        },
+        Ok(m) if m.is_dir() => {},
+        _ => return gap(format!("no {DIR} here: scripts not searched")),
     }
     let mut files = Vec::new();
     walk(&base, false, &mut files);
     files.sort();
     let mut docs = Vec::new();
     let mut missing = 0;
-    for f in files {
+    for (f, library) in files {
         let rel = f.strip_prefix(&base).unwrap_or(&f);
-        match describe(root, &f, rel) {
-            Some(d) => docs.push(d),
-            None => missing += 1,
+        match describe(root, &f, rel, library) {
+            Read::Script(d) => docs.push(*d),
+            Read::Bare => missing += 1,
+            Read::Skip => {},
         }
     }
     let mut gaps = Vec::new();
@@ -63,14 +83,14 @@ pub fn gather(root: &Path) -> Gathered {
     }
 }
 
+/// Directories of tests, which hold no tools.
+const TESTS: &[&str] = &["tests", "test"];
+
 /// Directories of a program's own source: what is in them is run by the program, and counts as a script
 /// only where it is marked executable.
-const LIBRARY: &[&str] = &["src", "lib", "tests", "test"];
+const LIBRARY: &[&str] = &["src", "lib"];
 
-/// Extensions of a file that is a script whether or not it is marked executable.
-const EXTENSIONS: &[&str] = &["sh", "bash", "py", "ts", "js", "cjs"];
-
-fn walk(dir: &Path, library: bool, out: &mut Vec<PathBuf>) {
+fn walk(dir: &Path, library: bool, out: &mut Vec<(PathBuf, bool)>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -82,23 +102,22 @@ fn walk(dir: &Path, library: bool, out: &mut Vec<PathBuf>) {
             continue;
         };
         if t.is_dir() {
-            if !SKIPPED.contains(&name.as_str()) {
+            if !SKIPPED.contains(&name.as_str()) && !TESTS.contains(&name.as_str()) {
                 walk(&p, library || LIBRARY.contains(&name.as_str()), out);
             }
-        } else if t.is_file() && is_script(&p, &name, library) {
-            out.push(p);
+        } else if t.is_file() && !is_test(&name) {
+            out.push((p, library));
         }
     }
 }
 
-/// An executable, or a file with a script extension, that is not a test, a fixture or the runner of a suite.
-fn is_script(p: &Path, name: &str, library: bool) -> bool {
+/// A test, a fixture or the runner of a suite.
+pub fn is_test(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name);
-    if name.contains("_test") || name.contains("_fixture") || stem == "test" {
-        return false;
-    }
-    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-    executable(p) || (!library && EXTENSIONS.contains(&ext))
+    name.contains("_test")
+        || name.contains("_fixture")
+        || stem == "test"
+        || name.starts_with("test_")
 }
 
 #[cfg(unix)]
@@ -112,15 +131,47 @@ fn executable(_p: &Path) -> bool {
     false
 }
 
-fn describe(root: &Path, file: &Path, rel: &Path) -> Option<Doc> {
-    let text = std::fs::read_to_string(file).ok()?;
-    let name = file.file_name()?.to_string_lossy().into_owned();
+/// The command that runs a file with a shebang that is not executable: the interpreter the line names,
+/// and the arguments it gives, `#!/usr/bin/env -S deno run` being `deno run`.
+pub fn interpreter(first_line: &str) -> Option<String> {
+    let mut words = first_line.strip_prefix("#!")?.split_whitespace();
+    let head = words.next()?;
+    let base = head.rsplit('/').next().unwrap_or(head);
+    let rest: Vec<&str> = if base == "env" {
+        words.skip_while(|w| w.starts_with('-')).collect()
+    } else {
+        std::iter::once(base).chain(words).collect()
+    };
+    (!rest.is_empty()).then(|| rest.join(" "))
+}
+
+fn describe(root: &Path, file: &Path, rel: &Path, library: bool) -> Read {
+    let exec = executable(file);
+    if library && !exec {
+        return Read::Skip;
+    }
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return Read::Skip;
+    };
+    let Some(name) = file.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+        return Read::Skip;
+    };
     let path = file
         .strip_prefix(root)
         .unwrap_or(file)
         .to_string_lossy()
         .into_owned();
-    let mut d = parse(&name, &path, &text)?;
+    let command = if exec {
+        path.clone()
+    } else {
+        match text.lines().next().and_then(interpreter) {
+            Some(i) => format!("{i} {path}"),
+            None => return Read::Skip,
+        }
+    };
+    let Some(mut d) = parse(&name, &command, &text) else {
+        return Read::Bare;
+    };
     d.place = rel
         .parent()
         .map(|p| {
@@ -129,7 +180,7 @@ fn describe(root: &Path, file: &Path, rel: &Path) -> Option<Doc> {
                 .collect()
         })
         .unwrap_or_default();
-    Some(d)
+    Read::Script(Box::new(d))
 }
 
 /// The comment block a text opens with, one string a line, the comment marks taken off.

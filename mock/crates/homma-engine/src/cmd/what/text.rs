@@ -212,7 +212,7 @@ pub fn group_of(stem_word: &str) -> Option<usize> {
 }
 
 /// How a query stem matched a stem of the text, strongest first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Grade {
     Fuzzy,
     Prefix,

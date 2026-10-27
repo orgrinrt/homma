@@ -36,6 +36,16 @@ pub fn repos(root: &Path, scope: &[String]) -> Vec<String> {
 
 pub fn gather(root: &Path, scope: &[String]) -> Gathered {
     let names = repos(root, scope);
+    if names.is_empty() {
+        return Gathered {
+            docs: Vec::new(),
+            gaps: vec![Gap {
+                source: "mock",
+                count:  0,
+                what:   "no mockspace repository here: mockspace commands not listed".to_string(),
+            }],
+        };
+    }
     // One listing for each repository, side by side: the slowest decides how long the source takes.
     let listed: Vec<(String, Result<String, String>)> = std::thread::scope(|s| {
         let handles: Vec<_> = names
@@ -83,15 +93,17 @@ pub fn gather(root: &Path, scope: &[String]) -> Gathered {
 }
 
 /// Read a pipe to its end on a thread of its own, so a child that writes more than the pipe holds is
-/// never left waiting for a reader that is waiting for the child.
-fn drain<R: std::io::Read + Send + 'static>(r: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+/// never left waiting for a reader that is waiting for the child. The bytes arrive on the channel.
+fn drain<R: std::io::Read + Send + 'static>(r: Option<R>) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
         if let Some(mut r) = r {
             let _ = r.read_to_end(&mut buf);
         }
-        buf
-    })
+        let _ = tx.send(buf);
+    });
+    rx
 }
 
 /// End the child and what it started: its process group where there is one.
@@ -133,8 +145,15 @@ pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String
             Err(e) => return Err(e.to_string()),
         }
     };
-    let out = out.join().unwrap_or_default();
-    let err = err.join().unwrap_or_default();
+    // A grandchild that kept the pipe open outlives the child; the limit counts these reads too.
+    let left = limit.saturating_sub(start.elapsed());
+    let (Ok(out), Ok(err)) = (
+        out.recv_timeout(left),
+        err.recv_timeout(limit.saturating_sub(start.elapsed())),
+    ) else {
+        end(&mut child);
+        return Err("cargo mock tools took longer than a minute".to_string());
+    };
     if !status.success() {
         let err = String::from_utf8_lossy(&err);
         let line = err

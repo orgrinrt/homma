@@ -63,10 +63,6 @@ fn a_better_match_is_worth_more() {
         order.windows(2).all(|w| w[0].worth() > w[1].worth()),
         "worth must fall with the grade"
     );
-    assert!(
-        order.windows(2).all(|w| w[0] > w[1]),
-        "and the grades are ordered the same way"
-    );
 }
 
 #[test]

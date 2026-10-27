@@ -134,7 +134,7 @@ fn the_scripts_without_a_header_are_counted_in_the_footer() {
         false,
     );
     plant(dir.path(), "a/bare", "#!/bin/sh\necho hi\n", true);
-    plant(dir.path(), "b/bare2.sh", "echo hi\n", false);
+    plant(dir.path(), "b/bare2.sh", "#!/bin/sh\necho hi\n", false);
     plant(dir.path(), "b/notes.txt", "not a script\n", false);
     plant(dir.path(), "b/one_test.sh", "echo test\n", true);
     let g = scripts::gather(dir.path());
@@ -148,7 +148,7 @@ fn the_scripts_without_a_header_are_counted_in_the_footer() {
     assert_eq!(g.gaps.len(), 1);
     assert_eq!(
         g.gaps[0].count, 2,
-        "the bare executable and the bare .sh are counted, the test and the text are not"
+        "the bare executable and the bare shebang script are counted, the test and the text are not"
     );
     assert_eq!(
         g.gaps[0].what,

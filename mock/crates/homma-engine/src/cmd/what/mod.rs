@@ -227,8 +227,19 @@ pub fn gather(root: &Path, kinds: &[Kind], no_mock: bool, scope: &[String]) -> G
     if wanted(kinds, Kind::Verb) {
         add(sources::verbs::gather());
     }
-    if wanted(kinds, Kind::Mock) && !no_mock {
-        add(sources::mock::gather(root, scope));
+    if wanted(kinds, Kind::Mock) {
+        if no_mock {
+            add(Gathered {
+                docs: Vec::new(),
+                gaps: vec![Gap {
+                    source: "mock",
+                    count:  0,
+                    what:   "mockspace commands left out by --no-mock".to_string(),
+                }],
+            });
+        } else {
+            add(sources::mock::gather(root, scope));
+        }
     }
     if wanted(kinds, Kind::Skill) {
         add(sources::corpora::skills(root));
@@ -239,13 +250,24 @@ pub fn gather(root: &Path, kinds: &[Kind], no_mock: bool, scope: &[String]) -> G
     all
 }
 
-/// The repositories the instance's scope names, empty where it names none or there is no local config.
-fn scope(root: &Path) -> Vec<String> {
-    homma_core::local::Local::load(root)
-        .ok()
-        .flatten()
-        .map(|l| l.instance.repos)
-        .unwrap_or_default()
+/// The repositories the instance's scope names, empty where it names none or there is no local config,
+/// and the gap where the local config is there and cannot be read.
+fn scope(root: &Path) -> (Vec<String>, Option<Gap>) {
+    match homma_core::local::Local::load(root) {
+        Ok(l) => (l.map(|l| l.instance.repos).unwrap_or_default(), None),
+        Err(e) => {
+            (
+                Vec::new(),
+                Some(Gap {
+                    source: "mock",
+                    count:  1,
+                    what:   format!(
+                        "homma.local.toml cannot be read, so its scope is not applied: {e}"
+                    ),
+                }),
+            )
+        },
+    }
 }
 
 /// `homma what <words>`.
@@ -261,7 +283,9 @@ pub fn run(
     no_mock: bool,
     format: OutputFormat,
 ) -> Result<Outcome> {
-    let g = gather(root, kinds, no_mock, &scope(root));
+    let (repos, bad) = scope(root);
+    let mut g = gather(root, kinds, no_mock, &repos);
+    g.gaps.extend(bad);
     let a = answer(&g.docs, g.gaps, &words.join(" "), limit);
     emit(&a, format)?;
     Ok(if a.hits.is_empty() { Outcome::ReportedFailure } else { Outcome::Ok })
