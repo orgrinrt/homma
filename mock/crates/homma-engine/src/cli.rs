@@ -204,9 +204,10 @@ pub enum Command {
     },
 
     /// The git hooks: one entrypoint per event in the repository's own hooks
-    /// directory, running the entries `[hooks]` in `homma.toml` names, the
-    /// release gate on `pre-push` among them whether or not the table is
-    /// written.
+    /// directory, or an entry registered with git-shook where that owns the
+    /// hooks path, running the entries `[hooks]` in `homma.toml` and in the
+    /// overlay files its `layers` key names, the release gate on `pre-push`
+    /// among them whether or not the table is written.
     Hook {
         #[command(subcommand)]
         op: HookOp,
@@ -646,10 +647,25 @@ pub enum MilestoneOp {
 #[derive(Debug, Subcommand)]
 pub enum HookOp {
     /// Write one entrypoint per event the `[hooks]` table names into the
-    /// repository's own hooks directory, or refuse and say why.
+    /// repository's own hooks directory, or refuse and say why. Where the
+    /// repository's hooks path is git-shook's, register a manifest generated
+    /// from every layer with it instead, and run `git shook install --yes`.
     Install {
         /// The repository's directory name under the workspace root.
-        repo: String,
+        repo:  String,
+        /// Register with git-shook whatever the hooks path is. `git shook
+        /// install` then takes `core.hooksPath` and keeps the hook that was
+        /// there, so it runs beside homma's.
+        #[arg(long)]
+        shook: bool,
+    },
+    /// Which `homma.*.toml` files the hooks are read from, which are named and
+    /// absent, and which are present and named by nothing, never read. With a
+    /// repository, whether git reaches each of its events. Exits non-zero
+    /// when anything needs looking at.
+    Doctor {
+        /// A repository's directory name under the workspace root.
+        repo: Option<String>,
     },
     /// What an entrypoint calls: run the event's entries, in order, against
     /// what the event touched, and exit with the first refusal.

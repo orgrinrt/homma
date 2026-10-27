@@ -84,6 +84,27 @@ pub struct Config {
     #[serde(default)]
     pub hooks: homma_api::Hooks,
 
+    /// `layers`: the overlay files in the workspace root that `[hooks]` and
+    /// `[agent.hooks]` are also read from, appended after this file's own in
+    /// list order. A declared list and not a glob of `homma.*.toml`; see
+    /// [`crate::layers`]. [`Config::from_path`] applies them, so a caller
+    /// reading `hooks` or `agent` from a loaded config has the merged tables.
+    #[serde(default)]
+    pub layers: homma_api::Layers,
+
+    /// The overlays `layers` names that could not be read, one line each, set
+    /// by [`Config::from_path`]. The load goes on past them, so a broken
+    /// `homma.local.toml` does not lock out `homma local`; a hook run and a
+    /// hook install refuse while any is here.
+    #[serde(skip)]
+    pub layer_errors: Vec<String>,
+
+    /// The directory the layers were read from: beside the manifest, set by
+    /// [`Config::from_path`] and empty for a config built from a string. What
+    /// `homma hook doctor` surveys for overlays nobody named.
+    #[serde(skip)]
+    pub layers_dir: PathBuf,
+
     /// `[agent]`: the hooks a workspace declares for the agent host, one array
     /// per host event under `[agent.hooks]`. `homma agent regen` writes a
     /// wrapper for each row and registers it; see `homma_api::AgentHooks`.
@@ -177,6 +198,11 @@ impl Config {
         }
         cfg.settle_token_commands(beside);
         cfg.settle_deny(beside);
+        // beside the manifest, since the overlays are files next to it
+        let failed =
+            crate::layers::apply(beside, &cfg.layers, &mut cfg.hooks, &mut cfg.agent.hooks);
+        cfg.layer_errors = failed.iter().map(ToString::to_string).collect();
+        cfg.layers_dir = beside.to_path_buf();
         // The workspace root rather than the manifest's own directory. The two
         // are the same thing whenever `workspace.path` is left at `.`, which is
         // the ordinary case, and they are not when it is set. Detecting beside

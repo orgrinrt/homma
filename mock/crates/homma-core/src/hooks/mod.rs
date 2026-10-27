@@ -8,16 +8,19 @@
 
 pub mod install;
 pub mod run;
+pub mod shook;
 
 pub use install::{
     HookError,
     Installed,
     MOCKSPACE_MARKER,
     Reach,
+    Via,
     Written,
     hooks_dir,
     hooks_path,
     install,
+    install_via,
     is_installed,
     reach,
     script,
