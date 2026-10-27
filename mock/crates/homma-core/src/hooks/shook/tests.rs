@@ -208,6 +208,34 @@ fn git_shook_registering_less_than_the_manifest_declares_is_an_error_naming_the_
 }
 
 #[test]
+fn a_refusal_gives_the_manifest_back_as_it_was() {
+    let d = repo();
+    let bin = tempfile::tempdir().unwrap();
+    executable(bin.path(), "git-shook", "#!/bin/sh\nexit 1\n");
+    let file = d
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(".git/shook/manifests/homma.toml");
+
+    // none before: none after
+    assert!(install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).is_err());
+    assert!(
+        !file.exists(),
+        "a refusal left a manifest where there was none"
+    );
+
+    // one before: the same text after
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "name = \"homma\"\n# old\n").unwrap();
+    assert!(install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).is_err());
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "name = \"homma\"\n# old\n"
+    );
+}
+
+#[test]
 fn a_git_shook_that_refuses_is_reported_with_what_it_said() {
     let d = repo();
     let bin = tempfile::tempdir().unwrap();

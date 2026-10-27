@@ -101,6 +101,25 @@ pub fn install_with(
     hooks: &Hooks,
     on_path: Option<&Path>,
 ) -> Result<Installed, HookError> {
+    let file = manifests_dir(root)?.join(format!("{NAME}.toml"));
+    let prior = std::fs::read(&file).ok();
+    let done = register(root, hooks, on_path);
+    if done.is_err() {
+        // a refusal leaves the manifest as it was, not a file every later
+        // install and `doctor` in the clone has to read
+        match prior {
+            Some(text) => {
+                let _ = std::fs::write(&file, text);
+            },
+            None => {
+                let _ = std::fs::remove_file(&file);
+            },
+        }
+    }
+    done
+}
+
+fn register(root: &Path, hooks: &Hooks, on_path: Option<&Path>) -> Result<Installed, HookError> {
     let dir = manifests_dir(root)?;
     std::fs::create_dir_all(&dir)?;
     std::fs::write(dir.join(format!("{NAME}.toml")), manifest(hooks))?;
