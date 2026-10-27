@@ -11,6 +11,16 @@ use super::super::doc::{Doc, Gap, Gathered, Kind, Verb};
 use crate::cmd::tools::descriptor::{Entry, discover};
 
 pub fn gather(root: &Path) -> Gathered {
+    if !root.join("tools").is_dir() {
+        return Gathered {
+            docs: Vec::new(),
+            gaps: vec![Gap {
+                source: "tools",
+                count:  0,
+                what:   "no tools/ here: tools not searched".to_string(),
+            }],
+        };
+    }
     let mut docs = Vec::new();
     let mut broken = 0;
     for e in discover(root) {

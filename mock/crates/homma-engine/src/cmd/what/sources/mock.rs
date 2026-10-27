@@ -101,9 +101,12 @@ struct Pipe {
 impl Pipe {
     /// The bytes read, after waiting up to `wait` for the end of the pipe: a grandchild that kept it
     /// open leaves the end out, and what arrived is then all there is.
-    fn take(&self, wait: Duration) -> Vec<u8> {
-        let _ = self.done.recv_timeout(wait);
-        self.bytes.lock().map(|b| b.clone()).unwrap_or_default()
+    fn take(&self, wait: Duration) -> (Vec<u8>, bool) {
+        let ended = self.done.recv_timeout(wait).is_ok();
+        (
+            self.bytes.lock().map(|b| b.clone()).unwrap_or_default(),
+            ended,
+        )
     }
 }
 
@@ -166,7 +169,10 @@ pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String
             Ok(Some(st)) => break st,
             Ok(None) if start.elapsed() > limit => {
                 end(&mut child);
-                return Err("cargo mock tools took longer than a minute".to_string());
+                return Err(format!(
+                    "cargo mock tools took longer than {} seconds",
+                    limit.as_secs()
+                ));
             },
             Ok(None) => std::thread::sleep(Duration::from_millis(40)),
             Err(e) => return Err(e.to_string()),
@@ -174,10 +180,12 @@ pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String
     };
     // A grandchild that kept the pipe open outlives the child, so the reads get a second and no more.
     let grace = Duration::from_secs(1).min(limit.saturating_sub(start.elapsed()));
-    let out = out.take(grace);
-    let err = err.take(grace);
-    // Whatever the child left running is ended with it.
-    end(&mut child);
+    let (out, out_ended) = out.take(grace);
+    let (err, err_ended) = err.take(grace);
+    // A pipe still open after the grace is held by something the child left running, which is ended.
+    if !(out_ended && err_ended) {
+        end(&mut child);
+    }
     if !status.success() {
         let err = String::from_utf8_lossy(&err);
         let line = err

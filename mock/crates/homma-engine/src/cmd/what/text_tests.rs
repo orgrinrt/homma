@@ -159,14 +159,3 @@ fn the_filler_is_dropped_as_it_is_and_once_stemmed() {
             .all(|(w, _)| w != "scripts")
     );
 }
-
-#[test]
-fn an_exact_match_beats_a_misspelling_of_the_same_word() {
-    assert_eq!(grade("disk", "disk"), Some(Grade::Same));
-    assert_eq!(grade("dsik", "disk"), Some(Grade::Fuzzy));
-    let order = [Grade::Same, Grade::Synonym, Grade::Prefix, Grade::Fuzzy];
-    assert!(
-        order.windows(2).all(|w| w[0].worth() > w[1].worth()),
-        "worth must fall with the grade"
-    );
-}

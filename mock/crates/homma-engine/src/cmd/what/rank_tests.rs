@@ -25,9 +25,9 @@ fn names(docs: &[Doc], q: &str) -> Vec<String> {
 }
 
 #[test]
-fn a_query_must_match_half_its_terms_and_a_third_of_a_long_one() {
+fn a_query_must_match_both_of_two_words_two_of_up_to_six_and_a_third_of_a_longer_one() {
     let got: Vec<usize> = (1 ..= 7).map(required).collect();
-    assert_eq!(got, [1, 1, 2, 2, 2, 2, 3]);
+    assert_eq!(got, [1, 2, 2, 2, 2, 2, 3]);
 }
 
 #[test]
@@ -57,16 +57,21 @@ fn a_name_outweighs_a_summary() {
 
 #[test]
 fn a_word_every_thing_carries_does_not_decide() {
+    // Every doc matches two terms; the padding matches the two that nearly everything carries, `y` the
+    // two that only it carries. Without the inverse weighting the scores tie and the name order puts the
+    // padding first.
     let mut docs: Vec<Doc> = (0 .. 12)
-        .map(|i| doc(Kind::Script, &format!("s{i}"), "works on a branch", &[]))
+        .map(|i| {
+            doc(
+                Kind::Script,
+                &format!("a{i}"),
+                "works on a common branch",
+                &[],
+            )
+        })
         .collect();
-    docs.push(doc(
-        Kind::Script,
-        "stray-runs",
-        "ends a lost run on a branch",
-        &[],
-    ));
-    assert_eq!(names(&docs, "lost branch")[0], "stray-runs");
+    docs.push(doc(Kind::Script, "zz-rare", "ends a lost stray", &[]));
+    assert_eq!(names(&docs, "common branch lost stray")[0], "zz-rare");
 }
 
 #[test]
@@ -80,52 +85,52 @@ fn a_tie_breaks_on_kind_and_then_name() {
 }
 
 #[test]
-fn a_rule_and_a_skill_rank_below_a_tool_that_says_the_same() {
-    // The same words in the same field of each, so only the kind decides.
-    let docs = vec![
-        doc(Kind::Rule, "x-rule", "trim the disk", &[]),
-        doc(Kind::Skill, "x-skill", "trim the disk", &[]),
-        doc(Kind::Tool, "x-tool", "trim the disk", &[]),
-    ];
-    assert_eq!(names(&docs, "trim disk"), ["x-tool", "x-skill", "x-rule"]);
+fn a_skill_ranks_below_a_tool_that_is_a_little_weaker() {
+    // The skill matches in a tag (4.0), the tool in a verb name (3.5): flat, the skill wins; with the
+    // skill at four fifths it is 3.2 and the tool wins.
+    let mut tool = doc(Kind::Tool, "tool", "unrelated words", &[]);
+    tool.verbs = vec![Verb {
+        name:    "trim".into(),
+        summary: String::new(),
+        command: "tool trim".into(),
+    }];
+    let docs = vec![doc(Kind::Skill, "aaa-skill", "other words", &["trim"]), tool];
+    assert_eq!(names(&docs, "trim"), ["tool", "aaa-skill"]);
 }
 
 #[test]
-fn a_thing_under_a_fifth_of_the_best_is_dropped_by_the_cut_and_one_above_it_is_kept() {
-    // Both match one of the two terms only through a summary; `strong` also matches in its name and tag.
-    let mut docs = vec![
-        doc(Kind::Tool, "alpha-beta", "alpha beta together", &[
-            "alpha", "beta",
-        ]),
-        doc(Kind::Tool, "weak", "mentions alpha once", &[]),
-        doc(Kind::Tool, "middling", "alpha beta here", &[]),
+fn a_rule_ranks_below_a_tool_that_is_a_little_weaker() {
+    // The rule matches in a tag (4.0), the tool in a summary (2.5): flat, the rule wins; at three fifths
+    // it is 2.4 and the tool wins.
+    let docs = vec![
+        doc(Kind::Rule, "aaa-rule", "other words", &["trim"]),
+        doc(Kind::Tool, "tool", "will trim it", &[]),
     ];
-    docs.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
-    let r = rank(&docs, &terms("alpha beta"));
-    let name = |h: &super::rank::Hit| docs[h.doc].name.clone();
-    assert_eq!(name(&r[0]), "alpha-beta");
-    let kept: Vec<String> = r.iter().map(name).collect();
-    assert!(kept.contains(&"middling".to_string()), "{kept:?}");
-    // `weak` matches one of two terms, which is enough to be an answer, so only the cut drops it.
-    assert_eq!(super::rank::required(2), 1);
-    assert!(!kept.contains(&"weak".to_string()), "{kept:?}");
+    assert_eq!(names(&docs, "trim"), ["tool", "aaa-rule"]);
+}
+
+#[test]
+fn an_exact_match_outranks_a_misspelling_in_the_same_field() {
+    let docs = vec![doc(Kind::Tool, "a-dsik", "x", &[]), doc(Kind::Tool, "z-disk", "x", &[])];
+    assert_eq!(names(&docs, "disk")[0], "z-disk");
 }
 
 #[test]
 fn a_thing_matching_too_few_of_a_long_query_is_not_an_answer() {
+    // `one` matches a single term but in its name, so it scores near `two`, which matches two in its
+    // summary. Only the coverage rule drops it; the cut would keep it.
     let many = terms("alpha beta gamma delta epsilon zeta");
-    let mut docs2 = vec![
-        doc(Kind::Tool, "all", "alpha beta gamma delta epsilon zeta", &[
-            "alpha", "beta", "gamma",
-        ]),
-        doc(Kind::Tool, "faint", "zeta", &[]),
+    let mut docs = vec![
+        doc(Kind::Tool, "two", "alpha beta", &[]),
+        doc(Kind::Tool, "zeta", "nothing", &[]),
     ];
-    docs2.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
-    let r2 = rank(&docs2, &many);
+    docs.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
+    let r = names(&docs, "alpha beta gamma delta epsilon zeta");
+    assert_eq!(many.len(), 6);
     assert_eq!(
-        r2.len(),
-        1,
-        "faint matched one of six terms, under the third a long query needs"
+        r,
+        ["two"],
+        "a single term of six is not an answer, however it scores"
     );
 }
 
@@ -222,4 +227,27 @@ fn a_tool_is_not_related_to_a_rule_by_a_shared_word() {
     let ranked = rank(&docs, &terms("trim"));
     let rel = related(&docs, &ranked[.. 1], 1, 3);
     assert!(rel[0].is_empty(), "{rel:?}");
+}
+
+#[test]
+fn a_thing_under_a_fifth_of_the_best_is_dropped_by_the_cut_and_one_above_it_is_kept() {
+    // All three match two of the three terms or more, so the coverage rule keeps each; `weak` finds
+    // them only in its body, where they are worth little, so only the cut drops it.
+    let mut weak = doc(Kind::Tool, "weak", "nothing", &[]);
+    weak.body = "alpha beta".to_string();
+    let mut docs = vec![
+        doc(
+            Kind::Tool,
+            "alpha-beta-gamma",
+            "alpha beta gamma together",
+            &["alpha", "beta", "gamma"],
+        ),
+        weak,
+        doc(Kind::Tool, "middling", "alpha beta gamma here", &[]),
+    ];
+    docs.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
+    let kept = names(&docs, "alpha beta gamma");
+    assert_eq!(kept[0], "alpha-beta-gamma");
+    assert!(kept.contains(&"middling".to_string()), "{kept:?}");
+    assert!(!kept.contains(&"weak".to_string()), "{kept:?}");
 }

@@ -385,3 +385,15 @@ fn a_tool_with_verbs_and_no_default_one_never_prints_a_command_the_dispatcher_re
         a.hits.iter().map(|h| &h.command).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn a_two_word_query_about_nothing_the_tooling_does_returns_nothing() {
+    for q in ["bake bread", "book flight"] {
+        let a = ask(q);
+        assert!(
+            a.hits.is_empty(),
+            "`{q}` found {:?}",
+            a.hits.iter().map(|h| &h.name).collect::<Vec<_>>()
+        );
+    }
+}

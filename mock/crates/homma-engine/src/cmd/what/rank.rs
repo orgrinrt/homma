@@ -176,9 +176,16 @@ fn best(term: &str, t: &Tokens) -> Option<Match> {
     found
 }
 
-/// How many of `n` terms a thing must match to be an answer: half, and a third of a long query.
+/// How many of `n` terms a thing must match to be an answer: both of two, two of three to six, a third of a
+/// longer query.
 pub const fn required(n: usize) -> usize {
-    if n <= 4 { n.div_ceil(2) } else { n.div_ceil(3) }
+    if n <= 2 {
+        n
+    } else if n <= 6 {
+        2
+    } else {
+        n.div_ceil(3)
+    }
 }
 
 /// The things that answer `terms`, best first. Ties break on kind, then name.
