@@ -279,7 +279,10 @@ failure, since `homma local` reads it whatever `layers` says and removing it
 would remove the clone's identity. A file that cannot be read is listed once, as an error with
 the reason the reader gave, line and column included, and not also as read.
 With a repository it exits non-zero for an event with no entrypoint, where
-there is no hooks path, as for one a hooks path does not reach. While a named overlay cannot be read, every verb that
+there is no hooks path, as for one a hooks path does not reach, and as for one
+where the file in git's own directory is somebody else's hook: with no hooks
+path git runs that file in place of the entrypoint, so it is reached only when
+the file is exactly the text homma writes. While a named overlay cannot be read, every verb that
 would act on the merged table refuses and names the file: `hook install`,
 `hook run` and `agent regen`, the last because it writes back only the rows it
 has and a layer missing from them would remove that layer's guards from the
