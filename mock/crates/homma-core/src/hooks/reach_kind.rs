@@ -34,6 +34,9 @@ pub enum Reach {
     /// A hook under the path that is some other tool's, and nothing runs the
     /// entrypoint until that tool chains to it.
     Foreign(PathBuf),
+    /// No hooks path, and the file in git's own directory is not the text
+    /// homma writes, so git runs that file in place of the entrypoint.
+    Other(PathBuf),
 }
 
 impl Reach {
@@ -73,6 +76,14 @@ impl fmt::Display for Reach {
                     f,
                     "{} is not mockspace's; git will not run this until that tool chains to the \
                      repository's own hooks",
+                    p.display()
+                )
+            },
+            Reach::Other(p) => {
+                write!(
+                    f,
+                    "{} is somebody else's hook, which git runs in place of the entrypoint; move \
+                     what it does into the hooks table or remove it, then `homma hook install`",
                     p.display()
                 )
             },

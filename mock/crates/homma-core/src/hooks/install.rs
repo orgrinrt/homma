@@ -162,7 +162,14 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
         // there: counting it reached from the absence of a hooks path alone made
         // `hook doctor` pass in a repository where nothing was ever installed
         let file = hooks_dir(root)?.join(event);
-        return Ok(if file.is_file() { Reach::Direct } else { Reach::NotInstalled(file) });
+        // and git runs whatever file is there, so it is homma's entrypoint only
+        // where the bytes are exactly what `script` writes
+        return Ok(match std::fs::read(&file) {
+            Ok(bytes) if bytes == script(event).as_bytes() => Reach::Direct,
+            Ok(_) => Reach::Other(file),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Reach::NotInstalled(file),
+            Err(_) => Reach::Other(file),
+        });
     };
     if dir == super::shook::hooks_dir(root)? {
         return super::shook::reach(root, event);
@@ -413,6 +420,15 @@ mod tests {
         std::fs::write(&missing, script("pre-push")).unwrap();
         assert_eq!(reach(d.path(), "pre-push").unwrap(), Reach::Direct);
         assert_eq!(hooks_path(d.path()).unwrap(), None);
+        // somebody else's file in git's own directory is what git runs, so the
+        // entrypoint is not reached and `install` refusing it agrees
+        let theirs = hooks_dir(d.path()).unwrap().join("pre-commit");
+        std::fs::write(&theirs, "#!/bin/sh\nexit 0\n").unwrap();
+        let r = reach(d.path(), "pre-commit").unwrap();
+        assert_eq!(r, Reach::Other(theirs.clone()));
+        assert!(!r.reached());
+        assert!(r.to_string().contains("somebody else's hook"));
+        std::fs::remove_file(&theirs).unwrap();
         // mockspace's three, and nothing for a fourth event
         let ms = hooks_path_dir(&["pre-commit", "pre-push", "commit-msg"], &[]);
         set_hooks_path(d.path(), ms.path().to_str().unwrap());
