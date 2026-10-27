@@ -258,9 +258,9 @@ if [ -f "$WS/homma.toml" ]; then
         status_err=""
         facts=""
         if [ "$status_rc" -eq 0 ]; then
-            facts=$(printf '%s' "$status_out" | jq -r '.repos[0].surfaces | [.mockspace_toml, .mock_dir_name, .mock_dir, .launcher_pin] | @tsv' 2>/dev/null)
+            facts=$(printf '%s' "$status_out" | jq -r '.repos[0].surfaces | [.mockspace_toml, .mock_dir_name, .mock_dir, .launcher_pin] | map(tostring) | join("|")' 2>/dev/null)
         fi
-        IFS=$'\t' read -r has_toml mock_dir_name has_mock_dir has_pin <<<"$facts"
+        IFS='|' read -r has_toml mock_dir_name has_mock_dir has_pin <<<"$facts"
         case "$has_toml$has_mock_dir$has_pin" in
             truetruetrue|truetruefalse|truefalsetrue|truefalsefalse|falsetruetrue|falsetruefalse|falsefalsetrue|falsefalsefalse) ;;
             *) status_rc=1 ;;
@@ -327,7 +327,7 @@ if [ -f "$WS/homma.toml" ]; then
         # want which config, and a second copy of that decision in bash would
         # start disagreeing with the first the day somebody adds a template,
         # which is the exact thing the directory exists to prevent.
-        config_out=$(homma --dir "$WS" repo config check --repo "$match_name" 2>&1)
+        config_out=$(homma --dir "$WS" repo config check --repo "$match_name" 2>/dev/null)
         config_rc=$?
         # `1` is the check having run and found the repo owing something, which is
         # what the advice below is for. Anything else non-zero is the check not
@@ -341,6 +341,7 @@ if [ -f "$WS/homma.toml" ]; then
             done <<<"$config_out"
             fix="Run \`homma repo config init --repo $match_name\` to place what is missing."
         elif [ "$config_rc" -ne 0 ]; then
+            config_out=$(homma --dir "$WS" repo config check --repo "$match_name" 2>&1)
             problems+=("the shared tool configs could not be checked: $config_out")
             fix="Read \`$WS/homma.toml\`; homma could not run against it, so this says nothing about repo \`$match_name\`."
         fi

@@ -97,6 +97,7 @@ fn the_json_has_a_probe_per_asked_surface_and_none_for_the_two_dropped() {
         "mockspace_toml",
         "mock_dir",
         "mock_dir_name",
+        "launcher_pin",
         "claude_dir",
         "github_instructions",
         "git_hooks_path",

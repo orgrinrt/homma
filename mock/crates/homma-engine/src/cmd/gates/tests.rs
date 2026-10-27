@@ -622,15 +622,26 @@ fn gate_e2e_an_alias_does_not_stand_in_for_the_launcher_pin() {
 
 #[test]
 fn gate_e2e_non_git_command_is_silent_allow() {
-    // Out of scope: command is not git commit / git push.
+    // Out of scope: command is not git commit / git push. The repo is drift (a
+    // toml and a mock directory, no pin, no hooks path), which is what the
+    // control below shows the gate refusing, so the allow can only be the filter.
     let dir = tempfile::tempdir().unwrap();
     let repo = fake_repo(dir.path(), "arvo", true, false);
+    fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
     let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("ls -la", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
         !out.contains("\"permissionDecision\":\"deny\""),
         "non-git command should be silent allow; got: {out}",
+    );
+    let control = run_gate(
+        &repos,
+        &input_json("git commit -m hi", &repo.to_string_lossy()),
+    );
+    assert!(
+        control.contains("\"permissionDecision\":\"deny\""),
+        "the same repo must be refused on a commit; got: {control}",
     );
 }
 
@@ -999,4 +1010,64 @@ fn gate_denies_when_homma_answers_with_something_that_is_not_the_report() {
             "{text}: {out}"
         );
     }
+}
+
+#[test]
+fn gate_reads_the_config_findings_from_stdout_and_not_what_homma_says_on_stderr() {
+    // The same class as the status read: a launcher line on stderr is not a
+    // finding about the repo, and was listed as a problem beside the real one.
+    let out = run_gate_in_a_workspace(
+        Some(
+            "echo 'homma: offline past the cache, using the last known revision' >&2; echo '  deny.toml is missing'; exit 1",
+        ),
+        true,
+    );
+    assert!(out.contains("deny.toml is missing"), "{out}");
+    assert!(
+        !out.contains("offline past the cache"),
+        "stderr was listed as a problem: {out}"
+    );
+}
+
+#[test]
+fn gate_e2e_an_empty_mock_dir_does_not_shift_the_facts() {
+    // `mock_dir = ""` names the repository root, which exists. An empty field
+    // in the facts the gate splits must stay an empty field, or the ones after
+    // it move and a correct answer from homma reads as unreadable.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = fake_repo(dir.path(), "arvo", false, true);
+    fs::write(
+        repo.join("mockspace.toml"),
+        "mock_dir = \"\"\nmockspace_branch = \"dev\"\n",
+    )
+    .unwrap();
+    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let input = input_json("git commit -m hi", &repo.to_string_lossy());
+    let out = run_gate(&repos, &input);
+    assert!(
+        !out.contains("could not be read"),
+        "an empty field made homma's answer unreadable: {out}"
+    );
+    assert!(
+        !out.contains("\"permissionDecision\":\"deny\""),
+        "the directory, the pin and the hooks path are all there: {out}"
+    );
+}
+
+#[test]
+fn gate_e2e_a_toml_that_does_not_parse_is_refused_for_a_missing_pin() {
+    // What happens today, filed as an open question for the lead designer: the
+    // status counts the toml as adopting, with the default mock directory and
+    // no pin, so the gate names the pin as missing even where the line is there.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = fake_repo(dir.path(), "arvo", true, true);
+    fs::write(
+        repo.join("mockspace.toml"),
+        "mockspace_branch = \"dev\"\nmock_dir = \n",
+    )
+    .unwrap();
+    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let input = input_json("git commit -m hi", &repo.to_string_lossy());
+    let out = run_gate(&repos, &input);
+    assert!(out.contains("no launcher pin"), "{out}");
 }
