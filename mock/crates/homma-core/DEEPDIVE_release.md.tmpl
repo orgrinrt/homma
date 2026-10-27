@@ -258,7 +258,7 @@ stays the declaration a plain `git shook install` finds, under the same
 `homma` name, so the registry holds one entry per event and not two.
 
 The table is read from layers. `homma.toml` is the base, and `layers` in it
-lists the overlay files in the workspace root, `["homma.local.toml"]` where
+lists the overlay files beside the manifest, `["homma.local.toml"]` where
 the key is absent. An overlay may carry `[hooks]` and `[agent.hooks]`, and its
 entries are appended to the base's for each event in list order, never
 replacing: no layer drops another's hook. The layers are a declared list and
@@ -268,9 +268,13 @@ overlay is not read, and the order is the list and not the alphabet. A named
 overlay that is absent is skipped, one that does not parse is an error naming
 the file, and an overlay other than `homma.local.toml` carrying any table but
 those two is refused naming the table, since nothing else reads it.
-`homma hook doctor` names every `homma.*.toml` in the root as read or as
+`homma hook doctor` names every `homma.*.toml` beside the manifest as read or as
 present and not named, whatever sits between `homma.` and `.toml`, so an
-editor's copy such as `homma.local.old.toml` is listed too, and a file that cannot be read once, as an error with
+editor's copy such as `homma.local.old.toml` is listed too. The clone's own
+`homma.local.toml` is the exception: when `layers` does not name it, doctor says
+its hooks tables are not read and its own tables still are, as a note and not a
+failure, since `homma local` reads it whatever `layers` says and removing it
+would remove the clone's identity. A file that cannot be read is listed once, as an error with
 the reason the reader gave, line and column included, and not also as read.
 With a repository it exits non-zero for an event with no entrypoint, where
 there is no hooks path, as for one a hooks path does not reach. While a named overlay cannot be read, every verb that
