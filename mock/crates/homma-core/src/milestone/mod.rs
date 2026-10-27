@@ -18,6 +18,10 @@ pub mod record;
 #[cfg(test)]
 mod tests;
 
+/// What a repository with no mark and no milestone tag is told.
+pub const NO_MILESTONE: &str = "no milestone is marked and no `milestone/*` tag is on the trunk; \
+                                `homma milestone mark <repo> <sha>` records one";
+
 /// A milestone call that was refused, or a git call under it that failed.
 #[derive(Debug)]
 pub enum MilestoneError {
@@ -68,12 +72,7 @@ impl fmt::Display for MilestoneError {
                 trunk,
             } => write!(f, "`{sha}` is not on `{trunk}`"),
             MilestoneError::AlreadyMarked(sha) => write!(f, "`{sha}` is already marked"),
-            MilestoneError::NoMilestone => {
-                write!(
-                    f,
-                    "no milestone is marked and no `milestone/*` tag is on the trunk; `homma                  milestone mark <repo> <sha>` records one"
-                )
-            },
+            MilestoneError::NoMilestone => f.write_str(NO_MILESTONE),
             MilestoneError::Record(why) => write!(f, "the milestone record is unreadable: {why}"),
             MilestoneError::Io(e) => write!(f, "the milestone record could not be written: {e}"),
         }
@@ -136,4 +135,10 @@ pub fn contains(cwd: &Path, descendant: &str, ancestor: &str) -> Result<bool, Mi
 /// Whether `rev` names a commit here.
 pub(crate) fn exists(cwd: &Path, rev: &str) -> bool {
     commit(cwd, rev).is_ok()
+}
+
+/// The trunk as this clone holds it: the local branch, or `origin`'s where
+/// the clone has only that.
+pub(crate) fn trunk_here(cwd: &Path, trunk: &str) -> String {
+    if exists(cwd, trunk) { trunk.to_string() } else { format!("origin/{trunk}") }
 }

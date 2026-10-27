@@ -15,7 +15,7 @@ use homma_core::milestone::record::{Mark, Source, base, mark};
 use serde::Serialize;
 
 use crate::cli::{Cli, MilestoneOp, OutputFormat};
-use crate::cmd::release::{branches_for, resolve_repo};
+use crate::cmd::util::{branches_for, resolve_repo};
 use crate::cmd::{Outcome, load_config};
 use crate::output::{HumanRender, emit};
 
@@ -60,11 +60,12 @@ impl HumanRender for PartitionReport {
             .iter()
             .map(|p| {
                 format!(
-                    "{:>7}  {} {}  ({} files, +{} -{})",
+                    "{:>7}  {} {}  ({} {}, +{} -{})",
                     p.changed(),
                     p.unit,
                     p.kind.word(),
                     p.files,
+                    if p.files == 1 { "file" } else { "files" },
                     p.added,
                     p.deleted
                 )
@@ -112,6 +113,9 @@ impl HumanRender for BranchReport {
                 );
                 if !b.conflicts.is_empty() {
                     row.push_str(&format!("  conflicts: {}", b.conflicts.join(", ")));
+                }
+                if let Some(why) = &b.reason {
+                    row.push_str(&format!("  reason: {why}"));
                 }
                 row
             })

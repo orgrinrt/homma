@@ -124,18 +124,71 @@ fn a_tagged_mark_makes_the_tag_and_a_repo_with_only_the_tag_is_answered_by_it() 
 }
 
 #[test]
-fn a_mark_that_cannot_be_tagged_still_leaves_the_record_it_wrote() {
+fn a_refused_tag_leaves_no_mark_and_a_rerun_is_not_already_marked() {
     let fx = Fx::new();
     let first = fx.commit("a.txt", "one\n");
-    fx.git(&["tag", "milestone/1", &first]);
+    // a tag named `milestone` makes git refuse the name `milestone/1`
+    fx.git(&["tag", "milestone", &first]);
+    assert!(matches!(
+        mark(fx.root(), "dev", &first, true),
+        Err(MilestoneError::Git { .. })
+    ));
+    assert!(marks(fx.root()).unwrap().is_empty());
+    assert!(!fx.root().join(RECORD_PATH).exists());
+    fx.git(&["tag", "-d", "milestone"]);
+    mark(fx.root(), "dev", &first, true).unwrap();
+    assert_eq!(marks(fx.root()).unwrap().len(), 1);
+    assert_eq!(fx.git(&["tag", "--list", "milestone/*"]), "milestone/1");
+}
+
+#[test]
+fn a_tag_number_already_taken_is_skipped_for_the_next_free_one() {
+    let fx = Fx::new();
+    let first = fx.commit("a.txt", "one\n");
     let second = fx.commit("a.txt", "two\n");
-    mark(fx.root(), "dev", &first, false).unwrap();
-    // the second mark wants `milestone/2`, which is free, and gets it
+    fx.git(&["tag", "milestone/1", &first]);
     mark(fx.root(), "dev", &second, true).unwrap();
     assert_eq!(
         fx.git(&["tag", "--list", "milestone/*"]),
         "milestone/1\nmilestone/2"
     );
+    assert_eq!(fx.git(&["rev-list", "-n1", "milestone/2"]), second);
+}
+
+#[test]
+fn a_clone_with_only_origins_trunk_is_answered_by_its_tags_and_marks() {
+    let origin = Fx::new();
+    let first = origin.commit("a.txt", "one\n");
+    origin.git(&["tag", "-a", "milestone/1", &first, "-m", "m"]);
+    origin.git(&["switch", "-qc", "elsewhere"]);
+    let dir = tempfile::tempdir().unwrap();
+    let url = origin.root().to_str().unwrap().to_string();
+    let out = std::process::Command::new("git")
+        .args(["clone", "-q", "--branch", "elsewhere", &url])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    // there is `origin/dev` here and no local `dev`
+    assert!(!exists_local(dir.path(), "dev"));
+    assert_eq!(
+        base(dir.path(), "dev").unwrap(),
+        (first.clone(), Source::Tag)
+    );
+    mark(dir.path(), "dev", &first, false).unwrap();
+    assert_eq!(marks(dir.path()).unwrap().len(), 1);
+}
+
+fn exists_local(root: &Path, branch: &str) -> bool {
+    let mut cmd = std::process::Command::new("git");
+    crate::testing::without_git_identity_env(&mut cmd);
+    cmd.arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")])
+        .output()
+        .unwrap()
+        .status
+        .success()
 }
 
 #[test]
@@ -203,7 +256,15 @@ fn a_range_whose_base_the_head_does_not_contain_is_refused() {
 fn a_marker_is_found_by_the_first_in_the_order_and_case_folds_only_where_declared() {
     assert_eq!(marker_of("// FIXME: x, and relaxed"), Some("FIXME"));
     assert_eq!(marker_of("assert!(a); // Relaxed for now"), Some("relaxed"));
-    assert_eq!(marker_of("A Stand-In for the store"), Some("stand-in"));
+    assert_eq!(marker_of("// A Stand-In for the store"), Some("stand-in"));
+    assert_eq!(marker_of("A Stand-In for the store"), None);
+    assert_eq!(marker_of("x.load(Ordering::Relaxed)"), None);
+    assert_eq!(
+        marker_of("x.load(Ordering::Relaxed); // relaxed on purpose"),
+        Some("relaxed")
+    );
+    assert_eq!(marker_of(" * a relaxed assertion"), Some("relaxed"));
+    assert_eq!(marker_of("let s = \"relaxed\";"), None);
     assert_eq!(marker_of("// fixme: lowercase is not the marker"), None);
     assert_eq!(marker_of("let todos = 1;"), None);
     assert_eq!(marker_of("#[ignore = \"slow\"]"), Some("#[ignore"));
@@ -345,4 +406,105 @@ fn a_name_on_origin_is_read_at_origins_tip_and_not_the_stale_local_one() {
         origin.git(&["rev-parse", "work"]),
         "the remote's tip, not the stale local one"
     );
+}
+
+#[test]
+fn stand_ins_are_read_in_source_only_and_a_memory_ordering_is_not_one() {
+    let fx = Fx::new();
+    let start = fx.commit("seed.txt", "x\n");
+    fx.commit(
+        "mock/research/notes.md",
+        "FIXME in a note\nTODO in a note\n",
+    );
+    fx.commit("docs/guide.md", "// relaxed in a page\n");
+    fx.commit("data/rows.json", "{\"a\": \"stand-in\"}\n");
+    fx.commit(
+        "src/lib.rs",
+        "use std::sync::atomic::Ordering;\nfn n() { c.load(Ordering::Relaxed); }\n// FIXME: real\n",
+    );
+    let found = stand_ins(fx.root(), &start, "dev").unwrap();
+    let rows: Vec<_> = found
+        .iter()
+        .map(|s| (s.file.as_str(), s.line, s.marker.as_str()))
+        .collect();
+    assert_eq!(rows, [("src/lib.rs", 3, "FIXME")]);
+}
+
+#[test]
+fn a_users_diff_configuration_changes_neither_the_partitions_nor_the_stand_ins() {
+    let fx = Fx::new();
+    let start = fx.commit("seed.txt", "x\n");
+    fx.git(&["config", "diff.noprefix", "true"]);
+    fx.git(&["config", "diff.mnemonicPrefix", "true"]);
+    fx.commit("src/lib.rs", "// FIXME: still found\n");
+    let found = stand_ins(fx.root(), &start, "dev").unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].file, "src/lib.rs");
+    assert_eq!(partition(fx.root(), &start, "dev").unwrap().len(), 1);
+}
+
+#[test]
+fn a_branch_with_no_shared_history_is_called_unrelated_and_the_rest_are_still_listed() {
+    let fx = branched();
+    fx.git(&["switch", "-q", "--orphan", "island"]);
+    fx.commit("island.txt", "alone\n");
+    fx.git(&["switch", "-q", "dev"]);
+    let found = branches(fx.root(), "dev", "main").unwrap();
+    let rows: Vec<_> = found.iter().map(|b| (b.name.as_str(), b.call)).collect();
+    assert_eq!(rows, [
+        ("clash", Call::MergeTrunk),
+        ("clean", Call::Land),
+        ("hollow", Call::Empty),
+        ("island", Call::Unrelated),
+    ]);
+    let island = found.iter().find(|b| b.name == "island").unwrap();
+    assert!(island.conflicts.is_empty());
+    assert_eq!(island.changed, 0);
+}
+
+#[test]
+fn a_branch_that_changes_only_a_binary_file_is_not_empty() {
+    let fx = Fx::new();
+    fx.commit("shared.txt", "line\n");
+    fx.git(&["switch", "-qc", "blob"]);
+    std::fs::write(fx.root().join("b.bin"), [0u8, 1, 2, 0, 255]).unwrap();
+    fx.git(&["add", "b.bin"]);
+    fx.git(&["commit", "-qm", "blob"]);
+    fx.git(&["switch", "-q", "dev"]);
+    let found = branches(fx.root(), "dev", "main").unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].changed, 0);
+    assert_eq!(found[0].call, Call::Land);
+}
+
+#[test]
+fn two_binary_edits_of_one_file_never_end_the_report_whatever_git_says_of_them() {
+    let fx = Fx::new();
+    std::fs::write(fx.root().join("b.bin"), [0u8, 1, 2]).unwrap();
+    fx.git(&["add", "b.bin"]);
+    fx.git(&["commit", "-qm", "seed"]);
+    fx.git(&["switch", "-qc", "left"]);
+    std::fs::write(fx.root().join("b.bin"), [0u8, 9, 9, 9]).unwrap();
+    fx.git(&["commit", "-qam", "left"]);
+    fx.git(&["switch", "-q", "dev"]);
+    std::fs::write(fx.root().join("b.bin"), [0u8, 7, 7, 7, 7]).unwrap();
+    fx.git(&["commit", "-qam", "trunk"]);
+    fx.commit("after.txt", "a\n");
+    fx.git(&["switch", "-qc", "plain"]);
+    fx.git(&["switch", "-q", "dev"]);
+    fx.git(&["switch", "-qc", "right"]);
+    fx.commit("right.txt", "r\n");
+    fx.git(&["switch", "-q", "dev"]);
+    let found = branches(fx.root(), "dev", "main").unwrap();
+    let left = found.iter().find(|b| b.name == "left").unwrap();
+    // git names the conflict or refuses; either way it is this branch's call
+    assert!(
+        matches!(left.call, Call::MergeTrunk | Call::Unreadable),
+        "{left:?}"
+    );
+    if left.call == Call::Unreadable {
+        assert!(left.reason.as_deref().is_some_and(|r| !r.is_empty()));
+    }
+    let right = found.iter().find(|b| b.name == "right").unwrap();
+    assert_eq!(right.call, Call::Land);
 }

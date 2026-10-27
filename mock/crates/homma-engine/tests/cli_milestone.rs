@@ -51,7 +51,9 @@ fn milestone_is_listed_and_a_mark_is_quiet_while_base_prints_the_sha() {
         .args(["-c", &cfg, "milestone", "base", "x"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("no milestone is marked"));
+        .stderr(predicate::str::contains(
+            "no milestone is marked and no `milestone/*` tag is on the trunk; `homma milestone mark <repo> <sha>` records one",
+        ));
     bin()
         .args(["-c", &cfg, "milestone", "mark", "x", &first])
         .assert()
@@ -95,9 +97,9 @@ fn the_range_reports_print_partitions_and_stand_ins_and_refuse_a_wrong_base() {
         .args(["-c", &cfg, "milestone", "partition", "x", &start, "HEAD"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("2  k source  (1 files, +2 -0)"))
+        .stdout(predicate::str::contains("2  k source  (1 file, +2 -0)"))
         .stdout(predicate::str::contains(
-            "1  (root) document  (1 files, +1 -0)",
+            "1  (root) document  (1 file, +1 -0)",
         ));
     bin()
         .args(["-c", &cfg, "milestone", "stand-ins", "x", &start, "HEAD"])
@@ -130,12 +132,18 @@ fn branches_prints_each_branch_the_trunk_lacks_with_its_conflicts_and_call() {
     commit_file(&root, "shared.txt", "branch\n");
     git_in(&root, &["switch", "-q", "main"]);
     commit_file(&root, "shared.txt", "trunk\n");
+    git_in(&root, &["switch", "-q", "--orphan", "island"]);
+    commit_file(&root, "island.txt", "alone\n");
+    git_in(&root, &["switch", "-q", "main"]);
     bin()
         .args(["-c", &cfg, "milestone", "branches", "x"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
             "clash  merge-trunk  2 lines  1 commits  conflicts: shared.txt",
+        ))
+        .stdout(predicate::str::contains(
+            "island  unrelated  0 lines  1 commits",
         ))
         .stdout(predicate::str::contains("clean  land  1 lines  1 commits"));
     bin()

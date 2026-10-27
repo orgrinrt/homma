@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{MilestoneError, commit, contains, exists, git};
+use super::{MilestoneError, commit, contains, exists, git, trunk_here};
 
 /// Where the record sits, relative to the repository's root.
 pub const RECORD_PATH: &str = ".homma/milestones.toml";
@@ -61,7 +61,7 @@ pub fn base(root: &Path, trunk: &str) -> Result<(String, Source), MilestoneError
         "--list",
         "milestone/*",
         "--merged",
-        trunk,
+        &trunk_here(root, trunk),
         "--sort=-version:refname",
     ])?;
     match listing.lines().next() {
@@ -100,6 +100,9 @@ pub fn mark(root: &Path, trunk: &str, rev: &str, tag: bool) -> Result<Mark, Mile
         sha,
         at,
     };
+    // the tag first: a refused tag then leaves no mark behind, and a rerun is
+    // not met by "already marked"
+    let tagged = if tag { Some(make_tag(root, existing.len() + 1, &new.sha)?) } else { None };
     let path = root.join(RECORD_PATH);
     let mut text = std::fs::read_to_string(&path).unwrap_or_default();
     if !text.is_empty() && !text.ends_with('\n') {
@@ -112,21 +115,37 @@ pub fn mark(root: &Path, trunk: &str, rev: &str, tag: bool) -> Result<Mark, Mile
         "[[milestone]]\nsha = \"{}\"\nat = \"{}\"\n",
         new.sha, new.at
     ));
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(MilestoneError::Io)?;
-    }
-    std::fs::write(&path, text).map_err(MilestoneError::Io)?;
-    if tag {
-        let n = existing.len() + 1;
-        let name = format!("{TAG_PREFIX}{n}");
-        git(root, &[
-            "tag",
-            "-a",
-            &name,
-            &new.sha,
-            "-m",
-            &format!("milestone {n}"),
-        ])?;
+    let written = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&path, text));
+    if let Err(e) = written {
+        if let Some(name) = tagged {
+            let _ = git(root, &["tag", "-d", &name]);
+        }
+        return Err(MilestoneError::Io(e));
     }
     Ok(new)
+}
+
+/// Make the annotated tag `milestone/<n>` at `sha`, `n` being the first
+/// number from `from` up whose tag is free; its name.
+fn make_tag(root: &Path, from: usize, sha: &str) -> Result<String, MilestoneError> {
+    let mut n = from;
+    let name = loop {
+        let name = format!("{TAG_PREFIX}{n}");
+        if !exists(root, &name) {
+            break name;
+        }
+        n += 1;
+    };
+    git(root, &[
+        "tag",
+        "-a",
+        &name,
+        sha,
+        "-m",
+        &format!("milestone {n}"),
+    ])?;
+    Ok(name)
 }

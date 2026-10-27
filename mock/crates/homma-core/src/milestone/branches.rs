@@ -23,8 +23,12 @@ pub enum Call {
     Land,
     /// It conflicts with the trunk, so the trunk is merged into it first.
     MergeTrunk,
-    /// It holds commits and differs from the trunk by no line.
+    /// Merging it into the trunk gives the trunk's own tree.
     Empty,
+    /// It shares no history with the trunk.
+    Unrelated,
+    /// Git could not compare it with the trunk; the reason is beside it.
+    Unreadable,
 }
 
 impl Call {
@@ -33,6 +37,8 @@ impl Call {
             Call::Land => "land",
             Call::MergeTrunk => "merge-trunk",
             Call::Empty => "empty",
+            Call::Unrelated => "unrelated",
+            Call::Unreadable => "unreadable",
         }
     }
 }
@@ -46,10 +52,22 @@ pub struct Branch {
     pub changed:   u64,
     pub conflicts: Vec<String>,
     pub call:      Call,
+    /// Git's words, for the calls that are about git failing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason:    Option<String>,
 }
 
-/// The files `git merge-tree --write-tree --name-only` reports in conflict.
-fn conflicts(root: &Path, trunk: &str, tip: &str) -> Result<Vec<String>, MilestoneError> {
+/// What merging a branch into the trunk came to.
+enum Merged {
+    /// No conflict; the tree the merge made.
+    Clean(String),
+    /// The files in conflict.
+    Conflicted(Vec<String>),
+    /// Git refused to say, and why.
+    Refused(String),
+}
+
+fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, MilestoneError> {
     let out = git_status(root, &[
         "merge-tree",
         "--write-tree",
@@ -57,24 +75,78 @@ fn conflicts(root: &Path, trunk: &str, tip: &str) -> Result<Vec<String>, Milesto
         trunk,
         tip,
     ])?;
-    match out.status {
-        Some(0) => Ok(Vec::new()),
+    Ok(match out.status {
+        Some(0) => Merged::Clean(out.stdout.lines().next().unwrap_or_default().to_string()),
         Some(1) => {
-            Ok(out
-                .stdout
-                .lines()
-                .skip(1)
-                .take_while(|l| !l.is_empty())
-                .map(str::to_string)
-                .collect())
+            Merged::Conflicted(
+                out.stdout
+                    .lines()
+                    .skip(1)
+                    .take_while(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            )
         },
-        _ => {
-            Err(MilestoneError::Git {
-                command: out.command_line(),
-                stderr:  out.stderr,
-            })
-        },
+        _ => Merged::Refused(first_words(&out.stderr, &out.stdout)),
+    })
+}
+
+/// The first non-empty line git said, from its error stream or else its output.
+fn first_words(stderr: &str, stdout: &str) -> String {
+    [stderr, stdout]
+        .iter()
+        .flat_map(|s| s.lines())
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("git gave no reason")
+        .to_string()
+}
+
+/// Read one branch against the trunk. A git failure here is this branch's
+/// call and never the report's.
+fn read(root: &Path, trunk: &str, name: String, tip: String) -> Branch {
+    let mut branch = Branch {
+        name,
+        tip: tip.clone(),
+        commits: 0,
+        changed: 0,
+        conflicts: Vec::new(),
+        call: Call::Land,
+        reason: None,
+    };
+    let outcome = (|| -> Result<(), MilestoneError> {
+        let range = format!("{trunk}..{tip}");
+        branch.commits = git(root, &["rev-list", "--count", &range])?
+            .trim()
+            .parse()
+            .unwrap_or(0);
+        if !git_status(root, &["merge-base", trunk, &tip])?.ok() {
+            branch.call = Call::Unrelated;
+            return Ok(());
+        }
+        let sym = format!("{trunk}...{tip}");
+        branch.changed = numstat(root, &[&sym])?.iter().map(|(_, a, d)| a + d).sum();
+        match merged(root, trunk, &tip)? {
+            Merged::Clean(tree) => {
+                let trunk_tree = git(root, &["rev-parse", &format!("{trunk}^{{tree}}")])?;
+                branch.call = if tree == trunk_tree.trim() { Call::Empty } else { Call::Land };
+            },
+            Merged::Conflicted(files) => {
+                branch.conflicts = files;
+                branch.call = Call::MergeTrunk;
+            },
+            Merged::Refused(why) => {
+                branch.call = Call::Unreadable;
+                branch.reason = Some(why);
+            },
+        }
+        Ok(())
+    })();
+    if let Err(e) = outcome {
+        branch.call = Call::Unreadable;
+        branch.reason = Some(e.to_string());
     }
+    branch
 }
 
 /// Every branch, from `origin` and the local heads, that `trunk` does not
@@ -109,29 +181,7 @@ pub fn branches(root: &Path, trunk: &str, release: &str) -> Result<Vec<Branch>, 
         if contains(root, &trunk_ref, &tip)? {
             continue;
         }
-        let range = format!("{trunk_ref}..{tip}");
-        let commits = git(root, &["rev-list", "--count", &range])?
-            .trim()
-            .parse()
-            .unwrap_or(0);
-        let sym = format!("{trunk_ref}...{tip}");
-        let changed = numstat(root, &[&sym])?.iter().map(|(_, a, d)| a + d).sum();
-        let conflicts = conflicts(root, &trunk_ref, &tip)?;
-        let call = if !conflicts.is_empty() {
-            Call::MergeTrunk
-        } else if changed == 0 {
-            Call::Empty
-        } else {
-            Call::Land
-        };
-        out.push(Branch {
-            name,
-            tip,
-            commits,
-            changed,
-            conflicts,
-            call,
-        });
+        out.push(read(root, &trunk_ref, name, tip));
     }
     Ok(out)
 }

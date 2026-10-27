@@ -17,7 +17,8 @@ pub const ROOT_UNIT: &str = "(root)";
 
 /// The markers a stand-in is read by, in the order a line is tried against
 /// them. The tool's own vocabulary, fixed here and not a content kind. The
-/// second field is whether the comparison ignores case.
+/// second field is whether the marker counts only inside a comment, compared
+/// without regard to case.
 pub const MARKERS: [(&str, bool); 7] = [
     ("FIXME", false),
     ("TODO", false),
@@ -27,6 +28,9 @@ pub const MARKERS: [(&str, bool); 7] = [
     ("stand-in", true),
     ("relaxed", true),
 ];
+
+/// The memory ordering, which says nothing about a relaxed assertion.
+const ORDERING: &str = "ordering::relaxed";
 
 /// Whether a changed file is code or prose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -106,7 +110,7 @@ pub(crate) fn numstat(
     root: &Path,
     spec: &[&str],
 ) -> Result<Vec<(String, u64, u64)>, MilestoneError> {
-    let mut args = vec!["diff", "--numstat", "-z", "--no-renames"];
+    let mut args = vec!["diff", "--numstat", "-z", "--no-renames", "--no-ext-diff"];
     args.extend_from_slice(spec);
     let raw = git(root, &args)?;
     let mut out = Vec::new();
@@ -149,11 +153,29 @@ pub fn partition(root: &Path, base: &str, head: &str) -> Result<Vec<Partition>, 
     Ok(parts)
 }
 
+/// The text of a line after its comment opener: `//`, `/*`, `#` and a space, or
+/// `<!--`, or the whole of a block comment's continuation line.
+fn comment_of(line: &str) -> Option<&str> {
+    if line.trim_start().starts_with('*') {
+        return Some(line);
+    }
+    ["//", "/*", "# ", "<!--"]
+        .iter()
+        .filter_map(|o| line.find(o).map(|i| &line[i + o.len() ..]))
+        .max_by_key(|rest| rest.len())
+}
+
 /// The first marker a line carries, by the order of [`MARKERS`].
 pub fn marker_of(line: &str) -> Option<&'static str> {
-    let lower = line.to_lowercase();
-    MARKERS.iter().find_map(|(m, fold)| {
-        let hit = if *fold { lower.contains(&m.to_lowercase()) } else { line.contains(m) };
+    let comment = comment_of(line).map(|c| c.to_lowercase().replace(ORDERING, ""));
+    MARKERS.iter().find_map(|(m, in_comment)| {
+        let hit = if *in_comment {
+            comment
+                .as_deref()
+                .is_some_and(|c| c.contains(&m.to_lowercase()))
+        } else {
+            line.contains(m)
+        };
         hit.then_some(*m)
     })
 }
@@ -168,6 +190,9 @@ pub fn stand_ins(root: &Path, base: &str, head: &str) -> Result<Vec<StandIn>, Mi
         "-U0",
         "--no-renames",
         "--no-color",
+        "--no-ext-diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
         &b,
         &h,
     ])?;
@@ -186,7 +211,10 @@ pub fn stand_ins(root: &Path, base: &str, head: &str) -> Result<Vec<StandIn>, Mi
             line = hunk_start(rest);
         } else if in_hunk && l.starts_with('+') {
             let text = &l[1 ..];
-            if let (Some(f), Some(m)) = (&file, marker_of(text)) {
+            let source = file
+                .as_deref()
+                .is_some_and(|f| kind_of(f) == PartitionKind::Source);
+            if let (Some(f), Some(m), true) = (&file, marker_of(text), source) {
                 found.push(StandIn {
                     file: f.clone(),
                     line,
