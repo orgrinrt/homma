@@ -5,7 +5,7 @@
 //! The milestone reports over repositories built here, never the live workspace.
 //! The branches report: calls, conflicts and the git failures a branch can carry.
 
-use super::super::branches::{Call, Merged, Related, branches, merged, read, related};
+use super::super::branches::{Call, Merged, Related, branches, classify, merged, read, related};
 use super::super::commit;
 use super::Fx;
 
@@ -206,4 +206,62 @@ fn a_merge_git_refuses_to_make_is_refused_with_its_words_and_not_a_conflict() {
         Merged::Clean(t) => panic!("clean {t}"),
         Merged::Conflicted(f) => panic!("conflicted {f:?}"),
     }
+}
+
+#[test]
+fn merge_tree_exits_are_read_as_clean_conflicted_or_refused() {
+    let tree = "0123456789abcdef0123456789abcdef01234567";
+    let tree64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    assert_eq!(
+        classify(Some(0), &format!("{tree}\n"), ""),
+        Merged::Clean(tree.to_string())
+    );
+    assert_eq!(
+        classify(
+            Some(1),
+            &format!("{tree}\na.txt\nb.txt\n\nAuto-merging a.txt\n"),
+            ""
+        ),
+        Merged::Conflicted(vec!["a.txt".to_string(), "b.txt".to_string()])
+    );
+    // git's way of refusing a merge it cannot make: exit 1, no tree first
+    assert_eq!(
+        classify(
+            Some(1),
+            "",
+            "merge-tree: 0123 - not something we can merge\n"
+        ),
+        Merged::Refused("merge-tree: 0123 - not something we can merge".to_string())
+    );
+    assert_eq!(
+        classify(Some(1), "not a tree line\nmore\n", ""),
+        Merged::Refused("not a tree line".to_string())
+    );
+    // a tree of the wrong length or not hex is not a tree
+    assert!(matches!(
+        classify(Some(1), "abc\nf\n", ""),
+        Merged::Refused(_)
+    ));
+    assert!(matches!(
+        classify(Some(1), &format!("{}z\nf\n", &tree[.. 39]), ""),
+        Merged::Refused(_)
+    ));
+    // sha-256 repositories write 64 hex digits
+    assert_eq!(
+        classify(Some(1), &format!("{tree64}\nf.txt\n"), ""),
+        Merged::Conflicted(vec!["f.txt".to_string()])
+    );
+    assert_eq!(
+        classify(Some(128), "", "fatal: bad object\n"),
+        Merged::Refused("fatal: bad object".to_string())
+    );
+    assert_eq!(
+        classify(None, "", ""),
+        Merged::Refused("git gave no reason".to_string())
+    );
+    // an exit other than 0 or 1 is a refusal even with a tree on stdout
+    assert!(matches!(
+        classify(Some(2), &format!("{tree}\n"), ""),
+        Merged::Refused(_)
+    ));
 }

@@ -170,9 +170,7 @@ pub fn partition(root: &Path, base: &str, head: &str) -> Result<Vec<Partition>, 
 fn comment_of(line: &str) -> Option<&str> {
     // a continuation is `*` and a space and then text; `*self` is code
     if let Some(rest) = line.trim_start().strip_prefix("* ") {
-        if !rest.trim().is_empty() {
-            return Some(rest);
-        }
+        return Some(rest);
     }
     ["//", "/*", "# ", "<!--"]
         .iter()

@@ -236,3 +236,45 @@ fn a_users_diff_configuration_changes_no_stand_in() {
     assert_eq!(found[0].file, "src/lib.rs");
     assert_eq!(found[0].line, 1);
 }
+
+#[test]
+fn a_comment_naming_the_memory_ordering_is_no_stand_in_and_unimplemented_is_one() {
+    let fx = Fx::new();
+    let start = fx.commit("seed.txt", "x\n");
+    // the ordering is removed before the word is looked for, in a comment too
+    fx.commit("a.rs", "// uses Ordering::Relaxed here\n");
+    fx.commit("b.rs", "fn f() { unimplemented!(\"later\") }\n");
+    let found = stand_ins(fx.root(), &start, "dev").unwrap();
+    let rows: Vec<_> = found
+        .iter()
+        .map(|s| (s.file.as_str(), s.marker.as_str()))
+        .collect();
+    assert_eq!(rows, [("b.rs", "unimplemented!(")]);
+    assert_eq!(marker_of("// uses Ordering::Relaxed here"), None);
+    assert_eq!(
+        marker_of("// uses Ordering::Relaxed, relaxed"),
+        Some("relaxed")
+    );
+}
+
+#[test]
+fn a_renamed_file_is_a_deletion_and_an_addition_in_both_reports() {
+    let fx = Fx::new();
+    fx.commit("old.rs", "// TODO: carried along\nfn x() {}\n");
+    let start = fx.git(&["rev-parse", "HEAD"]);
+    fx.git(&["mv", "old.rs", "new.rs"]);
+    fx.git(&["commit", "-qm", "rename"]);
+    // renames followed would show neither: the file is identical
+    let found = stand_ins(fx.root(), &start, "dev").unwrap();
+    let rows: Vec<_> = found
+        .iter()
+        .map(|s| (s.file.as_str(), s.line, s.marker.as_str()))
+        .collect();
+    assert_eq!(rows, [("new.rs", 1, "TODO")]);
+    let parts = partition(fx.root(), &start, "dev").unwrap();
+    let rows: Vec<_> = parts
+        .iter()
+        .map(|p| (p.unit.as_str(), p.files, p.added, p.deleted))
+        .collect();
+    assert_eq!(rows, [(ROOT_UNIT, 2, 2, 2)]);
+}

@@ -58,6 +58,7 @@ pub struct Branch {
 }
 
 /// What merging a branch into the trunk came to.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Merged {
     /// No conflict; the tree the merge made.
     Clean(String),
@@ -75,15 +76,19 @@ pub(crate) fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, Mile
         trunk,
         tip,
     ])?;
-    Ok(match out.status {
-        Some(0) => Merged::Clean(out.stdout.lines().next().unwrap_or_default().to_string()),
-        // a merge git cannot make also exits 1, with no tree on its first line
-        Some(1) if !starts_with_tree(&out.stdout) => {
-            Merged::Refused(first_words(&out.stderr, &out.stdout))
-        },
+    Ok(classify(out.status, &out.stdout, &out.stderr))
+}
+
+/// Read the exit and streams of `git merge-tree --write-tree --name-only`.
+/// Exit 0 is clean and 1 is conflicted, but a merge git cannot make also exits
+/// 1, with no tree on its first line; any other exit is git refusing.
+pub(crate) fn classify(status: Option<i32>, stdout: &str, stderr: &str) -> Merged {
+    match status {
+        Some(0) => Merged::Clean(stdout.lines().next().unwrap_or_default().to_string()),
+        Some(1) if !starts_with_tree(stdout) => Merged::Refused(first_words(stderr, stdout)),
         Some(1) => {
             Merged::Conflicted(
-                out.stdout
+                stdout
                     .lines()
                     .skip(1)
                     .take_while(|l| !l.is_empty())
@@ -91,8 +96,8 @@ pub(crate) fn merged(root: &Path, trunk: &str, tip: &str) -> Result<Merged, Mile
                     .collect(),
             )
         },
-        _ => Merged::Refused(first_words(&out.stderr, &out.stdout)),
-    })
+        _ => Merged::Refused(first_words(stderr, stdout)),
+    }
 }
 
 /// Whether the first line of `merge-tree` output is the tree it wrote.

@@ -160,10 +160,10 @@ fn branches_prints_each_branch_the_trunk_lacks_with_its_conflicts_and_call() {
         .stdout(predicate::str::contains("\"call\": \"merge-trunk\""));
 }
 
-/// A directory holding a `git` that fails `merge-base` the way a broken
+/// A directory holding a `git` that fails the subcommand `sub` the way a broken
 /// repository does, exit 128, and hands every other call to the real one.
 #[cfg(unix)]
-fn git_that_cannot_find_a_merge_base(dir: &Path) -> String {
+fn git_that_fails(dir: &Path, sub: &str) -> String {
     use std::os::unix::fs::PermissionsExt;
     let real = std::process::Command::new("sh")
         .args(["-c", "command -v git"])
@@ -174,7 +174,7 @@ fn git_that_cannot_find_a_merge_base(dir: &Path) -> String {
     std::fs::write(
         &shim,
         format!(
-            "#!/bin/sh\nif [ \"$1\" = merge-base ] && [ \"$2\" != --is-ancestor ]; then\n  echo 'fatal: shim refuses merge-base' >&2\n  exit 128\nfi\nexec {real} \"$@\"\n"
+            "#!/bin/sh\nif [ \"$1\" = {sub} ] && [ \"$2\" != --is-ancestor ]; then\n  echo 'fatal: shim refuses {sub}' >&2\n  exit 128\nfi\nexec {real} \"$@\"\n"
         ),
     )
     .unwrap();
@@ -196,7 +196,7 @@ fn a_branch_git_cannot_compare_is_listed_unreadable_with_its_reason_shown() {
     commit_file(&root, "s.txt", "a\n");
     git_in(&root, &["switch", "-q", "main"]);
     let shims = tempfile::tempdir().unwrap();
-    let path = git_that_cannot_find_a_merge_base(shims.path());
+    let path = git_that_fails(shims.path(), "merge-base");
     bin()
         .env("PATH", &path)
         .args(["-c", &cfg, "milestone", "branches", "x"])
@@ -213,5 +213,36 @@ fn a_branch_git_cannot_compare_is_listed_unreadable_with_its_reason_shown() {
         .stdout(predicate::str::contains("\"call\": \"unreadable\""))
         .stdout(predicate::str::contains(
             "\"reason\": \"fatal: shim refuses merge-base\"",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_merge_git_refuses_to_make_is_listed_unreadable_with_its_reason_and_its_lines() {
+    let (dir, cfg) = workspace();
+    let root = dir.path().join("x");
+    commit_file(&root, "shared.txt", "line\n");
+    git_in(&root, &["switch", "-qc", "side"]);
+    commit_file(&root, "s.txt", "a\n");
+    git_in(&root, &["switch", "-q", "main"]);
+    let shims = tempfile::tempdir().unwrap();
+    let path = git_that_fails(shims.path(), "merge-tree");
+    // merge-base is real here, so the branch is read as far as its merge
+    bin()
+        .env("PATH", &path)
+        .args(["-c", &cfg, "milestone", "branches", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "side  unreadable  1 lines  1 commits  reason: fatal: shim refuses merge-tree",
+        ));
+    bin()
+        .env("PATH", &path)
+        .args(["-c", &cfg, "--output", "json", "milestone", "branches", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"call\": \"unreadable\""))
+        .stdout(predicate::str::contains(
+            "\"reason\": \"fatal: shim refuses merge-tree\"",
         ));
 }
