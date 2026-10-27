@@ -155,8 +155,8 @@ pub mod status {
         }
     }
 
-    /// Where a repo's `mockspace.toml` is: at the root, or under the mock
-    /// directory, which is where ikiuni keeps it and where the commit gate
+    /// Where a repo's `mockspace.toml` is: at the root, or under `mock/`,
+    /// which is where ikiuni keeps it and where the commit gate
     /// looks as well. Only those two places are looked in: a toml under any
     /// other directory is missed, and the root one wins where both exist.
     pub(super) fn mockspace_toml_path(local: &Path) -> Option<std::path::PathBuf> {

@@ -232,7 +232,7 @@ has_alias=0
 has_pin=0
 has_hooks_path=0
 
-# Adoption is the `mockspace.toml`, at the root or under the mock dir. A repo
+# Adoption is the `mockspace.toml`, at the root or under `mock/`. A repo
 # without one has not adopted mockspace, whatever else it shows, and the
 # command the drift deny would name has nothing to run there, so only the
 # shared config check below still applies to it. The mock directory is
@@ -762,6 +762,7 @@ pub(crate) mod tests {
     fn gate_e2e_full_adoption_emits_no_deny() {
         let dir = tempfile::tempdir().unwrap();
         let repo = fake_repo(dir.path(), "arvo", true, AliasShape::UnderAlias, true);
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let out = run_gate(&repos, &input);
@@ -898,6 +899,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn gate_e2e_a_mock_dir_key_under_a_table_is_not_the_mock_dir() {
+        // Only a top-level key declares the mock dir, as the status probe
+        // reads it. A `mock_dir` under a table is some other setting, and
+        // reading it would look for a directory that was never declared.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, true);
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mockspace_branch = \"dev\"\n\n[something]\nmock_dir = \"elsewhere\"\n",
+        )
+        .unwrap();
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "the default mock dir exists and the key under a table is ignored; got: {out}",
+        );
+    }
+
+    #[test]
     fn gate_e2e_a_single_quoted_mock_dir_is_read() {
         // A TOML literal string is as valid as a basic one, and the status
         // probe parses real TOML, so the two must agree on the same file.
@@ -938,10 +960,12 @@ pub(crate) mod tests {
 
     #[test]
     fn gate_e2e_zero_adoption_emits_no_deny() {
-        // No mock/, no alias, no hooksPath. The gate stays out of the
-        // way to avoid enforcing adoption on unrelated repos.
+        // A toml and nothing else: no mock dir, no pin, no alias, no
+        // hooksPath. Adopted in name only, with no surface present, which is
+        // not drift, so the gate stays out of the way.
         let dir = tempfile::tempdir().unwrap();
         let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, false);
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
         let out = run_gate(&repos, &input);
@@ -982,6 +1006,7 @@ pub(crate) mod tests {
         // with nothing wrong with it and nothing `homma agent regen` can fix.
         let dir = tempfile::tempdir().unwrap();
         let repo = fake_repo(dir.path(), "arvo", false, AliasShape::None, false);
+        fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
         point_hooks_path_at_shook(&repo);
         let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
         let input = input_json("git commit -m hi", &repo.to_string_lossy());
