@@ -49,8 +49,6 @@ fn install_writes_executable_script_and_returns_entry() {
     assert!(body.starts_with("#!/usr/bin/env bash"));
     assert!(body.contains("'arvo|arvo'"));
     assert!(body.contains("'notko|notko'"));
-    assert!(body.contains("git commit"));
-    assert!(body.contains("git push"));
     assert!(
         !body.contains(workspace.to_str().unwrap()),
         "the gate baked the generating workspace's path"
@@ -122,7 +120,6 @@ fn script_body_includes_workspace_repo_paths() {
 fn script_body_handles_empty_repo_list() {
     let body = gate_script(&[]);
     assert!(body.contains("REPOS=("));
-    assert!(body.contains("git commit"));
 }
 
 // -------------------------------------------------------------------
@@ -958,6 +955,16 @@ fn the_two_arms_are_reported_together_rather_than_one_hiding_the_other() {
         out.contains("deny.toml is missing"),
         "the config arm is missing: {out}"
     );
+    // And each arm's advice, not only its problems: the second must not
+    // overwrite the first.
+    assert!(
+        out.contains("Add a launcher pin"),
+        "the pin advice was overwritten: {out}"
+    );
+    assert!(
+        out.contains("homma repo config init --repo arvo"),
+        "the config advice is missing: {out}"
+    );
 }
 
 #[test]
@@ -1070,4 +1077,24 @@ fn gate_e2e_a_toml_that_does_not_parse_is_refused_for_a_missing_pin() {
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(out.contains("no launcher pin"), "{out}");
+}
+
+#[test]
+fn gate_e2e_a_push_on_a_drift_repo_is_refused_and_a_non_git_command_is_not() {
+    // The gate covers `git push` as well as `git commit`: the same drift repo
+    // is refused on both forms, including behind a `cd`, and allowed on `ls`.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = fake_repo(dir.path(), "arvo", true, false);
+    fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
+    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let at = repo.to_string_lossy().to_string();
+    for command in ["git push origin dev", "cd arvo && git commit -m hi"] {
+        let out = run_gate(&repos, &input_json(command, &at));
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "{command} was not refused: {out}"
+        );
+    }
+    let ls = run_gate(&repos, &input_json("ls -la", &at));
+    assert!(!ls.contains("\"permissionDecision\":\"deny\""), "{ls}");
 }

@@ -244,6 +244,9 @@ has_hooks_path=0
 
 problems=()
 fix=""
+# Each arm adds its advice and none replaces another's, so a repo wrong in two
+# ways is told how to fix both.
+add_fix() {{ if [ -n "$fix" ]; then fix+=$'\n'"$1"; else fix="$1"; fi; }}
 
 if [ -f "$WS/homma.toml" ]; then
     if ! command -v homma >/dev/null 2>&1; then
@@ -255,6 +258,7 @@ if [ -f "$WS/homma.toml" ]; then
         # is left out of the answer and shown only when the answer failed.
         status_out=$(homma --dir "$WS" agent status --repo "$match_name" --output json 2>/dev/null)
         status_rc=$?
+        answer_rc=$status_rc
         status_err=""
         facts=""
         if [ "$status_rc" -eq 0 ]; then
@@ -267,9 +271,15 @@ if [ -f "$WS/homma.toml" ]; then
         esac
 
         if [ "$status_rc" -ne 0 ]; then
-            status_err=$(homma --dir "$WS" agent status --repo "$match_name" --output json 2>&1)
+            # What homma said when it failed; when it answered and the answer
+            # was not the report, the answer is the evidence.
+            if [ "$answer_rc" -ne 0 ]; then
+                status_err=$(homma --dir "$WS" agent status --repo "$match_name" --output json 2>&1)
+            else
+                status_err="$status_out"
+            fi
             problems+=("the mockspace surfaces could not be read: $status_err")
-            fix="Read \`$WS/homma.toml\`; homma could not report on repo \`$match_name\`."
+            add_fix "Read \`$WS/homma.toml\`; homma could not report on repo \`$match_name\`."
         elif [ "$has_toml" = "true" ]; then
             hooks_path="$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)"
             if [ -n "$hooks_path" ]; then
@@ -315,10 +325,10 @@ if [ -f "$WS/homma.toml" ]; then
                     regen_wanted=1
                 fi
                 if [ "$has_pin" != "true" ]; then
-                    fix="Add a launcher pin (a \`mockspace_*\` key such as \`mockspace_branch\`) to \`mockspace.toml\`, since \`cargo mock\` refuses to run without one."
+                    add_fix "Add a launcher pin (a \`mockspace_*\` key such as \`mockspace_branch\`) to \`mockspace.toml\`, since \`cargo mock\` refuses to run without one."
                     [ "$regen_wanted" -eq 1 ] && fix+=" Then run \`homma agent regen --repo $match_name\` for the rest."
                 else
-                    fix="Run \`homma agent regen --repo $match_name\` to fix."
+                    add_fix "Run \`homma agent regen --repo $match_name\` to fix."
                 fi
             fi
         fi
@@ -339,11 +349,11 @@ if [ -f "$WS/homma.toml" ]; then
             while IFS= read -r line; do
                 [ -n "$line" ] && problems+=("$line")
             done <<<"$config_out"
-            fix="Run \`homma repo config init --repo $match_name\` to place what is missing."
+            add_fix "Run \`homma repo config init --repo $match_name\` to place what is missing."
         elif [ "$config_rc" -ne 0 ]; then
             config_out=$(homma --dir "$WS" repo config check --repo "$match_name" 2>&1)
             problems+=("the shared tool configs could not be checked: $config_out")
-            fix="Read \`$WS/homma.toml\`; homma could not run against it, so this says nothing about repo \`$match_name\`."
+            add_fix "Read \`$WS/homma.toml\`; homma could not run against it, so this says nothing about repo \`$match_name\`."
         fi
     fi
 fi
