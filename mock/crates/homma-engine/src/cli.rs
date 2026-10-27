@@ -397,8 +397,10 @@ pub enum AgentOp {
     ///    activate when work touches that repo's tree.
     ///
     /// Repos without a `mockspace.toml` skip the first stage, not fail it.
-    /// Use `--skip-cargo-mock` to re-aggregate without re-rendering
-    /// per-repo, or `--skip-aggregate` to just rerun `cargo mock`.
+    /// Each `--skip-*` flag leaves the other two stages running.
+    /// `--skip-aggregate` also skips what follows the loop beside it:
+    /// writing the commit gate, the declared hooks and the merge of the
+    /// local settings.
     Regen {
         /// Single repo from `homma.toml`. Default: all repos.
         #[arg(long)]
@@ -406,15 +408,17 @@ pub enum AgentOp {
         /// Keep going after a per-repo regen failure.
         #[arg(long)]
         continue_on_error: bool,
-        /// Skip the per-repo `cargo mock` step; only run workspace
-        /// aggregation against the already-rendered per-repo `.claude/`.
+        /// Skip the per-repo `cargo mock` step; the shared tool configs
+        /// and the workspace aggregation still run, against the
+        /// already-rendered per-repo `.claude/`.
         #[arg(long)]
         skip_cargo_mock:   bool,
         /// Skip comparing each repo against the shared tool configs.
         #[arg(long)]
         skip_configs:      bool,
-        /// Skip the workspace aggregation step; only run per-repo
-        /// `cargo mock`.
+        /// Skip the workspace aggregation step, and with it the commit
+        /// gate, the declared hooks and the settings merge; per-repo
+        /// `cargo mock` and the shared tool configs still run.
         #[arg(long)]
         skip_aggregate:    bool,
     },
