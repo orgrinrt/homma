@@ -302,6 +302,26 @@ pub enum Command {
         #[command(subcommand)]
         op: Option<ToolsOp>,
     },
+    /// Which tool, script, verb, skill or rule does a thing, found by words.
+    ///
+    /// Say what you want to do in your own words: `homma what land a branch`. The answer is the things
+    /// that do it, each with the exact command and the words that matched, and what sits beside them.
+    /// Names, tags and summaries are matched by stem, synonym, prefix and misspelling. A footer counts
+    /// what could not be searched for want of a descriptor. Exits non-zero when nothing matches.
+    What {
+        /// What you want to do, in your own words.
+        #[arg(required = true, num_args = 1..)]
+        words:   Vec<String>,
+        /// How many answers to give.
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u32).range(1..))]
+        limit:   u32,
+        /// Only things of this kind. Repeatable.
+        #[arg(long = "kind", value_enum)]
+        kinds:   Vec<crate::cmd::what::doc::Kind>,
+        /// Leave out the mockspace commands, the one source that starts a process.
+        #[arg(long)]
+        no_mock: bool,
+    },
     /// A promoted tool of the content repository, `homma <tool> <verb> ...`.
     #[command(external_subcommand)]
     External(Vec<OsString>),
