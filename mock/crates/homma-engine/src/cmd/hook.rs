@@ -13,7 +13,8 @@ use homma_core::{Config, hooks};
 
 use crate::cli::{Cli, HookOp};
 use crate::cmd::Outcome;
-use crate::cmd::release::{Report, finish, resolve_repo};
+use crate::cmd::release::{Report, finish};
+use crate::cmd::util::resolve_repo;
 
 pub fn run(cli: &Cli, cfg: &Config, op: &HookOp) -> Result<Outcome> {
     match op {
