@@ -8,6 +8,9 @@
 mockspace_branch = "dev"
 
 project_name = "homma"
+
+# Files that only ever grow, so the append merge driver keeps both sides when two branches add to them.
+append_only = [".homma/milestones.toml"]
 crate_prefix = "homma"
 abi_version = 1
 mock_dir = "mock"
