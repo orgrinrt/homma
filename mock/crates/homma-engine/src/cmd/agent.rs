@@ -336,6 +336,16 @@ pub mod regen {
                  would do nothing"
             ));
         }
+        // The aggregate writes back only the rows it is handed, so a layer that
+        // could not be read would take its guards out of the clone and say
+        // nothing. The hook verbs refuse the same way; `homma local` and
+        // `hook doctor` still run, which is how the file is found and repaired.
+        if !opts.skip_aggregate && !cfg.layer_errors.is_empty() {
+            return Err(anyhow!(
+                "{}\nthe agent hooks are incomplete without it, so nothing is regenerated",
+                cfg.layer_errors.join("\n")
+            ));
+        }
 
         let workspace = &cfg.workspace.path;
 

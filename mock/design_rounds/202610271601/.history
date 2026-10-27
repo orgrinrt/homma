@@ -1,0 +1,50 @@
+a0345dc chore: lock the src changelist for round 202610271601
+a4b6736 test: count the runs of a layer hook on a real commit
+a358f50 chore: lock the doc changelist for round 202610271601
+0408e6e docs: file the topic on counting layer hook runs
+85cd2b1 chore: close design round 202610271548
+a1b32dd chore: lock the src changelist for round 202610271548
+47302cd fix: name the --only flag in the install help and refusal
+302fd7d chore: lock the doc changelist for round 202610271548
+574cd54 docs: file the topic on the install wording
+0ba7246 docs: regenerate the release deep dive
+4525daf chore: close design round 202610271534
+c5ac78e chore: lock the src changelist for round 202610271534
+4212f9e fix: leave homma's entrypoint in git's directory under git-shook
+6f428f1 chore: lock the doc changelist for round 202610271534
+f660201 docs: leave the entrypoint in git's directory under git-shook
+2e7859f docs: file the topic on the entrypoint left in git's directory
+692a889 docs: regenerate the release deep dive
+c903a89 chore: close design round 202610271515
+084edb2 chore: lock the src changelist for round 202610271515
+197cb2b feat: count the gate chain reached only with homma's entrypoint
+e17b3a8 chore: lock the doc changelist for round 202610271515
+495706b docs: count the gate chain reached only with homma's entrypoint
+47c46df docs: file the topic on the gate chain reaching the entrypoint
+a687042 test: record the green engine run for the foreign hook round
+2a014fa docs: regenerate the release deep dive
+d84fb9c chore: close design round 202610271455
+1d5cc9c chore: lock the src changelist for round 202610271455
+10a06a9 feat: report a foreign hook in git's own directory as not reached
+2d35f9a chore: lock the doc changelist for round 202610271455
+d942d88 docs: fail doctor on a foreign hook in git's own directory
+f4001c7 chore: file the seventh review topic for the shook round
+182199a docs: regenerate after the sixth review round
+8236bb1 chore: close design round 202610271435
+3d27c51 chore: lock the src changelist for round 202610271435
+c762eba fix: give the shook manifest back as it was when registration fails
+fc90d9b chore: lock the doc changelist for round 202610271435
+1bf1671 docs: say a failed registration gives the manifest back
+f40b2cd docs: say a failed registration gives the manifest back
+72302a3 chore: file the sixth review topic for the shook round
+8ee653f docs: regenerate after the fifth review round
+4964ecf chore: close design round 202610271416
+dcaec4c chore: lock the src changelist for round 202610271416
+ed734d8 fix: report the clone's own file as a note, not a stray
+85389b6 chore: lock the doc changelist for round 202610271416
+4c43ac8 docs: place the overlays and the clone's own file correctly
+16b1cfd chore: file the fifth review topic for the shook round
+c699733 chore: record the green run after merging dev
+1e428ce chore: regenerate generated files after merge
+8fdece8 Merge branch 'dev' of https://github.com/orgrinrt/homma into work/homma-shook
+89a8087 docs: regenerate after the third review round

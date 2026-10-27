@@ -42,6 +42,14 @@ pub struct Local {
     /// a tool without knowing it.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tools:    BTreeMap<String, toml::Table>,
+    /// `[hooks]` and `[agent.hooks]`, the clone's own layer of the two hooks
+    /// tables. Read by [`crate::layers`], which owns their shape; carried here
+    /// untyped so `deny_unknown_fields` accepts a file that declares them, the
+    /// way `Config` carries `paths` and `org` for the reader that owns those.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hooks:    Option<toml::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent:    Option<toml::Value>,
 }
 
 /// `[instance]`: what this clone is for.

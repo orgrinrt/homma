@@ -540,3 +540,18 @@ fn a_stored_config_is_the_one_its_name_says() {
         Err(LocalError::Parse { .. })
     ));
 }
+
+#[test]
+fn the_clones_own_hooks_layer_is_accepted_beside_its_own_tables() {
+    let l = Local::parse(
+        "[instance]\nwork = \"x\"\n[[hooks.post-merge]]\nrun = \"y\"\n\
+         [[agent.hooks.Stop]]\nrun = \"scripts/z\"\n",
+    )
+    .unwrap();
+    assert!(l.hooks.is_some());
+    assert!(l.agent.is_some());
+    // and a table nobody reads is still refused, which is the control
+    assert!(
+        Local::parse("[instance]\nwork = \"x\"\n[forges.github]\nkind = \"github\"\n").is_err()
+    );
+}

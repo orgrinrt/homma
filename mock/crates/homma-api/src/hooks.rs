@@ -217,6 +217,23 @@ impl Hooks {
         Ok(Self(map))
     }
 
+    /// Add another layer's entries after the ones already here, event by
+    /// event, in the order that layer wrote them. Nothing is replaced, so no
+    /// layer can drop another's entry, and the release gate every table
+    /// carries is not added a second time.
+    pub fn append(&mut self, layer: &Hooks) {
+        let gate = Self::gate();
+        for (event, entries) in &layer.0 {
+            let mine = self.0.entry(event.clone()).or_default();
+            for entry in entries {
+                if event == GATE_EVENT && *entry == gate && mine.contains(&gate) {
+                    continue;
+                }
+                mine.push(entry.clone());
+            }
+        }
+    }
+
     /// The default rows alone, for a caller with no manifest to read one from.
     pub fn defaults() -> &'static Hooks {
         static DEFAULTS: std::sync::LazyLock<Hooks> = std::sync::LazyLock::new(Hooks::default);
@@ -445,5 +462,51 @@ mod tests {
         assert!(STDIN_EVENTS.contains(&"pre-push"));
         assert!(!STDIN_EVENTS.contains(&"pre-commit"));
         assert!(!STDIN_EVENTS.contains(&"commit-msg"));
+    }
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+
+    fn parse(text: &str) -> Hooks {
+        toml::from_str::<Hooks>(text).unwrap()
+    }
+
+    fn runs(h: &Hooks, event: &str) -> Vec<String> {
+        h.entries(event)
+            .iter()
+            .map(|e| e.run().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_layers_entries_follow_the_bases_for_each_event_and_replace_none() {
+        let mut base = parse("[[pre-commit]]\nrun = \"base-a\"\n[[pre-push]]\nrun = \"base-p\"\n");
+        let local = parse("[[pre-commit]]\nrun = \"local-a\"\n[[post-merge]]\nrun = \"local-m\"\n");
+        base.append(&local);
+        assert_eq!(runs(&base, "pre-commit"), vec!["base-a", "local-a"]);
+        assert_eq!(
+            runs(&base, "pre-push"),
+            vec![GATE.to_string(), "base-p".to_string()],
+            "the gate stays first and the base's own follows"
+        );
+        assert_eq!(runs(&base, "post-merge"), vec!["local-m"]);
+    }
+
+    #[test]
+    fn a_layer_with_no_table_adds_neither_a_second_gate_nor_anything_else() {
+        let mut base = parse("[[pre-push]]\nrun = \"base-p\"\n");
+        let before = base.clone();
+        base.append(&Hooks::default());
+        assert_eq!(base, before);
+    }
+
+    #[test]
+    fn layers_apply_in_the_order_given() {
+        let mut t = parse("[[pre-commit]]\nrun = \"one\"\n");
+        t.append(&parse("[[pre-commit]]\nrun = \"two\"\n"));
+        t.append(&parse("[[pre-commit]]\nrun = \"three\"\n"));
+        assert_eq!(runs(&t, "pre-commit"), vec!["one", "two", "three"]);
     }
 }

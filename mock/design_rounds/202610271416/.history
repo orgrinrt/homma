@@ -1,0 +1,50 @@
+dcaec4c chore: lock the src changelist for round 202610271416
+ed734d8 fix: report the clone's own file as a note, not a stray
+85389b6 chore: lock the doc changelist for round 202610271416
+4c43ac8 docs: place the overlays and the clone's own file correctly
+16b1cfd chore: file the fifth review topic for the shook round
+c699733 chore: record the green run after merging dev
+1e428ce chore: regenerate generated files after merge
+8fdece8 Merge branch 'dev' of https://github.com/orgrinrt/homma into work/homma-shook
+89a8087 docs: regenerate after the third review round
+440b924 chore: close design round 202610271333
+c3af625 chore: lock the src changelist for round 202610271333
+84db1c2 fix: remove the adopted entrypoint copy and list every stray layer
+80137e2 chore: lock the doc changelist for round 202610271333
+16d075d docs: state the adopted entrypoint copy and the stray listing
+4aac25b chore: file the third review topic for the shook round
+1aa8c83 feat: add `homma what` to find the tool for a task
+76a83b1 docs: regenerate after the git-shook consent round
+dbbedc0 chore: close design round 202610271310
+0eecd15 chore: lock the src changelist for round 202610271311
+7bfc914 refactor: move `Reach` into its own module
+0ae74ed feat: scope the git-shook consent and keep a broken layer's reason
+5fd5194 chore: lock the doc changelist for the second shook review round
+858c954 docs: design the scoped git-shook consent and the coexistence order
+94b6ce8 docs: regenerate the release deep dive for the shook review round
+c26315d chore: close the shook review round
+29555de chore: lock the src changelist for the shook review round
+546be56 feat: drop the forced shook install and refuse regen on a broken layer
+723356f chore: lock the doc changelist for the shook review round
+e12b597 docs: design the hook verbs after the review of the shook round
+4a76f56 docs: regenerate the design documents for the shook round
+a54f16e chore: close the shook design round
+e7e16ce chore: lock the src changelist for the shook round
+638d180 feat: read hooks from every layer and register them with git-shook
+126b091 chore: lock the doc changelist for the shook round
+f92600b docs: design hooks chained through git-shook and read from every layer
+b8d373a feat: report agent surfaces by adoption and ask homma in the gate
+b66343a docs: file the repo scope every command keeps to as a topic
+a3e732a fix: neutralise the git template dir for every test repository
+b09d0c9 feat: add homma milestone base, mark, partition and stand-ins
+23f9b94 chore: regenerate the structure graph
+7e4139f feat: dispatch the content repository's tools as homma subcommands (#74)
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)
+7500149 chore: track the generated merge attributes (#77)
+a5dc5d9 feat: install a stored local config by name (#73)
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim

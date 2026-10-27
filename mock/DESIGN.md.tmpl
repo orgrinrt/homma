@@ -395,11 +395,21 @@ no, and a path that is anything else counts as before.
 
 The per-repository half is one entrypoint per git event in the repository's
 own hooks directory, written by homma and reading its entries off `[hooks]` in
-the workspace manifest, the release deep dive has the shape. mockspace owns
-`core.hooksPath` in every repository it manages and homma never contends for
-it: mockspace's gate runs the repository's own hook after its own checks, so
-git's own directory is the one place both reach, and homma writes there and
-nowhere else. The workspace hook stays one file in one place beside that,
+the workspace manifest and the overlay files it lists in `layers`, the release
+deep dive has the shape. Where the repository's hooks path is git-shook's,
+homma registers through git-shook instead, with a manifest it generates from
+every layer into the git directory, so a hook declared only in
+`homma.local.toml` is installed and runs. mockspace owns
+`core.hooksPath` in every repository it manages, except one where git-shook
+already holds it, and homma never contends for it: mockspace's gate runs the
+repository's own hook after its own checks, so git's own directory is the one
+place both reach, and homma writes there and nowhere else, unless git-shook
+holds the key. There each registers an entry of its own, mockspace's
+`00-mockspace` and homma's `homma`, and git-shook runs an event's entries in
+name order up to the first refusal, so the gate refuses before homma's entry
+has run, and a hook git-shook kept as `00-existing` runs ahead of both. Each
+registers with `install --yes --only` its own name, so running either is
+consent for its own manifest and for no other. The workspace hook stays one file in one place beside that,
 which matters because the per-repository wiring is exactly the thing that can
 be quietly absent.
 
@@ -706,6 +716,14 @@ own. Without it the hook sees every call. homma writes a wrapper for each row
 beside the aggregated ones, carrying the same line, so the rows are kept and
 removed by the same rule, and a guard a workspace wants in every session is a
 line in the manifest rather than a hand edit to a generated file.
+
+The table is read from the same layers as the git hooks: the manifest, then
+each overlay file its `layers` key names, `homma.local.toml` where the key is
+absent. A row in an overlay is appended after the manifest's for its event and
+replaces none of them, so a clone adds a guard of its own and cannot remove a
+shared one. A registration written from an overlay row is the clone's, which is
+where the regen already writes, so it lands in `settings.local.json` like every
+other.
 
 A call is narrowed by where it lands, and a hook sees it when any place it
 lands is under the hook's repository. For a tool writing a file that is the
