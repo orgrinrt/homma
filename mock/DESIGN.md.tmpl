@@ -502,7 +502,7 @@ exits non-zero, so a script can tell an answer from none. `--limit <n>` keeps th
 first n answers, five unless given and never fewer than one, `--kind <kind>` keeps one kind and may be
 repeated, and `--no-mock` leaves out the one source that starts a process.
 `--output json` gives the same answer as data: the query, the terms it was
-reduced to, the hits with their kind, name, command, summary, matches, score and
+reduced to, the hits with their kind, name, command, summary, matched, score and
 related names, and the gaps.
 
 The sources are the places that already hold what a tool is for, read where they
@@ -518,7 +518,9 @@ tool.
 - A script is a file under `.shared/scripts`, at any depth, that can be run: it is
   executable, or it starts with a shebang line, in which case its command is the
   interpreter the line names followed by the path. A file with neither is a
-  library and is not an answer, whatever its extension. A test is not a script: a
+  library and is not an answer, whatever its extension, and neither is one whose
+  header has a sentence beginning `Sourced`, which is how the hygiene directory's
+  convention has a file say that another file sources it. A test is not a script: a
   name with `_test` or `_fixture` in it or starting `test_`, a `test` runner beside
   its suite, and anything under a `tests` or `test` directory. A program's own
   source, under a `src` or `lib` directory, is a script only where it is
@@ -530,7 +532,7 @@ tool.
   whichever spelling the language gives it: `#` lines, a `"""` docstring or a
   `/** */` block. Its first line of prose is the summary, with a leading
   `<name> - ` or `<name>: ` taken off; a line that is only rules (`====`) is
-  skipped. A later line that begins with the script's own name is a usage line,
+  skipped. A line after that one which begins with the script's own name is a usage line,
   and its second word, when it is a plain lowercase word, names a verb the script
   takes. A line `tags: a, b` in the block adds tags. The directory the script
   sits in is its place, since `remote` and `hygiene` are how the workspace already
@@ -548,11 +550,12 @@ tool.
   as well as waiting, so it is the only one `--no-mock` leaves out, it is run for no
   repository outside the instance's `repos` where that is given, and a repository
   where it fails is named in the footer. The builtins are the same in every repository and are
-  listed once.
+  listed once. A project tool belongs to one repository and runs nowhere else, so
+  its place is that repository and its command is prefixed with `cd <repository> &&`.
 - A skill is a directory under `.shared/skills`, with its description. Its command
   is the slash command that loads it, `/<name>`.
-- A rule is a file under `.shared/rules`, with its `fires` line as the summary and
-  its topics as tags. Its command is `homma rules show <name>`.
+- A rule is a file under `.shared/rules`, with its `fires` line as the summary, its
+  topics as tags and its card as the rest of its text. Its command is `homma rules show <name>`.
 
 What a source cannot be read from is not an error. An absent directory is a source
 with nothing in it, a local config that does not parse widens nothing silently,
@@ -576,8 +579,8 @@ the rest of a script's header. A rule is named by a sentence, so the words of a
 rule's name count as its summary and not as a name. For each word the best way it
 matches in the best place wins, and a match is one of these, in order of what it
 is worth: the same stem; a word of the same group in the small table of synonyms
-(`free`, `trim`, `reclaim`, `clean` are one group, `done`, `finished`, `ended`
-another, and no word is in two groups once stemmed); a prefix of at least four letters; a misspelling, which is one edit for
+(`free`, `trim`, `reclaim`, `clean` are one group, `done`, `finished`, `complete`
+another, `end`, `ended`, `stop` a third, and no word is in two groups once stemmed); a prefix of at least four letters; a misspelling, which is one edit for
 a word of five to seven letters and two for eight or more, and for a shorter word
 only two letters swapped (`dsik` for `disk`), since any other edit in `bake`
 makes `make`. A word is worth more the fewer things it matches, by the usual
