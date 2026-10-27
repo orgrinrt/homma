@@ -136,6 +136,19 @@ fn a_layer_that_cannot_be_read_stops_the_verbs_and_not_the_rest_of_homma() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("error     "));
+    // the agent aggregate writes back only the rows it has, so it refuses
+    // naming the file rather than regenerating without the layer's guards
+    homma(&root)
+        .args(["agent", "regen", "--skip-cargo-mock", "--skip-configs"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("homma.local.toml"));
+    // and the control: with the aggregate skipped nothing needs the table, so
+    // the refusal is specific to the stage that would lose rows
+    homma(&root)
+        .args(["agent", "regen", "--skip-cargo-mock", "--skip-aggregate"])
+        .assert()
+        .stderr(predicate::str::contains("incomplete").not());
     // the manifest still loads, so `homma local` gets as far as its own reader,
     // which names the broken file itself; a refused manifest load would blame
     // homma.toml instead

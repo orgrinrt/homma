@@ -252,31 +252,17 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
     }
 }
 
-/// How an install reaches git.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Via {
-    /// Through git-shook where `core.hooksPath` is its dispatcher directory,
-    /// else as an entrypoint in git's own hooks directory.
-    Auto,
-    /// Through git-shook whatever the hooks path is, which has `git shook
-    /// install` take `core.hooksPath` and keep the hook that was there.
-    Shook,
-}
-
-/// An install by [`Via::Auto`]; see [`install_via`].
+/// Install the table: registered with git-shook where `core.hooksPath` is its
+/// dispatcher directory, else one entrypoint per event. Nothing forces the
+/// first: moving `core.hooksPath` onto git-shook's directory from a repository
+/// where another tool holds it is that tool's key to give up and not this one's.
 pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
-    install_via(root, hooks, Via::Auto)
-}
-
-/// Install the table: registered with git-shook where that is the way in, else
-/// one entrypoint per event.
-pub fn install_via(root: &Path, hooks: &Hooks, via: Via) -> Result<Installed, HookError> {
     let shook_path = hooks_path(root)?.is_some_and(|p| {
         super::shook::hooks_dir(root)
             .map(|d| d == p)
             .unwrap_or(false)
     });
-    if via == Via::Shook || shook_path {
+    if shook_path {
         return super::shook::install(root, hooks);
     }
     install_entrypoints(root, hooks)

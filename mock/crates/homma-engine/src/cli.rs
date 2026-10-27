@@ -652,12 +652,7 @@ pub enum HookOp {
     /// from every layer with it instead, and run `git shook install --yes`.
     Install {
         /// The repository's directory name under the workspace root.
-        repo:  String,
-        /// Register with git-shook whatever the hooks path is. `git shook
-        /// install` then takes `core.hooksPath` and keeps the hook that was
-        /// there, so it runs beside homma's.
-        #[arg(long)]
-        shook: bool,
+        repo: String,
     },
     /// Which `homma.*.toml` files the hooks are read from, which are named and
     /// absent, and which are present and named by nothing, never read. With a

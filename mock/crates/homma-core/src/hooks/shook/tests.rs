@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use homma_api::HookEntry;
 
 use super::*;
-use crate::hooks::install::{HookError, Reach, Via, install_via};
+use crate::hooks::install::{HookError, Reach, install};
 
 fn repo() -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
@@ -153,13 +153,12 @@ fn git_without_the_subcommand_says_git_shook_is_not_installed() {
 }
 
 #[test]
-fn via_shook_registers_even_where_no_hooks_path_is_set_and_auto_does_not() {
+fn install_writes_entrypoints_and_registers_nothing_where_git_shook_holds_no_key() {
     let d = repo();
-    let bin = tempfile::tempdir().unwrap();
-    fake_shook(bin.path(), &bin.path().join("log"));
-    // auto, with the hooks path unset, writes an entrypoint into git's own
-    // directory and registers nothing
-    let i = install_via(d.path(), &table(&[]), Via::Auto).unwrap();
+    // an empty table would make the all-Direct assertion vacuous, so it names
+    // an event, and the entrypoint it writes is the control
+    let i = install(d.path(), &table(&["pre-commit"])).unwrap();
+    assert!(i.written.iter().any(|w| w.event == "pre-commit"));
     assert!(i.written.iter().all(|w| w.reach == Reach::Direct));
     assert!(!d.path().join(".git/shook").exists());
 }

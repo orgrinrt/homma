@@ -20,8 +20,7 @@ pub fn run(cli: &Cli, cfg: &Config, op: &HookOp) -> Result<Outcome> {
     match op {
         HookOp::Install {
             repo,
-            shook,
-        } => install_cmd(cli, cfg, repo, *shook),
+        } => install_cmd(cli, cfg, repo),
         HookOp::Doctor {
             repo,
         } => doctor_cmd(cli, cfg, repo.as_deref()),
@@ -49,13 +48,12 @@ fn refused_for_layers(cfg: &Config) -> Option<Report> {
     })
 }
 
-fn install_cmd(cli: &Cli, cfg: &Config, repo: &str, shook: bool) -> Result<Outcome> {
+fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     if let Some(report) = refused_for_layers(cfg) {
         return finish(cli, report);
     }
     let (_, _, root) = resolve_repo(cfg, Some(repo))?;
-    let via = if shook { hooks::Via::Shook } else { hooks::Via::Auto };
-    match hooks::install_via(&root, &cfg.hooks, via) {
+    match hooks::install(&root, &cfg.hooks) {
         Ok(i) => {
             // one line per entrypoint, with how git reaches it; one that
             // nothing reaches makes the exit non-zero like a refusal, so a
