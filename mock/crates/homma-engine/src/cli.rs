@@ -669,7 +669,8 @@ pub enum HookOp {
     /// Write one entrypoint per event the `[hooks]` table names into the
     /// repository's own hooks directory, or refuse and say why. Where the
     /// repository's hooks path is git-shook's, register a manifest generated
-    /// from every layer with it instead, and run `git shook install --yes`.
+    /// from every layer with it instead, and run `git shook install --yes --only homma`,
+    /// so the yes covers that manifest and no tracked `shook.toml`.
     Install {
         /// The repository's directory name under the workspace root.
         repo: String,

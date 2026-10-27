@@ -256,6 +256,10 @@ fn a_git_shook_that_refuses_is_reported_with_what_it_said() {
     );
     let err = install_with(d.path(), &table(&[]), Some(bin.path())).unwrap_err();
     assert!(err.to_string().contains("no thanks"), "{err}");
+    assert!(
+        err.to_string().contains("install --yes --only homma"),
+        "the refusal names the command that was run: {err}"
+    );
 }
 
 #[test]

@@ -16,7 +16,7 @@
 //! tracked `shook.toml` files. A tracked manifest cannot carry a hook declared
 //! only in `homma.local.toml`, which is per clone and untracked; one in the git
 //! directory is per clone as well. Running `homma hook install` is the consent
-//! git-shook asks for, so the install runs `git shook install --yes` itself.
+//! git-shook asks for, so the install runs `git shook install --yes --only homma` itself.
 
 use std::path::{Path, PathBuf};
 
@@ -147,7 +147,7 @@ fn register(root: &Path, hooks: &Hooks, on_path: Option<&Path>) -> Result<Instal
              https://github.com/orgrinrt/git-shook, or put git-shook on PATH"
                 .to_string()
         } else {
-            format!("`git shook install --yes` refused: {said}")
+            format!("`git shook install --yes --only homma` refused: {said}")
         }));
     }
 
