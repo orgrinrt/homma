@@ -118,7 +118,7 @@ pub(crate) fn resolve_repo<'a>(
 /// The trunk and the release line for this repo: the workspace's working
 /// branch onto its public one, or the public one alone where the repo has no
 /// working branch, which is the shape of a crate released off `main`.
-fn branches_for<'a>(cfg: &'a Config, root: &Path) -> (&'a str, &'a str) {
+pub(crate) fn branches_for<'a>(cfg: &'a Config, root: &Path) -> (&'a str, &'a str) {
     let public = cfg.defaults.public_branch.as_str();
     let working = cfg.defaults.working_branch.as_str();
     // a fresh clone holds `origin/dev` and no local `dev`, and it still
