@@ -1,3 +1,8 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+
 use std::fs;
 
 use super::*;
@@ -285,6 +290,9 @@ fn the_launcher_pin_is_a_top_level_key_of_the_toml_and_nothing_else() {
     assert!(!pinned("mock_dir = \"mock\"\n"));
     assert!(!pinned("[t]\nmockspace_branch = \"dev\"\n"));
     assert!(!pinned("mockspace_branch = \n"));
+    // The launcher reads a pin only where its value is a string.
+    assert!(!pinned("mockspace_branch = 3\n"));
+    assert!(!pinned("mockspace_rev = true\n"));
 }
 
 #[test]
@@ -318,4 +326,24 @@ fn the_root_toml_wins_over_the_one_under_the_mock_dir() {
     fs::create_dir_all(only.join("mock")).unwrap();
     fs::write(only.join("mock/mockspace.toml"), b"mock_dir = \"under\"\n").unwrap();
     assert_eq!(probe("s", &only).surfaces.mock_dir_name, "under");
+}
+
+#[test]
+fn a_mock_dir_is_read_as_the_toml_reads_it() {
+    // The two spellings the gate's awk once handled by hand: a literal string,
+    // and a key under an indented table, which is not the top-level one.
+    let dir = tempfile::tempdir().unwrap();
+    let literal = dir.path().join("a");
+    fs::create_dir_all(literal.join("linux")).unwrap();
+    fs::write(literal.join("mockspace.toml"), "mock_dir = 'linux'\n").unwrap();
+    assert_eq!(probe("a", &literal).surfaces.mock_dir_name, "linux");
+
+    let indented = dir.path().join("b");
+    fs::create_dir_all(&indented).unwrap();
+    fs::write(
+        indented.join("mockspace.toml"),
+        "mockspace_branch = \"dev\"\n  [t]\n  mock_dir = \"elsewhere\"\n",
+    )
+    .unwrap();
+    assert_eq!(probe("b", &indented).surfaces.mock_dir_name, "mock");
 }

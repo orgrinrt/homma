@@ -214,14 +214,6 @@ if [ -z "$match_path" ]; then
     exit 0
 fi
 
-# The mockspace tool repo is not a mockspace *consumer*. Its mock/ is v2
-# self-hosting and its v1 src is intentionally ungated (no core.hooksPath),
-# so it always scores partial adoption by design, not drift. Skip the gate
-# for it, identified by its own Cargo package name.
-if [ "$match_name" = "mockspace" ] \
-    && grep -qE '^name[[:space:]]*=[[:space:]]*"mockspace"[[:space:]]*$' "$match_path/Cargo.toml" 2>/dev/null; then
-    exit 0
-fi
 # Which of mockspace's surfaces a repo has, and whether it adopted mockspace at
 # all, which is whether it carries a `mockspace.toml`. A repo without the toml
 # has not adopted mockspace, whatever else it shows, and the command the drift
@@ -257,8 +249,13 @@ if [ -f "$WS/homma.toml" ]; then
     if ! command -v homma >/dev/null 2>&1; then
         problems+=("homma is not on PATH, so the mockspace surfaces and the shared tool configs could not be checked")
     else
-        status_out=$(homma --dir "$WS" agent status --repo "$match_name" --output json 2>&1)
+        # The answer is stdout and nothing else. `homma` is the launcher, which
+        # writes to stderr on a run that succeeds when it is offline past its
+        # cache, builds the engine for a moved pin or updates itself, so stderr
+        # is left out of the answer and shown only when the answer failed.
+        status_out=$(homma --dir "$WS" agent status --repo "$match_name" --output json 2>/dev/null)
         status_rc=$?
+        status_err=""
         facts=""
         if [ "$status_rc" -eq 0 ]; then
             facts=$(printf '%s' "$status_out" | jq -r '.repos[0].surfaces | [.mockspace_toml, .mock_dir_name, .mock_dir, .launcher_pin] | @tsv' 2>/dev/null)
@@ -270,7 +267,8 @@ if [ -f "$WS/homma.toml" ]; then
         esac
 
         if [ "$status_rc" -ne 0 ]; then
-            problems+=("the mockspace surfaces could not be read: $status_out")
+            status_err=$(homma --dir "$WS" agent status --repo "$match_name" --output json 2>&1)
+            problems+=("the mockspace surfaces could not be read: $status_err")
             fix="Read \`$WS/homma.toml\`; homma could not report on repo \`$match_name\`."
         elif [ "$has_toml" = "true" ]; then
             hooks_path="$(git -C "$match_path" config --get core.hooksPath 2>/dev/null)"

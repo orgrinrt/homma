@@ -33,7 +33,8 @@ target/
 # not allow: invisible to review, absent from history, and deleted by a clean
 # with nothing left behind.
 #
-# The source is `mock/agent/`, which is tracked. Committing the render as well
+# The source is mockspace's builtin rules and whatever a repo adds under its
+# mock directory's `agent/`, which is tracked. Committing the render as well
 # would be a second copy of the same content, drifting whenever somebody
 # regenerates and forgets.
 # No trailing slashes. A `dir/` pattern matches only a path that exists as a

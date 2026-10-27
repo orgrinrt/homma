@@ -164,13 +164,14 @@ pub mod status {
     }
 
     /// Whether the toml carries a launcher pin, a top-level `mockspace_version`,
-    /// `mockspace_branch`, `mockspace_rev` or `mockspace_tag`. A toml that does
+    /// `mockspace_branch`, `mockspace_rev` or `mockspace_tag` with a string value,
+    /// the only value the launcher reads. A toml that does
     /// not parse carries none, and a key under a table is not a pin.
     fn has_launcher_pin(local: &Path) -> bool {
         read_mockspace_toml(local).is_some_and(|t| {
             ["mockspace_version", "mockspace_branch", "mockspace_rev", "mockspace_tag"]
                 .iter()
-                .any(|k| t.contains_key(*k))
+                .any(|k| t.get(*k).is_some_and(toml::Value::is_str))
         })
     }
 
