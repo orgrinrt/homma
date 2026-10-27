@@ -1,0 +1,50 @@
+49f7129 chore: lock the eighth source changelist
+d1a83d0 fix: read sourcing lines of scripts only in `homma what`
+f683449 chore: close the seventh `homma what` round
+182f310 chore: lock the seventh source changelist
+cf584ae fix: skip sourced libraries in `homma what`, calibrate its related cut
+7761163 chore: close the sixth `homma what` round
+057a406 chore: lock the sixth source changelist
+b4473e7 fix: keep the subject of `note` and test the weights of `homma what`
+5d47a8a chore: close the fifth `homma what` round
+d15cd0d chore: lock the fifth source changelist
+bc6452e fix: test the weights of `homma what` and leave out catalogue suites
+d029765 chore: close the fourth homma what round
+d60f693 chore: lock the fourth source changelist
+b8a173a fix: make `homma what` need both words of two and test its ranking
+63e377d chore: close the third homma what round
+f4a97da chore: lock the third source changelist
+a0c98a1 fix: name the verbs a bare tool wants in `homma what`
+b22e7e8 chore: close the second homma what round
+d09e425 chore: lock the second source changelist
+46be8dd fix: make homma what name the verb and skip sourced libraries
+480cf0f docs: settle the script, rule and mockspace answers of homma what
+f0a3add chore: close the homma what round
+4c88ae9 chore: lock the source changelist
+5291357 feat: add the second review fixes to homma what
+0dc1d0d docs: settle what a script is for `homma what`
+39c0934 chore: deprecate the changelists to reopen the round
+2efeacb chore: lock the source changelist
+9726054 feat: let `homma what` find the data, voice and asked-before tools
+2aac453 fix: harden `homma what` after its review
+b1cb699 docs: amend the design of `homma what` after its review
+e0ffd53 chore: deprecate the changelists of the round to reopen it
+99e3a3e chore: lock the src changelist of the round
+a55c990 feat: add `homma what` to find the tool that does a thing
+f6b4b0f docs: design `homma what`, which finds the tool that does a thing
+b8d373a feat: report agent surfaces by adoption and ask homma in the gate
+b66343a docs: file the repo scope every command keeps to as a topic
+a3e732a fix: neutralise the git template dir for every test repository
+b09d0c9 feat: add homma milestone base, mark, partition and stand-ins
+23f9b94 chore: regenerate the structure graph
+7e4139f feat: dispatch the content repository's tools as homma subcommands (#74)
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)
+7500149 chore: track the generated merge attributes (#77)
+a5dc5d9 feat: install a stored local config by name (#73)
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
