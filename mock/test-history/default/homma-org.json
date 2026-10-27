@@ -3,19 +3,19 @@
   "flavour": "",
   "member": "homma-org",
   "green": {
-    "full": "1b94d1d69af34388167f38154066bda867c7ab7196c5c8f8f17333a4de8ac2be",
+    "full": "c6d20b21540d2499bad1d4e1ee26f41624ea0156fe42b868c7a5c161a2e09875",
     "own": {
       "homma-api": "5e7519dcf7a7c29e05241d38eeff5d7f80678635b35e794efa070de5fb81b241",
-      "homma-core": "b5fe7354b4008a688a5bb0d872c27d5ecfb2a1d03d8b8175e161fbb4035d60e1",
+      "homma-core": "fb8b3fac50fe5717b7486f0a6038cea796a366ec1fe15339c6cb08b9fd4b8b4b",
       "homma-org": "6e4f4a91202aba2b0a4203bc87f24cfc5fb648c0fb44bfad67aa2f42c36ed99f"
     }
   },
   "tests": {},
   "bins": {
-    "homma-org": "1dce9e454d359699175911d3c48e336b94f9154ae43da70a85c241923a4414fd",
-    "homma-org::agents_corpus": "5d4bc6ff770833a87897716f9fd779c3261497b6cb3f7120eeb129ea0fb045d8",
-    "homma-org::provisioned_commit": "dc7c9714cf20fe85b11857fc94d2e1181d368dc259978c9fa182a22859bcdb34",
-    "homma-org::rules_corpus": "0c5f5e347c11ba5b384b31fb0a62e3d1530427826265698ff07907d115cdd5b9",
-    "homma-org::skills_corpus": "5d6e297ad9164bc4db421e8f5959ee929423c93b5b447547c4c8d5282b8f0609"
+    "homma-org": "8dfb25724d9f73368041edf73ec3e6d68e7c871622a31f18f7dc675fe23502a4",
+    "homma-org::agents_corpus": "f5ea17fa7bcd53da9d122c472bab4c03c52aeb438051248717581968e6b79cd5",
+    "homma-org::provisioned_commit": "fa045bee2e112bc4ddd63c590927e1b7c931d0423c9b19e7db3730b475c50fdf",
+    "homma-org::rules_corpus": "7bf97837b34bcdf1ca5b49b937ea73b2b10ef3fd9cc3964fdd929544ca07dfd9",
+    "homma-org::skills_corpus": "50bcc7286036d66da975e00b40e2f5c8845f1a153abfcf815d785543d53c0bcd"
   }
 }
