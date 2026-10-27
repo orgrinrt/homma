@@ -180,8 +180,9 @@ pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String
     };
     // A grandchild that kept the pipe open outlives the child, so the reads get a second and no more.
     let grace = Duration::from_secs(1).min(limit.saturating_sub(start.elapsed()));
+    let until = Instant::now() + grace;
     let (out, out_ended) = out.take(grace);
-    let (err, err_ended) = err.take(grace);
+    let (err, err_ended) = err.take(until.saturating_duration_since(Instant::now()));
     // A pipe still open after the grace is held by something the child left running, which is ended.
     if !(out_ended && err_ended) {
         end(&mut child);

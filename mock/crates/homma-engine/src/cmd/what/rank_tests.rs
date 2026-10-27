@@ -49,10 +49,10 @@ fn a_thing_matching_too_few_terms_is_not_an_answer() {
 #[test]
 fn a_name_outweighs_a_summary() {
     let docs = vec![
-        doc(Kind::Script, "tidy", "land things somewhere", &[]),
+        doc(Kind::Script, "a-tidy", "land things somewhere", &[]),
         doc(Kind::Script, "land-it", "does something", &[]),
     ];
-    assert_eq!(names(&docs, "land"), ["land-it", "tidy"]);
+    assert_eq!(names(&docs, "land"), ["land-it", "a-tidy"]);
 }
 
 #[test]
@@ -161,14 +161,30 @@ fn the_verb_that_matched_best_is_named() {
 
 #[test]
 fn the_best_way_a_word_matches_is_the_one_kept() {
-    let docs = vec![doc(Kind::Tool, "x", "worktrees of the clone", &["worktree"])];
+    // The body is read before the place, so a tie between them would keep the body.
+    let mut d = doc(Kind::Tool, "x", "unrelated", &[]);
+    d.body = "worktree".to_string();
+    d.place = vec!["worktree".to_string()];
+    let docs = vec![d];
     let r = rank(&docs, &terms("worktree"));
     assert_eq!(r[0].matches.len(), 1);
     assert_eq!(
         r[0].matches[0].field,
-        super::rank::Field::Tag,
-        "the same stem in a tag beats the same stem in a summary"
+        super::rank::Field::Place,
+        "the same stem in the place beats the same stem in the body"
     );
+}
+
+#[test]
+fn the_share_of_the_query_a_thing_covers_decides_between_equal_sums() {
+    // Both sum to twelve fields-worth: `alpha-beta` is two terms in its name, `zzz` three in its tags.
+    // The third term is carried by `lone` so every term is as rare as the others.
+    let docs = vec![
+        doc(Kind::Tool, "alpha-beta", "x", &[]),
+        doc(Kind::Tool, "zzz", "x", &["alpha", "beta", "gamma"]),
+        doc(Kind::Tool, "lone", "gamma", &[]),
+    ];
+    assert_eq!(names(&docs, "alpha beta gamma")[0], "zzz");
 }
 
 #[test]

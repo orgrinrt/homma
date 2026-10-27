@@ -116,6 +116,7 @@ pub fn is_test(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name);
     name.contains("_test")
         || name.contains("_fixture")
+        || name.contains("_catalogue")
         || stem == "test"
         || name.starts_with("test_")
 }

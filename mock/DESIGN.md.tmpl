@@ -521,7 +521,7 @@ tool.
   library and is not an answer, whatever its extension, and neither is one whose
   header has a sentence beginning `Sourced`, which is how the hygiene directory's
   convention has a file say that another file sources it. A test is not a script: a
-  name with `_test` or `_fixture` in it or starting `test_`, a `test` runner beside
+  name with `_test`, `_fixture` or `_catalogue` in it or starting `test_`, a `test` runner beside
   its suite, and anything under a `tests` or `test` directory. A program's own
   source, under a `src` or `lib` directory, is a script only where it is
   executable. A symbolic link is not followed, whether to a file or to a
@@ -549,7 +549,8 @@ tool.
   it runs and the whole process group ended when it overruns, the limit counting the time spent reading
   as well as waiting, so it is the only one `--no-mock` leaves out, it is run for no
   repository outside the instance's `repos` where that is given, and a repository
-  where it fails is named in the footer. The builtins are the same in every repository and are
+  where it fails is named in the footer. A listing is a run of `cargo mock`, which refreshes the
+  hooks of its own repository as any run of it does, a side effect of this source and of no other. The builtins are the same in every repository and are
   listed once. A project tool belongs to one repository and runs nowhere else, so
   its place is that repository and its command is prefixed with `cd <repository> &&`.
 - A skill is a directory under `.shared/skills`, with its description. Its command
@@ -567,7 +568,7 @@ tools failed`. The footer is the way a gap in the tooling becomes visible to the
 agent that hit it, and it is printed whether or not anything matched.
 
 How a query finds a thing. The text is lowercased, split into words at everything
-that is not a letter or a digit, and the filler is dropped, as it is or once stemmed, a short fixed list of
+that is not a letter or a digit, a single letter is dropped, and so is the filler, as it is or once stemmed, a short fixed list of
 the words that carry no subject (`a`, `the`, `to`, `for`, `use`, `what`, `which`,
 `how`, `do`, `i`, `my`, `this`, and the like). What remains is reduced to stems
 the same way the sources' text is, by taking off a plural, then `ing` or `ed`, so a root such as `speed` is cut the same bare or plural, and the

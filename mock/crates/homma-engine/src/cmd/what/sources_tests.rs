@@ -408,3 +408,20 @@ fn an_absent_tools_directory_is_a_gap_and_not_an_error() {
     assert!(g.docs.is_empty());
     assert_eq!(g.gaps[0].what, "no tools/ here: tools not searched");
 }
+
+#[test]
+fn a_catalogue_suite_is_not_a_script() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    plant(
+        dir.path(),
+        "a/guard_catalogue.sh",
+        "#!/bin/sh\n# guard catalogue - cases kept red\n",
+        true,
+    );
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["one"]
+    );
+}
