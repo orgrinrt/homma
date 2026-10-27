@@ -44,6 +44,7 @@ pub mod gates;
 pub mod hook;
 pub mod local;
 pub mod migrate;
+pub mod milestone;
 pub mod org;
 pub mod registry;
 pub mod release;
@@ -344,6 +345,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         Command::Release {
             op,
         } => release::run(&cli, op),
+        Command::Milestone {
+            op,
+        } => milestone::run(&cli, op),
         Command::Hook {
             op,
         } => {

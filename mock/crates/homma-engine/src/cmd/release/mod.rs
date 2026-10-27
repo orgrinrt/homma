@@ -21,6 +21,7 @@ use homma_store::Store;
 use serde::Serialize;
 
 use crate::cli::{Cli, ReleaseOp};
+use crate::cmd::util::{branches_for, resolve_repo};
 use crate::cmd::{Outcome, config_path, load_config};
 use crate::output::{HumanRender, emit};
 
@@ -62,70 +63,6 @@ fn store(cli: &Cli) -> Store {
         .join(".data")
         .join("homma");
     Store::open(dir)
-}
-
-/// The repo named, or the one the working directory is inside, with its
-/// root made absolute against the workspace.
-pub(crate) fn resolve_repo<'a>(
-    cfg: &'a Config,
-    name: Option<&str>,
-) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
-    let root_of =
-        |r: &RepoConfig| crate::cmd::util::resolve_local_path(&cfg.workspace.path, &r.local_path);
-    if let Some(n) = name {
-        return cfg
-            .repos
-            .get_key_value(n)
-            .map(|(k, r)| (k.as_str(), r, root_of(r)))
-            .ok_or_else(|| anyhow!("`{n}` is not a repository in this workspace"));
-    }
-    let here = std::env::current_dir()?;
-    let here = here.canonicalize().unwrap_or(here);
-    let containing = |dir: &Path| {
-        cfg.repos
-            .iter()
-            .map(|(n, r)| (n.as_str(), r, root_of(r)))
-            .filter(|(_, _, root)| {
-                let p = root.canonicalize().unwrap_or_else(|_| root.clone());
-                dir.starts_with(&p)
-            })
-            .max_by_key(|(_, _, root)| root.components().count())
-    };
-    if let Some(found) = containing(&here) {
-        return Ok(found);
-    }
-    // a worktree sits beside the clones rather than under one, and a hook
-    // runs with it as the working directory; the clone it hangs off is the
-    // parent of the common git directory
-    let common = std::process::Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .current_dir(&here)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
-    if let Some(clone) = common.as_deref().and_then(Path::parent) {
-        let clone = clone.canonicalize().unwrap_or_else(|_| clone.to_path_buf());
-        if let Some(found) = containing(&clone) {
-            return Ok(found);
-        }
-    }
-    Err(anyhow!(
-        "the working directory is not inside a workspace repository; name one"
-    ))
-}
-
-/// The trunk and the release line for this repo: the workspace's working
-/// branch onto its public one, or the public one alone where the repo has no
-/// working branch, which is the shape of a crate released off `main`.
-fn branches_for<'a>(cfg: &'a Config, root: &Path) -> (&'a str, &'a str) {
-    let public = cfg.defaults.public_branch.as_str();
-    let working = cfg.defaults.working_branch.as_str();
-    // a fresh clone holds `origin/dev` and no local `dev`, and it still
-    // releases by merging, so the remote ref counts as the branch being there
-    let here = homma_core::release::git::sha(root, working).is_ok();
-    let there = homma_core::release::git::sha(root, &format!("origin/{working}")).is_ok();
-    if here || there { (working, public) } else { (public, public) }
 }
 
 /// The branches, refusing where the working branch is on origin and not

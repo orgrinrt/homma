@@ -11,7 +11,7 @@
   "tests": {
     "homma-api::compile_fail": {
       "a_relative_path_cannot_reach_the_git_contract": {
-        "secs": 20.9,
+        "secs": 12.8,
         "passed": true,
         "passed_at": "d3aa799a057e98b63b04864b9c58c9baaec3aac7eb09086943cdee93f9606907"
       }
