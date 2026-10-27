@@ -57,6 +57,7 @@ pub mod stray_targets;
 pub mod tools;
 pub(crate) mod util;
 pub mod verify;
+pub mod what;
 
 /// Outcome of dispatching a command body.
 ///
@@ -400,6 +401,15 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     words,
                 }) => tools::run_tool(&root, name, words, tools::Asked::ByName),
             }
+        },
+        Command::What {
+            words,
+            limit,
+            kinds,
+            no_mock,
+        } => {
+            let root = tools::root(&config_path(&cli));
+            what::run(&root, words, *limit, kinds, *no_mock, cli.output)
         },
         Command::External(words) => {
             let root = tools::root(&config_path(&cli));
