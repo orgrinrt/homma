@@ -33,3 +33,22 @@ fn truncate_walks_back_to_char_boundary() {
     assert!(out.ends_with("..."));
     assert!(out.is_char_boundary(out.len() - 3));
 }
+
+#[test]
+fn a_mock_dir_with_no_toml_has_nothing_to_run() {
+    // mockspace's own tree: `mock/` and no `mockspace.toml`. The stage keyed
+    // on the directory would run `cargo mock` there and fail.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("mock")).unwrap();
+    assert_eq!(nothing_to_run(dir.path()), Some("no mockspace.toml"));
+}
+
+#[test]
+fn a_declared_mock_dir_with_a_toml_has_something_to_run() {
+    // The control: sodapop's `linux/` with its toml must not be skipped, or
+    // the test above would pass for a stage that skips everything.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("linux")).unwrap();
+    std::fs::write(dir.path().join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
+    assert_eq!(nothing_to_run(dir.path()), None);
+}

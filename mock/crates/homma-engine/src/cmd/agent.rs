@@ -49,12 +49,14 @@ pub mod status {
     #[derive(Debug, Clone, Copy, Serialize)]
     #[serde(rename_all = "snake_case")]
     pub enum AgentState {
-        /// `mock/agent/` templates present and rendered into both `.claude/`
-        /// and `.github/`, plus the `cargo mock` alias is configured.
+        /// The mock directory is there and rendered into both `.claude/` and
+        /// `.github/instructions/`, and the git hooks are wired.
         Configured,
-        /// Some surfaces exist but not all. Worth running `homma agent regen`.
+        /// Adopted, but some surfaces are missing. Worth running `homma agent
+        /// regen`.
         Partial,
-        /// No `mock/` directory at all. The repo has not adopted mockspace yet.
+        /// No `mockspace.toml`. The repo has not adopted mockspace, whether or
+        /// not it has a mock directory.
         NotConfigured,
         /// `local_path` does not exist on the filesystem.
         Missing,
@@ -422,8 +424,8 @@ pub mod regen {
             // Stage 1: cargo mock.
             let cargo_mock = if opts.skip_cargo_mock {
                 StageStatus::Skipped("--skip-cargo-mock".into())
-            } else if status::mockspace_toml_path(&local).is_none() {
-                StageStatus::Skipped("no mockspace.toml".into())
+            } else if let Some(why) = nothing_to_run(&local) {
+                StageStatus::Skipped(why.into())
             } else {
                 match invoke_cargo_mock(&local) {
                     Ok(()) => StageStatus::Success,
@@ -632,6 +634,16 @@ pub mod regen {
         })
     }
 
+    /// Why `cargo mock` has nothing to run in this repo, when it has not.
+    /// Adoption is the `mockspace.toml`, so a mock directory alone is no
+    /// reason to run it: mockspace's own tree has one and answers "no
+    /// mockspace.toml found".
+    fn nothing_to_run(local: &Path) -> Option<&'static str> {
+        status::mockspace_toml_path(local)
+            .is_none()
+            .then_some("no mockspace.toml")
+    }
+
     /// Run `cargo mock` from the repo root. Errors carry the exit status +
     /// scrubbed stderr summary.
     fn invoke_cargo_mock(dir: &Path) -> Result<()> {
@@ -731,8 +743,6 @@ pub mod regen {
     #[cfg(test)]
     mod tests;
 }
-
-// Tests for `status::probe` live inside the `status` module (see above).
 
 /// The places this pass may not aggregate into.
 ///
