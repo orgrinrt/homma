@@ -222,12 +222,11 @@ if [ "$match_name" = "mockspace" ] \
     exit 0
 fi
 
-# Decide whether the repo has *partially* adopted mockspace.
-# A repo with NO mockspace surface (no mock dir, no alias, no
-# core.hooksPath) has not adopted mockspace at all; the gate stays
-# out of the way to avoid enforcing adoption on unrelated repos.
-# Only flag repos where some surfaces exist but others are missing,
-# i.e. actual drift.
+# Decide whether a repo that has adopted mockspace, which is whether it carries
+# a `mockspace.toml`, has only some of its surfaces. A repo without the toml
+# is not checked for drift at all, and the gate stays out of the way to avoid
+# enforcing adoption on unrelated repos. Of one that has the toml, only flag
+# some surfaces present and others missing, i.e. actual drift.
 has_mock_dir=0
 has_alias=0
 has_pin=0
@@ -307,8 +306,8 @@ adoption=$((has_mock_dir + has_config + has_hooks_path))
 problems=()
 fix=""
 
-# Zero adoption is a repo that never opted in and full adoption is one with
-# nothing to say. Anything between the two is drift.
+# Of a repo with the toml, no surface is one that never finished opting in and
+# all of them is one with nothing to say. Anything between the two is drift.
 if [ "$has_toml" -eq 1 ] && [ "$adoption" -ne 0 ] && [ "$adoption" -ne 3 ]; then
     [ "$has_mock_dir" -eq 0 ] && \
         problems+=("$match_path/$mock_dir_name/ is missing but other mockspace surfaces are present")
@@ -548,7 +547,7 @@ pub(crate) mod tests {
     // End-to-end bash-execution tests for the rendered gate script. The
     // script reads JSON from stdin via `jq`, walks the workspace's
     // member-repo table to find a covering repo, then probes that
-    // repo's mockspace adoption surfaces (`mock/` dir, `cargo mock`
+    // repo's mockspace adoption surfaces (the declared mock dir, `cargo mock`
     // alias under `[alias]` in `.cargo/config.toml`, and
     // `core.hooksPath` git config). All exit codes are 0; the
     // allow/deny signal travels through stdout's JSON payload.
@@ -847,6 +846,54 @@ pub(crate) mod tests {
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "no toml means no adoption; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_a_toml_under_the_mock_dir_counts_as_adopting() {
+        // ikiuni keeps its config at `mock/mockspace.toml`. Drift fixture with
+        // the pin under `mock/` and no hooks: the gate must see the toml and
+        // deny, not treat the repo as unadopted.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "ikiuni", true, AliasShape::None, false);
+        fs::write(
+            repo.join("mock/mockspace.toml"),
+            "mockspace_branch = \"dev\"\n",
+        )
+        .unwrap();
+        let repos = vec![("ikiuni".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "a toml under mock/ is adoption, and the hooks are missing; got: {out}",
+        );
+        assert!(out.contains("core.hooksPath"), "got: {out}");
+    }
+
+    #[test]
+    fn gate_e2e_the_root_toml_wins_over_the_one_under_the_mock_dir() {
+        // Both exist and disagree about `mock_dir`; the root one is the one
+        // read, as the status probe reads it.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "sodapop", true, AliasShape::None, true);
+        fs::create_dir_all(repo.join("linux")).unwrap();
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mock_dir = \"linux\"\nmockspace_branch = \"dev\"\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("mock/mockspace.toml"),
+            "mock_dir = \"elsewhere\"\n",
+        )
+        .unwrap();
+        let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "the root toml declares linux, which exists; got: {out}",
         );
     }
 

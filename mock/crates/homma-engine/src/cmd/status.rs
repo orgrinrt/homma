@@ -376,6 +376,10 @@ impl StatusReport {
         writeln!(out, "agent surfaces:")?;
         let mut short = false;
         for a in show {
+            if matches!(a.state, AgentState::Missing) {
+                writeln!(out, "  {} not on disk", a.repo)?;
+                continue;
+            }
             if matches!(a.state, AgentState::NotConfigured) {
                 writeln!(out, "  {} no mockspace", a.repo)?;
                 continue;
@@ -384,7 +388,7 @@ impl StatusReport {
             if missing.is_empty() {
                 writeln!(out, "  {} ok", a.repo)?;
             } else {
-                short = matches!(a.state, AgentState::Partial) || short;
+                short = true;
                 writeln!(out, "  {} missing {}", a.repo, missing.join(", "))?;
             }
         }
@@ -864,13 +868,15 @@ mod tests {
     #[test]
     fn a_repo_not_on_disk_is_not_told_to_regenerate() {
         // `regen` skips a path that does not exist, so the line naming it
-        // would send somebody to a command that does nothing for that repo.
+        // would send somebody to a command that does nothing for that repo,
+        // and the surfaces probed in a path that is not there say nothing.
         let text = rendered(&with(
             vec![agent_state("kamu", AgentState::Missing, false)],
             empty_configs(),
             Vec::new(),
         ));
-        assert!(text.contains("kamu missing"), "{text}");
+        assert!(text.contains("kamu not on disk"), "{text}");
+        assert!(!text.contains("kamu missing"), "{text}");
         assert!(!text.contains("homma agent regen"), "{text}");
     }
 
