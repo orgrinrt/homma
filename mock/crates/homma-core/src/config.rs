@@ -84,7 +84,7 @@ pub struct Config {
     #[serde(default)]
     pub hooks: homma_api::Hooks,
 
-    /// `layers`: the overlay files in the workspace root that `[hooks]` and
+    /// `layers`: the overlay files beside the manifest that `[hooks]` and
     /// `[agent.hooks]` are also read from, appended after this file's own in
     /// list order. A declared list and not a glob of `homma.*.toml`; see
     /// [`crate::layers`]. [`Config::from_path`] applies them, so a caller

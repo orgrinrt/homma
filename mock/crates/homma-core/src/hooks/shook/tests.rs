@@ -111,7 +111,7 @@ fn an_install_writes_the_manifest_and_has_git_shook_register_it() {
 }
 
 #[test]
-fn registering_removes_the_entrypoint_this_tool_wrote_and_nobody_elses() {
+fn registering_leaves_the_entrypoint_this_tool_wrote_and_records_it_as_declined() {
     let d = repo();
     let bin = tempfile::tempdir().unwrap();
     fake_shook(bin.path(), &bin.path().join("log"));
@@ -124,12 +124,22 @@ fn registering_removes_the_entrypoint_this_tool_wrote_and_nobody_elses() {
     install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).unwrap();
 
     assert!(
-        !own.join("post-merge").exists(),
-        "the stale entrypoint of ours is gone"
+        own.join("post-merge").is_file(),
+        "ours stays, so git still finds the table once git-shook gives the key up"
+    );
+    let declined = d.path().canonicalize().unwrap().join(".git/shook/declined");
+    assert_eq!(
+        std::fs::read_to_string(declined.join("post-merge")).unwrap(),
+        crate::hooks::script("post-merge"),
+        "and it is recorded as declined, which is what the gate's chain reads to skip it"
     );
     assert!(
         own.join("pre-push").is_file(),
         "a hook that is not ours stays"
+    );
+    assert!(
+        !declined.join("pre-push").exists(),
+        "and is not recorded: the chain must still run it"
     );
 }
 

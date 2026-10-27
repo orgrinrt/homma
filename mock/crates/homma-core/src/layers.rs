@@ -6,7 +6,7 @@
 //! two hooks tables and nothing else. `homma.toml` is the base, each overlay
 //! appends to it in list order, and no layer replaces another's entries.
 //!
-//! An overlay is `homma.<name>.toml` in the workspace root. `homma.local.toml`
+//! An overlay is `homma.<name>.toml` beside the manifest. `homma.local.toml`
 //! has a reader of its own for its own tables, so for that file the tables
 //! this module does not read are left to it; any other overlay carries the two
 //! hooks tables only, and a table beside them is refused by name, since
@@ -219,7 +219,7 @@ pub fn apply(
     failed
 }
 
-/// Which of the workspace root's `homma.*.toml` files are read, which are
+/// Which of the `homma.*.toml` files beside the manifest are read, which are
 /// named and absent, and which are present and named by nobody.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Survey {

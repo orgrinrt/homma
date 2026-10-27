@@ -168,20 +168,25 @@ fn register(root: &Path, hooks: &Hooks, on_path: Option<&Path>) -> Result<Instal
         });
     }
     // An entrypoint this tool wrote into git's own hooks directory before the
-    // repository moved to git-shook is reached by nothing there, and by a chain
-    // from whatever else still runs that directory (mockspace's gate), which
-    // would run the table a second time beside the entry. Removed when it is
-    // exactly the text this tool writes; anything else at that path is somebody's.
+    // repository moved to git-shook stays: once git-shook gives the key up, git
+    // reads that directory again and the table must still be there. A chain
+    // from whatever else runs that directory (mockspace's gate) would run the
+    // table a second time beside the entry, so a copy is recorded under
+    // `declined/`, which is how git-shook marks a hook it leaves in place and
+    // what the chain reads to skip the file. Only a file exactly the text this
+    // tool writes is recorded; anything else at that path is somebody's.
     let own = git_hooks_dir(root)?;
     for event in hooks.events() {
-        let stale = own.join(event);
-        if std::fs::read(&stale).is_ok_and(|bytes| bytes == script(event).as_bytes()) {
-            std::fs::remove_file(&stale)?;
+        let registry = common_dir(root)?.join("shook");
+        let left = own.join(event);
+        if std::fs::read(&left).is_ok_and(|bytes| bytes == script(event).as_bytes()) {
+            let declined = registry.join("declined");
+            std::fs::create_dir_all(&declined)?;
+            std::fs::write(declined.join(event), script(event))?;
         }
         // And the copy git-shook made of it when it adopted the hook: its
         // `00-existing` entry runs the table beside the registered one. Both
         // go when the kept file is exactly that text, and neither otherwise.
-        let registry = common_dir(root)?.join("shook");
         let kept = registry.join("kept").join(event);
         if std::fs::read(&kept).is_ok_and(|bytes| bytes == script(event).as_bytes()) {
             std::fs::remove_file(&kept)?;
