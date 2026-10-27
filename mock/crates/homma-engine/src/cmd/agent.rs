@@ -74,16 +74,8 @@ pub mod status {
         pub mock_dir_name:       String,
         /// Whether the directory named by `mock_dir_name` exists.
         pub mock_dir:            bool,
-        /// Deprecated: nothing asks a repo for its mock directory's `agent/`, since the
-        /// builtin rules ship inside mockspace. Kept so the document only
-        /// grows, and carries what its probe finds.
-        pub mock_agent_dir:      bool,
         pub claude_dir:          bool,
         pub github_instructions: bool,
-        /// Deprecated: the launcher answers `cargo mock`, so no repo carries
-        /// an alias and none is asked for one. Kept so the document only
-        /// grows, and carries what its probe finds.
-        pub cargo_mock_alias:    bool,
         /// Whether `core.hooksPath` is set, which is whether any per-repo git
         /// hook fires at all.
         ///
@@ -130,11 +122,9 @@ pub mod status {
         let surfaces = Surfaces {
             mockspace_toml: mockspace_toml_path(local).is_some(),
             mock_dir: local.join(&mock_dir_name).is_dir(),
-            mock_agent_dir: local.join(&mock_dir_name).join("agent").is_dir(),
             mock_dir_name,
             claude_dir: local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
-            cargo_mock_alias: has_cargo_mock_alias(local),
             git_hooks_path: homma_core::repo::hooks_are_wired(local),
         };
         let state = roll_up(local, &surfaces);
@@ -143,15 +133,6 @@ pub mod status {
             local_path: local.display().to_string(),
             state,
             surfaces,
-        }
-    }
-
-    /// Does `.cargo/config.toml` contain a `mock` alias. Only the deprecated
-    /// field reads it.
-    fn has_cargo_mock_alias(local: &Path) -> bool {
-        match std::fs::read_to_string(local.join(".cargo/config.toml")) {
-            Ok(s) => s.contains("mock = ") || s.contains("mock=\""),
-            Err(_) => false,
         }
     }
 

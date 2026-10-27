@@ -74,7 +74,7 @@ fn a_mock_dir_with_no_toml_has_no_mockspace() {
 }
 
 #[test]
-fn the_json_keeps_its_deprecated_fields_with_their_probe_values() {
+fn the_json_has_a_probe_per_asked_surface_and_none_for_the_two_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("r");
     fs::create_dir_all(repo.join("mock/agent")).unwrap();
@@ -85,13 +85,9 @@ fn the_json_keeps_its_deprecated_fields_with_their_probe_values() {
         b"[alias]\nmock = \"run\"\n",
     )
     .unwrap();
-    let with = serde_json::to_value(probe("r", &repo)).unwrap();
-    assert_eq!(with["surfaces"]["mock_agent_dir"], true);
-    assert_eq!(with["surfaces"]["cargo_mock_alias"], true);
-
-    let bare = tempfile::tempdir().unwrap();
-    fs::write(bare.path().join("mockspace.toml"), b"mock_dir = \"mock\"\n").unwrap();
-    let without = serde_json::to_value(probe("r", bare.path())).unwrap();
+    // A repo that carries both surfaces still has no field for either: the
+    // control that the absence is the document's shape, not the probe's value.
+    let without = serde_json::to_value(probe("r", &repo)).unwrap();
     for key in [
         "mockspace_toml",
         "mock_dir",
@@ -105,8 +101,12 @@ fn the_json_keeps_its_deprecated_fields_with_their_probe_values() {
             "{key} left the document"
         );
     }
-    assert_eq!(without["surfaces"]["mock_agent_dir"], false);
-    assert_eq!(without["surfaces"]["cargo_mock_alias"], false);
+    for key in ["mock_agent_dir", "cargo_mock_alias"] {
+        assert!(
+            without["surfaces"].get(key).is_none(),
+            "{key} is back in the document"
+        );
+    }
 }
 
 #[test]
@@ -226,24 +226,6 @@ fn a_repo_with_a_cargo_manifest_and_no_mockspace_is_not_configured() {
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("Cargo.toml"), b"[package]\nname = \"r\"\n").unwrap();
     assert!(matches!(probe("r", &repo).state, AgentState::NotConfigured));
-}
-
-#[test]
-fn the_agent_dir_is_probed_under_the_declared_mock_dir() {
-    // `linux/agent` with a `mock_dir = "linux"` toml is the agent directory;
-    // a probe for the literal `mock/agent` reports it absent.
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().join("r");
-    fs::create_dir_all(repo.join("linux/agent")).unwrap();
-    fs::write(repo.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
-    assert!(probe("r", &repo).surfaces.mock_agent_dir);
-
-    // The control: a literal `mock/agent` is not it when the toml says
-    // `linux`.
-    let other = dir.path().join("s");
-    fs::create_dir_all(other.join("mock/agent")).unwrap();
-    fs::write(other.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
-    assert!(!probe("s", &other).surfaces.mock_agent_dir);
 }
 
 #[test]
