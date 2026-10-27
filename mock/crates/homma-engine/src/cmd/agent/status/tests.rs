@@ -269,3 +269,53 @@ fn a_toml_that_does_not_parse_still_counts_as_adopting_and_names_the_default_dir
     assert!(state.surfaces.mockspace_toml);
     assert_eq!(state.surfaces.mock_dir_name, "mock");
 }
+
+#[test]
+fn the_launcher_pin_is_a_top_level_key_of_the_toml_and_nothing_else() {
+    let pinned = |toml: &str| -> bool {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("mockspace.toml"), toml).unwrap();
+        probe("r", dir.path()).surfaces.launcher_pin
+    };
+    for key in ["mockspace_version", "mockspace_branch", "mockspace_rev", "mockspace_tag"] {
+        assert!(pinned(&format!("{key} = \"x\"\n")), "{key} is a pin");
+    }
+    // The controls: no pin, a pin-looking key under a table, and a toml that
+    // does not parse, which carries none.
+    assert!(!pinned("mock_dir = \"mock\"\n"));
+    assert!(!pinned("[t]\nmockspace_branch = \"dev\"\n"));
+    assert!(!pinned("mockspace_branch = \n"));
+}
+
+#[test]
+fn a_nested_array_before_the_mock_dir_does_not_hide_it() {
+    // A valid toml the gate's awk once read the default from: an element line
+    // of a multi-line array begins with `[`.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("r");
+    fs::create_dir_all(repo.join("linux")).unwrap();
+    fs::write(
+        repo.join("mockspace.toml"),
+        "layers = [\n  [\"a\", \"b\"],\n]\nmock_dir = \"linux\"\n",
+    )
+    .unwrap();
+    let state = probe("r", &repo);
+    assert_eq!(state.surfaces.mock_dir_name, "linux");
+    assert!(state.surfaces.mock_dir);
+}
+
+#[test]
+fn the_root_toml_wins_over_the_one_under_the_mock_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("r");
+    fs::create_dir_all(repo.join("mock")).unwrap();
+    fs::write(repo.join("mockspace.toml"), b"mock_dir = \"root\"\n").unwrap();
+    fs::write(repo.join("mock/mockspace.toml"), b"mock_dir = \"under\"\n").unwrap();
+    assert_eq!(probe("r", &repo).surfaces.mock_dir_name, "root");
+
+    // The control: with only the one under `mock/`, that one is read.
+    let only = dir.path().join("s");
+    fs::create_dir_all(only.join("mock")).unwrap();
+    fs::write(only.join("mock/mockspace.toml"), b"mock_dir = \"under\"\n").unwrap();
+    assert_eq!(probe("s", &only).surfaces.mock_dir_name, "under");
+}

@@ -545,6 +545,7 @@ mod tests {
             mockspace_toml:      true,
             mock_dir_name:       "mock".into(),
             mock_dir:            true,
+            launcher_pin:        false,
             claude_dir:          true,
             github_instructions: true,
             git_hooks_path:      all,

@@ -74,6 +74,9 @@ pub mod status {
         pub mock_dir_name:       String,
         /// Whether the directory named by `mock_dir_name` exists.
         pub mock_dir:            bool,
+        /// Whether the toml carries a launcher pin at its top level. The commit
+        /// gate counts it; the summary and the roll-up do not ask for it.
+        pub launcher_pin:        bool,
         pub claude_dir:          bool,
         pub github_instructions: bool,
         /// Whether `core.hooksPath` is set, which is whether any per-repo git
@@ -117,12 +120,13 @@ pub mod status {
         Ok(out)
     }
 
-    fn probe(name: &str, local: &Path) -> RepoAgentState {
+    pub(crate) fn probe(name: &str, local: &Path) -> RepoAgentState {
         let mock_dir_name = declared_mock_dir(local);
         let surfaces = Surfaces {
             mockspace_toml: mockspace_toml_path(local).is_some(),
             mock_dir: local.join(&mock_dir_name).is_dir(),
             mock_dir_name,
+            launcher_pin: has_launcher_pin(local),
             claude_dir: local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
             git_hooks_path: homma_core::repo::hooks_are_wired(local),
@@ -151,14 +155,30 @@ pub mod status {
     /// when the file or the key is absent. Only the default is a name worth
     /// hard-coding: sodapop declares `linux`.
     fn declared_mock_dir(local: &Path) -> String {
-        mockspace_toml_path(local)
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| s.parse::<toml::Table>().ok())
+        read_mockspace_toml(local)
             .and_then(|t| {
                 t.get("mock_dir")
                     .and_then(|v| v.as_str().map(str::to_string))
             })
             .unwrap_or_else(|| "mock".to_string())
+    }
+
+    /// Whether the toml carries a launcher pin, a top-level `mockspace_version`,
+    /// `mockspace_branch`, `mockspace_rev` or `mockspace_tag`. A toml that does
+    /// not parse carries none, and a key under a table is not a pin.
+    fn has_launcher_pin(local: &Path) -> bool {
+        read_mockspace_toml(local).is_some_and(|t| {
+            ["mockspace_version", "mockspace_branch", "mockspace_rev", "mockspace_tag"]
+                .iter()
+                .any(|k| t.contains_key(*k))
+        })
+    }
+
+    /// The repo's `mockspace.toml` parsed as a toml, `None` where there is no
+    /// file or it does not parse.
+    fn read_mockspace_toml(local: &Path) -> Option<toml::Table> {
+        let text = std::fs::read_to_string(mockspace_toml_path(local)?).ok()?;
+        text.parse::<toml::Table>().ok()
     }
 
     /// A repo without a `mockspace.toml` has not adopted mockspace, which
@@ -278,10 +298,11 @@ pub mod regen {
     }
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
-    /// repo; stage 2 merges hook entries into the clone's
-    /// `settings.local.json` and sweeps its own out of `settings.json`;
-    /// stage 3 aggregates per-repo rules and hooks into the workspace
-    /// `.claude/`.
+    /// repo; stage 2 compares and places the shared tool configs; stage 3
+    /// aggregates per-repo rules and hooks into the workspace `.claude/`.
+    /// After the per-repo loop it writes the workspace gate and merges the hook
+    /// entries into the clone's `settings.local.json`, sweeping its own out of
+    /// `settings.json`.
     pub fn run_with(
         cfg: &Config,
         repo: Option<&str>,
@@ -515,7 +536,7 @@ pub mod regen {
             }
         }
 
-        // Stage 3: write the workspace-level mockspace gate hook and
+        // After the loop: write the workspace-level mockspace gate hook and
         // merge all entries (per-repo aggregated + workspace gate) into
         // settings.local.json.
         if !opts.skip_aggregate {
