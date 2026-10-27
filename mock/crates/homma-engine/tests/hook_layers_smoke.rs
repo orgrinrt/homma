@@ -361,5 +361,11 @@ fn a_layer_only_hook_installed_under_git_shook_runs_on_a_real_commit() {
         String::from_utf8_lossy(&committed.stdout),
         String::from_utf8_lossy(&committed.stderr)
     );
-    assert!(said.contains("LAYER-RAN"), "the layer's entry ran: {said}");
+    assert_eq!(
+        // homma's own report line quotes the command, so the lines that are the
+        // output alone are what is counted
+        said.lines().filter(|l| l.trim() == "LAYER-RAN").count(),
+        1,
+        "the layer's entry ran, once: {said}"
+    );
 }
