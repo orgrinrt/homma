@@ -7,6 +7,7 @@
 //! git calls it. The table itself is `homma_api::Hooks`.
 
 pub mod install;
+mod reach_kind;
 pub mod run;
 pub mod shook;
 
