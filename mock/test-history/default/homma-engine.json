@@ -84,6 +84,26 @@
         "secs": 29.0,
         "passed": true,
         "passed_at": "c16c2f90a5445cce247bd3fb09341eac6219ba710f5dd9230aeb06b8691b214c"
+      },
+      "cmd::what::accept_tests::merge_dev_into_my_branch_finds_merge_dev": {
+        "secs": 29.5,
+        "passed": true,
+        "passed_at": "c16c2f90a5445cce247bd3fb09341eac6219ba710f5dd9230aeb06b8691b214c"
+      },
+      "cmd::what::accept_tests::no_shell_library_is_offered_as_a_command": {
+        "secs": 29.3,
+        "passed": true,
+        "passed_at": "c16c2f90a5445cce247bd3fb09341eac6219ba710f5dd9230aeb06b8691b214c"
+      },
+      "cmd::what::accept_tests::open_a_pull_request_finds_open_pr": {
+        "secs": 29.5,
+        "passed": true,
+        "passed_at": "c16c2f90a5445cce247bd3fb09341eac6219ba710f5dd9230aeb06b8691b214c"
+      },
+      "cmd::what::accept_tests::post_a_stand_up_finds_the_stand_up_script_with_its_post_verb": {
+        "secs": 29.9,
+        "passed": true,
+        "passed_at": "c16c2f90a5445cce247bd3fb09341eac6219ba710f5dd9230aeb06b8691b214c"
       }
     }
   },
