@@ -295,7 +295,13 @@ impl std::fmt::Display for ConfigFinding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Matches(n) => write!(f, "{n} matches"),
-            Self::Differs(n) => write!(f, "{n} differs from the shared copy, left as it is"),
+            Self::Differs(n) => {
+                write!(
+                    f,
+                    "{n} differs from the shared copy, left as it is; put the shared copy back, \
+                     or add a variant of it beside the shared ones"
+                )
+            },
             Self::Missing(n, s) => write!(f, "{n} is missing, and is {s} here"),
             Self::Placed(n) => write!(f, "placed {n}"),
             Self::CannotInfer(n) => {

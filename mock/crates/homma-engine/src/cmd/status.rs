@@ -357,23 +357,39 @@ impl StatusReport {
     fn render_agent(&self, out: &mut dyn Write, full: bool) -> std::io::Result<()> {
         use crate::cmd::agent::status::AgentState;
 
+        // A repo with no mockspace is not short of anything, so it is listed
+        // under `--full` as what it is and never in the summary.
         let show: Vec<&RepoAgentState> = self
             .agent
             .iter()
-            .filter(|a| full || !matches!(a.state, AgentState::Configured))
+            .filter(|a| {
+                match a.state {
+                    AgentState::Configured | AgentState::NotConfigured => full,
+                    AgentState::Partial | AgentState::Missing => true,
+                }
+            })
             .collect();
         if show.is_empty() {
             return Ok(());
         }
         writeln!(out)?;
         writeln!(out, "agent surfaces:")?;
+        let mut short = false;
         for a in show {
+            if matches!(a.state, AgentState::NotConfigured) {
+                writeln!(out, "  {} no mockspace", a.repo)?;
+                continue;
+            }
             let missing = missing_surfaces(a);
             if missing.is_empty() {
                 writeln!(out, "  {} ok", a.repo)?;
             } else {
+                short = true;
                 writeln!(out, "  {} missing {}", a.repo, missing.join(", "))?;
             }
+        }
+        if short {
+            writeln!(out, "  run `homma agent regen` to render what is missing")?;
         }
         Ok(())
     }
@@ -457,17 +473,15 @@ impl StatusReport {
     }
 }
 
-/// Which agent surfaces a repo does not have.
-fn missing_surfaces(a: &RepoAgentState) -> Vec<&'static str> {
+/// Which agent surfaces an adopted repo does not have.
+fn missing_surfaces(a: &RepoAgentState) -> Vec<String> {
     let s = &a.surfaces;
     let mut out = Vec::new();
     for (present, name) in [
-        (s.mock_dir, "mock/"),
-        (s.mock_agent_dir, "mock/agent/"),
-        (s.claude_dir, ".claude/"),
-        (s.github_instructions, ".github/instructions/"),
-        (s.cargo_mock_alias, "cargo-mock-alias"),
-        (s.git_hooks_path, "git-hooks"),
+        (s.mock_dir, format!("{}/", s.mock_dir_name)),
+        (s.claude_dir, ".claude/".to_string()),
+        (s.github_instructions, ".github/instructions/".to_string()),
+        (s.git_hooks_path, "git-hooks".to_string()),
     ] {
         if !present {
             out.push(name);
@@ -524,11 +538,11 @@ mod tests {
 
     fn surfaces(all: bool) -> Surfaces {
         Surfaces {
+            mockspace_toml:      true,
+            mock_dir_name:       "mock".into(),
             mock_dir:            true,
-            mock_agent_dir:      true,
             claude_dir:          true,
             github_instructions: true,
-            cargo_mock_alias:    true,
             git_hooks_path:      all,
         }
     }
@@ -787,6 +801,48 @@ mod tests {
         assert!(text.contains("shared configs:"), "{text}");
         assert!(text.contains("working trees:"), "{text}");
         assert!(text.contains("clean on dev"), "{text}");
+    }
+
+    #[test]
+    fn a_repo_with_no_mockspace_is_not_reported_in_the_summary() {
+        // notko, git-shook and the bash libraries have no mockspace on purpose.
+        // Listing them as missing four directories every session is a line
+        // nobody can act on, which is what trains a reader past the lines that
+        // can be acted on.
+        let text = rendered(&with(
+            vec![agent_state("git-shook", AgentState::NotConfigured, false)],
+            empty_configs(),
+            Vec::new(),
+        ));
+        assert!(!text.contains("git-shook"), "{text}");
+        assert!(!text.contains("agent surfaces:"), "{text}");
+    }
+
+    #[test]
+    fn a_repo_with_no_mockspace_is_named_as_that_under_full() {
+        // The control on the case above: the silence there could be a renderer
+        // that drops every not-configured state, and this shows it is only
+        // the summary that does.
+        let text = rendered_full(&with(
+            vec![agent_state("git-shook", AgentState::NotConfigured, false)],
+            empty_configs(),
+            Vec::new(),
+        ));
+        assert!(text.contains("git-shook no mockspace"), "{text}");
+        assert!(!text.contains("missing"), "{text}");
+    }
+
+    #[test]
+    fn a_missing_surface_names_the_command_that_renders_it_and_the_declared_mock_dir() {
+        let mut a = agent_state("sodapop", AgentState::Partial, true);
+        a.surfaces.mock_dir_name = "linux".into();
+        a.surfaces.mock_dir = false;
+        a.surfaces.claude_dir = false;
+        let text = rendered(&with(vec![a], empty_configs(), Vec::new()));
+        assert!(text.contains("sodapop missing linux/, .claude/"), "{text}");
+        assert!(!text.contains("mock/agent"), "{text}");
+        assert!(!text.contains("cargo-mock-alias"), "{text}");
+        assert!(text.contains("homma agent regen"), "{text}");
     }
 
     #[test]
