@@ -22,7 +22,15 @@ use std::path::{Path, PathBuf};
 
 use homma_api::Hooks;
 
-use super::install::{HookError, Installed, Reach, Written, common_dir};
+use super::install::{
+    HookError,
+    Installed,
+    Reach,
+    Written,
+    common_dir,
+    hooks_dir as git_hooks_dir,
+    script,
+};
 use crate::release::sh;
 
 /// The name homma registers under, which is the manifest's name and the file
@@ -104,7 +112,10 @@ pub fn install_with(
         joined.push(rest);
         joined.to_string_lossy().into_owned()
     });
-    let args = ["shook", "install", "--yes"];
+    // `--only`: running this verb is the consent for homma's own manifest, and
+    // not for a tracked `shook.toml` that arrived through a merge and has not
+    // been looked at
+    let args = ["shook", "install", "--yes", "--only", NAME];
     let out = match &path {
         Some(path) => sh::run_with_env(root, "git", &args, &[("PATH", path.as_str())]),
         None => sh::run(root, "git", &args),
@@ -136,6 +147,18 @@ pub fn install_with(
             reach: Reach::Shook(entry.clone()),
             path:  entry,
         });
+    }
+    // An entrypoint this tool wrote into git's own hooks directory before the
+    // repository moved to git-shook is reached by nothing there, and by a chain
+    // from whatever else still runs that directory (mockspace's gate), which
+    // would run the table a second time beside the entry. Removed when it is
+    // exactly the text this tool writes; anything else at that path is somebody's.
+    let own = git_hooks_dir(root)?;
+    for event in hooks.events() {
+        let stale = own.join(event);
+        if std::fs::read(&stale).is_ok_and(|bytes| bytes == script(event).as_bytes()) {
+            std::fs::remove_file(&stale)?;
+        }
     }
     Ok(Installed {
         written,

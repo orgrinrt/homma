@@ -106,6 +106,14 @@ fn an_overlay_that_does_not_parse_is_an_error_naming_the_file() {
     write(d.path(), "homma.a.toml", "[[hooks.pre-commit]]\nrun = \n");
     let err = read(d.path(), "homma.a.toml").unwrap_err();
     assert!(err.to_string().contains("homma.a.toml"), "{err}");
+    // the line a verb prints keeps the reader's reason, the position included,
+    // which `Display` alone drops
+    assert!(
+        !err.to_string().contains("line"),
+        "control: Display has no cause"
+    );
+    assert!(err.report().contains("homma.a.toml"), "{}", err.report());
+    assert!(err.report().contains("line 2"), "{}", err.report());
     write(
         d.path(),
         "homma.b.toml",
@@ -254,6 +262,11 @@ mod through_the_config {
         assert!(
             cfg.layer_errors[0].contains("homma.a.toml"),
             "{:?}",
+            cfg.layer_errors
+        );
+        assert!(
+            cfg.layer_errors[0].contains("line 2"),
+            "the cause reaches the config: {:?}",
             cfg.layer_errors
         );
         assert_eq!(runs(&cfg.hooks, "pre-commit"), vec!["b"]);

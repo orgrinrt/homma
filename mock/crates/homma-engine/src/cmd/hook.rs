@@ -96,6 +96,10 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
         }
     ));
     for name in &survey.read {
+        // a file that cannot be read is listed once, as the error it is
+        if cfg.layer_errors.iter().any(|e| e.contains(name.as_str())) {
+            continue;
+        }
         lines.push(format!("read      {name}"));
     }
     for name in &survey.absent {

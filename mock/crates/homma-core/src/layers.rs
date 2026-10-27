@@ -86,6 +86,20 @@ impl fmt::Display for LayerError {
     }
 }
 
+impl LayerError {
+    /// The line a verb prints: what failed, and the reader's own reason after it
+    /// where there is one, which for a parse is the line and column. `Display`
+    /// alone names the file and drops the cause, and `homma local show` gives
+    /// the cause for the same file, so a report without it sends the operator to
+    /// a second command for the one thing they needed.
+    pub fn report(&self) -> String {
+        match std::error::Error::source(self) {
+            Some(cause) => format!("{self}: {cause}"),
+            None => self.to_string(),
+        }
+    }
+}
+
 impl std::error::Error for LayerError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {

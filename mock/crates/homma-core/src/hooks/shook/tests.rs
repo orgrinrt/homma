@@ -88,7 +88,10 @@ fn an_install_writes_the_manifest_and_has_git_shook_register_it() {
         manifest(&table(&["post-merge"]))
     );
     let called = std::fs::read_to_string(&log).unwrap();
-    assert!(called.starts_with("install --yes|"), "{called}");
+    assert!(
+        called.starts_with("install --yes --only homma|"),
+        "the consent covers homma's manifest only: {called}"
+    );
     assert!(
         called
             .trim_end()
@@ -105,6 +108,54 @@ fn an_install_writes_the_manifest_and_has_git_shook_register_it() {
         assert_eq!(w.reach, Reach::Shook(w.path.clone()));
     }
     assert!(i.reached());
+}
+
+#[test]
+fn registering_removes_the_entrypoint_this_tool_wrote_and_nobody_elses() {
+    let d = repo();
+    let bin = tempfile::tempdir().unwrap();
+    fake_shook(bin.path(), &bin.path().join("log"));
+    let own = crate::hooks::hooks_dir(d.path()).unwrap();
+    std::fs::create_dir_all(&own).unwrap();
+    // ours, byte for byte, at one event; someone else's at another
+    std::fs::write(own.join("post-merge"), crate::hooks::script("post-merge")).unwrap();
+    std::fs::write(own.join("pre-push"), "#!/bin/sh\necho theirs\n").unwrap();
+
+    install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).unwrap();
+
+    assert!(
+        !own.join("post-merge").exists(),
+        "the stale entrypoint of ours is gone"
+    );
+    assert!(
+        own.join("pre-push").is_file(),
+        "a hook that is not ours stays"
+    );
+}
+
+#[test]
+fn install_routes_to_git_shook_only_where_it_holds_the_hooks_path() {
+    let d = repo();
+    let bin = tempfile::tempdir().unwrap();
+    let log = bin.path().join("log");
+    fake_shook(bin.path(), &log);
+    let shook_dir = hooks_dir(d.path()).unwrap();
+    std::fs::create_dir_all(&shook_dir).unwrap();
+    assert!(
+        sh::run(d.path(), "git", &[
+            "config",
+            "core.hooksPath",
+            shook_dir.to_str().unwrap()
+        ])
+        .unwrap()
+        .ok()
+    );
+
+    let i = crate::hooks::install::install_on(d.path(), &table(&["post-merge"]), Some(bin.path()))
+        .unwrap();
+
+    assert!(log.is_file(), "git-shook was called");
+    assert!(i.written.iter().all(|w| matches!(w.reach, Reach::Shook(_))));
 }
 
 #[test]

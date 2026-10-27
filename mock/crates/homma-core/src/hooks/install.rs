@@ -42,6 +42,9 @@ pub const MOCKSPACE_MARKER: &str = "# mockspace-managed";
 pub enum Reach {
     /// No hooks path: git reads the directory itself.
     Direct,
+    /// No hooks path, and no entrypoint of homma's in git's own directory yet,
+    /// so git runs nothing for this event until `homma hook install` writes it.
+    NotInstalled(PathBuf),
     /// The hook under the path is mockspace's, whose gate runs the
     /// repository's own hook after its own checks.
     Chained(PathBuf),
@@ -75,6 +78,13 @@ impl fmt::Display for Reach {
                 write!(
                     f,
                     "chains through {}, mockspace's, after its own checks",
+                    p.display()
+                )
+            },
+            Reach::NotInstalled(p) => {
+                write!(
+                    f,
+                    "nothing at {}; `homma hook install` writes the entrypoint",
                     p.display()
                 )
             },
@@ -230,7 +240,11 @@ pub(super) fn common_dir(root: &Path) -> Result<PathBuf, HookError> {
 /// lines say so.
 pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
     let Some(dir) = hooks_path(root)? else {
-        return Ok(Reach::Direct);
+        // git reads its own directory, and reaches the entrypoint only if one is
+        // there: counting it reached from the absence of a hooks path alone made
+        // `hook doctor` pass in a repository where nothing was ever installed
+        let file = hooks_dir(root)?.join(event);
+        return Ok(if file.is_file() { Reach::Direct } else { Reach::NotInstalled(file) });
     };
     if dir == super::shook::hooks_dir(root)? {
         return super::shook::reach(root, event);
@@ -257,13 +271,24 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
 /// first: moving `core.hooksPath` onto git-shook's directory from a repository
 /// where another tool holds it is that tool's key to give up and not this one's.
 pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
+    install_on(root, hooks, None)
+}
+
+/// [`install`], with `on_path` at the front of the `PATH` git-shook is looked
+/// up on where it is not on the caller's. The routing is here so a test can
+/// reach it with a stand-in for git-shook.
+pub(crate) fn install_on(
+    root: &Path,
+    hooks: &Hooks,
+    on_path: Option<&Path>,
+) -> Result<Installed, HookError> {
     let shook_path = hooks_path(root)?.is_some_and(|p| {
         super::shook::hooks_dir(root)
             .map(|d| d == p)
             .unwrap_or(false)
     });
     if shook_path {
-        return super::shook::install(root, hooks);
+        return super::shook::install_with(root, hooks, on_path);
     }
     install_entrypoints(root, hooks)
 }
@@ -459,6 +484,15 @@ mod tests {
     #[test]
     fn the_reach_is_per_event_and_read_off_the_hook_under_the_path() {
         let d = repo();
+        // no hooks path is not the same as reached: until an entrypoint is in
+        // git's own directory nothing runs, and `doctor` has to fail on it
+        let missing = hooks_dir(d.path()).unwrap().join("pre-push");
+        let r = reach(d.path(), "pre-push").unwrap();
+        assert_eq!(r, Reach::NotInstalled(missing.clone()));
+        assert!(!r.reached());
+        assert!(r.to_string().contains("homma hook install"));
+        std::fs::create_dir_all(missing.parent().unwrap()).unwrap();
+        std::fs::write(&missing, script("pre-push")).unwrap();
         assert_eq!(reach(d.path(), "pre-push").unwrap(), Reach::Direct);
         assert_eq!(hooks_path(d.path()).unwrap(), None);
         // mockspace's three, and nothing for a fourth event

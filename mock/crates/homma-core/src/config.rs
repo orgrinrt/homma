@@ -201,7 +201,10 @@ impl Config {
         // beside the manifest, since the overlays are files next to it
         let failed =
             crate::layers::apply(beside, &cfg.layers, &mut cfg.hooks, &mut cfg.agent.hooks);
-        cfg.layer_errors = failed.iter().map(ToString::to_string).collect();
+        cfg.layer_errors = failed
+            .iter()
+            .map(crate::layers::LayerError::report)
+            .collect();
         cfg.layers_dir = beside.to_path_buf();
         // The workspace root rather than the manifest's own directory. The two
         // are the same thing whenever `workspace.path` is left at `.`, which is

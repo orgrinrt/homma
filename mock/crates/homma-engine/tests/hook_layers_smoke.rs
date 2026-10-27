@@ -42,6 +42,61 @@ fn homma(root: &Path) -> assert_cmd::Command {
 }
 
 #[test]
+fn doctor_with_a_repository_fails_until_the_entrypoints_are_installed() {
+    let (_d, root, _member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("homma.local.toml"),
+        "[instance]\nwork = \"x\"\n[[hooks.post-merge]]\nrun = \"true\"\n",
+    )
+    .unwrap();
+
+    // no hooks path is set, and nothing is installed: git runs nothing, and
+    // the report must not say otherwise
+    homma(&root)
+        .args(["hook", "doctor", "r"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("post-merge"))
+        .stdout(predicate::str::contains("homma hook install"));
+
+    // and the control: once installed it passes
+    homma(&root)
+        .args(["hook", "install", "r"])
+        .assert()
+        .success();
+    homma(&root)
+        .args(["hook", "doctor", "r"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn a_broken_layer_is_listed_once_with_the_readers_reason() {
+    let (_d, root, _member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("homma.local.toml"),
+        "[[hooks.post-merge]]\nrun = \n",
+    )
+    .unwrap();
+
+    let out = homma(&root)
+        .args(["hook", "doctor"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8_lossy(&out);
+    assert_eq!(
+        text.lines().filter(|l| l.starts_with("error     ")).count(),
+        1,
+        "one error line: {text}"
+    );
+    assert!(text.contains("line 2"), "{text}");
+    assert!(!text.contains("read      homma.local.toml"), "{text}");
+}
+
+#[test]
 fn a_hook_declared_only_in_the_clones_own_file_is_installed_and_runs() {
     let (_d, root, member) = workspace(MANIFEST);
     std::fs::write(
