@@ -1,0 +1,5 @@
+# The tests run on any machine, and git copies the machine's template directory into
+# every repository `git init` makes. An empty value outranks `init.templateDir`, so a
+# test repository begins with no hooks. Only what cargo starts is affected.
+[env]
+GIT_TEMPLATE_DIR = ""
