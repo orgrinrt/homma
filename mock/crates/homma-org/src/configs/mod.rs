@@ -298,8 +298,9 @@ impl std::fmt::Display for ConfigFinding {
             Self::Differs(n) => {
                 write!(
                     f,
-                    "{n} differs from the shared copy, left as it is; put the shared copy back, \
-                     or add a variant of it beside the shared ones"
+                    "{n} differs from the shared copy, left as it is; where the difference is drift, \
+                     put the shared copy back; where the copy carries something the shared one lacks, \
+                     add a variant of it beside the shared ones, since putting it back would drop that"
                 )
             },
             Self::Missing(n, s) => write!(f, "{n} is missing, and is {s} here"),

@@ -541,6 +541,8 @@ mod tests {
             mockspace_toml:      true,
             mock_dir_name:       "mock".into(),
             mock_dir:            true,
+            mock_agent_dir:      false,
+            cargo_mock_alias:    false,
             claude_dir:          true,
             github_instructions: true,
             git_hooks_path:      all,

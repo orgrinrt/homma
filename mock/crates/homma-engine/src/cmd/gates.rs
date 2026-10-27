@@ -232,7 +232,20 @@ has_alias=0
 has_pin=0
 has_hooks_path=0
 
-[ -d "$match_path/mock" ] && has_mock_dir=1
+# The mock directory is the one `mockspace.toml` declares as `mock_dir`, and
+# `mock` only when it declares none: sodapop's is `linux`.
+mock_dir_name=mock
+for cfg in "$match_path/mockspace.toml" "$match_path/mock/mockspace.toml"; do
+    [ -f "$cfg" ] || continue
+    declared=$(awk -F'"' '
+        /^\[/ {{ exit }}
+        /^[[:space:]]*mock_dir[[:space:]]*=/ {{ print $2; exit }}
+    ' "$cfg")
+    [ -n "$declared" ] && mock_dir_name="$declared"
+    break
+done
+
+[ -d "$match_path/$mock_dir_name" ] && has_mock_dir=1
 
 if [ -f "$match_path/.cargo/config.toml" ]; then
     # Section-aware: only count `mock = ...` lines that appear under
@@ -291,7 +304,7 @@ fix=""
 # nothing to say. Anything between the two is drift.
 if [ "$adoption" -ne 0 ] && [ "$adoption" -ne 3 ]; then
     [ "$has_mock_dir" -eq 0 ] && \
-        problems+=("$match_path/mock/ is missing but other mockspace surfaces are present")
+        problems+=("$match_path/$mock_dir_name/ is missing but other mockspace surfaces are present")
     [ "$has_config" -eq 0 ] && \
         problems+=("$match_path: no launcher pin (mockspace_* in mockspace.toml) and no legacy [alias] mock entry")
     [ "$has_hooks_path" -eq 0 ] && \
@@ -771,6 +784,47 @@ pub(crate) mod tests {
             !out.contains("\"permissionDecision\":\"deny\""),
             "launcher pin + mock/ + hooks is full adoption; should not deny; got: {out}",
         );
+    }
+
+    #[test]
+    fn gate_e2e_declared_mock_dir_counts_as_the_mock_dir() {
+        // sodapop declares `mock_dir = "linux"`. A gate looking for a literal
+        // `mock/` reads it as missing the directory and denies a fully adopted
+        // repo.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "sodapop", false, AliasShape::None, true);
+        fs::create_dir_all(repo.join("linux")).unwrap();
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mock_dir = \"linux\"\nmockspace_branch = \"dev\"\n",
+        )
+        .unwrap();
+        let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "a declared mock dir with pin and hooks is full adoption; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_declared_mock_dir_that_is_absent_is_named_in_the_deny() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "sodapop", false, AliasShape::None, true);
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mock_dir = \"linux\"\nmockspace_branch = \"dev\"\n",
+        )
+        .unwrap();
+        let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            out.contains("\"permissionDecision\":\"deny\""),
+            "got: {out}"
+        );
+        assert!(out.contains("/linux/ is missing"), "got: {out}");
     }
 
     #[test]

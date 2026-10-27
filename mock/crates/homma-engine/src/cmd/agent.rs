@@ -71,8 +71,16 @@ pub mod status {
         /// it declares none.
         pub mock_dir_name:       String,
         pub mock_dir:            bool,
+        /// Deprecated: nothing asks a repo for `mock/agent/`, since the
+        /// builtin rules ship inside mockspace. Kept so the document only
+        /// grows, and carries what its probe finds.
+        pub mock_agent_dir:      bool,
         pub claude_dir:          bool,
         pub github_instructions: bool,
+        /// Deprecated: the launcher answers `cargo mock`, so no repo carries
+        /// an alias and none is asked for one. Kept so the document only
+        /// grows, and carries what its probe finds.
+        pub cargo_mock_alias:    bool,
         /// Whether `core.hooksPath` is set, which is whether any per-repo git
         /// hook fires at all.
         ///
@@ -119,9 +127,11 @@ pub mod status {
         let surfaces = Surfaces {
             mockspace_toml: mockspace_toml_path(local).is_some(),
             mock_dir: local.join(&mock_dir_name).is_dir(),
+            mock_agent_dir: local.join(&mock_dir_name).join("agent").is_dir(),
             mock_dir_name,
             claude_dir: local.join(".claude").is_dir(),
             github_instructions: local.join(".github/instructions").is_dir(),
+            cargo_mock_alias: has_cargo_mock_alias(local),
             git_hooks_path: homma_core::repo::hooks_are_wired(local),
         };
         let state = roll_up(local, &surfaces);
@@ -133,10 +143,19 @@ pub mod status {
         }
     }
 
+    /// Does `.cargo/config.toml` contain a `mock` alias. Only the deprecated
+    /// field reads it.
+    fn has_cargo_mock_alias(local: &Path) -> bool {
+        match std::fs::read_to_string(local.join(".cargo/config.toml")) {
+            Ok(s) => s.contains("mock = ") || s.contains("mock=\""),
+            Err(_) => false,
+        }
+    }
+
     /// Where a repo's `mockspace.toml` is: at the root, or under the mock
     /// directory, which is where ikiuni keeps it and where the commit gate
     /// looks as well.
-    fn mockspace_toml_path(local: &Path) -> Option<std::path::PathBuf> {
+    pub(super) fn mockspace_toml_path(local: &Path) -> Option<std::path::PathBuf> {
         ["mockspace.toml", "mock/mockspace.toml"]
             .iter()
             .map(|p| local.join(p))
@@ -157,9 +176,10 @@ pub mod status {
             .unwrap_or_else(|| "mock".to_string())
     }
 
-    /// A repo without a `mockspace.toml` and without its mock directory has not
-    /// adopted mockspace, which several repos here decided on purpose, so it is
-    /// not configured rather than partly so. The rendered surfaces, and the
+    /// A repo without a `mockspace.toml` has not adopted mockspace, which
+    /// several repos here decided on purpose, and mockspace's own tree has a
+    /// mock directory and no toml, so it is not configured rather than partly
+    /// so. The rendered surfaces, and the
     /// wiring that makes the hooks fire, are asked of an adopted repo only.
     /// `mock/agent/` is not one of them: the builtin rules ship inside
     /// mockspace, and that directory holds only what a repo adds itself. The
@@ -169,7 +189,7 @@ pub mod status {
         if !local.exists() {
             return AgentState::Missing;
         }
-        if !s.mockspace_toml && !s.mock_dir {
+        if !s.mockspace_toml {
             return AgentState::NotConfigured;
         }
         let core = s.mock_dir && s.claude_dir && s.github_instructions && s.git_hooks_path;
@@ -210,186 +230,7 @@ pub mod status {
     }
 
     #[cfg(test)]
-    mod tests {
-        use std::fs;
-
-        use super::*;
-
-        /// A repo with every surface but the hooks wiring.
-        ///
-        /// The wiring cannot be faked by writing files, because it is a git
-        /// config setting, so a test wanting it present makes a real
-        /// repository and sets it.
-        fn every_surface_but_hooks(repo: &Path) {
-            fs::create_dir_all(repo.join("mock")).unwrap();
-            fs::write(repo.join("mockspace.toml"), b"mock_dir = \"mock\"\n").unwrap();
-            fs::create_dir_all(repo.join(".claude")).unwrap();
-            fs::create_dir_all(repo.join(".github/instructions")).unwrap();
-        }
-
-        fn wire_the_hooks(repo: &Path) {
-            homma_core::testing::init_repo(repo);
-            homma_core::testing::set_hooks_path(repo, "mock/target/hooks");
-        }
-
-        #[test]
-        fn configured_when_all_surfaces_present_including_the_hooks_wiring() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            every_surface_but_hooks(&repo);
-            wire_the_hooks(&repo);
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Configured));
-            assert!(state.surfaces.git_hooks_path);
-        }
-
-        #[test]
-        fn a_repo_with_every_surface_but_no_hooks_wiring_is_partial() {
-            // The state that went unreported: the files are all there, so the
-            // tree looks adopted, and git invokes none of the hooks. It read as
-            // configured until the wiring became a surface.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            every_surface_but_hooks(&repo);
-            let state = probe("r", &repo);
-            assert!(!state.surfaces.git_hooks_path);
-            assert!(
-                matches!(state.state, AgentState::Partial),
-                "a repo whose hooks never fire reported as {:?}",
-                state.state
-            );
-        }
-
-        #[test]
-        fn partial_when_mock_present_but_render_missing() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(repo.join("mock/agent")).unwrap();
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Partial));
-        }
-
-        #[test]
-        fn not_configured_when_mock_absent() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::NotConfigured));
-        }
-
-        #[test]
-        fn missing_when_local_path_absent() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("does-not-exist");
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Missing));
-        }
-
-        #[test]
-        fn a_launcher_repo_has_no_cargo_alias_and_is_not_asked_for_one() {
-            // The launcher is installed once per machine and answers `cargo
-            // mock` itself, so a repo carries no `.cargo` alias. A repo with
-            // every rendered surface and no alias is the ordinary finished
-            // state, and it read as partial for as long as the alias counted.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            every_surface_but_hooks(&repo);
-            wire_the_hooks(&repo);
-            assert!(!repo.join(".cargo").exists());
-            let state = probe("r", &repo);
-            assert!(
-                matches!(state.state, AgentState::Configured),
-                "a repo without the retired alias reported as {:?}",
-                state.state
-            );
-        }
-
-        #[test]
-        fn a_repo_with_no_agent_templates_of_its_own_is_not_partial() {
-            // The builtin rules ship inside mockspace and are written into
-            // every consumer, so `mock/agent/` holds only what a repo adds.
-            // homma and muisti have none and are fully rendered.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            every_surface_but_hooks(&repo);
-            wire_the_hooks(&repo);
-            assert!(!repo.join("mock/agent").exists());
-            assert!(matches!(probe("r", &repo).state, AgentState::Configured));
-        }
-
-        #[test]
-        fn the_mock_dir_is_the_one_mockspace_toml_declares() {
-            // `mock` is only the default: sodapop declares `linux`, and a probe
-            // for a literal `mock/` reports a fully adopted repo as having
-            // none.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(repo.join("linux")).unwrap();
-            fs::create_dir_all(repo.join(".claude")).unwrap();
-            fs::create_dir_all(repo.join(".github/instructions")).unwrap();
-            fs::write(repo.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
-            wire_the_hooks(&repo);
-            let state = probe("r", &repo);
-            assert!(state.surfaces.mock_dir);
-            assert!(matches!(state.state, AgentState::Configured));
-        }
-
-        #[test]
-        fn a_declared_mock_dir_that_is_absent_is_named_by_its_declared_name() {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            fs::write(repo.join("mockspace.toml"), b"mock_dir = \"linux\"\n").unwrap();
-            let state = probe("r", &repo);
-            assert!(matches!(state.state, AgentState::Partial));
-            assert!(!state.surfaces.mock_dir);
-            assert_eq!(state.surfaces.mock_dir_name, "linux");
-        }
-
-        #[test]
-        fn a_repo_with_a_mockspace_toml_and_nothing_rendered_is_partial() {
-            // The control on the not-configured cases: adoption by the config
-            // alone must still be reported, or silence for the repos with no
-            // mockspace could be a probe that never reports anything.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(repo.join("mock")).unwrap();
-            fs::write(repo.join("mockspace.toml"), b"mock_dir = \"mock\"\n").unwrap();
-            assert!(matches!(probe("r", &repo).state, AgentState::Partial));
-        }
-
-        #[test]
-        fn a_mockspace_toml_under_the_mock_dir_counts_as_adopting() {
-            // ikiuni keeps its config at `mock/mockspace.toml`, which the
-            // commit gate already reads. A probe that looks only at the root
-            // reports it as having no mockspace, and says nothing of what it
-            // lacks.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(repo.join("mock")).unwrap();
-            fs::write(repo.join("mock/mockspace.toml"), b"project_name = \"r\"\n").unwrap();
-            let state = probe("r", &repo);
-            assert!(state.surfaces.mockspace_toml);
-            assert!(matches!(state.state, AgentState::Partial));
-        }
-
-        #[test]
-        fn a_repo_with_a_cargo_manifest_and_no_mockspace_is_not_configured() {
-            // notko, git-shook and the bash libraries are built without
-            // mockspace on purpose, so the absence is a fact about the repo and
-            // not a gap in it.
-            let dir = tempfile::tempdir().unwrap();
-            let repo = dir.path().join("r");
-            fs::create_dir_all(&repo).unwrap();
-            fs::write(repo.join("Cargo.toml"), b"[package]\nname = \"r\"\n").unwrap();
-            assert!(matches!(probe("r", &repo).state, AgentState::NotConfigured));
-        }
-    }
+    mod tests;
 }
 
 pub mod regen {
@@ -581,8 +422,8 @@ pub mod regen {
             // Stage 1: cargo mock.
             let cargo_mock = if opts.skip_cargo_mock {
                 StageStatus::Skipped("--skip-cargo-mock".into())
-            } else if !local.join("mock").is_dir() {
-                StageStatus::Skipped("no mock/ directory".into())
+            } else if status::mockspace_toml_path(&local).is_none() {
+                StageStatus::Skipped("no mockspace.toml".into())
             } else {
                 match invoke_cargo_mock(&local) {
                     Ok(()) => StageStatus::Success,
@@ -888,43 +729,7 @@ pub mod regen {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn last_meaningful_line_picks_last_nonempty() {
-            let s = "first\nsecond\n\n   \nthird\n";
-            assert_eq!(last_meaningful_line(s), Some("third"));
-        }
-
-        #[test]
-        fn last_meaningful_line_empty_input_is_none() {
-            assert_eq!(last_meaningful_line(""), None);
-            assert_eq!(last_meaningful_line("\n\n   \n"), None);
-        }
-
-        #[test]
-        fn truncate_short_is_unchanged() {
-            assert_eq!(truncate("hello".into(), 16), "hello");
-        }
-
-        #[test]
-        fn truncate_long_clipped_with_ellipsis() {
-            let s = "abcdefghij".to_string();
-            let out = truncate(s, 5);
-            assert_eq!(out, "abcde...");
-        }
-
-        #[test]
-        fn truncate_walks_back_to_char_boundary() {
-            // Two-byte chars; cutting at 3 lands mid-char.
-            let s = "ééé".to_string(); // 6 bytes
-            let out = truncate(s, 3);
-            // Walks back to byte 2 (between first and second char).
-            assert!(out.ends_with("..."));
-            assert!(out.is_char_boundary(out.len() - 3));
-        }
-    }
+    mod tests;
 }
 
 // Tests for `status::probe` live inside the `status` module (see above).

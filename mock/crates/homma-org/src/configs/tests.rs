@@ -167,6 +167,10 @@ fn a_difference_names_what_a_repo_does_about_it() {
     let line = ConfigFinding::Differs("deny.toml".into()).to_string();
     assert!(line.contains("left as it is"), "{line}");
     assert!(line.contains("put the shared copy back"), "{line}");
+    assert!(
+        line.contains("carries something the shared one lacks"),
+        "{line}"
+    );
     assert!(line.contains("variant"), "{line}");
 }
 
