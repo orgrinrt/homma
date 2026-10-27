@@ -194,6 +194,7 @@ pub fn parse(text: &str, repo: &str) -> Vec<Doc> {
         };
         let mut d = Doc::new(Kind::Mock, name, &format!("cargo mock {usage}"), &summary);
         if project {
+            d.command = format!("cd {repo} && cargo mock {usage}");
             d.place = vec![repo.to_string()];
             if !kind.is_empty() {
                 d.tags.push(kind.to_string());

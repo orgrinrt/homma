@@ -247,6 +247,19 @@ pub fn gather(root: &Path, kinds: &[Kind], no_mock: bool, scope: &[String]) -> G
     if wanted(kinds, Kind::Rule) {
         add(sources::corpora::rules(root));
     }
+    let left: Vec<&str> =
+        [Kind::Tool, Kind::Script, Kind::Verb, Kind::Mock, Kind::Skill, Kind::Rule]
+            .into_iter()
+            .filter(|k| !wanted(kinds, *k))
+            .map(Kind::label)
+            .collect();
+    if !left.is_empty() {
+        all.gaps.push(Gap {
+            source: "kind",
+            count:  left.len(),
+            what:   format!("{} left out by --kind, so not searched", left.join(", ")),
+        });
+    }
     all
 }
 

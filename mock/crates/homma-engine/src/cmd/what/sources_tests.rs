@@ -313,7 +313,7 @@ fn the_mockspace_listing_is_read_into_commands() {
     );
     assert_eq!(docs[2].command, "cargo mock help [name]");
     let ask = &docs[3];
-    assert_eq!(ask.command, "cargo mock ask <question>");
+    assert_eq!(ask.command, "cd homma && cargo mock ask <question>");
     assert_eq!(ask.tags, ["check"]);
     assert_eq!(ask.place, ["homma"]);
     assert!(ask.summary.starts_with("a question in words"));
@@ -384,4 +384,19 @@ fn the_real_tools_carry_their_verbs_and_how_to_run_them() {
             .any(|v| v.name == "trim" && v.command == "homma disk-trim trim")
     );
     assert!(t.tags.iter().any(|x| x == "hygiene"));
+}
+
+#[test]
+fn the_first_line_of_prose_is_the_summary_even_when_it_starts_with_the_name() {
+    let d = scripts::parse(
+        "merge-dev",
+        ".shared/scripts/merge-dev",
+        "#!/bin/sh\n# merge-dev merges dev into the branch\n#   merge-dev check  see what would conflict\n",
+    )
+    .unwrap();
+    assert_eq!(d.summary, "merge-dev merges dev into the branch");
+    assert_eq!(
+        d.verbs.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
+        ["check"]
+    );
 }

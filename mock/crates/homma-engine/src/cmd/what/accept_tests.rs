@@ -32,9 +32,19 @@ pub(super) fn workspace() -> PathBuf {
         .to_path_buf()
 }
 
+/// Everything the workspace holds, the mockspace listing included, read once for the whole set.
+fn everything() -> &'static (Vec<super::doc::Doc>, Vec<super::doc::Gap>) {
+    static ALL: std::sync::OnceLock<(Vec<super::doc::Doc>, Vec<super::doc::Gap>)> =
+        std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        let g = gather(&workspace(), &[], false, &[]);
+        (g.docs, g.gaps)
+    })
+}
+
 fn ask(q: &str) -> Answer {
-    let g = gather(&workspace(), &[], true, &[]);
-    answer(&g.docs, g.gaps, q, 5)
+    let (docs, gaps) = everything();
+    answer(docs, gaps.clone(), q, 5)
 }
 
 fn first(q: &str) -> (Kind, String, String) {
@@ -70,8 +80,47 @@ fn which_helpers_are_done_finds_the_sessions_check_with_its_finished_verb() {
 }
 
 #[test]
-fn free_disk_finds_disk_trim() {
+fn free_disk_finds_disk_trim_with_the_verb_that_matched() {
     must_come_first("free disk", Kind::Tool, "disk-trim");
+    assert_eq!(
+        first("free disk").2,
+        "homma disk-trim trim",
+        "disk-trim has no default verb, so the command without one is refused"
+    );
+}
+
+#[test]
+fn reap_worktrees_names_its_reap_verb() {
+    assert_eq!(first("reap worktrees").2, "homma reap-worktrees reap");
+}
+
+#[test]
+fn a_misspelt_long_word_is_found_by_its_edit() {
+    must_come_first("lnad a brach", Kind::Script, "land-branch");
+}
+
+#[test]
+fn a_sourced_library_is_never_an_answer() {
+    let (docs, _) = everything();
+    assert!(
+        !docs.iter().any(|d| {
+            d.command.contains("side-helper_ledger") || d.command.contains("a-command-line-scope")
+        }),
+        "a script whose header says it is sourced was offered as a command"
+    );
+}
+
+#[test]
+fn what_a_kind_filter_leaves_out_is_said_in_the_footer() {
+    let g = gather(&workspace(), &[Kind::Rule], true, &[]);
+    let a = answer(&g.docs, g.gaps, "free disk", 5);
+    assert!(
+        a.gaps
+            .iter()
+            .any(|g| g.what.contains("left out by --kind") && g.what.contains("script")),
+        "{:?}",
+        a.gaps
+    );
 }
 
 #[test]

@@ -145,6 +145,16 @@ pub fn interpreter(first_line: &str) -> Option<String> {
     (!rest.is_empty()).then(|| rest.join(" "))
 }
 
+/// Whether the header has a sentence that begins `Sourced`, the way the hygiene directory has a file say
+/// that another file sources it.
+pub fn says_sourced(text: &str) -> bool {
+    header(text).iter().any(|l| {
+        l.trim()
+            .split(". ")
+            .any(|s| s.trim_start().to_lowercase().starts_with("sourced"))
+    })
+}
+
 fn describe(root: &Path, file: &Path, rel: &Path, library: bool) -> Read {
     let exec = executable(file);
     if library && !exec {
@@ -153,6 +163,9 @@ fn describe(root: &Path, file: &Path, rel: &Path, library: bool) -> Read {
     let Ok(text) = std::fs::read_to_string(file) else {
         return Read::Skip;
     };
+    if says_sourced(&text) {
+        return Read::Skip;
+    }
     let Some(name) = file.file_name().map(|n| n.to_string_lossy().into_owned()) else {
         return Read::Skip;
     };
@@ -261,7 +274,7 @@ pub fn parse(name: &str, path: &str, text: &str) -> Option<Doc> {
             );
             continue;
         }
-        if let Some(v) = usage(name, stem, path, t) {
+        if let Some(v) = usage(name, stem, path, t).filter(|_| summary.is_some()) {
             if !verbs.iter().any(|x| x.name == v.name) {
                 verbs.push(v);
             }

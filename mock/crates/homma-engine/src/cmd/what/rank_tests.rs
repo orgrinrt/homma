@@ -89,7 +89,7 @@ fn a_rule_ranks_below_a_tool_that_says_the_same() {
 }
 
 #[test]
-fn a_thing_under_a_fifth_of_the_best_is_dropped_and_one_above_it_is_kept() {
+fn a_thing_under_a_fifth_of_the_best_is_dropped_by_the_cut_and_one_above_it_is_kept() {
     // Both match one of the two terms only through a summary; `strong` also matches in its name and tag.
     let mut docs = vec![
         doc(Kind::Tool, "alpha-beta", "alpha beta together", &[
@@ -100,16 +100,17 @@ fn a_thing_under_a_fifth_of_the_best_is_dropped_and_one_above_it_is_kept() {
     ];
     docs.extend((0 .. 30).map(|i| doc(Kind::Tool, &format!("pad{i}"), "nothing", &[])));
     let r = rank(&docs, &terms("alpha beta"));
-    let top = r[0].score;
     let name = |h: &super::rank::Hit| docs[h.doc].name.clone();
     assert_eq!(name(&r[0]), "alpha-beta");
     let kept: Vec<String> = r.iter().map(name).collect();
     assert!(kept.contains(&"middling".to_string()), "{kept:?}");
-    assert!(
-        r.iter().all(|h| h.score >= top * 0.2),
-        "nothing under a fifth is kept"
-    );
-    // A thing that would score under the cut: one matching a single rare term among many weighty ones.
+    // `weak` matches one of two terms, which is enough to be an answer, so only the cut drops it.
+    assert_eq!(super::rank::required(2), 1);
+    assert!(!kept.contains(&"weak".to_string()), "{kept:?}");
+}
+
+#[test]
+fn a_thing_matching_too_few_of_a_long_query_is_not_an_answer() {
     let many = terms("alpha beta gamma delta epsilon zeta");
     let mut docs2 = vec![
         doc(Kind::Tool, "all", "alpha beta gamma delta epsilon zeta", &[

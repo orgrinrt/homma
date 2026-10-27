@@ -33,9 +33,9 @@ impl Field {
         match self {
             Self::Name => 6.0,
             Self::Tag => 4.0,
-            Self::VerbName => 4.0,
+            Self::VerbName => 3.5,
             Self::Summary => 2.5,
-            Self::VerbSummary => 1.5,
+            Self::VerbSummary => 2.0,
             Self::Body => 1.0,
             Self::Place => 1.5,
         }
@@ -63,16 +63,19 @@ const CLOSE: f64 = 0.125;
 /// How one term matched in one thing.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Match {
-    pub term:  String,
+    pub term:       String,
     /// The word of the thing it matched.
-    pub token: String,
-    pub field: Field,
+    pub token:      String,
+    pub field:      Field,
     #[serde(skip)]
-    pub grade: Grade,
+    pub grade:      Grade,
     #[serde(skip)]
-    pub value: f64,
+    pub value:      f64,
     #[serde(skip)]
-    pub verb:  Option<usize>,
+    pub verb:       Option<usize>,
+    /// What the best verb match of this term is worth, apart from the field that won.
+    #[serde(skip)]
+    pub verb_value: f64,
 }
 
 /// A thing that answers.
@@ -131,9 +134,15 @@ fn tokens(d: &Doc) -> Tokens {
 /// The best way `term` matches in `t`, if it does.
 fn best(term: &str, t: &Tokens) -> Option<Match> {
     let mut found: Option<Match> = None;
+    let mut best_verb: Option<(usize, f64)> = None;
     let mut offer = |field: Field, token: &str, verb: Option<usize>| {
         if let Some(g) = text::grade(term, token) {
             let value = field.weight() * g.worth();
+            if let Some(v) = verb {
+                if best_verb.is_none_or(|(_, w)| value > w) {
+                    best_verb = Some((v, value));
+                }
+            }
             if found.as_ref().is_none_or(|m| value > m.value) {
                 found = Some(Match {
                     term: term.to_string(),
@@ -142,6 +151,7 @@ fn best(term: &str, t: &Tokens) -> Option<Match> {
                     grade: g,
                     value,
                     verb,
+                    verb_value: 0.0,
                 });
             }
         }
@@ -159,6 +169,10 @@ fn best(term: &str, t: &Tokens) -> Option<Match> {
         .for_each(|(i, s)| offer(Field::VerbSummary, s, Some(*i)));
     t.body.iter().for_each(|s| offer(Field::Body, s, None));
     t.place.iter().for_each(|s| offer(Field::Place, s, None));
+    if let Some(m) = found.as_mut() {
+        m.verb = best_verb.map(|(v, _)| v);
+        m.verb_value = best_verb.map_or(0.0, |(_, w)| w);
+    }
     found
 }
 
@@ -210,7 +224,7 @@ pub fn rank(docs: &[Doc], terms: &[String]) -> Vec<Hit> {
         let verb = matches
             .iter()
             .filter(|m| m.verb.is_some())
-            .max_by(|a, b| a.value.total_cmp(&b.value))
+            .max_by(|a, b| a.verb_value.total_cmp(&b.verb_value))
             .and_then(|m| m.verb);
         hits.push(Hit {
             doc: di,
