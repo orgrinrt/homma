@@ -9,7 +9,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::branches::{Call, branches};
-use super::range::{Kind, ROOT_UNIT, kind_of, marker_of, partition, stand_ins, unit_of};
+use super::range::{PartitionKind, ROOT_UNIT, kind_of, marker_of, partition, stand_ins, unit_of};
 use super::record::{RECORD_PATH, Source, base, mark, marks};
 use super::{MilestoneError, commit};
 
@@ -144,11 +144,11 @@ fn units_and_kinds_are_read_off_the_path() {
     assert_eq!(unit_of("crates/a/README.md.tmpl"), "a");
     assert_eq!(unit_of("crates/loose.rs"), ROOT_UNIT);
     assert_eq!(unit_of("scripts/run"), ROOT_UNIT);
-    assert_eq!(kind_of("a/README.md"), Kind::Document);
-    assert_eq!(kind_of("mock/DESIGN.md.tmpl"), Kind::Document);
-    assert_eq!(kind_of("docs/guide.txt"), Kind::Document);
-    assert_eq!(kind_of("src/docs/x.rs"), Kind::Source);
-    assert_eq!(kind_of("notes.md.bak"), Kind::Source);
+    assert_eq!(kind_of("a/README.md"), PartitionKind::Document);
+    assert_eq!(kind_of("mock/DESIGN.md.tmpl"), PartitionKind::Document);
+    assert_eq!(kind_of("docs/guide.txt"), PartitionKind::Document);
+    assert_eq!(kind_of("src/docs/x.rs"), PartitionKind::Source);
+    assert_eq!(kind_of("notes.md.bak"), PartitionKind::Source);
 }
 
 #[test]
@@ -169,11 +169,11 @@ fn a_range_splits_by_crate_and_kind_the_most_changed_first() {
         .map(|p| (p.unit.as_str(), p.kind, p.files, p.changed()))
         .collect();
     assert_eq!(rows, [
-        ("b", Kind::Source, 1, 5),
-        ("a", Kind::Source, 1, 3),
-        (ROOT_UNIT, Kind::Source, 2, 2),
-        (ROOT_UNIT, Kind::Document, 1, 1),
-        ("a", Kind::Document, 1, 1),
+        ("b", PartitionKind::Source, 1, 5),
+        ("a", PartitionKind::Source, 1, 3),
+        (ROOT_UNIT, PartitionKind::Source, 2, 2),
+        (ROOT_UNIT, PartitionKind::Document, 1, 1),
+        ("a", PartitionKind::Document, 1, 1),
     ]);
 }
 

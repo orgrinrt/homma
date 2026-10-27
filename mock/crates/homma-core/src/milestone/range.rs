@@ -31,16 +31,16 @@ pub const MARKERS: [(&str, bool); 7] = [
 /// Whether a changed file is code or prose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Kind {
+pub enum PartitionKind {
     Source,
     Document,
 }
 
-impl Kind {
+impl PartitionKind {
     pub fn word(self) -> &'static str {
         match self {
-            Kind::Source => "source",
-            Kind::Document => "document",
+            PartitionKind::Source => "source",
+            PartitionKind::Document => "document",
         }
     }
 }
@@ -49,7 +49,7 @@ impl Kind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Partition {
     pub unit:    String,
-    pub kind:    Kind,
+    pub kind:    PartitionKind,
     pub files:   u64,
     pub added:   u64,
     pub deleted: u64,
@@ -80,11 +80,11 @@ pub fn unit_of(path: &str) -> &str {
 }
 
 /// Whether a path is prose: markdown, a markdown template, or under `docs/`.
-pub fn kind_of(path: &str) -> Kind {
+pub fn kind_of(path: &str) -> PartitionKind {
     if path.ends_with(".md") || path.ends_with(".md.tmpl") || path.starts_with("docs/") {
-        Kind::Document
+        PartitionKind::Document
     } else {
-        Kind::Source
+        PartitionKind::Source
     }
 }
 
@@ -128,7 +128,7 @@ pub(crate) fn numstat(
 /// The range split by crate and kind, the most changed first.
 pub fn partition(root: &Path, base: &str, head: &str) -> Result<Vec<Partition>, MilestoneError> {
     let (b, h) = resolve(root, base, head)?;
-    let mut by: BTreeMap<(String, Kind), Partition> = BTreeMap::new();
+    let mut by: BTreeMap<(String, PartitionKind), Partition> = BTreeMap::new();
     for (path, added, deleted) in numstat(root, &[&b, &h])? {
         let key = (unit_of(&path).to_string(), kind_of(&path));
         let p = by.entry(key.clone()).or_insert_with(|| {
