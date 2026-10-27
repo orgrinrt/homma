@@ -1,0 +1,50 @@
+e8747ec chore: lock the src changelist
+e262038 fix: test the gate filter and read config findings from stdout
+d6c140b chore: lock the doc changelist
+4fdd1ce docs: name the unparseable toml in the open question
+77620eb chore: close design round 202610270822
+2c2fddd chore: lock the src changelist
+96243e3 fix: count only a string launcher pin and drop stale gate tests
+20e27c3 fix: read the status answer from stdout in the gate
+ad2f44c chore: lock the doc changelist
+869205c docs: name what the launcher and homma disagree on
+10f07c6 chore: close design round 202610270753
+5cef8a6 chore: lock the src changelist
+7d82132 fix: ask homma for the toml facts in the commit gate
+bc89975 chore: lock the doc changelist
+8eb3771 docs: state what the gate asks and counts
+b4febcb chore: close design round 202610270742
+e330d09 chore: lock the src changelist
+a4f39f4 fix: drop the two deprecated fields from the agent status
+22c93b3 chore: lock the doc changelist
+f3f91df docs: drop the deprecated fields from the status design
+b381c17 chore: close design round 202610270738
+a5d7082 chore: lock the src changelist
+8b24350 fix: read an indented table header in the gate
+36814b0 chore: record the test history after the dev merge
+00de9e0 Merge remote-tracking branch 'origin/dev' into work/surfaces-and-configs
+a3e732a fix: neutralise the git template dir for every test repository
+cc7f611 chore: close design round 202610270726
+a04977b chore: lock src changelist for 202610270726
+4b17d57 fix: hold the gate fixtures to the toml and update the help
+2615697 chore: lock doc changelist for 202610270726
+5495e12 docs: open the round for the fixtures and the help
+4c87977 docs: regenerate the design document
+125d0d1 chore: close design round 202610270716
+8a0cfbd chore: lock src changelist for 202610270717
+0f5b7da fix: name an absent repo and hold the toml lookup in the gate
+7eacd40 chore: lock doc changelist for 202610270716
+e08442b docs: say what regen and the gate do for an unadopted repo
+9cf9db4 docs: regenerate the design document
+13cc9dc chore: close design round 202610270707
+ccf1620 chore: lock src changelist for 202610270708
+2dbc82f fix: follow the toml in the gate and hold every surface
+3496396 chore: lock doc changelist for 202610270707
+3466291 docs: make the gate follow the toml
+8d851e3 chore: close design round 202610270656
+e4418bf chore: lock src changelist for 202610270700
+04e2d8e chore: write the replacement src changelist
+b0a3fd0 chore: relock doc changelist for 202610270656
+74d0c5e chore: unlock the round to replace a stray changelist
+6c82615 fix: drive regen in its tests and probe the declared agent dir
+fa7de5d chore: lock doc changelist for 202610270656

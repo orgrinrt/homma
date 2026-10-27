@@ -1,0 +1,50 @@
+e330d09 chore: lock the src changelist
+a4f39f4 fix: drop the two deprecated fields from the agent status
+22c93b3 chore: lock the doc changelist
+f3f91df docs: drop the deprecated fields from the status design
+b381c17 chore: close design round 202610270738
+a5d7082 chore: lock the src changelist
+8b24350 fix: read an indented table header in the gate
+36814b0 chore: record the test history after the dev merge
+00de9e0 Merge remote-tracking branch 'origin/dev' into work/surfaces-and-configs
+a3e732a fix: neutralise the git template dir for every test repository
+cc7f611 chore: close design round 202610270726
+a04977b chore: lock src changelist for 202610270726
+4b17d57 fix: hold the gate fixtures to the toml and update the help
+2615697 chore: lock doc changelist for 202610270726
+5495e12 docs: open the round for the fixtures and the help
+4c87977 docs: regenerate the design document
+125d0d1 chore: close design round 202610270716
+8a0cfbd chore: lock src changelist for 202610270717
+0f5b7da fix: name an absent repo and hold the toml lookup in the gate
+7eacd40 chore: lock doc changelist for 202610270716
+e08442b docs: say what regen and the gate do for an unadopted repo
+9cf9db4 docs: regenerate the design document
+13cc9dc chore: close design round 202610270707
+ccf1620 chore: lock src changelist for 202610270708
+2dbc82f fix: follow the toml in the gate and hold every surface
+3496396 chore: lock doc changelist for 202610270707
+3466291 docs: make the gate follow the toml
+8d851e3 chore: close design round 202610270656
+e4418bf chore: lock src changelist for 202610270700
+04e2d8e chore: write the replacement src changelist
+b0a3fd0 chore: relock doc changelist for 202610270656
+74d0c5e chore: unlock the round to replace a stray changelist
+6c82615 fix: drive regen in its tests and probe the declared agent dir
+fa7de5d chore: lock doc changelist for 202610270656
+f61a33a docs: fold the round files into one
+fb635ae docs: open the round for the regen stage tests
+b09d0c9 feat: add homma milestone base, mark, partition and stand-ins
+7c3d1e9 docs: regenerate the design and org documents
+cbb0244 chore: close design round 202610270605
+9f7a777 chore: lock src changelist for 202610270606
+cc4ed9a fix: test the regen skip and correct the state rustdoc
+cf0627a chore: lock doc changelist for 202610270605
+2d49522 docs: name where the deprecated agent field probes
+fbfd422 chore: close design round 202610270542
+2b9e425 chore: lock src changelist for 202610270544
+e323875 fix: make adoption the toml and keep the status fields
+8425009 chore: lock doc changelist for 202610270542
+23173a2 docs: make adoption the toml and keep the status fields
+e283e6e chore: close design round 202610270525
+2ecf18b chore: lock the source changelist

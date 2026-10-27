@@ -53,8 +53,22 @@ fn status_human_renders_workspace_summary() {
         .assert()
         .success()
         .stdout(predicate::str::contains("workspace: test-ws"))
-        .stdout(predicate::str::contains("github"))
-        .stdout(predicate::str::contains("notko"));
+        // notko has no mockspace in this fixture, which is nothing it is short of
+        .stdout(predicate::str::contains("notko").not())
+        .stdout(predicate::str::contains("missing").not());
+}
+
+#[test]
+fn status_full_names_a_repo_with_no_mockspace_as_that() {
+    // the control on the summary above: the silence there could be a status
+    // that never reaches the repo at all
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = write_tmp_config(&dir);
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "status", "--full"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("notko no mockspace"));
 }
 
 #[test]

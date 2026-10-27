@@ -124,8 +124,9 @@ pub enum Command {
 
     /// Workspace-level mockspace agent-template orchestration.
     ///
-    /// Each member repo renders its own `.claude/` and `.github/` from
-    /// `mock/agent/` templates via `cargo mock`. `homma agent` walks the
+    /// Each member repo that has adopted mockspace renders its own
+    /// `.claude/` and `.github/` via `cargo mock`, from the builtin rules and
+    /// whatever `agent/` templates it adds. `homma agent` walks the
     /// workspace and either discovers per-repo state (`status`) or
     /// drives the regen in each (`regen`).
     Agent {
@@ -373,8 +374,9 @@ pub enum AgentOp {
     /// Discover per-repo mockspace agent-template state.
     ///
     /// For each member repo (or one when `--repo` is set), reports whether
-    /// `mock/`, `.claude/`, `.github/`, the `cargo mock` alias and the git
-    /// hooks wiring are present.
+    /// it carries a `mockspace.toml`, which is what adopting mockspace is,
+    /// and for one that does, whether its mock directory, `.claude/`,
+    /// `.github/instructions/` and the git hooks wiring are present.
     Status {
         /// Single repo from `homma.toml`. Default: all.
         #[arg(long)]
@@ -383,33 +385,40 @@ pub enum AgentOp {
     /// Regenerate per-repo agent surfaces and aggregate them at the
     /// workspace level.
     ///
-    /// Two stages:
-    /// 1. Run `cargo mock` in each member repo with a `mock/`
-    ///    directory, regenerating `.claude/rules/*.md` and
-    ///    `.claude/hooks/*.sh` from `mock/agent/` templates.
-    /// 2. Aggregate per-repo rules and hooks into the workspace
+    /// Three stages:
+    /// 1. Run `cargo mock` in each member repo with a `mockspace.toml`,
+    ///    regenerating `.claude/rules/*.md` and `.claude/hooks/*.sh` from the
+    ///    builtin rules and whatever `agent/` templates the repo adds under
+    ///    its mock directory.
+    /// 2. Compare each repo's shared tool configs against the shared copies
+    ///    and place what is missing.
+    /// 3. Aggregate per-repo rules and hooks into the workspace
     ///    `.claude/`, with each repo's rules and hooks scoped to only
     ///    activate when work touches that repo's tree.
     ///
-    /// Repos without a `mock/` directory are skipped, not failed. Use
-    /// `--skip-cargo-mock` to re-aggregate without re-rendering
-    /// per-repo, or `--skip-aggregate` to just rerun `cargo mock`.
+    /// Repos without a `mockspace.toml` skip the first stage, not fail it.
+    /// Each `--skip-*` flag leaves the other two stages running.
+    /// `--skip-aggregate` also skips what follows the loop beside it:
+    /// writing the commit gate, the declared hooks and the merge of the
+    /// local settings.
     Regen {
-        /// Single repo from `homma.toml`. Default: all repos with a `mock/`.
+        /// Single repo from `homma.toml`. Default: all repos.
         #[arg(long)]
         repo:              Option<String>,
         /// Keep going after a per-repo regen failure.
         #[arg(long)]
         continue_on_error: bool,
-        /// Skip the per-repo `cargo mock` step; only run workspace
-        /// aggregation against the already-rendered per-repo `.claude/`.
+        /// Skip the per-repo `cargo mock` step; the shared tool configs
+        /// and the workspace aggregation still run, against the
+        /// already-rendered per-repo `.claude/`.
         #[arg(long)]
         skip_cargo_mock:   bool,
         /// Skip comparing each repo against the shared tool configs.
         #[arg(long)]
         skip_configs:      bool,
-        /// Skip the workspace aggregation step; only run per-repo
-        /// `cargo mock`.
+        /// Skip the workspace aggregation step, and with it the commit
+        /// gate, the declared hooks and the settings merge; per-repo
+        /// `cargo mock` and the shared tool configs still run.
         #[arg(long)]
         skip_aggregate:    bool,
     },
