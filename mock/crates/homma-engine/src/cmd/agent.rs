@@ -297,9 +297,10 @@ pub mod regen {
     }
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
-    /// repo; stage 2 aggregates per-repo rules and hooks into the
-    /// workspace `.claude/`; stage 3 merges hook entries into the
-    /// clone's `settings.local.json` and sweeps its own out of `settings.json`.
+    /// repo; stage 2 merges hook entries into the clone's
+    /// `settings.local.json` and sweeps its own out of `settings.json`;
+    /// stage 3 aggregates per-repo rules and hooks into the workspace
+    /// `.claude/`.
     pub fn run_with(
         cfg: &Config,
         repo: Option<&str>,

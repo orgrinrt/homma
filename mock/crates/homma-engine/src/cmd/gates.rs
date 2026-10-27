@@ -244,7 +244,7 @@ for cfg in "$match_path/mockspace.toml" "$match_path/mock/mockspace.toml"; do
     [ -f "$cfg" ] || continue
     has_toml=1
     declared=$(awk -F"[\"']" '
-        /^\[/ {{ exit }}
+        /^[[:space:]]*\[/ {{ exit }}
         /^[[:space:]]*mock_dir[[:space:]]*=/ {{ print $2; exit }}
     ' "$cfg")
     [ -n "$declared" ] && mock_dir_name="$declared"
@@ -294,7 +294,7 @@ fi
 for cfg in "$match_path/mockspace.toml" "$match_path/mock/mockspace.toml"; do
     [ -f "$cfg" ] || continue
     pin_hit=$(awk '
-        /^\[/ {{ exit }}
+        /^[[:space:]]*\[/ {{ exit }}
         /^[[:space:]]*mockspace_(version|branch|rev|tag)[[:space:]]*=/ {{ print "1"; exit }}
     ' "$cfg")
     [ "$pin_hit" = "1" ] && {{ has_pin=1; break; }}
@@ -916,6 +916,27 @@ pub(crate) mod tests {
         assert!(
             !out.contains("\"permissionDecision\":\"deny\""),
             "the default mock dir exists and the key under a table is ignored; got: {out}",
+        );
+    }
+
+    #[test]
+    fn gate_e2e_a_mock_dir_key_under_an_indented_table_is_not_the_mock_dir() {
+        // TOML allows leading whitespace before a table header, and the
+        // status probe parses real TOML, so the gate must stop at an indented
+        // header too or the two read different directories from one file.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = fake_repo(dir.path(), "arvo", true, AliasShape::None, true);
+        fs::write(
+            repo.join("mockspace.toml"),
+            "mockspace_branch = \"dev\"\n  [something]\n  mock_dir = \"elsewhere\"\n",
+        )
+        .unwrap();
+        let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+        let input = input_json("git commit -m hi", &repo.to_string_lossy());
+        let out = run_gate(&repos, &input);
+        assert!(
+            !out.contains("\"permissionDecision\":\"deny\""),
+            "the default mock dir exists and the key under an indented table is ignored; got: {out}",
         );
     }
 
