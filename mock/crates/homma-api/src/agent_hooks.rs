@@ -163,6 +163,17 @@ impl AgentHooks {
             .flat_map(|(e, rows)| rows.iter().map(move |r| (e.as_str(), r)))
     }
 
+    /// Add another layer's rows after the ones already here, event by event,
+    /// in the order that layer wrote them. Nothing is replaced.
+    pub fn append(&mut self, layer: &AgentHooks) {
+        for (event, rows) in &layer.0 {
+            self.0
+                .entry(event.clone())
+                .or_default()
+                .extend(rows.iter().cloned());
+        }
+    }
+
     /// Whether the table declares nothing.
     pub fn is_empty(&self) -> bool {
         self.0.values().all(Vec::is_empty)
@@ -356,5 +367,39 @@ mod tests {
         );
         let row = AgentHook::new("", "x", vec![]).unwrap();
         assert_eq!(row.matcher(), EVERY_TOOL);
+    }
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+
+    fn parse(text: &str) -> AgentHooks {
+        toml::from_str::<AgentTable>(text).unwrap().hooks
+    }
+
+    #[test]
+    fn a_layers_rows_follow_the_bases_for_each_event_and_replace_none() {
+        let mut base =
+            parse("[[hooks.PreToolUse]]\nrun = \"base\"\n[[hooks.Stop]]\nrun = \"stop\"\n");
+        let local = parse(
+            "[[hooks.PreToolUse]]\nrun = \"local\"\n[[hooks.SessionStart]]\nrun = \"start\"\n",
+        );
+        base.append(&local);
+        let rows: Vec<(&str, &str)> = base.iter().map(|(e, r)| (e, r.run())).collect();
+        assert_eq!(rows, vec![
+            ("PreToolUse", "base"),
+            ("PreToolUse", "local"),
+            ("SessionStart", "start"),
+            ("Stop", "stop"),
+        ]);
+    }
+
+    #[test]
+    fn an_empty_layer_changes_nothing() {
+        let mut base = parse("[[hooks.Stop]]\nrun = \"stop\"\n");
+        let before = base.clone();
+        base.append(&AgentHooks::default());
+        assert_eq!(base, before);
     }
 }

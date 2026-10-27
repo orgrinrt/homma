@@ -21,6 +21,9 @@ pub fn run(cli: &Cli, cfg: &Config, op: &HookOp) -> Result<Outcome> {
         HookOp::Install {
             repo,
         } => install_cmd(cli, cfg, repo),
+        HookOp::Doctor {
+            repo,
+        } => doctor_cmd(cli, cfg, repo.as_deref()),
         HookOp::Run {
             event,
             args,
@@ -28,7 +31,27 @@ pub fn run(cli: &Cli, cfg: &Config, op: &HookOp) -> Result<Outcome> {
     }
 }
 
+/// The report a hook verb gives instead of acting while a layer `layers`
+/// names could not be read. The load goes on past a broken overlay so
+/// `homma local` can repair one; what the verbs must not do is install or run
+/// the table with a layer's hooks missing from it, since a check that did not
+/// run looks the same as one that passed.
+fn refused_for_layers(cfg: &Config) -> Option<Report> {
+    if cfg.layer_errors.is_empty() {
+        return None;
+    }
+    let mut lines = cfg.layer_errors.clone();
+    lines.push("the hooks table is incomplete without it, so nothing is installed or run".into());
+    Some(Report {
+        ok: false,
+        lines,
+    })
+}
+
 fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
+    if let Some(report) = refused_for_layers(cfg) {
+        return finish(cli, report);
+    }
     let (_, _, root) = resolve_repo(cfg, Some(repo))?;
     match hooks::install(&root, &cfg.hooks) {
         Ok(i) => {
@@ -48,7 +71,7 @@ fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
         },
         // a refusal is reported, a line and a non-zero exit, so a sweep
         // across the workspace goes on to the next repo
-        Err(e @ hooks::HookError::HookExists(_)) => {
+        Err(e @ (hooks::HookError::HookExists(_) | hooks::HookError::Shook(_))) => {
             finish(cli, Report {
                 ok:    false,
                 lines: vec![e.to_string()],
@@ -60,7 +83,62 @@ fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
     }
 }
 
+fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
+    let mut ok = true;
+    let mut lines = Vec::new();
+    let survey = homma_core::layers::survey(&cfg.layers_dir, &cfg.layers)?;
+    lines.push(format!(
+        "hooks are read from homma.toml, then {}",
+        if cfg.layers.names().is_empty() {
+            "no layers".to_string()
+        } else {
+            cfg.layers.names().join(", ")
+        }
+    ));
+    for name in &survey.read {
+        // a file that cannot be read is listed once, as the error it is
+        if homma_core::layers::read(&cfg.layers_dir, name).is_err() {
+            continue;
+        }
+        lines.push(format!("read      {name}"));
+    }
+    for name in &survey.absent {
+        lines.push(format!("absent    {name} (named, and not there)"));
+    }
+    if survey.own_unlisted {
+        lines.push(format!(
+            "note      {} is not named in `layers`, so its hooks tables are not read; its own tables still are, so it stays",
+            homma_api::layers::DEFAULT_LAYER
+        ));
+    }
+    for name in &survey.strays {
+        ok = false;
+        lines.push(format!(
+            "stray     {name} is not named in `layers`, so it is never read; name it there or remove it"
+        ));
+    }
+    for err in &cfg.layer_errors {
+        ok = false;
+        lines.push(format!("error     {err}"));
+    }
+    if let Some(repo) = repo {
+        let (_, _, root) = resolve_repo(cfg, Some(repo))?;
+        for event in cfg.hooks.events() {
+            let reach = hooks::reach(&root, event)?;
+            ok &= reach.reached();
+            lines.push(format!("{event}: {reach}"));
+        }
+    }
+    finish(cli, Report {
+        ok,
+        lines,
+    })
+}
+
 fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outcome> {
+    if let Some(report) = refused_for_layers(cfg) {
+        return finish(cli, report);
+    }
     // the entrypoint runs with the repository as its working directory, and
     // a worktree's clone is found through its common git directory
     let (_, _, root) = resolve_repo(cfg, None)?;

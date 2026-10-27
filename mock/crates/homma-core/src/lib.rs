@@ -18,6 +18,7 @@ pub mod config;
 pub mod forge;
 pub mod hooks;
 pub mod inject;
+pub mod layers;
 pub mod local;
 pub mod milestone;
 pub mod release;

@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "flavour": "hook_layers_smoke",
+  "member": "homma-engine",
+  "green": {
+    "full": "1f562538fa28d05c192ad7f4a8e381884aec937f886003792e04641867e6e930",
+    "own": {
+      "homma": "65083a0c148502fe347cb9d37a9c479da3fef2d47cff21d5f43afff2799d9798",
+      "homma-api": "af8b70257a32f89008298f38a76bcba0ba42ab4826cd0f4152c19382e5d89124",
+      "homma-core": "7d053971aac8bac226d829360bc3ea9f060c580a85b3a5290efac57f4c930493",
+      "homma-engine": "30f50da5255c1bf71271c3bb2505011bd376d7d0284dc4ca47b36592877d2508",
+      "homma-org": "7e19e20507486ebf9439158836860993a83c9888db3459f52bb3484b85bc16a0",
+      "homma-store": "fbaa7513622cc86f236321f6b664c03c30f849dc2abfeea689a05fc1d8665e54"
+    }
+  },
+  "tests": {},
+  "bins": {}
+}

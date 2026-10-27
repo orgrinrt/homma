@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 
 use homma_api::Hooks;
 
+pub use super::reach_kind::Reach;
 use crate::release::git::GitError;
 use crate::release::sh;
 
@@ -35,72 +36,6 @@ pub fn script(event: &str) -> String {
 /// own. Spelled here rather than read from mockspace, since homma knows
 /// mockspace's files and not its crates.
 pub const MOCKSPACE_MARKER: &str = "# mockspace-managed";
-
-/// How git reaches one entrypoint, read off `core.hooksPath` and, where one
-/// is set, the file git will run under it for that event.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reach {
-    /// No hooks path: git reads the directory itself.
-    Direct,
-    /// The hook under the path is mockspace's, whose gate runs the
-    /// repository's own hook after its own checks.
-    Chained(PathBuf),
-    /// Nothing under the path for this event, so git runs nothing for it.
-    Missing(PathBuf),
-    /// The path is git-shook's dispatcher directory. It runs what the
-    /// repository's manifests declare and chains to nothing, so the
-    /// entrypoint is not reached and a `shook.toml` is the way in.
-    Shook(PathBuf),
-    /// A hook under the path that is some other tool's, and nothing runs the
-    /// entrypoint until that tool chains to it.
-    Foreign(PathBuf),
-}
-
-impl Reach {
-    pub fn reached(&self) -> bool {
-        matches!(self, Reach::Direct | Reach::Chained(_))
-    }
-}
-
-impl fmt::Display for Reach {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Reach::Direct => f.write_str("git reads the hooks directory directly"),
-            Reach::Chained(p) => {
-                write!(
-                    f,
-                    "chains through {}, mockspace's, after its own checks",
-                    p.display()
-                )
-            },
-            Reach::Missing(p) => {
-                write!(
-                    f,
-                    "nothing at {}, so git will not run this until whatever owns core.hooksPath \
-                     chains to the repository's own hooks",
-                    p.display()
-                )
-            },
-            Reach::Foreign(p) => {
-                write!(
-                    f,
-                    "{} is not mockspace's; git will not run this until that tool chains to the \
-                     repository's own hooks",
-                    p.display()
-                )
-            },
-            Reach::Shook(p) => {
-                write!(
-                    f,
-                    "{} is git-shook's, which runs what the manifests declare and chains to \
-                     nothing; declare `homma hook run <event>` in a shook.toml and run `git shook \
-                     install`",
-                    p.display()
-                )
-            },
-        }
-    }
-}
 
 /// One entrypoint the install wrote, and how git gets to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +63,10 @@ impl Installed {
 pub enum HookError {
     /// A hook for that event is already there and is not this tool's.
     HookExists(PathBuf),
+    /// Registering through git-shook did not go: it is not installed, it
+    /// refused, or it registered less than the manifest declares. The text
+    /// says which.
+    Shook(String),
     Git(GitError),
     Io(std::io::Error),
 }
@@ -143,6 +82,7 @@ impl fmt::Display for HookError {
                     p.display()
                 )
             },
+            HookError::Shook(why) => write!(f, "{why}"),
             HookError::Git(e) => write!(f, "{e}"),
             HookError::Io(e) => write!(f, "{e}"),
         }
@@ -200,29 +140,45 @@ pub fn hooks_path(root: &Path) -> Result<Option<PathBuf>, HookError> {
     Ok(Some(if p.is_absolute() { p } else { root.join(p) }))
 }
 
-/// The directory `git shook install` generates its dispatchers into, which is
-/// what it points `core.hooksPath` at. Compared against rather than matched by
-/// spelling, since a repository is free to keep a directory called `shook` and
-/// mean nothing by it.
-fn shook_hooks_dir(root: &Path) -> Result<PathBuf, HookError> {
+/// The common git directory, absolute, which a linked worktree shares with the
+/// clone it hangs off.
+pub(super) fn common_dir(root: &Path) -> Result<PathBuf, HookError> {
     let out = git(root, &[
         "rev-parse",
         "--path-format=absolute",
         "--git-common-dir",
     ])?;
-    Ok(PathBuf::from(out.stdout.trim()).join("shook").join("hooks"))
+    Ok(PathBuf::from(out.stdout.trim()))
+}
+
+/// What git's own hooks directory holds for `event`: `Direct` where the file is
+/// exactly the text homma writes, which is what git runs with no hooks path and
+/// what mockspace's gate chains to, `NotInstalled` where there is none, and
+/// `Other` where it is somebody else's.
+fn own_entrypoint(root: &Path, event: &str) -> Result<Reach, HookError> {
+    let file = hooks_dir(root)?.join(event);
+    Ok(match std::fs::read(&file) {
+        Ok(bytes) if bytes == script(event).as_bytes() => Reach::Direct,
+        Ok(_) => Reach::Other(file),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Reach::NotInstalled(file),
+        Err(_) => Reach::Other(file),
+    })
 }
 
 /// How git reaches `root`'s own entrypoint for `event`: directly with no
-/// hooks path, through git-shook's dispatcher, which does not reach it at all,
-/// else through whatever sits at `<hooksPath>/<event>`, which is mockspace's
-/// and chains where its first lines say so.
+/// hooks path, through git-shook's dispatcher, where homma is reached as a
+/// registered entry or not at all, else through whatever sits at
+/// `<hooksPath>/<event>`, which is mockspace's and chains where its first
+/// lines say so.
 pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
     let Some(dir) = hooks_path(root)? else {
-        return Ok(Reach::Direct);
+        // git reads its own directory, and reaches the entrypoint only if one is
+        // there: counting it reached from the absence of a hooks path alone made
+        // `hook doctor` pass in a repository where nothing was ever installed
+        return own_entrypoint(root, event);
     };
-    if dir == shook_hooks_dir(root)? {
-        return Ok(Reach::Shook(dir));
+    if dir == super::shook::hooks_dir(root)? {
+        return super::shook::reach(root, event);
     }
     let file = dir.join(event);
     match std::fs::read(&file) {
@@ -230,7 +186,12 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
             let head: String =
                 String::from_utf8_lossy(&bytes[.. bytes.len().min(512)]).into_owned();
             if head.lines().take(4).any(|l| l.contains(MOCKSPACE_MARKER)) {
-                Ok(Reach::Chained(file))
+                // the gate chains to git's own directory and to nothing else,
+                // so it reaches the entrypoint only where that holds it
+                match own_entrypoint(root, event)? {
+                    Reach::Direct => Ok(Reach::Chained(file)),
+                    unreached => Ok(unreached),
+                }
             } else {
                 Ok(Reach::Foreign(file))
             }
@@ -241,10 +202,37 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
     }
 }
 
+/// Install the table: registered with git-shook where `core.hooksPath` is its
+/// dispatcher directory, else one entrypoint per event. Nothing forces the
+/// first: moving `core.hooksPath` onto git-shook's directory from a repository
+/// where another tool holds it is that tool's key to give up and not this one's.
+pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
+    install_on(root, hooks, None)
+}
+
+/// [`install`], with `on_path` at the front of the `PATH` git-shook is looked
+/// up on where it is not on the caller's. The routing is here so a test can
+/// reach it with a stand-in for git-shook.
+pub(crate) fn install_on(
+    root: &Path,
+    hooks: &Hooks,
+    on_path: Option<&Path>,
+) -> Result<Installed, HookError> {
+    let shook_path = hooks_path(root)?.is_some_and(|p| {
+        super::shook::hooks_dir(root)
+            .map(|d| d == p)
+            .unwrap_or(false)
+    });
+    if shook_path {
+        return super::shook::install_with(root, hooks, on_path);
+    }
+    install_entrypoints(root, hooks)
+}
+
 /// Write one entrypoint per event the table names, or refuse and say why.
 /// Every event is checked before any is written, so no refusal leaves a
 /// partial install.
-pub fn install(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
+fn install_entrypoints(root: &Path, hooks: &Hooks) -> Result<Installed, HookError> {
     let dir = hooks_dir(root)?;
     let events: Vec<&str> = hooks.events().collect();
     // anything at a path that is not this tool's text is somebody's hook, a
@@ -432,8 +420,26 @@ mod tests {
     #[test]
     fn the_reach_is_per_event_and_read_off_the_hook_under_the_path() {
         let d = repo();
+        // no hooks path is not the same as reached: until an entrypoint is in
+        // git's own directory nothing runs, and `doctor` has to fail on it
+        let missing = hooks_dir(d.path()).unwrap().join("pre-push");
+        let r = reach(d.path(), "pre-push").unwrap();
+        assert_eq!(r, Reach::NotInstalled(missing.clone()));
+        assert!(!r.reached());
+        assert!(r.to_string().contains("homma hook install"));
+        std::fs::create_dir_all(missing.parent().unwrap()).unwrap();
+        std::fs::write(&missing, script("pre-push")).unwrap();
         assert_eq!(reach(d.path(), "pre-push").unwrap(), Reach::Direct);
         assert_eq!(hooks_path(d.path()).unwrap(), None);
+        // somebody else's file in git's own directory is what git runs, so the
+        // entrypoint is not reached and `install` refusing it agrees
+        let theirs = hooks_dir(d.path()).unwrap().join("pre-commit");
+        std::fs::write(&theirs, "#!/bin/sh\nexit 0\n").unwrap();
+        let r = reach(d.path(), "pre-commit").unwrap();
+        assert_eq!(r, Reach::Other(theirs.clone()));
+        assert!(!r.reached());
+        assert!(r.to_string().contains("somebody else's hook"));
+        std::fs::remove_file(&theirs).unwrap();
         // mockspace's three, and nothing for a fourth event
         let ms = hooks_path_dir(&["pre-commit", "pre-push", "commit-msg"], &[]);
         set_hooks_path(d.path(), ms.path().to_str().unwrap());
@@ -441,6 +447,18 @@ mod tests {
             reach(d.path(), "pre-push").unwrap(),
             Reach::Chained(ms.path().join("pre-push"))
         );
+        // mockspace's gate chains to git's own directory and nowhere else: with
+        // no entrypoint there, or somebody else's, the table never runs
+        let none = hooks_dir(d.path()).unwrap().join("pre-commit");
+        let r = reach(d.path(), "pre-commit").unwrap();
+        assert_eq!(r, Reach::NotInstalled(none.clone()));
+        assert!(!r.reached());
+        std::fs::write(&none, "#!/bin/sh\nexit 0\n").unwrap();
+        assert_eq!(
+            reach(d.path(), "pre-commit").unwrap(),
+            Reach::Other(none.clone())
+        );
+        std::fs::remove_file(&none).unwrap();
         assert_eq!(
             reach(d.path(), "post-merge").unwrap(),
             Reach::Missing(ms.path().join("post-merge"))
@@ -500,21 +518,21 @@ mod tests {
     }
 
     #[test]
-    fn git_shooks_hooks_path_is_its_own_kind_and_names_the_manifest() {
-        // git-shook's dispatcher runs what the repository's manifests declare
-        // and chains to nothing, so `Foreign`'s advice, that git will run the
-        // entrypoint once that tool chains to it, is advice about something
-        // that is not going to happen. What a reader can act on is the
-        // manifest, so this is a kind of its own and says so.
+    fn git_shooks_hooks_path_is_its_own_kind_and_reached_only_once_registered() {
+        // git-shook's dispatcher runs what is registered with it and chains to
+        // nothing, so `Foreign`'s advice, that git will run the entrypoint
+        // once that tool chains to it, is advice about something that is not
+        // going to happen. What a reader can act on is the registration, so
+        // this is a kind of its own and says so.
         let d = repo();
-        let shook = shook_hooks_dir(d.path()).unwrap();
+        let shook = super::super::shook::hooks_dir(d.path()).unwrap();
         std::fs::create_dir_all(&shook).unwrap();
         set_hooks_path(d.path(), shook.to_str().unwrap());
 
         let r = reach(d.path(), "pre-push").unwrap();
-        assert_eq!(r, Reach::Shook(shook.clone()));
+        assert_eq!(r, Reach::ShookUnregistered(shook.clone()));
         assert!(!r.reached());
-        assert!(r.to_string().contains("shook.toml"));
+        assert!(r.to_string().contains("homma hook install"));
         assert!(!r.to_string().contains("not mockspace's"));
 
         // and an empty dispatcher directory is still git-shook's: the kind is
@@ -522,7 +540,20 @@ mod tests {
         // it holds, since the entries live beside it rather than under it
         assert!(matches!(
             reach(d.path(), "pre-commit").unwrap(),
-            Reach::Shook(_)
+            Reach::ShookUnregistered(_)
+        ));
+
+        // homma's entry registered for one event reaches that event and no
+        // other, which is the control for the two above
+        let entry = super::super::shook::entry_path(d.path(), "pre-push").unwrap();
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&entry, "\nhomma\nhook\nrun\npre-push\n").unwrap();
+        let r = reach(d.path(), "pre-push").unwrap();
+        assert_eq!(r, Reach::Shook(entry));
+        assert!(r.reached());
+        assert!(matches!(
+            reach(d.path(), "pre-commit").unwrap(),
+            Reach::ShookUnregistered(_)
         ));
 
         // a sibling directory of the git directory spelled the same way is

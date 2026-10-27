@@ -1,21 +1,19 @@
-# What homma wants run at a git event, for `git shook install` to register.
+# What homma wants run at a git event, for a plain `git shook install` to
+# register in a clone that has never run `homma hook install`.
 #
-# homma installs these itself today, into the common git directory's `hooks/`
-# rather than into `core.hooksPath`, which is somebody else's directory. That
-# was the one place every chain reached: git reads it where no hooks path is
-# set, and mockspace's gate runs the repository's own hook there after its own
-# checks. It reaches nothing where git-shook owns the path, because a
-# dispatcher runs what the manifests declare and chains to nothing, so a
-# manifest is how homma gets to the event at all in a repository that has
-# adopted it.
+# Where homma is installed, `homma hook install <repo>` writes the fuller
+# declaration itself: a manifest named `homma` in the git directory's
+# `shook/manifests/`, with one `homma hook run <event>` for every event the
+# hooks table names once `homma.toml` and the overlay files its `layers` key
+# lists are read together. git-shook registers that manifest in place of this
+# file, since a clone-local manifest replaces a tracked one of the same name,
+# so a hook declared only in `homma.local.toml` is installed and this file
+# cannot be the reason it is not.
 #
-# `homma hook run <event>` is the same entry point homma's own generated hook
-# execs, and it reads `[hooks]` in `homma.toml` to decide what that event means,
-# so this changes who calls it and nothing about what it does.
-#
-# Both entries are declared and neither is a decision about which one a given
-# repository wants; `git shook install` shows what each would run and registers
-# them only once the operator agrees.
+# `homma hook run <event>` reads the layers again when the event fires to decide
+# what that event runs, so this changes who calls it and nothing about what it
+# does. `git shook install` shows what each entry would run and registers them
+# only once the operator agrees.
 
 name = "homma"
 
