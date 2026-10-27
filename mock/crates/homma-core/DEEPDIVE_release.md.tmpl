@@ -246,12 +246,14 @@ asks for, for homma's manifest and for nothing that arrived through a merge, so
 nothing is left for a second command. When git-shook refuses or cannot run, the
 manifest is given back as it was before the call, the text it had or no file,
 so a refusal does not leave a file behind for every later install to read. An entrypoint of homma's already in git's
-own hooks directory from before the move is removed when it is exactly the text
-homma writes, because a chain from the gate through that directory would run
-the table a second time beside the entry. So is the copy git-shook made of it
-when it adopted the hook, its `00-existing` entry and the kept file, when the
-copy is exactly that text too, since the entry would run the table beside the
-registered one. Nothing forces this path: the install never takes `core.hooksPath` to
+own hooks directory from before the move stays where it is when it is exactly
+the text homma writes, so that git, once git-shook gives the key up, still finds
+the table there. A copy of that text is recorded as declined in git-shook's
+registry, which is what a chain from the gate through that directory reads to
+skip the file rather than run the table a second time beside the entry. The
+copy git-shook made of it when it adopted the hook, its `00-existing` entry and
+the kept file, goes when the copy is exactly that text too, since the entry
+would run the table beside the registered one. Nothing forces this path: the install never takes `core.hooksPath` to
 git-shook from a repository where it is not already git-shook's, since that key
 is the other tool's to hold and homma never contends for it. The manifest is generated from the layers below, so an event
 declared in any layer has its entry and a hook added to a toml needs nothing
