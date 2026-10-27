@@ -21,7 +21,14 @@ pub fn gather(root: &Path) -> Gathered {
                 } else {
                     format!("homma tools run {}", t.name)
                 };
-                let mut d = Doc::new(Kind::Tool, &t.name, &head, &t.summary);
+                // A tool whose verbs have no default one is refused without a verb, so the bare command names them.
+                let bare = if t.commands.is_empty() || t.commands.iter().any(|c| c.name == t.name) {
+                    head.clone()
+                } else {
+                    let names: Vec<&str> = t.commands.iter().map(|c| c.name.as_str()).collect();
+                    format!("{head} <{}>", names.join("|"))
+                };
+                let mut d = Doc::new(Kind::Tool, &t.name, &bare, &t.summary);
                 d.tags.clone_from(&t.tags);
                 d.verbs = t
                     .commands

@@ -140,9 +140,9 @@ pub fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether a word is filler.
+/// Whether a word is filler, as it is or once stemmed, so `scripts` goes where `script` does.
 pub fn is_filler(w: &str) -> bool {
-    FILLER.contains(&w)
+    FILLER.contains(&w) || FILLER.contains(&stem(w).as_str())
 }
 
 /// The words of a query that carry a subject, each with its stem, each stem once, in the order given.
@@ -160,25 +160,28 @@ pub fn pairs(query: &str) -> Vec<(String, String)> {
     out
 }
 
-/// The stem of a lowercase word.
+/// The stem of a lowercase word: a plural comes off first, then `ing` or `ed`, so a root that ends in
+/// one of them (`speed`) is cut the same way whether it arrives bare or as `speeds`.
 pub fn stem(w: &str) -> String {
     let mut s = w.to_string();
     let n = s.chars().count();
     if n > 4 && s.ends_with("ies") {
         s.truncate(s.len() - 3);
         s.push('y');
-    } else if n > 5 && s.ends_with("ing") {
-        s.truncate(s.len() - 3);
-        undouble(&mut s);
-    } else if n > 4 && s.ends_with("ed") {
-        s.truncate(s.len() - 2);
-        undouble(&mut s);
     } else if n > 4
         && (s.ends_with("sses") || s.ends_with("shes") || s.ends_with("ches") || s.ends_with("xes"))
     {
         s.truncate(s.len() - 2);
     } else if n > 3 && s.ends_with('s') && !s.ends_with("ss") && !s.ends_with("us") {
         s.pop();
+    }
+    let n = s.chars().count();
+    if n > 5 && s.ends_with("ing") {
+        s.truncate(s.len() - 3);
+        undouble(&mut s);
+    } else if n > 4 && s.ends_with("ed") {
+        s.truncate(s.len() - 2);
+        undouble(&mut s);
     }
     if s.chars().count() > 3 && s.ends_with('e') {
         s.pop();

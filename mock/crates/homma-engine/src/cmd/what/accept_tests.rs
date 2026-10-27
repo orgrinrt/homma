@@ -198,7 +198,7 @@ mod catalogue {
 
     /// `branches.py` and the board's landed column say whether a branch landed; `land-branch` lands one.
     #[test]
-    #[ignore = "catalogue: land-branch comes first, and branches.py is not in the first five"]
+    #[ignore = "catalogue: land-branch comes first, branches.py is only fifth"]
     fn is_this_branch_landed_finds_the_branch_check() {
         must_come_first("is this branch landed", Kind::Script, "branches");
     }
@@ -362,5 +362,26 @@ fn the_default_path_reads_the_mockspace_commands_beside_the_rest() {
     assert_eq!(
         (b.hits[0].kind, b.hits[0].name.as_str()),
         (Kind::Tool, "disk-trim")
+    );
+}
+
+#[test]
+fn a_tool_with_verbs_and_no_default_one_never_prints_a_command_the_dispatcher_refuses() {
+    let (docs, _) = everything();
+    let bare: Vec<&str> = docs
+        .iter()
+        .filter(|d| d.kind == Kind::Tool && !d.verbs.is_empty())
+        .filter(|d| !d.verbs.iter().any(|v| v.name == d.name))
+        .filter(|d| !d.command.contains('<'))
+        .map(|d| d.command.as_str())
+        .collect();
+    assert!(bare.is_empty(), "bare commands that want a verb: {bare:?}");
+    let a = ask("hygiene");
+    assert!(
+        a.hits.iter().all(|h| {
+            h.kind != Kind::Tool || h.command.contains('<') || h.command.matches(' ').count() >= 2
+        }),
+        "a tool hit printed bare: {:?}",
+        a.hits.iter().map(|h| &h.command).collect::<Vec<_>>()
     );
 }

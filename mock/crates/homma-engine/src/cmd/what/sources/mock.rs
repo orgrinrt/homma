@@ -92,18 +92,45 @@ pub fn gather(root: &Path, scope: &[String]) -> Gathered {
     out
 }
 
-/// Read a pipe to its end on a thread of its own, so a child that writes more than the pipe holds is
-/// never left waiting for a reader that is waiting for the child. The bytes arrive on the channel.
-fn drain<R: std::io::Read + Send + 'static>(r: Option<R>) -> std::sync::mpsc::Receiver<Vec<u8>> {
-    let (tx, rx) = std::sync::mpsc::channel();
+/// What a pipe has delivered so far, and whether it reached its end.
+struct Pipe {
+    bytes: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    done:  std::sync::mpsc::Receiver<()>,
+}
+
+impl Pipe {
+    /// The bytes read, after waiting up to `wait` for the end of the pipe: a grandchild that kept it
+    /// open leaves the end out, and what arrived is then all there is.
+    fn take(&self, wait: Duration) -> Vec<u8> {
+        let _ = self.done.recv_timeout(wait);
+        self.bytes.lock().map(|b| b.clone()).unwrap_or_default()
+    }
+}
+
+/// Read a pipe on a thread of its own, so a child that writes more than the pipe holds is never left
+/// waiting for a reader that is waiting for the child.
+fn drain<R: std::io::Read + Send + 'static>(r: Option<R>) -> Pipe {
+    let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (tx, done) = std::sync::mpsc::channel();
+    let shared = std::sync::Arc::clone(&bytes);
     std::thread::spawn(move || {
-        let mut buf = Vec::new();
         if let Some(mut r) = r {
-            let _ = r.read_to_end(&mut buf);
+            let mut chunk = [0_u8; 8192];
+            while let Ok(n) = r.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                if let Ok(mut b) = shared.lock() {
+                    b.extend_from_slice(&chunk[.. n]);
+                }
+            }
         }
-        let _ = tx.send(buf);
+        let _ = tx.send(());
     });
-    rx
+    Pipe {
+        bytes,
+        done,
+    }
 }
 
 /// End the child and what it started: its process group where there is one.
@@ -145,15 +172,12 @@ pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String
             Err(e) => return Err(e.to_string()),
         }
     };
-    // A grandchild that kept the pipe open outlives the child; the limit counts these reads too.
-    let left = limit.saturating_sub(start.elapsed());
-    let (Ok(out), Ok(err)) = (
-        out.recv_timeout(left),
-        err.recv_timeout(limit.saturating_sub(start.elapsed())),
-    ) else {
-        end(&mut child);
-        return Err("cargo mock tools took longer than a minute".to_string());
-    };
+    // A grandchild that kept the pipe open outlives the child, so the reads get a second and no more.
+    let grace = Duration::from_secs(1).min(limit.saturating_sub(start.elapsed()));
+    let out = out.take(grace);
+    let err = err.take(grace);
+    // Whatever the child left running is ended with it.
+    end(&mut child);
     if !status.success() {
         let err = String::from_utf8_lossy(&err);
         let line = err

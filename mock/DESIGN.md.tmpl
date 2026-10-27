@@ -513,7 +513,7 @@ tool.
 - A tool is a directory with a `tool.toml`, read the way `homma tools` reads it:
   the name, the summary, the tags, and each verb with its own summary. Its command
   is `homma <name>` where the tool is promoted and `homma tools run <name>` where
-  it is not, followed by the verb that matched best. These exist on unix only,
+  it is not, followed by the verb that matched best, and where none matched and the tool has verbs but none named for itself, followed by its verbs in angle brackets (`homma disk-trim <trim|status>`), since a tool with no default verb is refused without one. These exist on unix only,
   since renki builds there only, and off unix the footer says so.
 - A script is a file under `.shared/scripts`, at any depth, that can be run: it is
   executable, or it starts with a shebang line, in which case its command is the
@@ -530,15 +530,15 @@ tool.
   Its descriptor is the comment block it opens with,
   read in place. The block is the run of comment lines after the shebang, in
   whichever spelling the language gives it: `#` lines, a `"""` docstring or a
-  `/** */` block. Its first line of prose is the summary, with a leading
-  `<name> - ` or `<name>: ` taken off; a line that is only rules (`====`) is
+  `/** */` block or `//` lines. Its first line of prose is the summary, with a leading
+  `<name> - `, `<name>: ` or `<name>` and an em-dash taken off; a line that is only rules (`====`) is
   skipped. A line after that one which begins with the script's own name is a usage line,
-  and its second word, when it is a plain lowercase word, names a verb the script
-  takes. A line `tags: a, b` in the block adds tags. The directory the script
+  and its second word, when it is a plain lowercase word set off by a single space
+  and not by a column gap, names a verb the script takes. A `shellcheck` line is not part of the block. A line `tags: a, b` in the block adds tags. The directory the script
   sits in is its place, since `remote` and `hygiene` are how the workspace already
   groups them. The prose after the summary is kept as the rest of the header. A
   script with no such block has no descriptor and is counted, not guessed at. The
-  directories `probes`, `.venv`, `node_modules` and `__pycache__` are not read.
+  directories `probes`, `.git`, `.venv`, `node_modules` and `__pycache__` are not read.
 - A homma verb is a subcommand of homma, read from clap's own description of the
   command line, two levels deep, so `homma rules about` is found by its own name
   and its own help. These need no descriptor, since the command line is one.
@@ -558,7 +558,7 @@ tool.
   topics as tags and its card as the rest of its text. Its command is `homma rules show <name>`.
 
 What a source cannot be read from is not an error. An absent directory is a source
-with nothing in it, a local config that does not parse widens nothing silently,
+with nothing in it, a local config that does not parse is read as naming no repository, so every repository is listed, and the footer says so,
 a workspace with no mockspace repository has no such commands, and a source left
 out by a flag is a source not read. The answer's footer says each, with the count of what it
 could not describe: `12 scripts under .shared/scripts carry no header comment`,
@@ -567,10 +567,10 @@ tools failed`. The footer is the way a gap in the tooling becomes visible to the
 agent that hit it, and it is printed whether or not anything matched.
 
 How a query finds a thing. The text is lowercased, split into words at everything
-that is not a letter or a digit, and the filler is dropped, a short fixed list of
+that is not a letter or a digit, and the filler is dropped, as it is or once stemmed, a short fixed list of
 the words that carry no subject (`a`, `the`, `to`, `for`, `use`, `what`, `which`,
 `how`, `do`, `i`, `my`, `this`, and the like). What remains is reduced to stems
-the same way the sources' text is, by taking off a plural, `ing`, `ed` and the
+the same way the sources' text is, by taking off a plural, then `ing` or `ed`, so a root such as `speed` is cut the same bare or plural, and the
 like, so `landed`, `lands` and `landing` are one stem. A word is looked for in
 seven places, each with its own weight, from the most to the least: the name, the
 tags, the verb names, the summary, the verb summaries, the place (the

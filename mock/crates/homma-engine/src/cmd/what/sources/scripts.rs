@@ -296,7 +296,7 @@ pub fn parse(name: &str, path: &str, text: &str) -> Option<Doc> {
 
 fn strip_name(t: &str, name: &str, stem: &str) -> String {
     for n in [name, stem] {
-        for sep in [" - ", ": ", " \u{2014} ", ": "] {
+        for sep in [" - ", ": ", " \u{2014} "] {
             if let Some(r) = t.strip_prefix(n).and_then(|r| r.strip_prefix(sep)) {
                 return r.trim().to_string();
             }
@@ -311,6 +311,10 @@ fn usage(name: &str, stem: &str, path: &str, t: &str) -> Option<Verb> {
     let first = words.next()?;
     let base = first.rsplit('/').next().unwrap_or(first);
     if base != name && base != stem {
+        return None;
+    }
+    // The verb follows the name after one space; a column of description after a gap is not a verb.
+    if t[first.len() ..].starts_with("  ") {
         return None;
     }
     let verb = words.next()?;

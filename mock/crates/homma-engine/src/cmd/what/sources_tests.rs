@@ -377,7 +377,10 @@ fn the_real_tools_carry_their_verbs_and_how_to_run_them() {
         .iter()
         .find(|d| d.name == "disk-trim")
         .expect("disk-trim");
-    assert_eq!(t.command, "homma disk-trim");
+    assert_eq!(
+        t.command, "homma disk-trim <trim|auto|report>",
+        "bare, it names the verbs it wants"
+    );
     assert!(
         t.verbs
             .iter()
@@ -398,5 +401,126 @@ fn the_first_line_of_prose_is_the_summary_even_when_it_starts_with_the_name() {
     assert_eq!(
         d.verbs.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
         ["check"]
+    );
+}
+
+#[test]
+fn a_column_of_description_after_the_name_is_not_a_verb() {
+    let d = scripts::parse(
+        "storage.py",
+        "python3 .shared/scripts/watch/storage.py",
+        "#!/usr/bin/env python3\n# storage.py - the catalogue, scored\n#   storage.py      every storage purpose, its candidates\n#   storage.py show  one purpose\n",
+    )
+    .unwrap();
+    assert_eq!(
+        d.verbs.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
+        ["show"],
+        "`every` follows a column gap and is description"
+    );
+}
+
+#[test]
+fn a_programs_own_source_counts_only_where_executable_and_tests_never() {
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "p/src/run", "#!/bin/sh\n# run - runs\n", true);
+    plant(
+        dir.path(),
+        "p/src/helper.sh",
+        "#!/bin/sh\n# helper - helps\n",
+        false,
+    );
+    plant(
+        dir.path(),
+        "p/lib/util.sh",
+        "#!/bin/sh\n# util - utils\n",
+        false,
+    );
+    plant(
+        dir.path(),
+        "p/tests/check",
+        "#!/bin/sh\n# check - checks\n",
+        true,
+    );
+    plant(
+        dir.path(),
+        "p/test_thing.sh",
+        "#!/bin/sh\n# thing - tests\n",
+        true,
+    );
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["run"]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_scripts_directory_being_a_link_is_a_gap_and_not_a_way_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    plant(
+        outside.path(),
+        "x/secret",
+        "#!/bin/sh\n# secret - outside\n",
+        true,
+    );
+    std::fs::create_dir_all(dir.path().join(".shared")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join(".shared/scripts"),
+        dir.path().join(".shared/scripts"),
+    )
+    .unwrap();
+    let g = scripts::gather(dir.path());
+    assert!(g.docs.is_empty(), "{:?}", g.docs);
+    assert!(!g.gaps.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn an_executable_that_is_not_text_is_skipped_and_does_not_stop_the_walk() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
+    let bin = dir.path().join(".shared/scripts/a/blob");
+    std::fs::write(&bin, [0xFF_u8, 0xFE, 0x00, 0x80]).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let g = scripts::gather(dir.path());
+    assert_eq!(
+        g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+        ["one"]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_grandchild_holding_the_pipe_after_the_child_exits_does_not_hold_the_listing() {
+    let dir = tempfile::tempdir().unwrap();
+    let prog = fake_cargo(dir.path(), "(sleep 20 &)\nprintf '    mock lock  seal\\n'");
+    let t = std::time::Instant::now();
+    let out =
+        mock::list(&prog, dir.path(), std::time::Duration::from_secs(30)).expect("the listing");
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(10),
+        "it waited for the grandchild: {:?}",
+        t.elapsed()
+    );
+    assert!(out.contains("mock lock"));
+}
+
+#[test]
+fn a_local_config_that_does_not_parse_widens_the_scope_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("homma.local.toml"), "= = not toml [").unwrap();
+    let (repos, gap) = super::scope(dir.path());
+    assert!(
+        repos.is_empty(),
+        "no repository is named by a config nobody could read"
+    );
+    let gap = gap.expect("the footer names it");
+    assert!(
+        gap.what.contains("homma.local.toml cannot be read"),
+        "{}",
+        gap.what
     );
 }

@@ -80,12 +80,14 @@ fn a_tie_breaks_on_kind_and_then_name() {
 }
 
 #[test]
-fn a_rule_ranks_below_a_tool_that_says_the_same() {
+fn a_rule_and_a_skill_rank_below_a_tool_that_says_the_same() {
+    // The same words in the same field of each, so only the kind decides.
     let docs = vec![
-        doc(Kind::Rule, "trim-the-disk", "trim the disk", &[]),
-        doc(Kind::Tool, "disk-trim", "trim the disk", &[]),
+        doc(Kind::Rule, "x-rule", "trim the disk", &[]),
+        doc(Kind::Skill, "x-skill", "trim the disk", &[]),
+        doc(Kind::Tool, "x-tool", "trim the disk", &[]),
     ];
-    assert_eq!(names(&docs, "trim disk")[0], "disk-trim");
+    assert_eq!(names(&docs, "trim disk"), ["x-tool", "x-skill", "x-rule"]);
 }
 
 #[test]

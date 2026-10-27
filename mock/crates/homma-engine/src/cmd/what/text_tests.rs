@@ -57,15 +57,6 @@ fn words_split_at_everything_that_is_not_a_letter_or_a_digit() {
 }
 
 #[test]
-fn a_better_match_is_worth_more() {
-    let order = [Grade::Same, Grade::Synonym, Grade::Prefix, Grade::Fuzzy];
-    assert!(
-        order.windows(2).all(|w| w[0].worth() > w[1].worth()),
-        "worth must fall with the grade"
-    );
-}
-
-#[test]
 fn no_word_is_in_two_synonym_groups_once_stemmed() {
     let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for (i, g) in super::text::SYNONYMS.iter().enumerate() {
@@ -148,4 +139,34 @@ fn edit_distance_counts_a_swap_as_one() {
     assert_eq!(edit_distance("disk", "dsik"), 1);
     assert_eq!(edit_distance("kitten", "sitting"), 3);
     assert_eq!(edit_distance("", "abc"), 3);
+}
+
+#[test]
+fn a_root_that_ends_in_a_suffix_is_cut_the_same_bare_and_plural() {
+    for (bare, plural) in [("speed", "speeds"), ("embed", "embeds"), ("string", "strings")] {
+        assert_eq!(stem(bare), stem(plural), "{bare} is not {plural}");
+    }
+}
+
+#[test]
+fn the_filler_is_dropped_as_it_is_and_once_stemmed() {
+    for w in ["script", "scripts", "command", "commands", "use", "uses"] {
+        assert!(is_filler(w), "{w} carries a subject");
+    }
+    assert!(
+        pairs("which scripts free disk")
+            .iter()
+            .all(|(w, _)| w != "scripts")
+    );
+}
+
+#[test]
+fn an_exact_match_beats_a_misspelling_of_the_same_word() {
+    assert_eq!(grade("disk", "disk"), Some(Grade::Same));
+    assert_eq!(grade("dsik", "disk"), Some(Grade::Fuzzy));
+    let order = [Grade::Same, Grade::Synonym, Grade::Prefix, Grade::Fuzzy];
+    assert!(
+        order.windows(2).all(|w| w[0].worth() > w[1].worth()),
+        "worth must fall with the grade"
+    );
 }
