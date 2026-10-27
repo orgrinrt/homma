@@ -268,3 +268,98 @@ fn a_layer_that_cannot_be_read_stops_the_verbs_and_not_the_rest_of_homma() {
             .and(predicate::str::contains("homma.toml does not parse").not()),
     );
 }
+
+/// The whole chain once: git-shook holds the key, `hook install` is routed to
+/// it, and a real commit from the member, with no `--dir`, runs the entry only
+/// the clone's own file declares. Needs `GIT_SHOOK` naming the git-shook script
+/// and says so when it is unset.
+#[test]
+fn a_layer_only_hook_installed_under_git_shook_runs_on_a_real_commit() {
+    let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK names no git-shook script");
+        return;
+    };
+    let shook_dir = script.parent().unwrap().to_path_buf();
+    let (_d, root, member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("homma.local.toml"),
+        "[instance]\nwork = \"x\"\n[[hooks.pre-commit]]\nrun = \"echo LAYER-RAN\"\n",
+    )
+    .unwrap();
+    // the entrypoints call `homma`, the launcher, which hands the engine the
+    // workspace root; this stands in for it with the same two words
+    let shim = tempfile::tempdir().unwrap();
+    let launcher = shim.path().join("homma");
+    std::fs::write(
+        &launcher,
+        format!(
+            "#!/bin/sh\nexec '{}' --dir '{}' \"$@\"\n",
+            bin().get_program().to_string_lossy(),
+            root.display()
+        ),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = format!(
+        "{}:{}:{}",
+        shim.path().display(),
+        shook_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |args: &[&str]| {
+        git()
+            .args(args)
+            .current_dir(&member)
+            .env("PATH", &path)
+            .output()
+            .unwrap()
+    };
+    for c in [&["config", "user.email", "t@t"][..], &["config", "user.name", "t"][..]] {
+        assert!(run(c).status.success());
+    }
+    // git-shook adopts a clone only when it has a manifest, so the key is taken
+    // with a clone-local one that registers a harmless entry of someone else's
+    std::fs::create_dir_all(member.join(".git/shook/manifests")).unwrap();
+    std::fs::write(
+        member.join(".git/shook/manifests/other.toml"),
+        "name = \"other\"\n\n[hooks.pre-push]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let adopted = run(&["shook", "install", "--yes"]);
+    assert!(adopted.status.success(), "{adopted:?}");
+    assert!(
+        git()
+            .args(["config", "--get", "core.hooksPath"])
+            .current_dir(&member)
+            .output()
+            .unwrap()
+            .stdout
+            .ends_with(b"shook/hooks\n"),
+        "control: git-shook holds the key"
+    );
+
+    homma(&root)
+        .env("PATH", &path)
+        .args(["hook", "install", "r"])
+        .assert()
+        .success();
+    homma(&root)
+        .env("PATH", &path)
+        .args(["hook", "doctor", "r"])
+        .assert()
+        .success();
+
+    std::fs::write(member.join("f"), "x").unwrap();
+    assert!(run(&["add", "f"]).status.success());
+    let committed = run(&["commit", "-qm", "one"]);
+    assert!(committed.status.success(), "{committed:?}");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&committed.stdout),
+        String::from_utf8_lossy(&committed.stderr)
+    );
+    assert!(said.contains("LAYER-RAN"), "the layer's entry ran: {said}");
+}

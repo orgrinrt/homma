@@ -151,6 +151,20 @@ pub(super) fn common_dir(root: &Path) -> Result<PathBuf, HookError> {
     Ok(PathBuf::from(out.stdout.trim()))
 }
 
+/// What git's own hooks directory holds for `event`: `Direct` where the file is
+/// exactly the text homma writes, which is what git runs with no hooks path and
+/// what mockspace's gate chains to, `NotInstalled` where there is none, and
+/// `Other` where it is somebody else's.
+fn own_entrypoint(root: &Path, event: &str) -> Result<Reach, HookError> {
+    let file = hooks_dir(root)?.join(event);
+    Ok(match std::fs::read(&file) {
+        Ok(bytes) if bytes == script(event).as_bytes() => Reach::Direct,
+        Ok(_) => Reach::Other(file),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Reach::NotInstalled(file),
+        Err(_) => Reach::Other(file),
+    })
+}
+
 /// How git reaches `root`'s own entrypoint for `event`: directly with no
 /// hooks path, through git-shook's dispatcher, where homma is reached as a
 /// registered entry or not at all, else through whatever sits at
@@ -161,15 +175,7 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
         // git reads its own directory, and reaches the entrypoint only if one is
         // there: counting it reached from the absence of a hooks path alone made
         // `hook doctor` pass in a repository where nothing was ever installed
-        let file = hooks_dir(root)?.join(event);
-        // and git runs whatever file is there, so it is homma's entrypoint only
-        // where the bytes are exactly what `script` writes
-        return Ok(match std::fs::read(&file) {
-            Ok(bytes) if bytes == script(event).as_bytes() => Reach::Direct,
-            Ok(_) => Reach::Other(file),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Reach::NotInstalled(file),
-            Err(_) => Reach::Other(file),
-        });
+        return own_entrypoint(root, event);
     };
     if dir == super::shook::hooks_dir(root)? {
         return super::shook::reach(root, event);
@@ -180,7 +186,12 @@ pub fn reach(root: &Path, event: &str) -> Result<Reach, HookError> {
             let head: String =
                 String::from_utf8_lossy(&bytes[.. bytes.len().min(512)]).into_owned();
             if head.lines().take(4).any(|l| l.contains(MOCKSPACE_MARKER)) {
-                Ok(Reach::Chained(file))
+                // the gate chains to git's own directory and to nothing else,
+                // so it reaches the entrypoint only where that holds it
+                match own_entrypoint(root, event)? {
+                    Reach::Direct => Ok(Reach::Chained(file)),
+                    unreached => Ok(unreached),
+                }
             } else {
                 Ok(Reach::Foreign(file))
             }
@@ -436,6 +447,18 @@ mod tests {
             reach(d.path(), "pre-push").unwrap(),
             Reach::Chained(ms.path().join("pre-push"))
         );
+        // mockspace's gate chains to git's own directory and nowhere else: with
+        // no entrypoint there, or somebody else's, the table never runs
+        let none = hooks_dir(d.path()).unwrap().join("pre-commit");
+        let r = reach(d.path(), "pre-commit").unwrap();
+        assert_eq!(r, Reach::NotInstalled(none.clone()));
+        assert!(!r.reached());
+        std::fs::write(&none, "#!/bin/sh\nexit 0\n").unwrap();
+        assert_eq!(
+            reach(d.path(), "pre-commit").unwrap(),
+            Reach::Other(none.clone())
+        );
+        std::fs::remove_file(&none).unwrap();
         assert_eq!(
             reach(d.path(), "post-merge").unwrap(),
             Reach::Missing(ms.path().join("post-merge"))
