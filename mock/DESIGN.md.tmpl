@@ -515,11 +515,17 @@ tool.
   is `homma <name>` where the tool is promoted and `homma tools run <name>` where
   it is not, followed by the verb that matched best. These exist on unix only,
   since renki builds there only, and off unix the footer says so.
-- A script is a file under `.shared/scripts`, at any depth, that is executable or
-  carries a script extension (`sh`, `bash`, `py`, `ts`, `js`, `cjs`), other than a
-  test or a fixture (a name with `_test` or `_fixture` in it, and a `test` runner
-  beside its suite). A symbolic link is not followed, whether to a file or to a
-  directory, so a link cannot make the walk loop or leave the workspace. Its descriptor is the comment block it opens with,
+- A script is a file under `.shared/scripts`, at any depth, that can be run: it is
+  executable, or it starts with a shebang line, in which case its command is the
+  interpreter the line names followed by the path. A file with neither is a
+  library and is not an answer, whatever its extension. A test is not a script: a
+  name with `_test` or `_fixture` in it or starting `test_`, a `test` runner beside
+  its suite, and anything under a `tests` or `test` directory. A program's own
+  source, under a `src` or `lib` directory, is a script only where it is
+  executable. A symbolic link is not followed, whether to a file or to a
+  directory, and the scripts directory itself being a link is a gap in the footer
+  and not a way out of the workspace.
+  Its descriptor is the comment block it opens with,
   read in place. The block is the run of comment lines after the shebang, in
   whichever spelling the language gives it: `#` lines, a `"""` docstring or a
   `/** */` block. Its first line of prose is the summary, with a leading
@@ -538,7 +544,8 @@ tool.
   workspace that has a `mockspace.toml`: the builtin subcommands and the project
   tools, with the kind the listing gives each. It is the one source that starts a
   process, one for each repository and side by side, with both its pipes drained as
-  it runs and the whole process group ended when it overruns, so it is the only one `--no-mock` leaves out, it is run for no
+  it runs and the whole process group ended when it overruns, the limit counting the time spent reading
+  as well as waiting, so it is the only one `--no-mock` leaves out, it is run for no
   repository outside the instance's `repos` where that is given, and a repository
   where it fails is named in the footer. The builtins are the same in every repository and are
   listed once.
@@ -548,7 +555,9 @@ tool.
   its topics as tags. Its command is `homma rules show <name>`.
 
 What a source cannot be read from is not an error. An absent directory is a source
-with nothing in it, and the answer's footer says so, with the count of what it
+with nothing in it, a local config that does not parse widens nothing silently,
+a workspace with no mockspace repository has no such commands, and a source left
+out by a flag is a source not read. The answer's footer says each, with the count of what it
 could not describe: `12 scripts under .shared/scripts carry no header comment`,
 `1 tool.toml cannot be read`, `mockspace commands not listed in muisti: cargo mock
 tools failed`. The footer is the way a gap in the tooling becomes visible to the
@@ -606,7 +615,10 @@ real tools and scripts, never against a fixture made to pass: each query is what
 a helper or the coordinator would type and names the thing that must come first,
 and one query must return nothing. The set lives with the command's tests and
 reads the workspace the repository sits in; where there is no workspace around
-the repository the set is refused, not skipped.
+the repository the set is refused, not skipped. It is run with every source, the mockspace listing among them, since
+that source can push a tool from first place. A query the matcher does not yet
+answer is kept as an ignored case that says what should come first, and the
+work's report says the requirement behind it is unmet.
 
 The instance's scope (`repos` under `[instance]` in `homma.local.toml`) is kept
 where it applies: the tools, scripts, skills and rules belong to the workspace
