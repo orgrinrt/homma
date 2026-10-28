@@ -523,7 +523,15 @@ tool.
 - A tool is a directory with a `tool.toml`, read the way `homma tools` reads it:
   the name, the summary, the tags, and each verb with its own summary. Its command
   is `homma <name>` where the tool is promoted and `homma tools run <name>` where
-  it is not, followed by the verb that matched best, and where none matched and the tool has verbs but none named for itself, followed by its verbs in angle brackets (`homma disk-trim <trim|auto|report>`), since a tool with no default verb is refused without one. These exist on unix only,
+  it is not, followed by the verb that matched best, and where none matched and the tool has verbs but none named for itself, followed by its verbs in angle brackets (`homma disk-trim <trim|auto|report>`), since a tool with no default verb is refused without one.
+  The tool's `README.md`, beside the descriptor, is read too, for a tool whose forms are written there
+  and not declared one by one (`msg`, whose channel is an argument and whose verbs follow it). A line in a
+  fenced block that begins with the tool's name or the name of one of its commands is a usage line, and a
+  usage line is a verb: its name is the words after the command, its summary is the text set off by a
+  column gap of two spaces or more, and its command is the line without that text, the tool's own name
+  replaced by the command that dispatches it, so `msg kaski show 3f9a1c` is answered as `homma msg kaski show 3f9a1c`.
+  The prose of the readme is the rest of the tool's text, weighed as the rest of a script's header is. A
+  readme that is absent or unreadable is no gap, since a tool does not need one.
   since renki builds there only, and off unix the footer says so.
 - A script is a file under `.shared/scripts`, at any depth, that can be run: it is
   executable, or it starts with a shebang line, in which case its command is the
