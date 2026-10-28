@@ -908,3 +908,18 @@ store.
 `homma status` carries the instance, one line in the human output and the
 table whole in the document, `null` where there is no file. Where the file does
 not parse the instance is `null` and `instance_error` carries the message.
+
+A file names a console when `[tools.console]` carries a non-empty `channel`, and a
+clone that does keeps no dashboard, the console being its replacement. Homma
+holds no opinion on what a dashboard is, so what it does about that is limited
+to the file: `local set` refuses a key under `tools.dashboard` in such a file,
+which would otherwise put a recorded page back into a clone that has none, and
+`local install` refuses a stored config that names a console and also carries a
+`tools.dashboard` table, so a fresh clone is never started from the
+contradiction. The tool that builds the page reads the same fact from the
+parsed file and refuses its own verbs.
+
+An injected tool that prints nothing and does not fail gets no heading in the
+human output of `homma status`, so a tool that has switched itself off leaves no
+empty line behind. A tool that failed keeps its heading, and the document
+carries every block either way.
