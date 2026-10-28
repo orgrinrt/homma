@@ -38,6 +38,14 @@ Verification: a test that the file is executable, names the engine that wrote it
 File: `mock/crates/homma-engine/tests/answers_smoke.rs`
 Verification: a workspace fixture, a directory of documents and a stand-in launcher: the first run writes one capture and attaches, a second run prints nothing and writes nothing (the case that must fail if the store keys were not read), `--output json` names the capture, and the delegate run through a hook placed by `homma answers hook` writes a capture and a pointer.
 
+## CHANGE: enum variant `Outcome::Exit` added, a command that ends on a status of its own
+File: `mock/crates/homma-engine/src/cmd/mod.rs`
+Verification: the smoke test reads status 3 from the placed hook when the delegate declines, which is how mockspace tells a declined step from a failed one.
+
+## Finding: the console's ticket document
+
+The console sends a ticket question as `kind: ticket` with `key: {"ticket": "<id>"}`, where the drain accepts only a plain identifier for both. `docs::fault` takes either shape, and the drain's own validation still refuses the console's documents until it is rewired onto this command.
+
 ## Open topics
 
 The four other foreign flat topics need nothing from this round; `202610270717_topic.capture-answers-left-on-a-page.md` is answered and archived with it.

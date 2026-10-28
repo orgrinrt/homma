@@ -32,6 +32,7 @@ use crate::cli::{
 pub mod agent;
 pub mod agents;
 pub mod aggregate;
+pub mod answers;
 pub mod archive;
 pub mod capture;
 pub mod config;
@@ -74,6 +75,9 @@ pub enum Outcome {
     /// Command completed, emitted its own diagnostic, and signals a
     /// non-zero exit. Used by `verify` when checks fail.
     ReportedFailure,
+    /// Command completed and asks the process to exit with this status. `answers delegate` uses 3
+    /// to leave a write to mockspace, which is neither success nor failure.
+    Exit(u8),
 }
 
 /// Dispatch the parsed CLI to the right command body.
@@ -310,6 +314,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             capture::run(&cfg, &ask, &denied, cli.output)?;
             Ok(Outcome::Ok)
         },
+        Command::Answers {
+            op,
+        } => answers::run(&cli, op),
         Command::Agent {
             op,
         } => {
