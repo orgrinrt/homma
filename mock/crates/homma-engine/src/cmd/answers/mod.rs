@@ -285,6 +285,11 @@ pub fn run(cli: &Cli, op: &AnswersOp) -> Result<Outcome> {
             match delegate::run(&run, &repo, target, field, value)? {
                 delegate::Delegated::Whole => Ok(Outcome::Ok),
                 delegate::Delegated::Declined => Ok(Outcome::Exit(3)),
+                // Exit 1, the status of a command that ran and reported; an `Err` here would be 2.
+                delegate::Delegated::Failed(why) => {
+                    eprintln!("{why}");
+                    Ok(Outcome::ReportedFailure)
+                },
             }
         },
     }

@@ -133,3 +133,49 @@ fn the_placed_hook_takes_words_and_declines_the_rest() {
     answers(&root, &mock, &["hook", "--remove"]).success();
     assert!(!hook.exists());
 }
+
+#[test]
+fn a_hook_whose_row_cannot_be_written_exits_one_leaves_no_capture_and_can_be_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, _page, _mock) = setup(dir.path());
+    // A launcher that refuses until the row "exists", which is the file `ready`.
+    let ready = dir.path().join("ready");
+    let mock = dir.path().join("refusing-mock");
+    std::fs::write(
+        &mock,
+        format!(
+            "#!/bin/sh\n[ -e '{}' ] || {{ echo 'no such row' >&2; exit 2; }}\necho \"$@\" >> '{}'\n",
+            ready.display(),
+            dir.path().join("args").display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&mock, std::fs::Permissions::from_mode(0o755)).unwrap();
+    answers(&root, &mock, &["hook"]).success();
+    let hook = root.join(".mockspace/hooks/registry-append");
+    let run = || {
+        std::process::Command::new(&hook)
+            .current_dir(root.join("kaski"))
+            .env("HOMMA_MOCK", &mock)
+            .env("MOCKSPACE_REPO_ROOT", root.join("kaski"))
+            .args(["ticket::tk_one", "answers", "2026-10-28T09:41:00Z: yes please"])
+            .output()
+            .unwrap()
+    };
+    let failed = run();
+    assert_eq!(failed.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("no such row"));
+    assert_eq!(
+        captures(&root),
+        0,
+        "a failed append leaves nothing to be dropped as recorded"
+    );
+    std::fs::write(&ready, "").unwrap();
+    assert_eq!(run().status.code(), Some(0));
+    assert_eq!(captures(&root), 1);
+    let log = std::fs::read_to_string(dir.path().join("args")).unwrap();
+    assert!(
+        log.contains("ticket::tk_one answers 2026-10-28T09:41:00Z: "),
+        "{log}"
+    );
+}

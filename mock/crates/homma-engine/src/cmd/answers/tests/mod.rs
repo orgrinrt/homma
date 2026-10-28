@@ -478,18 +478,23 @@ fn a_delegate_whose_row_cannot_be_written_fails_and_says_why() {
     let mock = script(tmp.path(), "mock", "echo 'no such row' >&2; exit 2");
     let run = run_in(tmp.path(), Some(mock));
     let repo = tmp.path().join("kaski");
-    let err = delegate::run(
+    let done = delegate::run(
         &run,
         &repo,
         "ticket::t1",
         "answers",
         "2026-10-28T09:40:00Z: yes",
     )
-    .unwrap_err()
-    .to_string();
+    .unwrap();
+    let delegate::Delegated::Failed(why) = done else { panic!("{done:?}") };
     assert!(
-        err.contains("no such row") && err.contains("ticket::t1"),
-        "{err}"
+        why.contains("no such row") && why.contains("ticket::t1"),
+        "{why}"
+    );
+    assert_eq!(
+        fs::read_dir(&run.store).unwrap().count(),
+        0,
+        "the capture is taken away again"
     );
 }
 

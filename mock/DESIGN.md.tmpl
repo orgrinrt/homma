@@ -353,7 +353,9 @@ to the row with `--local`. The id it gives the document carries a short hash of
 the words, so two appends at the same `<at>` with different words are two
 documents, and the same words twice are one. A row that cannot be written is a
 failure and not a success: the delegate prints why on stderr and exits 1, which
-mockspace reports with what it printed, and the capture it wrote stays. For
+mockspace reports with what it printed, and the capture it wrote is taken away,
+so that the same append made again once the row exists is taken afresh and not
+dropped as already recorded. For
 anything else it exits 3, which leaves the write
 to mockspace, so a repository in a workspace with these tools behaves as one
 without them for every other field. `homma answers hook` places that file in the

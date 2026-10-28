@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result};
 use serde_json::json;
 
 use super::docs::{self, Collection};
@@ -21,6 +21,9 @@ pub enum Delegated {
     Whole,
     /// Not a step for this command; mockspace writes the row.
     Declined,
+    /// The row could not be written, for the reasons given. The capture is taken away again, so
+    /// the same append made later is taken afresh and not dropped as already recorded.
+    Failed(String),
 }
 
 /// The value of an `answers` entry made of words: `<at>: <words>`.
@@ -64,7 +67,11 @@ pub fn run(run: &Run, repo: &Path, target: &str, field: &str, value: &str) -> Re
     let source = Source::Delegated(target);
     let taken = take_documents(run, read, &source, Some(repo))?;
     if !taken.left.is_empty() {
-        bail!("{}", taken.left.join("; "));
+        if let Some(capture) = &taken.written {
+            std::fs::remove_file(capture)
+                .with_context(|| format!("taking away {}", capture.display()))?;
+        }
+        return Ok(Delegated::Failed(taken.left.join("; ")));
     }
     Ok(Delegated::Whole)
 }
