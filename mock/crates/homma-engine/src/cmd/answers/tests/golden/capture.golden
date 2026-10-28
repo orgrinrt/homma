@@ -1,0 +1,70 @@
+---
+when: 2026-10-28 09:40
+kind: mixed
+source: the documents in fixture
+bears_on:
+  - clause-dev
+  - kaski
+tags: [dashboard, answers, notes]
+store:
+  - answers/q1@2026-10-28T09:10:00Z
+  - answers/q2@2026-10-28T09:20:00Z
+  - answers/a3@2026-10-28T09:30:00Z
+  - notes/20261028094000@2026-10-28T09:40:00Z
+---
+
+# op answers q1, q2 and 1 more and leaves a note
+
+Left on the dashboard page, copied field for field.
+
+## q1, answered at 2026-10-28T09:10:00Z
+
+  ```text
+  Which era comes first?
+  ```
+
+Options offered:
+
+1. Stone
+2. Bronze
+
+Chosen:
+
+- Bronze
+
+> Bronze, but keep it short.
+>
+> And a second paragraph.
+
+## q2, answered at 2026-10-28T09:20:00Z
+
+  ````text
+  Is ```this``` fenced?
+  second line
+  ````
+
+Options offered: none, free text.
+
+> yes
+
+## a3, answered at 2026-10-28T09:30:00Z
+
+  ```text
+  Pick one
+  ```
+
+Options offered:
+
+1. x
+2. y
+
+Chosen:
+
+- x
+
+## A note, left at 2026-10-28T09:40:00Z
+
+> remember the
+>
+> second paragraph
+
