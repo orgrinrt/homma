@@ -8,11 +8,11 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use serde_json::json;
 
 use super::docs::{self, Collection};
-use super::{Run, Source, take_documents};
+use super::{Run, Source, render, take_documents};
 
 /// What the delegate did.
 #[derive(Debug, PartialEq, Eq)]
@@ -42,7 +42,9 @@ pub fn run(run: &Run, repo: &Path, target: &str, field: &str, value: &str) -> Re
         .and_then(|n| n.to_str())
         .unwrap_or_default();
     let document = json!({
-        "id": format!("{namespace}.{id}"),
+        // The words are part of the id, so a second append at the same `<at>` with other words is
+        // another document and not a duplicate the store key drops; the same words stay one.
+        "id": format!("{namespace}.{id}-{}", render::digest(said)),
         "key": { namespace: id },
         "kind": "registry",
         "where": place,
@@ -60,6 +62,9 @@ pub fn run(run: &Run, repo: &Path, target: &str, field: &str, value: &str) -> Re
         skipped: Vec::new(),
     };
     let source = Source::Delegated(target);
-    take_documents(run, read, &source, Some(repo))?;
+    let taken = take_documents(run, read, &source, Some(repo))?;
+    if !taken.left.is_empty() {
+        bail!("{}", taken.left.join("; "));
+    }
     Ok(Delegated::Whole)
 }

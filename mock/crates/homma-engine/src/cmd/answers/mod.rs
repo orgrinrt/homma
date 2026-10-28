@@ -35,7 +35,10 @@ mod tests;
 /// Where the documents came from, as the capture says it.
 pub enum Source<'a> {
     Dir(&'a Path),
-    Channel(&'a str),
+    Channel {
+        channel: &'a str,
+        from:    &'a str,
+    },
     Delegated(&'a str),
 }
 
@@ -43,8 +46,62 @@ impl Source<'_> {
     fn words(&self) -> String {
         match self {
             Source::Dir(d) => format!("the documents in {}", d.display()),
-            Source::Channel(c) => format!("the channel {c}"),
+            Source::Channel {
+                channel,
+                ..
+            } => format!("the channel {channel}"),
             Source::Delegated(t) => format!("registry-append of {t}"),
+        }
+    }
+
+    /// The tag a capture carries for where its words were left.
+    pub(crate) fn tag(&self) -> &'static str {
+        match self {
+            Source::Dir(_) => "dashboard",
+            Source::Channel {
+                ..
+            } => "channel",
+            Source::Delegated(_) => "registry-append",
+        }
+    }
+
+    /// The sentence under a capture's title.
+    pub(crate) fn lead(&self) -> String {
+        match self {
+            Source::Dir(_) => "Left on the dashboard page, copied field for field.".into(),
+            Source::Channel {
+                channel,
+                ..
+            } => {
+                format!("Left on the channel {channel}, copied field for field.")
+            },
+            Source::Delegated(t) => {
+                format!("Appended to {t} with registry-append, copied field for field.")
+            },
+        }
+    }
+
+    /// Who the title says spoke: the page is op's, a channel's is whoever `--from` names, and
+    /// a delegated append does not say.
+    pub(crate) fn speaker(&self) -> &str {
+        match self {
+            Source::Dir(_) => "op",
+            Source::Channel {
+                from,
+                ..
+            } => from,
+            Source::Delegated(_) => "someone",
+        }
+    }
+
+    /// Where a title says notes were left, with its leading space, or nothing.
+    pub(crate) fn place(&self) -> &'static str {
+        match self {
+            Source::Dir(_) => " on the page",
+            Source::Channel {
+                ..
+            } => " on the channel",
+            Source::Delegated(_) => "",
         }
     }
 }
@@ -117,9 +174,9 @@ pub fn take_documents(
         .max()
         .unwrap_or_default()
         .to_string();
-    let title = render::title(&fresh);
+    let title = render::title(&fresh, source);
     let name = render::name(&run.store, &latest, &title, &fresh);
-    let body = render::text(&fresh, &render::when_of(&latest), &source.words(), &title);
+    let body = render::text(&fresh, &render::when_of(&latest), source, &title);
     std::fs::create_dir_all(&run.store)
         .with_context(|| format!("making {}", run.store.display()))?;
     let file = run.store.join(&name);
@@ -198,7 +255,10 @@ pub fn run(cli: &Cli, op: &AnswersOp) -> Result<Outcome> {
                 (None, Some(c)) => {
                     (
                         docs::read_channel(root, &docs::msg_program(root), c, from)?,
-                        Source::Channel(c),
+                        Source::Channel {
+                            channel: c,
+                            from,
+                        },
                     )
                 },
                 (None, None) => bail!("name a --dir or a --channel to take from"),

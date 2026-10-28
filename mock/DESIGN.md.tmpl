@@ -321,7 +321,7 @@ tool for the messages of kind `answer` and `note` from `--from` (`op` by default
 and takes each body that is a JSON document. A document is checked before
 anything is derived from it, because whoever can open the page wrote it: a
 timestamp in `at`, an identifier of plain characters in `id`, `key` and `where`,
-a `kind` of `agenda` or `registry`, text in `asks`, `choice` and `text`, a list
+a `kind` of plain characters (`registry` is the one the engine reads: a bare id on it names the `question` row of that id), text in `asks`, `choice` and `text`, a list
 of text in `options`, and no control character in a choice or an option. One
 that fails is named on stderr and skipped. A document's store key is
 `answers/<id>@<at>` or, for a note, `notes/<digits of at>@<at>`, and one whose key
@@ -329,8 +329,12 @@ a capture in the store already lists under `store:` is not taken again, so a run
 with nothing new writes nothing. What is new is one capture, `kind` being
 `answers`, `notes` or `mixed`, with the questions, every option offered and the
 choice in plain words, and what was written as a blockquote, each copied as the
-page holds it; the name is the minute of the latest `at` and a title made of the
-ids answered, and a name already taken gets a short hash of the keys. Each answer
+page holds it. Where the words were left is said in the capture and not assumed:
+the `tags` and the line under the title read the dashboard page for `--dir`, the
+channel for `--channel` and the `registry-append` for the delegate, and the title
+names who spoke, `op` for a directory, `--from` for a channel and `someone` for
+the delegate. The name is the minute of the latest `at` and the title as a slug,
+and a name already taken gets a short hash of the keys. Each answer
 whose `key` names a row, `{"ticket": "<id>"}` or a bare id of a `question`, is
 attached to it: `cargo mock registry-append <namespace>::<id> answers "<at>:
 <capture path>"` with `--local`, in the repository the document's `where` names
@@ -345,11 +349,19 @@ workspace's `.mockspace/hooks/registry-append` runs, which mockspace consults
 before it writes a row. It takes the step whole only for the field `answers` and
 a value of the form `<at>: <words>`: it writes the words as a capture, as an
 answer document with no question would be, and attaches `<at>: <capture path>`
-to the row with `--local`. For anything else it exits 3, which leaves the write
+to the row with `--local`. The id it gives the document carries a short hash of
+the words, so two appends at the same `<at>` with different words are two
+documents, and the same words twice are one. A row that cannot be written is a
+failure and not a success: the delegate prints why on stderr and exits 1, which
+mockspace reports with what it printed, and the capture it wrote stays. For
+anything else it exits 3, which leaves the write
 to mockspace, so a repository in a workspace with these tools behaves as one
 without them for every other field. `homma answers hook` places that file in the
 workspace root, naming the engine that wrote it, and `--remove` takes it away;
-neither prints anything.
+neither prints anything. The file starts with a test that the engine it names is
+still an executable and exits 3 when it is not, so a workspace whose engine was
+replaced or removed writes its rows through mockspace as before and not by a hook
+that fails every one.
 
 Two commands are the launcher's rather than the engine's, because each runs
 where there may be no engine to run. `homma config`, described with the settings
@@ -525,7 +537,7 @@ promoted, and for one whose name a built-in command already holds.
 A built-in command wins over a tool of the same name, except that a built-in
 group hands the verbs it does not know to the tool of its name. A group is every
 built-in command that takes verbs, `org`, `repo`, `forge`, `agent`, `docs`,
-`local`, `rules`, `skills`, `agents`, `release`, `milestone` and `hook`, and none is
+`local`, `rules`, `skills`, `agents`, `release`, `milestone`, `hook` and `answers`, and none is
 singled out. `rules` shows it: `homma rules about` and `homma rules render` are
 the built-in's, and `homma rules show` is the tool's, so the cards' pointer to
 the elaboration is a command that answers. A word that neither the built-in

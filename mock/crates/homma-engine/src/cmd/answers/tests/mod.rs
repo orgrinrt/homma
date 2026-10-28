@@ -187,14 +187,18 @@ fn golden_docs() -> Vec<docs::Document> {
 
 #[test]
 fn the_title_is_the_drains() {
-    assert_eq!(render::title(&golden_docs()), TITLE.trim_end());
+    assert_eq!(
+        render::title(&golden_docs(), &Source::Dir(Path::new("fixture"))),
+        TITLE.trim_end()
+    );
 }
 
 #[test]
 fn the_capture_is_the_drains_byte_for_byte() {
     let d = golden_docs();
-    let title = render::title(&d);
-    let got = render::text(&d, "2026-10-28 09:40", "the documents in fixture", &title);
+    let source = Source::Dir(Path::new("fixture"));
+    let title = render::title(&d, &source);
+    let got = render::text(&d, "2026-10-28 09:40", &source, &title);
     assert_eq!(got, CAPTURE);
 }
 
@@ -204,7 +208,7 @@ fn a_fence_inside_the_question_gets_a_longer_fence() {
         serde_json::from_str(&answer("q", json!("q"), "registry", "2026-10-28T09:10:00Z")).unwrap();
     v["asks"] = json!("run ```x``` now");
     let d = docs::parse(Collection::Answers, &v.to_string()).unwrap();
-    let got = render::text(&[d], "w", "s", "t");
+    let got = render::text(&[d], "w", &Source::Dir(Path::new("s")), "t");
     assert!(got.contains("  ````text\n"), "{got}");
 }
 
@@ -358,7 +362,10 @@ fn a_row_that_cannot_be_written_leaves_the_capture_and_is_named() {
             taken:   vec![d],
             skipped: vec![],
         },
-        &Source::Channel("kaski"),
+        &Source::Channel {
+            channel: "kaski",
+            from:    "op",
+        },
         None,
     )
     .unwrap();
@@ -420,4 +427,219 @@ fn the_hook_is_placed_executable_and_removed() {
     hook::remove(tmp.path()).unwrap();
     assert!(!p.exists());
     hook::remove(tmp.path()).unwrap();
+}
+
+// ---- the review's findings
+
+#[test]
+fn a_kind_that_is_not_a_plain_name_is_refused_and_a_console_kind_is_taken() {
+    let mut v: serde_json::Value = serde_json::from_str(&answer(
+        "q",
+        json!({"ticket": "t"}),
+        "ticket",
+        "2026-10-28T09:40:00Z",
+    ))
+    .unwrap();
+    assert!(docs::parse(Collection::Answers, &v.to_string()).is_ok());
+    for bad in ["../x", "a b", "", "x/y"] {
+        v["kind"] = json!(bad);
+        let why = docs::parse(Collection::Answers, &v.to_string()).unwrap_err();
+        assert!(why.contains("`kind`"), "{bad:?}: {why}");
+    }
+    v["kind"] = json!(7);
+    assert!(
+        docs::parse(Collection::Answers, &v.to_string())
+            .unwrap_err()
+            .contains("`kind`")
+    );
+}
+
+#[test]
+fn a_control_character_in_a_choice_is_refused() {
+    let mut v: serde_json::Value =
+        serde_json::from_str(&answer("q", json!("q"), "registry", "2026-10-28T09:40:00Z")).unwrap();
+    v["choice"] = json!("b\u{1b}[31m");
+    assert!(
+        docs::parse(Collection::Answers, &v.to_string())
+            .unwrap_err()
+            .contains("`choice`")
+    );
+    v["choice"] = json!(["a", "b\u{7}"]);
+    assert!(
+        docs::parse(Collection::Answers, &v.to_string())
+            .unwrap_err()
+            .contains("`choice`")
+    );
+}
+
+#[test]
+fn a_delegate_whose_row_cannot_be_written_fails_and_says_why() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mock = script(tmp.path(), "mock", "echo 'no such row' >&2; exit 2");
+    let run = run_in(tmp.path(), Some(mock));
+    let repo = tmp.path().join("kaski");
+    let err = delegate::run(
+        &run,
+        &repo,
+        "ticket::t1",
+        "answers",
+        "2026-10-28T09:40:00Z: yes",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("no such row") && err.contains("ticket::t1"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_delegate_attaches_with_local_and_the_capture_path_it_wrote() {
+    let tmp = tempfile::tempdir().unwrap();
+    let log = tmp.path().join("args");
+    let mock = script(
+        tmp.path(),
+        "mock",
+        &format!("echo \"$@\" >> '{}'", log.display()),
+    );
+    let run = run_in(tmp.path(), Some(mock));
+    let repo = tmp.path().join("kaski");
+    delegate::run(
+        &run,
+        &repo,
+        "ticket::t1",
+        "answers",
+        "2026-10-28T09:40:00Z: yes",
+    )
+    .unwrap();
+    let args = fs::read_to_string(log).unwrap();
+    assert!(
+        args.starts_with("registry-append ticket::t1 answers 2026-10-28T09:40:00Z: ")
+            && args.trim_end().ends_with(".md --local"),
+        "{args}"
+    );
+}
+
+#[test]
+fn two_appends_at_one_time_with_different_words_are_two_captures_and_the_same_words_are_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let run = run_in(tmp.path(), Some(script(tmp.path(), "mock", "exit 0")));
+    let repo = tmp.path().join("kaski");
+    let at = "2026-10-28T09:40:00Z";
+    for words in ["yes", "no", "yes"] {
+        delegate::run(
+            &run,
+            &repo,
+            "ticket::t1",
+            "answers",
+            &format!("{at}: {words}"),
+        )
+        .unwrap();
+    }
+    let said: Vec<String> = fs::read_dir(&run.store)
+        .unwrap()
+        .map(|e| fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert!(said.iter().any(|c| c.contains("> yes")));
+    assert!(said.iter().any(|c| c.contains("> no")));
+}
+
+#[test]
+fn the_placed_hook_declines_when_its_engine_is_gone_and_runs_it_when_it_is_there() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    let engine = tmp.path().join("homma-engine");
+    // Gone: the placed file exits 3, which leaves the write to mockspace.
+    let file = hook::place(&ws, &engine).unwrap();
+    let gone = std::process::Command::new(&file)
+        .args(["ticket::t", "answers", "x"])
+        .status()
+        .unwrap();
+    assert_eq!(gone.code(), Some(3));
+    // There: it runs the engine named, with the workspace and the verb and the arguments given.
+    let log = tmp.path().join("args");
+    let engine = script(
+        tmp.path(),
+        "homma-engine",
+        &format!("echo \"$@\" > '{}'; exit 0", log.display()),
+    );
+    let file = hook::place(&ws, &engine).unwrap();
+    let ran = std::process::Command::new(&file)
+        .args(["ticket::t", "answers", "x"])
+        .status()
+        .unwrap();
+    assert_eq!(ran.code(), Some(0));
+    assert_eq!(
+        fs::read_to_string(log).unwrap().trim(),
+        format!(
+            "--dir {} answers delegate ticket::t answers x",
+            ws.display()
+        )
+    );
+    // Replaced: placing again names the new engine and no trace of the old.
+    let other = script(tmp.path(), "other-engine", "exit 0");
+    hook::place(&ws, &other).unwrap();
+    let text = fs::read_to_string(hook::path(&ws)).unwrap();
+    assert!(text.contains(other.to_str().unwrap()), "{text}");
+    assert!(!text.contains(engine.to_str().unwrap()), "{text}");
+}
+
+#[test]
+fn a_capture_says_where_its_words_were_left_and_who_left_them() {
+    let docs = vec![
+        docs::parse(
+            Collection::Answers,
+            &answer(
+                "tk",
+                json!({"ticket": "t1"}),
+                "ticket",
+                "2026-10-28T09:40:00Z",
+            ),
+        )
+        .unwrap(),
+    ];
+    let note = docs::parse(
+        Collection::Notes,
+        r#"{"text":"t","at":"2026-10-28T09:41:00Z"}"#,
+    )
+    .unwrap();
+    let from_the_page = Source::Dir(Path::new("fixture"));
+    let from_the_channel = Source::Channel {
+        channel: "kaski",
+        from:    "coord",
+    };
+    let delegated = Source::Delegated("ticket::t1");
+
+    let title = render::title(&docs, &from_the_channel);
+    assert_eq!(title, "coord answers ticket::t1");
+    let text = render::text(&docs, "2026-10-28 09:40", &from_the_channel, &title);
+    assert!(text.contains("tags: [channel, answers]"), "{text}");
+    assert!(text.contains("Left on the channel kaski,"), "{text}");
+    assert!(!text.contains("dashboard"), "{text}");
+
+    let text = render::text(&docs, "w", &delegated, &render::title(&docs, &delegated));
+    assert!(text.contains("tags: [registry-append, answers]"), "{text}");
+    assert!(text.contains("# someone answers ticket::t1"), "{text}");
+    assert!(!text.contains("dashboard"), "{text}");
+
+    // The controls: the page keeps its tag, its lead and `op`, and a note says where it was left.
+    let text = render::text(
+        &docs,
+        "w",
+        &from_the_page,
+        &render::title(&docs, &from_the_page),
+    );
+    assert!(
+        text.contains("tags: [dashboard, answers]") && text.contains("Left on the dashboard page")
+    );
+    assert!(text.contains("# op answers ticket::t1"), "{text}");
+    assert_eq!(
+        render::title(&[note.clone()], &from_the_page),
+        "op leaves a note on the page"
+    );
+    assert_eq!(
+        render::title(&[note], &from_the_channel),
+        "coord leaves a note on the channel"
+    );
 }

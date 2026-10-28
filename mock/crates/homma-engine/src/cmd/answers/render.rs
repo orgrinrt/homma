@@ -14,6 +14,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use super::Source;
 use super::docs::{Collection, Document};
 
 /// A fence one backtick longer than any run inside `text`, three at least.
@@ -98,7 +99,8 @@ fn note_entry(d: &Document) -> String {
 }
 
 /// What the capture is called, from the questions answered and the notes left.
-pub fn title(docs: &[Document]) -> String {
+pub fn title(docs: &[Document], source: &Source<'_>) -> String {
+    let who = source.speaker();
     let keys: Vec<String> = docs
         .iter()
         .filter(|d| d.collection == Collection::Answers)
@@ -107,9 +109,9 @@ pub fn title(docs: &[Document]) -> String {
     let notes = docs.len() - keys.len();
     let answered = match keys.as_slice() {
         [] => String::new(),
-        [a] => format!("op answers {a}"),
-        [a, b] => format!("op answers {a} and {b}"),
-        [a, b, rest @ ..] => format!("op answers {a}, {b} and {} more", rest.len()),
+        [a] => format!("{who} answers {a}"),
+        [a, b] => format!("{who} answers {a} and {b}"),
+        [a, b, rest @ ..] => format!("{who} answers {a}, {b} and {} more", rest.len()),
     };
     let left = match notes {
         0 => String::new(),
@@ -117,7 +119,7 @@ pub fn title(docs: &[Document]) -> String {
         n => format!("{n} notes"),
     };
     match (answered.is_empty(), left.is_empty()) {
-        (true, _) => format!("op leaves {left} on the page"),
+        (true, _) => format!("{who} leaves {left}{}", source.place()),
         (_, true) => answered,
         _ => format!("{answered} and leaves {left}"),
     }
@@ -125,7 +127,7 @@ pub fn title(docs: &[Document]) -> String {
 
 /// The capture's text. `docs` are in the order they are to be written; `when` is
 /// `YYYY-MM-DD HH:MM` of the latest, and `source` says where the words were left.
-pub fn text(docs: &[Document], when: &str, source: &str, title: &str) -> String {
+pub fn text(docs: &[Document], when: &str, source: &Source<'_>, title: &str) -> String {
     let answers = docs.iter().any(|d| d.collection == Collection::Answers);
     let notes = docs.iter().any(|d| d.collection == Collection::Notes);
     let (kind, tags) = match (answers, notes) {
@@ -138,7 +140,10 @@ pub fn text(docs: &[Document], when: &str, source: &str, title: &str) -> String 
         .filter(|d| d.collection == Collection::Answers)
         .map(|d| d.text("where"))
         .collect();
-    let mut out = format!("---\nwhen: {when}\nkind: {kind}\nsource: {source}\nbears_on:");
+    let mut out = format!(
+        "---\nwhen: {when}\nkind: {kind}\nsource: {}\nbears_on:",
+        source.words()
+    );
     if bears.is_empty() {
         out.push_str(" []");
     } else {
@@ -146,7 +151,7 @@ pub fn text(docs: &[Document], when: &str, source: &str, title: &str) -> String 
             let _ = write!(out, "\n  - {b}");
         }
     }
-    let _ = write!(out, "\ntags: [dashboard, {tags}]\nstore:\n");
+    let _ = write!(out, "\ntags: [{}, {tags}]\nstore:\n", source.tag());
     out.push_str(
         &docs
             .iter()
@@ -154,10 +159,7 @@ pub fn text(docs: &[Document], when: &str, source: &str, title: &str) -> String 
             .collect::<Vec<_>>()
             .join("\n"),
     );
-    let _ = write!(
-        out,
-        "\n---\n\n# {title}\n\nLeft on the dashboard page, copied field for field.\n\n"
-    );
+    let _ = write!(out, "\n---\n\n# {title}\n\n{}\n\n", source.lead());
     out.push_str(
         &docs
             .iter()
@@ -199,15 +201,20 @@ fn slug(title: &str) -> String {
     cut.trim_end_matches('-').to_string()
 }
 
-/// 32-bit FNV-1a over the sorted keys, in hex: the suffix that tells two captures of one minute apart.
-fn short_hash(docs: &[Document]) -> String {
-    let mut keys: Vec<&str> = docs.iter().map(|d| d.key.as_str()).collect();
-    keys.sort_unstable();
+/// 32-bit FNV-1a of `text`, in hex.
+pub fn digest(text: &str) -> String {
     let mut h: u32 = 0x811C_9DC5;
-    for b in keys.join("\n").bytes() {
+    for b in text.bytes() {
         h = (h ^ u32::from(b)).wrapping_mul(0x0100_0193);
     }
     format!("{h:08x}")
+}
+
+/// The digest of the sorted keys: the suffix that tells two captures of one minute apart.
+fn short_hash(docs: &[Document]) -> String {
+    let mut keys: Vec<&str> = docs.iter().map(|d| d.key.as_str()).collect();
+    keys.sort_unstable();
+    digest(&keys.join("\n"))
 }
 
 /// The file a capture gets: the minute of the latest `at`, then the title as a slug. A name

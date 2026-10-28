@@ -30,10 +30,11 @@ pub fn place(root: &Path, exe: &Path) -> Result<PathBuf> {
     let file = path(root);
     let dir = file.parent().context("the hook has no directory")?;
     std::fs::create_dir_all(dir).with_context(|| format!("making {}", dir.display()))?;
+    // A replaced or removed engine would otherwise fail every `registry-append` in the workspace
+    // with 126 or 127; exiting 3 leaves the write to mockspace, as if no hook were there.
+    let (exe, root) = (quoted(exe)?, quoted(root)?);
     let body = format!(
-        "#!/bin/sh\n# Placed by `homma answers hook`; `homma answers hook --remove` takes it away.\nexec {} --dir {} answers delegate \"$@\"\n",
-        quoted(exe)?,
-        quoted(root)?
+        "#!/bin/sh\n# Placed by `homma answers hook`; `homma answers hook --remove` takes it away.\n[ -x {exe} ] || exit 3\nexec {exe} --dir {root} answers delegate \"$@\"\n"
     );
     std::fs::write(&file, body).with_context(|| format!("writing {}", file.display()))?;
     #[cfg(unix)]
