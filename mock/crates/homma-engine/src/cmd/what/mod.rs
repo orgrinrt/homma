@@ -35,6 +35,8 @@ mod mock_tests;
 #[cfg(test)]
 mod rank_tests;
 #[cfg(test)]
+mod readme_tests;
+#[cfg(test)]
 mod sources_tests;
 #[cfg(test)]
 mod text_tests;

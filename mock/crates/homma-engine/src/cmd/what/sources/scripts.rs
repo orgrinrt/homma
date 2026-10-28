@@ -361,6 +361,7 @@ fn usage(name: &str, stem: &str, path: &str, t: &str) -> Option<Verb> {
         name: verb.to_string(),
         summary,
         command: format!("{path} {verb}"),
+        example: false,
     })
 }
 

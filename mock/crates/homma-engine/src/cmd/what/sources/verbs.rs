@@ -33,6 +33,7 @@ pub fn gather() -> Gathered {
                 name:    s.get_name().to_string(),
                 summary: about(s),
                 command: format!("homma {name} {}", s.get_name()),
+                example: false,
             });
         }
         docs.push(d);

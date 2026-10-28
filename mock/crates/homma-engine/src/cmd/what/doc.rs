@@ -59,6 +59,10 @@ pub struct Verb {
     pub summary: String,
     /// The exact command that runs it.
     pub command: String,
+    /// Whether the name is a worked invocation read from a usage line, with its arguments in it, rather than a
+    /// word the thing gives the verb. Its words say what the verb does the way a summary does, and are not
+    /// names.
+    pub example: bool,
 }
 
 /// One thing that can be found.
