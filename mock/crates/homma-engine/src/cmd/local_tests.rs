@@ -659,3 +659,17 @@ fn a_tool_cannot_record_a_dashboard_into_a_clone_that_names_a_console() {
     assert!(set(d.path(), "tools.console.deployed", "abc").is_ok());
     assert!(!file(&d).contains("dashboard"));
 }
+
+#[test]
+fn install_into_a_clone_keeping_its_dashboard_does_not_add_a_console() {
+    let d = ws();
+    let old = "[instance]\nwork = \"kaski\"\n\n[tools.dashboard]\nregistry = [\"kaski\"]\n";
+    std::fs::write(d.path().join(LOCAL_FILE), old).unwrap();
+    store(&d, &[("kaski", KASKI_CONSOLE)]);
+    let err = install(d.path(), "kaski", false).unwrap_err().to_string();
+    assert!(
+        err.contains("tools.dashboard") && err.contains("console"),
+        "{err}"
+    );
+    assert_eq!(file(&d), old);
+}

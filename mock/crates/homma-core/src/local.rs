@@ -91,6 +91,18 @@ impl Local {
             .is_some_and(|c| !c.is_empty())
     }
 
+    /// The one contradiction check: a config that names a console and also
+    /// carries `[tools.dashboard]`. `set`, `fill` and `parse_stored` all run it
+    /// over what they produce.
+    pub fn check_console(&self) -> Result<(), LocalError> {
+        if self.names_console() && self.tools.contains_key("dashboard") {
+            return Err(LocalError::DashboardWhereConsole(
+                "tools.dashboard".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Read the file beside the manifest in `dir`.
     ///
     /// `Ok(None)` where there is no file, which is the ordinary case. A file
@@ -157,9 +169,6 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
             instance[*field] = toml_edit::value(value);
         },
         ["tools", tool, field] => {
-            if *tool == "dashboard" && Local::parse(text).is_ok_and(|l| l.names_console()) {
-                return Err(LocalError::DashboardWhereConsole(key.to_owned()));
-            }
             let tools = doc.entry("tools").or_insert_with(|| {
                 let mut t = toml_edit::Table::new();
                 // No bare `[tools]` header above the first tool's table.
@@ -178,7 +187,9 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
         _ => return Err(LocalError::Key(key.to_owned())),
     }
     let out = doc.to_string();
-    Local::parse(&out).map_err(LocalError::Refused)?;
+    Local::parse(&out)
+        .map_err(LocalError::Refused)?
+        .check_console()?;
     Ok(out)
 }
 
@@ -196,7 +207,9 @@ pub fn fill(existing: &str, stored: &str) -> Result<(String, Vec<String>), Local
     let mut added = Vec::new();
     fill_table(doc.as_table_mut(), from.as_table(), "", &mut added);
     let out = doc.to_string();
-    Local::parse(&out).map_err(LocalError::Refused)?;
+    Local::parse(&out)
+        .map_err(LocalError::Refused)?
+        .check_console()?;
     Ok((out, added))
 }
 
@@ -244,11 +257,7 @@ pub fn parse_stored(path: &Path, name: &str, text: &str) -> Result<Local, LocalE
             source,
         }
     })?;
-    if parsed.names_console() && parsed.tools.contains_key("dashboard") {
-        return Err(LocalError::DashboardWhereConsole(
-            "tools.dashboard".to_owned(),
-        ));
-    }
+    parsed.check_console()?;
     if parsed.instance.work != name {
         return Err(LocalError::StoredWork {
             name: name.to_owned(),

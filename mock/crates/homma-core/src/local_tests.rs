@@ -574,7 +574,7 @@ fn a_config_names_a_console_by_its_channel_and_nothing_else() {
 #[test]
 fn nothing_writes_the_dashboard_into_a_config_that_names_a_console() {
     match set(WITH_CONSOLE, "tools.dashboard.url", "https://x") {
-        Err(LocalError::DashboardWhereConsole(key)) => assert_eq!(key, "tools.dashboard.url"),
+        Err(LocalError::DashboardWhereConsole(key)) => assert_eq!(key, "tools.dashboard"),
         other => panic!("{other:?}"),
     }
     // The controls: the console's own keys, and the dashboard in a config with no console.
@@ -591,4 +591,29 @@ fn a_stored_config_cannot_name_a_console_and_carry_a_dashboard() {
         parse_stored(p, "k", &both),
         Err(LocalError::DashboardWhereConsole(_))
     ));
+}
+
+const WITH_DASHBOARD: &str = "[instance]\nwork = \"k\"\n\n[tools.dashboard]\nregistry = [\"k\"]\n";
+
+#[test]
+fn naming_a_console_beside_a_dashboard_is_refused_by_set() {
+    match set(WITH_DASHBOARD, "tools.console.channel", "k") {
+        Err(LocalError::DashboardWhereConsole(key)) => assert_eq!(key, "tools.dashboard"),
+        other => panic!("{other:?}"),
+    }
+    // The controls: a console key that does not name one, and the dashboard's own keys.
+    assert!(set(WITH_DASHBOARD, "tools.console.deployed", "abc").is_ok());
+    assert!(set(WITH_DASHBOARD, "tools.dashboard.url", "https://x").is_ok());
+}
+
+#[test]
+fn fill_refuses_a_console_that_would_land_beside_a_dashboard() {
+    match fill(WITH_DASHBOARD, WITH_CONSOLE) {
+        Err(LocalError::DashboardWhereConsole(key)) => assert_eq!(key, "tools.dashboard"),
+        other => panic!("{other:?}"),
+    }
+    // The controls: a console filled into a file without a dashboard, and a dashboard
+    // filled into a file without a console.
+    assert!(fill("[instance]\nwork = \"k\"\n", WITH_CONSOLE).is_ok());
+    assert!(fill("[instance]\nwork = \"k\"\n", WITH_DASHBOARD).is_ok());
 }
