@@ -294,6 +294,15 @@ pub enum Command {
         #[arg(long)]
         into:     Option<PathBuf>,
     },
+    /// Take the answers and notes left on a page or a channel.
+    ///
+    /// `take` writes what is new as one capture in the capture store and attaches each answer to the
+    /// row it answers, and prints nothing when nothing was new. `delegate` is what a workspace's
+    /// mockspace hook runs, and `hook` places or removes that hook.
+    Answers {
+        #[command(subcommand)]
+        op: AnswersOp,
+    },
     /// The content repository's own tools.
     ///
     /// Each is a directory `tools/<name>/` with a `tool.toml`. `homma tools`
@@ -1139,5 +1148,40 @@ pub enum OrgOp {
         /// being operated on.
         #[arg(long)]
         root: Option<PathBuf>,
+    },
+}
+
+/// `homma answers` operations.
+#[derive(Debug, Subcommand)]
+pub enum AnswersOp {
+    /// Write what is new in a directory or channel of answer and note documents as one capture,
+    /// and attach each answer to its row.
+    #[command(group(clap::ArgGroup::new("source").required(true).args(["dir", "channel"])))]
+    Take {
+        /// A directory holding `answers/` and `notes/` of JSON documents.
+        #[arg(long)]
+        dir:     Option<PathBuf>,
+        /// A channel, read through the workspace's `msg` tool.
+        #[arg(long)]
+        channel: Option<String>,
+        /// Whose messages on the channel are taken.
+        #[arg(long, default_value = "op")]
+        from:    String,
+        /// The store to write into for this run. Defaults to `captures` under `[paths]`.
+        #[arg(long)]
+        into:    Option<PathBuf>,
+    },
+    /// What mockspace's `registry-append` hook runs: takes words appended to a row's `answers`
+    /// whole, and exits 3 for anything else so mockspace writes the row.
+    Delegate {
+        /// `<namespace>::<id>` of the row.
+        target: String,
+        field:  String,
+        value:  String,
+    },
+    /// Place the hook mockspace consults before it writes a row, or take it away.
+    Hook {
+        #[arg(long)]
+        remove: bool,
     },
 }

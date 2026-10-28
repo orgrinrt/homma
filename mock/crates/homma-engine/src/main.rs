@@ -32,6 +32,7 @@ fn main() -> ExitCode {
     match outcome {
         Ok(cmd::Outcome::Ok) => ExitCode::SUCCESS,
         Ok(cmd::Outcome::ReportedFailure) => ExitCode::FAILURE,
+        Ok(cmd::Outcome::Exit(n)) => ExitCode::from(n),
         // `2`, not `FAILURE`, and the distinction is the whole contract a
         // caller has with this binary: `1` is a command that ran and reported,
         // `2` is one that could not run. Both were `1` while the commit gate
