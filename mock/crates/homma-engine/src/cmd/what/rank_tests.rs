@@ -93,6 +93,7 @@ fn a_skill_ranks_below_a_tool_that_is_a_little_weaker() {
         name:    "trim".into(),
         summary: String::new(),
         command: "tool trim".into(),
+        example: false,
     }];
     let docs = vec![doc(Kind::Skill, "aaa-skill", "other words", &["trim"]), tool];
     assert_eq!(names(&docs, "trim"), ["tool", "aaa-skill"]);
@@ -147,11 +148,13 @@ fn the_verb_that_matched_best_is_named() {
             name:    "blocked".into(),
             summary: "ids of helpers stopped on a refusal".into(),
             command: "sessions blocked".into(),
+            example: false,
         },
         Verb {
             name:    "finished".into(),
             summary: "ids of idle helpers whose channel says done".into(),
             command: "sessions finished".into(),
+            example: false,
         },
     ];
     let docs = vec![d];
@@ -279,6 +282,7 @@ fn in_field(field: Field, name: &str) -> Doc {
                 name:    "zap".into(),
                 summary: String::new(),
                 command: "x zap".into(),
+                example: false,
             }];
         },
         Field::Summary => d.summary = "zap".to_string(),
@@ -287,6 +291,7 @@ fn in_field(field: Field, name: &str) -> Doc {
                 name:    "other".into(),
                 summary: "zap".into(),
                 command: "x other".into(),
+                example: false,
             }];
         },
         Field::Place => d.place = vec!["zap".to_string()],

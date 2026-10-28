@@ -471,3 +471,14 @@ fn no_shell_library_is_offered_as_a_command() {
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn reading_an_earlier_message_on_a_msg_channel_finds_the_show_form() {
+    let (kind, name, command) = first("read an earlier message on a msg channel");
+    assert_eq!((kind, name.as_str()), (Kind::Tool, "msg"));
+    assert!(
+        command.starts_with("homma msg ") && command.contains(" show "),
+        "the readme's form for reading a message again was not the answer: {command}"
+    );
+}
