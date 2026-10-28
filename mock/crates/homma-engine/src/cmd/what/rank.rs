@@ -63,19 +63,18 @@ pub const CLOSE: f64 = 0.225;
 /// How one term matched in one thing.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Match {
-    pub term:       String,
+    pub term:  String,
     /// The word of the thing it matched.
-    pub token:      String,
-    pub field:      Field,
+    pub token: String,
+    pub field: Field,
     #[serde(skip)]
-    pub grade:      Grade,
+    pub grade: Grade,
     #[serde(skip)]
-    pub value:      f64,
+    pub value: f64,
+    /// What this term is worth in each verb it matched, apart from the field that won: the verb's index and the
+    /// best value. The thing's own bare command is not among them.
     #[serde(skip)]
-    pub verb:       Option<usize>,
-    /// What the best verb match of this term is worth, apart from the field that won.
-    #[serde(skip)]
-    pub verb_value: f64,
+    pub verbs: Vec<(usize, f64)>,
 }
 
 /// A thing that answers.
@@ -97,6 +96,8 @@ struct Tokens {
     verb_summary: Vec<(usize, String)>,
     body:         Vec<String>,
     place:        Vec<String>,
+    /// Which verbs are the thing's own bare command, which is never the verb an answer names.
+    bare:         Vec<bool>,
 }
 
 fn stems(text: &str) -> Vec<String> {
@@ -111,7 +112,9 @@ fn tokens(d: &Doc) -> Tokens {
     let mut verb_names = Vec::new();
     let mut verb_summary = Vec::new();
     for (i, v) in d.verbs.iter().enumerate() {
-        verb_names.extend(stems(&v.name).into_iter().map(|s| (i, s)));
+        // A worked invocation says what the verb does the way its summary does, and its words are not names.
+        let into = if v.example { &mut verb_summary } else { &mut verb_names };
+        into.extend(stems(&v.name).into_iter().map(|s| (i, s)));
         verb_summary.extend(stems(&v.summary).into_iter().map(|s| (i, s)));
     }
     // A rule is named by a sentence, which says what it is about the way a summary does.
@@ -128,19 +131,21 @@ fn tokens(d: &Doc) -> Tokens {
         body: stems(&d.body),
         verb_summary,
         place: d.place.iter().flat_map(|t| stems(t)).collect(),
+        bare: d.verbs.iter().map(|v| v.command == d.command).collect(),
     }
 }
 
 /// The best way `term` matches in `t`, if it does.
 fn best(term: &str, t: &Tokens) -> Option<Match> {
     let mut found: Option<Match> = None;
-    let mut best_verb: Option<(usize, f64)> = None;
+    let mut per_verb: Vec<(usize, f64)> = Vec::new();
     let mut offer = |field: Field, token: &str, verb: Option<usize>| {
         if let Some(g) = text::grade(term, token) {
             let value = field.weight() * g.worth();
-            if let Some(v) = verb {
-                if best_verb.is_none_or(|(_, w)| value > w) {
-                    best_verb = Some((v, value));
+            if let Some(v) = verb.filter(|v| !t.bare[*v]) {
+                match per_verb.iter_mut().find(|(i, _)| *i == v) {
+                    Some((_, w)) => *w = w.max(value),
+                    None => per_verb.push((v, value)),
                 }
             }
             if found.as_ref().is_none_or(|m| value > m.value) {
@@ -150,8 +155,7 @@ fn best(term: &str, t: &Tokens) -> Option<Match> {
                     field,
                     grade: g,
                     value,
-                    verb,
-                    verb_value: 0.0,
+                    verbs: Vec::new(),
                 });
             }
         }
@@ -170,8 +174,7 @@ fn best(term: &str, t: &Tokens) -> Option<Match> {
     t.body.iter().for_each(|s| offer(Field::Body, s, None));
     t.place.iter().for_each(|s| offer(Field::Place, s, None));
     if let Some(m) = found.as_mut() {
-        m.verb = best_verb.map(|(v, _)| v);
-        m.verb_value = best_verb.map_or(0.0, |(_, w)| w);
+        m.verbs = per_verb;
     }
     found
 }
@@ -215,9 +218,16 @@ pub fn rank(docs: &[Doc], terms: &[String]) -> Vec<Hit> {
         }
         let mut score = 0.0;
         let mut matches = Vec::new();
+        let mut by_verb: Vec<(usize, f64)> = Vec::new();
         for (i, m) in row.iter().enumerate() {
             if let Some(m) = m {
                 score += m.value * idf[i];
+                for &(v, w) in &m.verbs {
+                    match by_verb.iter_mut().find(|(seen, _)| *seen == v) {
+                        Some((_, sum)) => *sum += w * idf[i],
+                        None => by_verb.push((v, w * idf[i])),
+                    }
+                }
                 matches.push(m.clone());
             }
         }
@@ -228,11 +238,11 @@ pub fn rank(docs: &[Doc], terms: &[String]) -> Vec<Hit> {
             .map(|(_, w)| w)
             .sum();
         score *= (0.5 + 0.5 * seen / idf_all) * docs[di].kind.prior();
-        let verb = matches
+        // The verb that answers the most of the query, the earlier one where two are equal.
+        let verb = by_verb
             .iter()
-            .filter(|m| m.verb.is_some())
-            .max_by(|a, b| a.verb_value.total_cmp(&b.verb_value))
-            .and_then(|m| m.verb);
+            .max_by(|a, b| a.1.total_cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
+            .map(|&(v, _)| v);
         hits.push(Hit {
             doc: di,
             score,
@@ -260,7 +270,7 @@ fn alike(a: Kind, b: Kind) -> bool {
 }
 
 /// The words a thing is known by when it is compared with another: name, tags, place, summary and the
-/// names of its verbs, each once.
+/// names of its verbs, each once. The words of a usage line a readme gave are not names.
 fn bag(d: &Doc) -> Vec<String> {
     let mut k: Vec<String> = d
         .tags
@@ -270,7 +280,12 @@ fn bag(d: &Doc) -> Vec<String> {
         .collect();
     k.extend(stems(&d.name));
     k.extend(stems(&d.summary));
-    k.extend(d.verbs.iter().flat_map(|v| stems(&v.name)));
+    k.extend(
+        d.verbs
+            .iter()
+            .filter(|v| !v.example)
+            .flat_map(|v| stems(&v.name)),
+    );
     k.sort();
     k.dedup();
     k

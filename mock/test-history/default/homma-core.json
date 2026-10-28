@@ -2,17 +2,16 @@
   "version": 2,
   "flavour": "",
   "member": "homma-core",
-  "green": null,
-  "tests": {
-    "homma-core": {
-      "inject::tests::a_bare_program_name_is_its_own_title": {
-        "secs": 16.6,
-        "passed": true,
-        "passed_at": "534664ea85563c149ae03c4ccd84afaca3ed4968ffe34b839a76afee2cd8ccca"
-      }
+  "green": {
+    "full": "d86e8f8606619cd51b21081d22e94952e52cd4abd345d7d9c72937e9d19a3683",
+    "own": {
+      "homma-api": "af8b70257a32f89008298f38a76bcba0ba42ab4826cd0f4152c19382e5d89124",
+      "homma-core": "04e26fb15da59a9e3b68fb545738f378d8f010cc0b56d40286639fd6ff1a2f13"
     }
   },
+  "tests": {},
   "bins": {
+    "homma-core": "d4dbd77cc0aeb7b70babf525d9b6f2706b55da50c29d025f631360e4f5aaf2df",
     "homma-core::config_smoke": "4e92ed5bafffe8568237ce1a95af30ace9dc9d7aed18ab76fd41e577af16df65",
     "homma-core::forge_smoke": "2b893a420acd8d3be54e1470cf36fc08a757bb67516797e27bf8eaae9381cdb3",
     "homma-core::hostile_identity_env": "cd8648182049297fcc75690417da86b86749b222bd6450de8699c92b6ff7211f",
