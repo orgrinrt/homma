@@ -80,6 +80,17 @@ impl Local {
         toml::from_str(s)
     }
 
+    /// Whether the file names a console: `[tools.console]` with a non-empty
+    /// `channel`. A clone that does has no dashboard, and nothing writes or
+    /// stores `[tools.dashboard]` for it.
+    pub fn names_console(&self) -> bool {
+        self.tools
+            .get("console")
+            .and_then(|t| t.get("channel"))
+            .and_then(toml::Value::as_str)
+            .is_some_and(|c| !c.is_empty())
+    }
+
     /// Read the file beside the manifest in `dir`.
     ///
     /// `Ok(None)` where there is no file, which is the ordinary case. A file
@@ -146,6 +157,9 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
             instance[*field] = toml_edit::value(value);
         },
         ["tools", tool, field] => {
+            if *tool == "dashboard" && Local::parse(text).is_ok_and(|l| l.names_console()) {
+                return Err(LocalError::DashboardWhereConsole(key.to_owned()));
+            }
             let tools = doc.entry("tools").or_insert_with(|| {
                 let mut t = toml_edit::Table::new();
                 // No bare `[tools]` header above the first tool's table.
@@ -230,6 +244,11 @@ pub fn parse_stored(path: &Path, name: &str, text: &str) -> Result<Local, LocalE
             source,
         }
     })?;
+    if parsed.names_console() && parsed.tools.contains_key("dashboard") {
+        return Err(LocalError::DashboardWhereConsole(
+            "tools.dashboard".to_owned(),
+        ));
+    }
     if parsed.instance.work != name {
         return Err(LocalError::StoredWork {
             name: name.to_owned(),
@@ -293,6 +312,9 @@ pub enum LocalError {
     Edit(toml_edit::TomlError),
     /// The value would leave a file that does not load.
     Refused(toml::de::Error),
+    /// A `tools.dashboard` key written or stored in a config that names a
+    /// console, which replaces the dashboard.
+    DashboardWhereConsole(String),
     /// A stored config whose `instance.work` is not its file's name.
     StoredWork {
         name: String,
@@ -320,6 +342,12 @@ impl std::fmt::Display for LocalError {
                 )
             },
             Self::Edit(_) => write!(f, "{LOCAL_FILE} is not TOML"),
+            Self::DashboardWhereConsole(key) => {
+                write!(
+                    f,
+                    "`{key}` is refused: this config names a console in `tools.console`, which replaces the dashboard"
+                )
+            },
             Self::Refused(_) => write!(f, "that value would leave {LOCAL_FILE} unable to load"),
             Self::StoredWork {
                 name,
@@ -345,7 +373,7 @@ impl std::error::Error for LocalError {
                 source,
                 ..
             } => Some(source),
-            Self::Key(_) => None,
+            Self::Key(_) | Self::DashboardWhereConsole(_) => None,
             Self::Edit(e) => Some(e),
             Self::Refused(e) => Some(e),
             Self::StoredWork {

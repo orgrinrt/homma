@@ -555,3 +555,40 @@ fn the_clones_own_hooks_layer_is_accepted_beside_its_own_tables() {
         Local::parse("[instance]\nwork = \"x\"\n[forges.github]\nkind = \"github\"\n").is_err()
     );
 }
+
+const WITH_CONSOLE: &str = "[instance]\nwork = \"k\"\n\n[tools.console]\nchannel = \"k\"\n";
+
+#[test]
+fn a_config_names_a_console_by_its_channel_and_nothing_else() {
+    assert!(Local::parse(WITH_CONSOLE).unwrap().names_console());
+    for not in [
+        "[instance]\nwork = \"k\"\n",
+        "[instance]\nwork = \"k\"\n[tools.console]\nclone = \"/x\"\n",
+        "[instance]\nwork = \"k\"\n[tools.console]\nchannel = \"\"\n",
+        "[instance]\nwork = \"k\"\n[tools.dashboard]\nchannel = \"k\"\n",
+    ] {
+        assert!(!Local::parse(not).unwrap().names_console(), "{not}");
+    }
+}
+
+#[test]
+fn nothing_writes_the_dashboard_into_a_config_that_names_a_console() {
+    match set(WITH_CONSOLE, "tools.dashboard.url", "https://x") {
+        Err(LocalError::DashboardWhereConsole(key)) => assert_eq!(key, "tools.dashboard.url"),
+        other => panic!("{other:?}"),
+    }
+    // The controls: the console's own keys, and the dashboard in a config with no console.
+    assert!(set(WITH_CONSOLE, "tools.console.deployed", "abc").is_ok());
+    assert!(set(&skeleton("k"), "tools.dashboard.url", "https://x").is_ok());
+}
+
+#[test]
+fn a_stored_config_cannot_name_a_console_and_carry_a_dashboard() {
+    let p = Path::new("/store/k.toml");
+    assert!(parse_stored(p, "k", WITH_CONSOLE).is_ok());
+    let both = format!("{WITH_CONSOLE}\n[tools.dashboard]\nregistry = [\"k\"]\n");
+    assert!(matches!(
+        parse_stored(p, "k", &both),
+        Err(LocalError::DashboardWhereConsole(_))
+    ));
+}
