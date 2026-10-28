@@ -533,7 +533,8 @@ tool.
   replaced by the command that dispatches it, so `msg kaski show 3f9a1c` is answered as `homma msg kaski show 3f9a1c`.
   The prose of the readme is the rest of the tool's text, weighed as the rest of a script's header is. A
   readme that is absent or unreadable is no gap, since a tool does not need one. At most 80 usage lines
-  and 24000 characters of prose are kept from one readme.
+  and 24000 characters of prose are kept from one readme, the prose stopping at the
+  24000th character wherever that falls, inside a line included.
 - A script is a file under `.shared/scripts`, at any depth, that can be run: it is
   executable, or it starts with a shebang line, in which case its command is the
   interpreter the line names followed by the path. A file with neither is a

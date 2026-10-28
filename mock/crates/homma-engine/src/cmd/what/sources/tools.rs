@@ -31,8 +31,10 @@ fn readme(text: &str, tool: &str, commands: &[&str], head: &str) -> (Vec<Verb>, 
             continue;
         }
         if !fenced {
-            if prose.len() < MAX_PROSE {
-                prose.push_str(t);
+            // The cap is in characters and falls inside a line: one long line is cut, not kept whole.
+            let room = MAX_PROSE.saturating_sub(prose.chars().count());
+            prose.extend(t.chars().take(room));
+            if room > t.chars().count() {
                 prose.push(' ');
             }
             continue;

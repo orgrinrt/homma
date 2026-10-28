@@ -215,3 +215,48 @@ fn the_words_of_a_usage_line_weigh_as_a_summary_and_not_as_a_verb_name() {
     assert_eq!(by("declared").matches[0].field, Field::VerbName);
     assert_eq!(by("example").matches[0].field, Field::VerbSummary);
 }
+
+#[cfg(unix)]
+#[test]
+fn the_prose_of_a_readme_stops_at_its_limit_inside_a_line() {
+    let ws = tempfile::tempdir().unwrap();
+    // One line of 100000 characters, none of them ASCII, so a cut by bytes would land short.
+    let long = "ä".repeat(100_000);
+    plant(
+        ws.path(),
+        "msg",
+        MSG_TOML,
+        Some(&format!("# msg\n\n{long}\n")),
+    );
+    let g = tools::gather(ws.path());
+    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let kept = d.body.chars().count();
+    assert!(
+        (23_900 ..= 24_000).contains(&kept),
+        "{kept} characters kept"
+    );
+    // The control: prose under the limit is kept whole.
+    plant(ws.path(), "msg", MSG_TOML, Some("# msg\n\nshort prose\n"));
+    let g = tools::gather(ws.path());
+    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    assert_eq!(d.body, "# msg  short prose");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_readme_keeps_at_most_eighty_usage_lines() {
+    let ws = tempfile::tempdir().unwrap();
+    let mut text = String::from("```\n");
+    for i in 0 .. 200 {
+        text.push_str(&format!("msg kaski verb{i}   summary {i}\n"));
+    }
+    text.push_str("```\n");
+    plant(ws.path(), "msg", MSG_TOML, Some(&text));
+    let g = tools::gather(ws.path());
+    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let examples = d.verbs.iter().filter(|v| v.example).count();
+    assert_eq!(examples, 80);
+    // The first 80 are the ones kept.
+    assert!(d.verbs.iter().any(|v| v.name == "kaski verb79"));
+    assert!(!d.verbs.iter().any(|v| v.name == "kaski verb80"));
+}
