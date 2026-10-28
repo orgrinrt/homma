@@ -329,6 +329,12 @@ impl StatusReport {
         self.render_stray_targets(out)?;
 
         for block in &self.injected {
+            // A tool with nothing to say prints no heading: a clone whose config
+            // turns a tool off (the dashboard, where a console replaces it) shows
+            // no line for it, rather than an empty one.
+            if block.failed.is_none() && block.text.trim().is_empty() {
+                continue;
+            }
             writeln!(out)?;
             match &block.failed {
                 // The failure goes on the heading rather than under it, so a
@@ -715,6 +721,22 @@ mod tests {
         let with = rendered(&report(vec![block("t", "x", None)]));
         assert!(!bare.contains("t:"), "{bare}");
         assert_eq!(with.len() - bare.len(), "\nt:\n  x\n".len(), "{with:?}");
+    }
+
+    #[test]
+    fn a_tool_with_nothing_to_say_prints_no_heading() {
+        // The silent block is absent from the text; the failed one, whose text is
+        // empty too, is the control and keeps its heading.
+        let text = rendered(&report(vec![
+            block("dashboard", "", None),
+            block("blank", " \n", None),
+            block("agenda", "", Some("exited 1")),
+            block("context", "45%", None),
+        ]));
+        assert!(!text.contains("dashboard"), "{text}");
+        assert!(!text.contains("blank"), "{text}");
+        assert!(text.contains("agenda: exited 1"), "{text}");
+        assert!(text.contains("context:\n  45%"), "{text}");
     }
 
     #[test]

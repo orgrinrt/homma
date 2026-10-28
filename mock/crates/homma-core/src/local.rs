@@ -80,6 +80,29 @@ impl Local {
         toml::from_str(s)
     }
 
+    /// Whether the file names a console: `[tools.console]` with a non-empty
+    /// `channel`. A clone that does has no dashboard, and nothing writes or
+    /// stores `[tools.dashboard]` for it.
+    pub fn names_console(&self) -> bool {
+        self.tools
+            .get("console")
+            .and_then(|t| t.get("channel"))
+            .and_then(toml::Value::as_str)
+            .is_some_and(|c| !c.is_empty())
+    }
+
+    /// The one contradiction check: a config that names a console and also
+    /// carries `[tools.dashboard]`. `set`, `fill` and `parse_stored` all run it
+    /// over what they produce.
+    pub fn check_console(&self) -> Result<(), LocalError> {
+        if self.names_console() && self.tools.contains_key("dashboard") {
+            return Err(LocalError::DashboardWhereConsole(
+                "tools.dashboard".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Read the file beside the manifest in `dir`.
     ///
     /// `Ok(None)` where there is no file, which is the ordinary case. A file
@@ -164,7 +187,9 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
         _ => return Err(LocalError::Key(key.to_owned())),
     }
     let out = doc.to_string();
-    Local::parse(&out).map_err(LocalError::Refused)?;
+    Local::parse(&out)
+        .map_err(LocalError::Refused)?
+        .check_console()?;
     Ok(out)
 }
 
@@ -182,7 +207,9 @@ pub fn fill(existing: &str, stored: &str) -> Result<(String, Vec<String>), Local
     let mut added = Vec::new();
     fill_table(doc.as_table_mut(), from.as_table(), "", &mut added);
     let out = doc.to_string();
-    Local::parse(&out).map_err(LocalError::Refused)?;
+    Local::parse(&out)
+        .map_err(LocalError::Refused)?
+        .check_console()?;
     Ok((out, added))
 }
 
@@ -230,6 +257,7 @@ pub fn parse_stored(path: &Path, name: &str, text: &str) -> Result<Local, LocalE
             source,
         }
     })?;
+    parsed.check_console()?;
     if parsed.instance.work != name {
         return Err(LocalError::StoredWork {
             name: name.to_owned(),
@@ -293,6 +321,9 @@ pub enum LocalError {
     Edit(toml_edit::TomlError),
     /// The value would leave a file that does not load.
     Refused(toml::de::Error),
+    /// A `tools.dashboard` key written or stored in a config that names a
+    /// console, which replaces the dashboard.
+    DashboardWhereConsole(String),
     /// A stored config whose `instance.work` is not its file's name.
     StoredWork {
         name: String,
@@ -320,6 +351,12 @@ impl std::fmt::Display for LocalError {
                 )
             },
             Self::Edit(_) => write!(f, "{LOCAL_FILE} is not TOML"),
+            Self::DashboardWhereConsole(key) => {
+                write!(
+                    f,
+                    "`{key}` is refused: this config names a console in `tools.console`, which replaces the dashboard"
+                )
+            },
             Self::Refused(_) => write!(f, "that value would leave {LOCAL_FILE} unable to load"),
             Self::StoredWork {
                 name,
@@ -345,7 +382,7 @@ impl std::error::Error for LocalError {
                 source,
                 ..
             } => Some(source),
-            Self::Key(_) => None,
+            Self::Key(_) | Self::DashboardWhereConsole(_) => None,
             Self::Edit(e) => Some(e),
             Self::Refused(e) => Some(e),
             Self::StoredWork {

@@ -622,3 +622,54 @@ fn a_replace_whose_write_fails_leaves_the_old_file_where_it_was() {
         "nothing was moved aside for a write that did not happen"
     );
 }
+
+const KASKI_CONSOLE: &str =
+    "[instance]\nwork = \"kaski\"\n\n[tools.console]\nchannel = \"kaski\"\ndeploy = \"x\"\n";
+
+#[test]
+fn install_writes_the_console_form_and_refuses_a_stored_dashboard_beside_it() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI_CONSOLE)]);
+    assert_eq!(
+        install(d.path(), "kaski", false).unwrap(),
+        Installed::Written
+    );
+    assert_eq!(file(&d), KASKI_CONSOLE);
+    let (parsed, _) = show(d.path()).unwrap().unwrap();
+    assert!(parsed.names_console());
+
+    // The control: the same store with a dashboard table beside the console is refused,
+    // and the clone that holds the good file is left as it was.
+    let both = format!("{KASKI_CONSOLE}\n[tools.dashboard]\nregistry = [\"kaski\"]\n");
+    store(&d, &[("kaski", &both)]);
+    let err = install(d.path(), "kaski", true).unwrap_err().to_string();
+    assert!(
+        err.contains("tools.dashboard") && err.contains("console"),
+        "{err}"
+    );
+    assert_eq!(file(&d), KASKI_CONSOLE);
+}
+
+#[test]
+fn a_tool_cannot_record_a_dashboard_into_a_clone_that_names_a_console() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI_CONSOLE)]);
+    install(d.path(), "kaski", false).unwrap();
+    assert!(set(d.path(), "tools.dashboard.published", "abc").is_err());
+    assert!(set(d.path(), "tools.console.deployed", "abc").is_ok());
+    assert!(!file(&d).contains("dashboard"));
+}
+
+#[test]
+fn install_into_a_clone_keeping_its_dashboard_does_not_add_a_console() {
+    let d = ws();
+    let old = "[instance]\nwork = \"kaski\"\n\n[tools.dashboard]\nregistry = [\"kaski\"]\n";
+    std::fs::write(d.path().join(LOCAL_FILE), old).unwrap();
+    store(&d, &[("kaski", KASKI_CONSOLE)]);
+    let err = install(d.path(), "kaski", false).unwrap_err().to_string();
+    assert!(
+        err.contains("tools.dashboard") && err.contains("console"),
+        "{err}"
+    );
+    assert_eq!(file(&d), old);
+}
