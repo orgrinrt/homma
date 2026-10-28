@@ -98,19 +98,31 @@ fn without_a_readme_the_tool_is_read_by_its_descriptor_alone_and_nothing_is_said
 #[cfg(unix)]
 #[test]
 fn a_command_the_descriptor_declares_is_not_read_twice_from_the_readme() {
+    // The descriptor declares `show`, so `homma msg show` is its command; the readme's line `msg show  x`
+    // dispatches to the same one. A line with a command of its own is the control.
+    let toml = format!(
+        "{MSG_TOML}[[tool.commands]]\nname=\"show\"\nsummary=\"read one\"\nrun=\"msg show\"\n"
+    );
     let ws = tempfile::tempdir().unwrap();
     plant(
         ws.path(),
         "msg",
-        MSG_TOML,
-        Some("```\nmsg                 the bare command\n```\n"),
+        &toml,
+        Some("```\nmsg show  x\nmsg wait  y\n```\n"),
     );
     let g = tools::gather(ws.path());
     let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
-    assert_eq!(
-        d.verbs.len(),
-        1,
-        "a bare line adds nothing the declared command does not say"
+    let shown = d
+        .verbs
+        .iter()
+        .filter(|v| v.command == "homma msg show")
+        .count();
+    assert_eq!(shown, 1, "{:?}", d.verbs);
+    assert!(
+        d.verbs
+            .iter()
+            .any(|v| v.command == "homma msg wait" && v.example),
+        "a readme line the descriptor does not declare is still a verb"
     );
 }
 
