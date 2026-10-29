@@ -229,3 +229,33 @@ fn events_with_no_uuid_anywhere_have_nothing_to_mark_the_capture_by() {
     );
     assert!(err.contains("`uuid`"), "{err}");
 }
+
+#[test]
+fn a_message_written_twice_across_the_cut_is_written_again_and_said() {
+    let dir = tempfile::tempdir().expect("a directory");
+    // An earlier capture took the first copy, a typed line `gone` with the cut
+    // behind it, and ended on it.
+    std::fs::write(
+        dir.path().join("202609241400_before.md"),
+        "---\nwhen: 2026-09-24 14:00\nkind: unprompted\nsource: s\nthrough: gone\ntags: [chat]\n---\n\n# before\n",
+    )
+    .unwrap();
+    // The file holds only the second copy, an attachment naming the first.
+    let mut second = queued("q", T1, "while you work");
+    second["attachment"]["source_uuid"] = json!("gone");
+    let t = read(&lines(&[boundary("b", Some("gone")), second.clone()])).unwrap();
+    let scan = store::scan(dir.path(), "s", &t).unwrap();
+    assert_eq!((scan.mark, scan.passed), (None, 1));
+    let made = run_over(
+        dir.path(),
+        &lines(&[boundary("b", Some("gone")), second.clone()]),
+        &ask(&[]),
+    )
+    .expect("the second copy is new to the file");
+    assert_eq!(made.said, 1);
+    assert!(made.body.contains("> while you work\n"), "{}", made.body);
+    // The control: the same store over a file that is not cut refuses, since
+    // the `through` it names is nowhere in it.
+    let whole = read(&lines(&[second])).unwrap();
+    assert!(store::scan(dir.path(), "s", &whole).is_err());
+}
