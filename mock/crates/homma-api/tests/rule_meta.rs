@@ -377,3 +377,72 @@ fn an_indented_marker_still_separates() {
     assert!(p.has_elaboration());
     assert_eq!(p.elaboration(), "depth");
 }
+
+/// The sound fixture with one more meta line before the closing fence.
+fn with(extra: &str) -> String {
+    sound().replacen("kind: reflex\n", &format!("kind: reflex\n{extra}\n"), 1)
+}
+
+#[test]
+fn roles_and_where_are_read() {
+    use homma_api::session::{Place, SessionRole};
+
+    let p = rule::parse(&with("roles: [coordinator, helper]\nwhere: cloud")).unwrap();
+    assert_eq!(p.meta.roles, vec![
+        SessionRole::Coordinator,
+        SessionRole::Helper
+    ]);
+    assert_eq!(p.meta.place, Some(Place::Cloud));
+
+    let p = rule::parse(&with("roles: [helper]\nwhere: local")).unwrap();
+    assert_eq!(p.meta.roles, vec![SessionRole::Helper]);
+    assert_eq!(p.meta.place, Some(Place::Local));
+}
+
+#[test]
+fn absent_roles_and_where_bind_every_session() {
+    // The control: a rule that says neither binds everywhere, so a card nobody
+    // tagged is still written for every session.
+    let p = rule::parse(&sound()).unwrap();
+    assert!(p.meta.roles.is_empty());
+    assert_eq!(p.meta.place, None);
+}
+
+#[test]
+fn a_word_that_is_neither_role_is_refused_naming_the_key_and_the_word() {
+    match rule::parse(&with("roles: [coordinator, helpr]")).unwrap_err() {
+        MetaError::BadValue {
+            key,
+            reason,
+        } => {
+            assert_eq!(key, "roles");
+            assert!(reason.contains("helpr"), "the word is named: {reason}");
+        },
+        other => panic!("wrong refusal: {other:?}"),
+    }
+}
+
+#[test]
+fn a_where_that_is_neither_place_is_refused() {
+    match rule::parse(&with("where: everywhere")).unwrap_err() {
+        MetaError::BadValue {
+            key,
+            reason,
+        } => {
+            assert_eq!(key, "where");
+            assert!(reason.contains("everywhere"), "{reason}");
+        },
+        other => panic!("wrong refusal: {other:?}"),
+    }
+}
+
+#[test]
+fn a_duplicated_where_is_refused() {
+    match rule::parse(&with("where: cloud\nwhere: local")).unwrap_err() {
+        MetaError::DuplicateKey {
+            key,
+            ..
+        } => assert_eq!(key, "where"),
+        other => panic!("wrong refusal: {other:?}"),
+    }
+}

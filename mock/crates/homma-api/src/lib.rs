@@ -24,6 +24,7 @@ pub mod record;
 pub mod reference;
 pub mod release;
 pub mod rule;
+pub mod session;
 pub mod skill;
 pub mod version;
 
@@ -59,4 +60,5 @@ pub use release::{
     Version,
 };
 pub use rule::{MetaError, Parsed, RuleKind, RuleMeta};
+pub use session::{CLOUD_VAR, Place, ROLE_FILE, Session, SessionRole, UnknownWord};
 pub use skill::{SkillError, SkillMeta};
