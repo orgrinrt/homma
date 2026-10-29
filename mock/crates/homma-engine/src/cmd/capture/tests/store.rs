@@ -213,6 +213,8 @@ fn a_transcript_that_does_not_open_on_a_boundary_over_a_lost_line_still_refuses(
         // One naming a line the file holds, as a local session's file carries
         // every compaction.
         vec![typed("a", "2026-09-24T10:00:00Z", "x"), boundary("b", Some("a"))],
+        // First in the file, over a line the file holds: nothing is lost.
+        vec![boundary("b", Some("a")), typed("a", "2026-09-24T10:00:00Z", "x")],
         // And one that is not the first line, whatever it names.
         vec![typed("a", "2026-09-24T10:00:00Z", "x"), boundary("b", Some("gone"))],
     ] {
