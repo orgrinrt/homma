@@ -459,9 +459,9 @@ fn a_duplicated_roles_key_is_refused() {
 }
 
 #[test]
-fn an_empty_roles_list_binds_every_role_like_an_absent_one() {
-    // The stated reading: an empty list says nothing about roles, so it binds
-    // none out. It is not read as a rule for no one.
+fn an_empty_roles_list_is_read_as_listing_no_role() {
+    // An empty list parses to no roles; `admits` reads that as every role
+    // (see the session table), never as a rule for no one.
     let p = rule::parse(&with("roles: []")).unwrap();
     assert!(p.meta.roles.is_empty());
 }

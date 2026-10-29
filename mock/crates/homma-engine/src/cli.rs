@@ -551,7 +551,7 @@ pub enum RulesOp {
         session: SessionArgs,
 
         /// Every role and place, one line each, rather than one session.
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["role", "place"])]
         all: bool,
     },
 }

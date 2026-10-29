@@ -271,14 +271,19 @@ pub mod load {
     #[derive(Debug, Serialize)]
     pub struct Row {
         /// The role, `any` for a session with none, which takes every role.
-        pub role:  String,
-        pub place: Place,
-        pub cards: usize,
-        pub bytes: usize,
-        /// The cards, largest first. Left out of the table over every kind of
+        pub role:         String,
+        pub place:        Place,
+        /// The cards loaded at the start of a session: those with no `paths:`
+        /// scope.
+        pub cards:        usize,
+        pub bytes:        usize,
+        /// The admitted cards loaded only against matching files.
+        pub scoped_cards: usize,
+        pub scoped_bytes: usize,
+        /// The loaded cards, largest first. Left out of the table over every kind of
         /// session, where it would be a page of names per row.
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        pub names: Vec<CardSize>,
+        pub names:        Vec<CardSize>,
     }
 
     /// What the sessions load.
@@ -298,6 +303,13 @@ pub mod load {
                     "{} {}: {} cards, {} bytes",
                     row.role, row.place, row.cards, row.bytes
                 )?;
+                if row.scoped_cards > 0 {
+                    write!(
+                        out,
+                        ", and {} cards, {} bytes against matching files",
+                        row.scoped_cards, row.scoped_bytes
+                    )?;
+                }
                 for c in &row.names {
                     write!(out, "\n  {:>7}  {}", c.bytes, c.name)?;
                 }
@@ -307,27 +319,36 @@ pub mod load {
     }
 
     /// The cards one session loads, counted from the card text itself.
+    ///
+    /// A card with a `paths:` scope is admitted but not loaded at the start of a
+    /// session, so it is counted apart from the ones that are.
     fn row(corpus: &Corpus, session: &Session, names: bool) -> Result<Row> {
-        let mut sizes = corpus
-            .rules
-            .iter()
-            .filter(|r| session.admits(&r.meta))
-            .map(|r| {
-                Ok(CardSize {
-                    name:  r.name.clone(),
-                    bytes: corpus.card_bytes(r)?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let bytes = sizes.iter().map(|c| c.bytes).sum();
-        let cards = sizes.len();
-        sizes.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(&b.name)));
+        let mut loaded = Vec::new();
+        let mut scoped_cards = 0;
+        let mut scoped_bytes = 0;
+        for r in corpus.rules.iter().filter(|r| session.admits(&r.meta)) {
+            let bytes = corpus.card_bytes(r)?;
+            if r.meta.paths.is_empty() {
+                loaded.push(CardSize {
+                    name: r.name.clone(),
+                    bytes,
+                });
+            } else {
+                scoped_cards += 1;
+                scoped_bytes += bytes;
+            }
+        }
+        let bytes = loaded.iter().map(|c| c.bytes).sum();
+        let cards = loaded.len();
+        loaded.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(&b.name)));
         Ok(Row {
             role: role_word(session.role).to_string(),
             place: session.place,
             cards,
             bytes,
-            names: if names { sizes } else { Vec::new() },
+            scoped_cards,
+            scoped_bytes,
+            names: if names { loaded } else { Vec::new() },
         })
     }
 

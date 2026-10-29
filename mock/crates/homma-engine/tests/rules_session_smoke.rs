@@ -38,6 +38,8 @@ fn workspace() -> tempfile::TempDir {
     rule(ws.path(), "for-coordinator", "roles: [coordinator]");
     rule(ws.path(), "for-helper", "roles: [helper]");
     rule(ws.path(), "for-local", "where: local");
+    // Admitted everywhere but loaded only against matching files.
+    rule(ws.path(), "gated", "paths: [\"**/*.rs\"]");
     std::fs::create_dir_all(ws.path().join("home")).unwrap();
     ws
 }
@@ -84,7 +86,7 @@ fn a_helper_in_the_cloud_gets_its_own_cards_and_not_the_coordinators() {
     let ws = workspace();
     role_file(ws.path(), "helper\n");
     homma(ws.path(), Some("1"), &["render"]).assert().success();
-    assert_eq!(generated(ws.path()), ["for-all", "for-helper"]);
+    assert_eq!(generated(ws.path()), ["for-all", "for-helper", "gated"]);
 }
 
 #[test]
@@ -92,7 +94,11 @@ fn a_coordinator_in_the_cloud_gets_its_own_cards_and_not_the_helpers() {
     let ws = workspace();
     role_file(ws.path(), "coordinator\n");
     homma(ws.path(), Some("1"), &["render"]).assert().success();
-    assert_eq!(generated(ws.path()), ["for-all", "for-coordinator"]);
+    assert_eq!(generated(ws.path()), [
+        "for-all",
+        "for-coordinator",
+        "gated"
+    ]);
 }
 
 #[test]
@@ -105,7 +111,8 @@ fn a_session_with_no_role_file_gets_every_role_s_card() {
         "for-all",
         "for-coordinator",
         "for-helper",
-        "for-local"
+        "for-local",
+        "gated"
     ]);
 }
 
@@ -132,7 +139,11 @@ fn an_option_overrides_the_role_file() {
     homma(ws.path(), Some("1"), &["render", "--role", "coordinator"])
         .assert()
         .success();
-    assert_eq!(generated(ws.path()), ["for-all", "for-coordinator"]);
+    assert_eq!(generated(ws.path()), [
+        "for-all",
+        "for-coordinator",
+        "gated"
+    ]);
 }
 
 #[test]
@@ -144,7 +155,7 @@ fn rendering_for_the_other_role_removes_the_first_roles_card() {
     homma(ws.path(), Some("1"), &["render", "--role", "helper"])
         .assert()
         .success();
-    assert_eq!(generated(ws.path()), ["for-all", "for-helper"]);
+    assert_eq!(generated(ws.path()), ["for-all", "for-helper", "gated"]);
 }
 
 #[test]
@@ -218,9 +229,11 @@ fn load_all_counts_what_each_kind_of_session_loads_and_matches_what_render_write
         "the table over every session carries no names"
     );
 
-    // The bytes reported are the bytes a render of that session writes.
+    // The bytes reported, loaded and scoped together, are the bytes a render of
+    // that session writes.
     for (role, place) in [("coordinator", "cloud"), ("helper", "local"), ("any", "cloud")] {
-        let reported = row(role, place)["bytes"].as_u64().unwrap();
+        let reported = row(role, place)["bytes"].as_u64().unwrap()
+            + row(role, place)["scoped_bytes"].as_u64().unwrap();
         let mut render = vec!["render", "--place", place];
         if role != "any" {
             render.extend(["--role", role]);
@@ -238,5 +251,81 @@ fn load_all_counts_what_each_kind_of_session_loads_and_matches_what_render_write
     // One session names its cards, largest first.
     let one = json(&["load", "--role", "helper", "--place", "cloud"]);
     let names = one["rows"][0]["names"].as_array().unwrap();
-    assert_eq!(names.len(), 2);
+    assert_eq!(
+        names.len(),
+        2,
+        "the gated card is not among the loaded ones"
+    );
+    assert!(names.iter().all(|n| n["name"] != "gated"));
+    let sizes: Vec<u64> = names.iter().map(|n| n["bytes"].as_u64().unwrap()).collect();
+    assert!(
+        sizes.windows(2).all(|w| w[0] >= w[1]),
+        "largest first: {sizes:?}"
+    );
+    assert_eq!(one["rows"][0]["scoped_cards"], 1);
+}
+
+#[test]
+fn a_gated_card_is_counted_apart_from_the_loaded_ones() {
+    let ws = workspace();
+    let o = support::bin()
+        .arg("--dir")
+        .arg(ws.path())
+        .args(["--output", "json", "rules", "load", "--all"])
+        .env("HOME", ws.path().join("home"))
+        .env_remove(homma_api::session::CLOUD_VAR)
+        .output()
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    for r in doc["rows"].as_array().unwrap() {
+        assert_eq!(r["scoped_cards"], 1, "{r}");
+        assert!(r["scoped_bytes"].as_u64().unwrap() > 0, "{r}");
+    }
+    // The control: without the gated rule nothing is reported scoped.
+    std::fs::remove_file(ws.path().join(".shared/rules/gated.md.tmpl")).unwrap();
+    let o = support::bin()
+        .arg("--dir")
+        .arg(ws.path())
+        .args(["--output", "json", "rules", "load", "--all"])
+        .env("HOME", ws.path().join("home"))
+        .env_remove(homma_api::session::CLOUD_VAR)
+        .output()
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert!(
+        doc["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["scoped_cards"] == 0)
+    );
+}
+
+#[test]
+fn all_and_a_named_session_exclude_each_other() {
+    let ws = workspace();
+    homma(ws.path(), None, &["load", "--all", "--role", "helper"])
+        .assert()
+        .failure();
+    homma(ws.path(), None, &["load", "--all", "--place", "cloud"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn a_role_option_is_given_the_say_over_a_misspelt_role_file() {
+    let ws = workspace();
+    role_file(ws.path(), "helpr\n");
+    homma(ws.path(), Some("1"), &["render", "--role", "helper"])
+        .assert()
+        .success();
+    assert_eq!(generated(ws.path()), ["for-all", "for-helper", "gated"]);
+}
+
+#[test]
+fn a_role_file_that_cannot_be_read_is_refused() {
+    let ws = workspace();
+    let path = ws.path().join("home").join(homma_api::session::ROLE_FILE);
+    std::fs::create_dir_all(&path).unwrap();
+    homma(ws.path(), Some("1"), &["render"]).assert().failure();
 }

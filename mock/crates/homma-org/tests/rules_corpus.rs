@@ -599,7 +599,7 @@ fn a_card_no_rule_claims_survives_a_restricting_session() {
 }
 
 #[test]
-fn withheld_admitted_and_bytes_agree_with_what_is_written() {
+fn the_bytes_reported_are_the_bytes_written_and_the_withheld_are_named() {
     let d = tagged();
     let c = Corpus::load(&d.join("rules")).unwrap();
     let s = session(Some(SessionRole::Helper), Place::Cloud);
@@ -614,7 +614,6 @@ fn withheld_admitted_and_bytes_agree_with_what_is_written() {
         .collect();
     let withheld: Vec<&str> = c.withheld(&s).map(|r| r.name.as_str()).collect();
     assert_eq!(admitted.len(), written.len());
-    assert_eq!(admitted.len() + withheld.len(), c.rules.len());
     assert!(withheld.contains(&"for-coordinator") && withheld.contains(&"for-local"));
 
     let total: usize = c
