@@ -389,9 +389,19 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     rules::about::run(&cfg, query, cli.output)?;
                     Ok(Outcome::Ok)
                 },
-                RulesOp::Render {} => {
+                RulesOp::Render {
+                    session,
+                } => {
                     let cfg = load_config(&cli)?;
-                    rules::render::run(&cfg, cli.output)?;
+                    rules::render::run(&cfg, session, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                RulesOp::Load {
+                    session,
+                    all,
+                } => {
+                    let cfg = load_config(&cli)?;
+                    rules::load::run(&cfg, session, *all, cli.output)?;
                     Ok(Outcome::Ok)
                 },
             }

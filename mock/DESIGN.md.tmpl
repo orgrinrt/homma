@@ -113,6 +113,27 @@ the other thing: on disk a card the pass wrote last time and a document
 somebody put there on purpose are the same file, and this is the case the skill
 corpus below already decides for a directory nothing claims.
 
+**A card is for a session, and not for every session.** Two more optional keys
+state whom a rule binds. `roles` is a list of `coordinator` and `helper`, and
+absent means every role, and so does an empty list; a role named twice is read
+as listed. `where` is `cloud` or `local`, and absent means both.
+A role here is the session's own, which is not the standing a person has in the
+organisation. The session is the role found in `~/.config/clause-dev/role`, the
+file the setup script and the bootstrap write, and the place, which is cloud
+when `CLAUSE_CLOUD` is `1` and local otherwise; an explicit option on the
+command overrides each. A session with no role file takes every role, so
+nothing is withheld from it for want of a role, and its place is still read from
+the cloud variable. A home directory that is not set means there is no role file.
+A role file
+holding any other word is refused by name, since taking every role would hide a
+misspelt file behind a full load.
+
+A card the session excludes is not written. One that an earlier pass wrote for
+an authored rule and that this session excludes is removed, because the rule
+claims it and the pass owns it, which is not the case of a card nothing claims.
+Discovery is not shaped by the session: `rules about` and `rules show` answer
+for every rule, so a card left out is one command away.
+
 An element of an inline list may carry a comma inside quotes, and the split
 respects them. A brace group is the ordinary way to write a path pattern, so a
 list that split on every comma could not express one at all.
@@ -161,7 +182,7 @@ listing is offered to every session until somebody says so.
 ```
 homma org        who exists
 homma work       workspaces and what is in them
-homma rules      the corpus: what governs a subject, and generating the cards
+homma rules      the corpus: what governs a subject, generating the cards of a session, and what each kind of session loads
 homma skills     what is authored, and generating the tree a session finds
 homma agents     the personas: what is authored, and generating the ones a session dispatches
 homma sauna      correspondence and work
@@ -554,9 +575,16 @@ A built-in command wins over a tool of the same name, except that a built-in
 group hands the verbs it does not know to the tool of its name. A group is every
 built-in command that takes verbs, `org`, `repo`, `forge`, `agent`, `docs`,
 `local`, `rules`, `skills`, `agents`, `release`, `milestone`, `hook` and `answers`, and none is
-singled out. `rules` shows it: `homma rules about` and `homma rules render` are
-the built-in's, and `homma rules show` is the tool's, so the cards' pointer to
-the elaboration is a command that answers. A word that neither the built-in
+singled out. `rules` shows it: `homma rules about`, `homma rules render` and
+`homma rules load` are the built-in's, and `homma rules show` is the tool's, so
+the cards' pointer to the elaboration is a command that answers. `rules load`
+prints for a session the cards it gets with their bytes, and with `--all` the
+count and bytes for each role and place, so a check counts what each kind of
+session loads rather than the whole corpus. A row counts the cards the session
+loads at its start, those with no `paths:` scope, and reports the cards it
+admits and loads only against matching files as their own count and bytes, so
+the figure is comparable with the always-loaded set. `--all` and the options
+that name one session exclude each other. A word that neither the built-in
 group nor the tool knows is refused naming both sets of verbs. `tools` is not a
 group in this sense, since `homma tools run <name>` is how any tool is named,
 whatever a built-in holds.

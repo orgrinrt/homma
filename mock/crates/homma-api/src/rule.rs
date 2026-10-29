@@ -25,9 +25,10 @@ use std::fmt;
 use serde::Serialize;
 
 use crate::frontmatter::{self, FrontmatterError};
+use crate::session::{Place, SessionRole};
 
 /// Every field a rule may declare.
-const KNOWN: &[&str] = &["topics", "fires", "kind", "paths"];
+const KNOWN: &[&str] = &["topics", "fires", "kind", "paths", "roles", "where"];
 
 /// What a rule declares about itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -45,6 +46,11 @@ pub struct RuleMeta {
     /// Path globs the rule is gated on, when it has a file signature. Absent
     /// for the rules that have none, which is most of them.
     pub paths:  Vec<String>,
+    /// The session roles the rule binds. Empty for the rules that bind every
+    /// role, which is most of them.
+    pub roles:  Vec<SessionRole>,
+    /// The one place the rule binds, `None` for the rules that bind both.
+    pub place:  Option<Place>,
 }
 
 /// Whether a rule is one move, a practice, or a table to look something up in.
@@ -185,12 +191,38 @@ pub fn parse(source: &str) -> Result<Parsed, MetaError> {
 
     let paths = block.list("paths")?;
 
+    let roles = block
+        .list("roles")?
+        .iter()
+        .map(|word| {
+            word.parse::<SessionRole>().map_err(|e| {
+                MetaError::BadValue {
+                    key:    "roles".into(),
+                    reason: e.to_string(),
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let place = block
+        .optional("where")
+        .map(|word| {
+            word.parse::<Place>().map_err(|e| {
+                MetaError::BadValue {
+                    key:    "where".into(),
+                    reason: e.to_string(),
+                }
+            })
+        })
+        .transpose()?;
+
     Ok(Parsed {
         meta: RuleMeta {
             topics,
             fires,
             kind,
             paths,
+            roles,
+            place,
         },
         body: block.body,
     })
