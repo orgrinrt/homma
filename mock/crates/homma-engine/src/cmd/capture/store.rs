@@ -173,20 +173,41 @@ pub struct Mark {
     pub uuid: String,
 }
 
+/// What a look through the store found for one session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scan {
+    /// Where the last capture ended, if the transcript holds one.
+    pub mark:   Option<Mark>,
+    /// The captures of the session passed over because a cut transcript lacks
+    /// their `through`.
+    pub passed: usize,
+}
+
 /// The `through` of the capture in `store` that reaches furthest into the
 /// session's transcript.
+pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Option<Mark>> {
+    scan(store, session, read).map(|s| s.mark)
+}
+
+/// [`watermark`], with the number of captures passed over.
 ///
 /// Furthest in the file, not latest in time, since the file is the order the
 /// harness read things in. A capture naming the session with no `through`, or
 /// one the transcript does not hold, is refused by file: skipping it would
 /// move the watermark back and write its events a second time. The one
 /// exception is a cut transcript, whose missing lines were all written before
-/// the cut: such a capture's words are not in the file, and it moves nothing.
-pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Option<Mark>> {
+/// the cut: such a capture moves nothing, and is counted.
+pub fn scan(store: &Path, session: &str, read: &Transcript) -> Result<Scan> {
     let mut latest: Option<Mark> = None;
+    let mut passed = 0;
     let entries = match std::fs::read_dir(store) {
         Ok(d) => d,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Scan {
+                mark:   None,
+                passed: 0,
+            });
+        },
         Err(e) => return Err(e).with_context(|| format!("reading {}", store.display())),
     };
     for e in entries {
@@ -206,6 +227,7 @@ pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Optio
             through.ok_or_else(|| anyhow!("{} names the session and no `through`", p.display()))?;
         let Some(line) = read.line_of(through) else {
             if read.cut {
+                passed += 1;
                 continue;
             }
             bail!(
@@ -220,7 +242,10 @@ pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Optio
             });
         }
     }
-    Ok(latest)
+    Ok(Scan {
+        mark: latest,
+        passed,
+    })
 }
 
 /// The file-name slug of a title: lowercase letters and digits, `ä` and `å`

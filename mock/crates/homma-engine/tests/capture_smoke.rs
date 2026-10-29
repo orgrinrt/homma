@@ -522,3 +522,36 @@ fn no_transcript_and_a_bad_instant_are_refused_before_anything_is_written() {
         .stderr(predicate::str::contains("--title"));
     assert!(store(&root).is_empty());
 }
+
+#[test]
+fn the_captures_passed_over_in_a_cut_transcript_are_said_on_stderr() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    // A file that opens on the compaction boundary over a line it lacks, and a
+    // capture of the session that ends on that line.
+    let boundary = serde_json::json!({
+        "type": "system", "subtype": "compact_boundary", "uuid": "b",
+        "parentUuid": null, "logicalParentUuid": "gone",
+        "timestamp": "2026-09-24T13:00:00Z", "content": "Conversation compacted",
+    });
+    std::fs::write(&t, format!("{boundary}\n{SAID}\n")).unwrap();
+    let earlier = root.join(".data/op-responses");
+    std::fs::create_dir_all(&earlier).unwrap();
+    std::fs::write(
+        earlier.join("202609241200_before.md"),
+        "---\nwhen: 2026-09-24 12:00\nkind: unprompted\nsource: s\nthrough: gone\ntags: [chat]\n---\n\n# before\n",
+    )
+    .unwrap();
+    capture(&root, &home, &[
+        "--title",
+        "After",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stderr(predicate::str::contains(
+        "warning: 1 earlier capture(s) of this session end before the transcript's cut and were \
+         passed over",
+    ));
+}

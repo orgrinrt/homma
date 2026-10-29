@@ -89,3 +89,15 @@ fn round(uuid: &str, at: &str, first: &str, second: &str, notes: Option<&str>) -
         },
     })
 }
+
+/// The harness's compaction boundary, naming the last line before it or none.
+/// Every boundary the harness writes has no `parentUuid`, the first of a cut
+/// file and the ones in the middle of a whole one alike.
+fn boundary(uuid: &str, lost: Option<&str>) -> Value {
+    json!({
+        "type": "system", "subtype": "compact_boundary", "uuid": uuid,
+        "parentUuid": null, "logicalParentUuid": lost,
+        "timestamp": "2026-09-24T09:00:00Z", "isSidechain": false,
+        "content": "Conversation compacted",
+    })
+}

@@ -439,3 +439,35 @@ fn a_twin_is_only_what_the_attachment_names() {
     let got = events(&lines(&[note, typed("t", T1, "mine")])).expect("reads");
     assert_eq!(got.len(), 1);
 }
+
+#[test]
+fn a_file_opening_on_a_boundary_over_a_line_it_lacks_is_cut() {
+    let cut = read(&lines(&[boundary("b", Some("gone")), typed("a", T0, "x")])).expect("reads");
+    assert!(cut.cut);
+    // The line is only lost when the file lacks it, and a boundary that names
+    // nothing, or one past the first line, says nothing was.
+    for whole in [
+        vec![typed("a", T0, "x"), boundary("b", Some("a"))],
+        vec![boundary("b", None), typed("a", T0, "x")],
+        vec![typed("a", T0, "x"), boundary("b", Some("gone"))],
+        vec![typed("a", T0, "x")],
+    ] {
+        assert!(!read(&lines(&whole)).expect("reads").cut);
+    }
+    // A boundary with a parent is just as cut: the field says nothing.
+    let mut parented = boundary("b", Some("gone"));
+    parented["parentUuid"] = json!("p");
+    assert!(read(&lines(&[parented])).expect("reads").cut);
+    assert!(!read("").expect("reads").cut);
+}
+
+#[test]
+fn a_message_written_twice_across_the_cut_is_taken_from_its_second_copy() {
+    // The first copy was before the cut and the file lacks it, so nothing in
+    // the file says the words were taken: they are read, never dropped.
+    let mut q = queued("q", T1, "while you work");
+    q["attachment"]["source_uuid"] = json!("t");
+    let got = events(&lines(&[boundary("b", Some("gone")), q])).expect("reads");
+    assert_eq!(got.len(), 1);
+    assert_eq!(said(&got[0]), "while you work");
+}

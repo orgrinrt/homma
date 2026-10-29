@@ -201,7 +201,18 @@ pub fn run(
     }
     // What a tool typed into the terminal is the tool's, not the person's.
     read.events = typed::without(std::mem::take(&mut read.events), &typed::read(&path)?);
-    let mark = store::watermark(&dir, &session, &read)?;
+    let store::Scan {
+        mark,
+        passed,
+    } = store::scan(&dir, &session, &read)?;
+    // Captures of this session the cut file lacks the end of are passed over,
+    // and a message the harness wrote twice across the cut can come out again.
+    if passed > 0 {
+        eprintln!(
+            "warning: {passed} earlier capture(s) of this session end before the transcript's \
+             cut and were passed over; a message written twice across the cut is taken again"
+        );
+    }
     let made = make(
         root,
         &read,
