@@ -446,3 +446,30 @@ fn a_duplicated_where_is_refused() {
         other => panic!("wrong refusal: {other:?}"),
     }
 }
+
+#[test]
+fn a_duplicated_roles_key_is_refused() {
+    match rule::parse(&with("roles: [helper]\nroles: [coordinator]")).unwrap_err() {
+        MetaError::DuplicateKey {
+            key,
+            ..
+        } => assert_eq!(key, "roles"),
+        other => panic!("wrong refusal: {other:?}"),
+    }
+}
+
+#[test]
+fn an_empty_roles_list_binds_every_role_like_an_absent_one() {
+    // The stated reading: an empty list says nothing about roles, so it binds
+    // none out. It is not read as a rule for no one.
+    let p = rule::parse(&with("roles: []")).unwrap();
+    assert!(p.meta.roles.is_empty());
+}
+
+#[test]
+fn a_role_named_twice_is_read_as_listed() {
+    use homma_api::session::SessionRole;
+
+    let p = rule::parse(&with("roles: [helper, helper]")).unwrap();
+    assert_eq!(p.meta.roles, vec![SessionRole::Helper, SessionRole::Helper]);
+}

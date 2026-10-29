@@ -606,17 +606,45 @@ fn withheld_admitted_and_bytes_agree_with_what_is_written() {
     let out = d.join("out");
     let written = c.render_cards(&out, &s).unwrap();
 
-    let admitted: Vec<&str> = c.admitted(&s).map(|r| r.name.as_str()).collect();
+    let admitted: Vec<&str> = c
+        .rules
+        .iter()
+        .filter(|r| s.admits(&r.meta))
+        .map(|r| r.name.as_str())
+        .collect();
     let withheld: Vec<&str> = c.withheld(&s).map(|r| r.name.as_str()).collect();
     assert_eq!(admitted.len(), written.len());
     assert_eq!(admitted.len() + withheld.len(), c.rules.len());
     assert!(withheld.contains(&"for-coordinator") && withheld.contains(&"for-local"));
 
-    let total: usize = c.admitted(&s).map(|r| c.card_bytes(r).unwrap()).sum();
+    let total: usize = c
+        .rules
+        .iter()
+        .filter(|r| s.admits(&r.meta))
+        .map(|r| c.card_bytes(r).unwrap())
+        .sum();
     let on_disk: u64 = written.iter().map(|p| fs::metadata(p).unwrap().len()).sum();
     assert_eq!(
         total as u64, on_disk,
         "the size reported is the size written"
     );
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_card_that_cannot_be_removed_is_refused_naming_it() {
+    // A directory where the stale card would be: removing it as a file fails
+    // with something other than "not found", which must not pass as success.
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let out = d.join("out");
+    fs::create_dir_all(out.join("for-coordinator.md")).unwrap();
+    match c.render_cards(&out, &session(Some(SessionRole::Helper), Place::Cloud)) {
+        Err(CorpusError::Write {
+            path,
+            ..
+        }) => assert!(path.ends_with("for-coordinator.md"), "{path:?}"),
+        other => panic!("expected a refused removal, got {other:?}"),
+    }
     let _ = fs::remove_dir_all(&d);
 }

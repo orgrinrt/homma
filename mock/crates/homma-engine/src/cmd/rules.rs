@@ -309,7 +309,9 @@ pub mod load {
     /// The cards one session loads, counted from the card text itself.
     fn row(corpus: &Corpus, session: &Session, names: bool) -> Result<Row> {
         let mut sizes = corpus
-            .admitted(session)
+            .rules
+            .iter()
+            .filter(|r| session.admits(&r.meta))
             .map(|r| {
                 Ok(CardSize {
                     name:  r.name.clone(),

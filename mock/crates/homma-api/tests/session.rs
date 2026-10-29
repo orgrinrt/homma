@@ -139,3 +139,59 @@ fn role_and_place_both_have_to_fit() {
     assert!(!s(SessionRole::Coordinator, Place::Cloud).admits(&rule));
     assert!(!s(SessionRole::Helper, Place::Local).admits(&rule));
 }
+
+/// The whole space, written out by hand: four role tags by three place tags,
+/// each with the answer for a session of no role, a coordinator and a helper,
+/// in the cloud and then locally.
+///
+/// A literal table rather than a loop computing the answer a second way, since
+/// a second `admits` would agree with the first one's mistakes.
+#[test]
+fn every_cell_of_roles_by_place_is_what_the_table_says() {
+    const T: bool = true;
+    const F: bool = false;
+    // Rows: no role, coordinator, helper. Columns: cloud, local.
+    let table: [(&str, [[bool; 2]; 3]); 12] = [
+        ("", [[T, T], [T, T], [T, T]]),
+        ("where: cloud", [[T, F], [T, F], [T, F]]),
+        ("where: local", [[F, T], [F, T], [F, T]]),
+        ("roles: [coordinator]", [[T, T], [T, T], [F, F]]),
+        ("roles: [coordinator]\nwhere: cloud", [[T, F], [T, F], [
+            F, F,
+        ]]),
+        ("roles: [coordinator]\nwhere: local", [[F, T], [F, T], [
+            F, F,
+        ]]),
+        ("roles: [helper]", [[T, T], [F, F], [T, T]]),
+        ("roles: [helper]\nwhere: cloud", [[T, F], [F, F], [T, F]]),
+        ("roles: [helper]\nwhere: local", [[F, T], [F, F], [F, T]]),
+        ("roles: [coordinator, helper]", [[T, T], [T, T], [T, T]]),
+        ("roles: [coordinator, helper]\nwhere: cloud", [
+            [T, F],
+            [T, F],
+            [T, F],
+        ]),
+        ("roles: [coordinator, helper]\nwhere: local", [
+            [F, T],
+            [F, T],
+            [F, T],
+        ]),
+    ];
+    let roles = [None, Some(SessionRole::Coordinator), Some(SessionRole::Helper)];
+    for (tags, expected) in table {
+        let rule = meta(tags);
+        for (r, role) in roles.into_iter().enumerate() {
+            for (p, place) in Place::ALL.into_iter().enumerate() {
+                assert_eq!(
+                    Session {
+                        role,
+                        place
+                    }
+                    .admits(&rule),
+                    expected[r][p],
+                    "{tags:?} for {role:?} in {place:?}"
+                );
+            }
+        }
+    }
+}

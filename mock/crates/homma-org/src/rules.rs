@@ -298,11 +298,6 @@ impl Corpus {
         Ok(self.card_text(r)?.len())
     }
 
-    /// The rules whose cards the session loads.
-    pub fn admitted<'a>(&'a self, session: &'a Session) -> impl Iterator<Item = &'a Rule> {
-        self.rules.iter().filter(move |r| session.admits(&r.meta))
-    }
-
     /// The rules the session does not load, which discovery still answers for.
     pub fn withheld<'a>(&'a self, session: &'a Session) -> impl Iterator<Item = &'a Rule> {
         self.rules.iter().filter(move |r| !session.admits(&r.meta))

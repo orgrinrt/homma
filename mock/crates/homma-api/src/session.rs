@@ -141,8 +141,8 @@ impl UnknownWord {
     }
 
     /// The word that was refused.
-    pub fn got(&self) -> &str {
-        &self.got
+    pub const fn got(&self) -> &str {
+        self.got.as_str()
     }
 }
 
@@ -199,12 +199,43 @@ impl Session {
     /// A rule naming no roles binds every role and one naming no place binds
     /// both, so a rule that says nothing is admitted everywhere. A session with
     /// no role is admitted by a rule naming any role.
-    pub fn admits(&self, meta: &RuleMeta) -> bool {
+    pub const fn admits(&self, meta: &RuleMeta) -> bool {
         let role_fits = match self.role {
             None => true,
-            Some(role) => meta.roles.is_empty() || meta.roles.contains(&role),
+            Some(role) => {
+                let roles = meta.roles.as_slice();
+                let mut i = 0;
+                let mut found = roles.is_empty();
+                while i < roles.len() {
+                    if same_role(roles[i], role) {
+                        found = true;
+                    }
+                    i += 1;
+                }
+                found
+            },
         };
-        let place_fits = meta.place.is_none_or(|p| p == self.place);
+        let place_fits = match meta.place {
+            None => true,
+            Some(p) => same_place(p, self.place),
+        };
         role_fits && place_fits
     }
+}
+
+/// Whether two roles are the same one. `==` is not yet const on an enum.
+const fn same_role(a: SessionRole, b: SessionRole) -> bool {
+    matches!(
+        (a, b),
+        (SessionRole::Coordinator, SessionRole::Coordinator)
+            | (SessionRole::Helper, SessionRole::Helper)
+    )
+}
+
+/// Whether two places are the same one.
+const fn same_place(a: Place, b: Place) -> bool {
+    matches!(
+        (a, b),
+        (Place::Cloud, Place::Cloud) | (Place::Local, Place::Local)
+    )
 }
