@@ -121,8 +121,10 @@ A role here is the session's own, which is not the standing a person has in the
 organisation. The session is the role found in `~/.config/clause-dev/role`, the
 file the setup script and the bootstrap write, and the place, which is cloud
 when `CLAUSE_CLOUD` is `1` and local otherwise; an explicit option on the
-command overrides each. A session with no role file is a local one of the
-person's own and takes every role, so nothing is withheld from it. A role file
+command overrides each. A session with no role file takes every role, so
+nothing is withheld from it for want of a role, and its place is still read from
+the cloud variable. A home directory that is not set means there is no role file.
+A role file
 holding any other word is refused by name, since taking every role would hide a
 misspelt file behind a full load.
 
@@ -578,7 +580,11 @@ singled out. `rules` shows it: `homma rules about`, `homma rules render` and
 the cards' pointer to the elaboration is a command that answers. `rules load`
 prints for a session the cards it gets with their bytes, and with `--all` the
 count and bytes for each role and place, so a check counts what each kind of
-session loads rather than the whole corpus. A word that neither the built-in
+session loads rather than the whole corpus. A row counts the cards the session
+loads at its start, those with no `paths:` scope, and reports the cards it
+admits and loads only against matching files as their own count and bytes, so
+the figure is comparable with the always-loaded set. `--all` and the options
+that name one session exclude each other. A word that neither the built-in
 group nor the tool knows is refused naming both sets of verbs. `tools` is not a
 group in this sense, since `homma tools run <name>` is how any tool is named,
 whatever a built-in holds.
