@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use homma_api::rule::{self, MetaError, RuleMeta};
+use homma_api::session::Session;
 use mockspace_template::template::TemplateEnv;
 use serde::Serialize;
 
@@ -239,7 +240,13 @@ impl Corpus {
     /// cannot go unreported; and on disk a card this pass wrote last time and a
     /// document somebody put there on purpose are the same file, which is why
     /// it cannot be deleted.
-    pub fn render_cards(&self, dst: &Path) -> Result<Vec<PathBuf>, CorpusError> {
+    ///
+    /// **Only the cards the session binds are written.** A rule that excludes
+    /// the session's role or place has no card in its always-loaded set, and a
+    /// card of such a rule that an earlier pass wrote, for another role, is
+    /// removed: the rule claims it, so it is the pass's own file and the stale
+    /// copy would be injected into the session the rule says it is not for.
+    pub fn render_cards(&self, dst: &Path, session: &Session) -> Result<Vec<PathBuf>, CorpusError> {
         fs::create_dir_all(dst).map_err(|cause| {
             CorpusError::Write {
                 path: dst.to_path_buf(),
@@ -249,11 +256,21 @@ impl Corpus {
 
         let mut written = Vec::with_capacity(self.rules.len());
         for r in &self.rules {
-            let out = self.render(r, &r.card, "card")?;
             let path = dst.join(format!("{}.md", r.name));
-            // A trailing newline, because a file without one concatenates with
-            // whatever is injected after it.
-            let body = format!("{}{}\n", paths_frontmatter(r), out.trim_end());
+            if !session.admits(&r.meta) {
+                match fs::remove_file(&path) {
+                    Ok(()) => {},
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+                    Err(cause) => {
+                        return Err(CorpusError::Write {
+                            path,
+                            cause,
+                        });
+                    },
+                }
+                continue;
+            }
+            let body = self.card_text(r)?;
             fs::write(&path, body).map_err(|cause| {
                 CorpusError::Write {
                     path: path.clone(),
@@ -263,6 +280,32 @@ impl Corpus {
             written.push(path);
         }
         Ok(written)
+    }
+
+    /// The generated card of a rule, exactly as it is written to disk.
+    ///
+    /// One function for the writing and for [`Self::card_bytes`], so the size
+    /// reported is the size of what a session loads and the two cannot drift.
+    fn card_text(&self, r: &Rule) -> Result<String, CorpusError> {
+        let out = self.render(r, &r.card, "card")?;
+        // A trailing newline, because a file without one concatenates with
+        // whatever is injected after it.
+        Ok(format!("{}{}\n", paths_frontmatter(r), out.trim_end()))
+    }
+
+    /// How many bytes a rule's card is in a session that loads it.
+    pub fn card_bytes(&self, r: &Rule) -> Result<usize, CorpusError> {
+        Ok(self.card_text(r)?.len())
+    }
+
+    /// The rules whose cards the session loads.
+    pub fn admitted<'a>(&'a self, session: &'a Session) -> impl Iterator<Item = &'a Rule> {
+        self.rules.iter().filter(move |r| session.admits(&r.meta))
+    }
+
+    /// The rules the session does not load, which discovery still answers for.
+    pub fn withheld<'a>(&'a self, session: &'a Session) -> impl Iterator<Item = &'a Rule> {
+        self.rules.iter().filter(move |r| !session.admits(&r.meta))
     }
 
     /// Cards in `dst` that no authored rule claims.

@@ -13,7 +13,8 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use homma_api::session::{Place, SessionRole};
 
 /// `homma`: workspace management CLI for multi-repo Rust workspaces.
 #[derive(Debug, Parser)]
@@ -534,8 +535,40 @@ pub enum RulesOp {
     /// Generate the cards a session loads, from the authored templates.
     ///
     /// Writes `.claude/rules/<name>.md` per rule. Those are generated output
-    /// and editing one by hand loses the edit on the next run.
-    Render {},
+    /// and editing one by hand loses the edit on the next run. Only the cards
+    /// of the session's role and place are written, and a card an earlier run
+    /// wrote for another role is removed.
+    Render {
+        #[command(flatten)]
+        session: SessionArgs,
+    },
+
+    /// The cards a session loads, with their sizes.
+    ///
+    /// With `--all`, the count and bytes for each role and place instead.
+    Load {
+        #[command(flatten)]
+        session: SessionArgs,
+
+        /// Every role and place, one line each, rather than one session.
+        #[arg(long)]
+        all: bool,
+    },
+}
+
+/// The session a set of cards is chosen for, when the environment is not to say.
+#[derive(Debug, Args)]
+pub struct SessionArgs {
+    /// The session role, `coordinator` or `helper`. Without it the role file
+    /// `~/.config/clause-dev/role` says, and a session with none takes every
+    /// role.
+    #[arg(long)]
+    pub role: Option<SessionRole>,
+
+    /// Where the session runs, `cloud` or `local`. Without it `CLAUSE_CLOUD`
+    /// being `1` says cloud, and anything else local.
+    #[arg(long)]
+    pub place: Option<Place>,
 }
 
 /// `skills` subcommands.

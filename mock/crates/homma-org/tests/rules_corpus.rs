@@ -14,7 +14,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use homma_api::session::{Place, Session, SessionRole};
 use homma_org::rules::{Corpus, CorpusError};
+
+/// A session that binds every rule that is not tied to a place it is not in.
+fn every() -> Session {
+    Session::every(Place::Local)
+}
 
 /// A corpus of three rules on disjoint subjects.
 ///
@@ -68,7 +74,10 @@ fn a_gated_rule_keeps_its_gating_through_generation() {
     .unwrap();
 
     let out = dir.join("out");
-    Corpus::load(&src).unwrap().render_cards(&out).unwrap();
+    Corpus::load(&src)
+        .unwrap()
+        .render_cards(&out, &every())
+        .unwrap();
 
     let card = fs::read_to_string(out.join("rust-only.md")).unwrap();
     assert!(
@@ -211,7 +220,7 @@ fn renders_the_card_and_not_the_elaboration() {
     let d = fixture();
     let c = Corpus::load(&d.join("rules")).unwrap();
     let out = d.join("cards");
-    assert_eq!(c.render_cards(&out).unwrap().len(), 3);
+    assert_eq!(c.render_cards(&out, &every()).unwrap().len(), 3);
 
     let card = fs::read_to_string(out.join("writing-style.md")).unwrap();
     assert!(card.contains("# writing-style"));
@@ -238,7 +247,7 @@ fn a_generated_card_ends_with_exactly_one_newline() {
     let d = fixture();
     let c = Corpus::load(&d.join("rules")).unwrap();
     let out = d.join("cards");
-    c.render_cards(&out).unwrap();
+    c.render_cards(&out, &every()).unwrap();
     let card = fs::read_to_string(out.join("writing-style.md")).unwrap();
     assert!(card.ends_with('\n'));
     assert!(!card.ends_with("\n\n"));
@@ -277,7 +286,7 @@ fn a_template_can_say_which_variant_it_is_being_rendered_as() {
     let c = Corpus::load(&src).unwrap();
     let r = c.rules.iter().find(|r| r.name == "writing-style").unwrap();
     let out = d.join("cards");
-    c.render_cards(&out).unwrap();
+    c.render_cards(&out, &every()).unwrap();
     let card = fs::read_to_string(out.join("writing-style.md")).unwrap();
     assert!(card.contains("Fetch the rest"));
     assert!(!c.render_full(r).unwrap().contains("Fetch the rest"));
@@ -313,7 +322,7 @@ fn a_template_naming_something_the_meta_does_not_have_is_refused() {
     )
     .unwrap();
     let c = Corpus::load(&src).unwrap();
-    match c.render_cards(&d.join("cards")) {
+    match c.render_cards(&d.join("cards"), &every()) {
         Err(CorpusError::Render {
             ..
         }) => {},
@@ -364,7 +373,7 @@ fn a_dot_in_a_rule_name_is_part_of_the_name() {
     // And it reaches a session, which is the half that was actually missing:
     // it loaded fine before too, if the guard had let it.
     let out = d.join("out");
-    c.render_cards(&out).unwrap();
+    c.render_cards(&out, &every()).unwrap();
     assert!(
         out.join("no-legacy-shims-pre-1.0.md").is_file(),
         "an authored rule that generates no card governs nothing"
@@ -383,7 +392,7 @@ fn every_authored_rule_generates_a_card() {
     let src = d.join("rules");
     let out = d.join("out");
     let c = Corpus::load(&src).unwrap();
-    c.render_cards(&out).unwrap();
+    c.render_cards(&out, &every()).unwrap();
 
     let mut authored: Vec<String> = fs::read_dir(&src)
         .unwrap()
@@ -421,7 +430,7 @@ fn a_card_no_rule_claims_is_reported_and_left_alone() {
     let d = fixture();
     let c = Corpus::load(&d.join("rules")).unwrap();
     let out = d.join("out");
-    c.render_cards(&out).unwrap();
+    c.render_cards(&out, &every()).unwrap();
     assert!(c.unclaimed(&out).unwrap().is_empty());
 
     // The shape a deleted rule leaves behind, planted rather than produced by
@@ -437,7 +446,7 @@ fn a_card_no_rule_claims_is_reported_and_left_alone() {
 
     // A second render does not remove it either, which is the half that would
     // pass vacuously if `unclaimed` were the only thing checked.
-    c.render_cards(&out).unwrap();
+    c.render_cards(&out, &every()).unwrap();
     assert!(out.join("a-rule-that-was-deleted.md").is_file());
 
     // And what is not a card is not reported as one, so the report is about
@@ -446,5 +455,168 @@ fn a_card_no_rule_claims_is_reported_and_left_alone() {
     assert_eq!(c.unclaimed(&out).unwrap(), vec![
         "a-rule-that-was-deleted".to_string()
     ]);
+    let _ = fs::remove_dir_all(&d);
+}
+
+/// A corpus of an untagged rule, a coordinator's, a helper's, a local-only one
+/// and a cloud-only one, the cells the session choice has to tell apart.
+fn tagged() -> PathBuf {
+    let d = fixture();
+    let src = d.join("rules");
+    for (name, extra) in [
+        ("for-coordinator", "roles: [coordinator]"),
+        ("for-helper", "roles: [helper]"),
+        ("for-local", "where: local"),
+        ("for-cloud", "where: cloud"),
+    ] {
+        fs::write(
+            src.join(format!("{name}.md.tmpl")),
+            format!(
+                "---\ntopics: [{name}]\nfires: \"x\"\nkind: reflex\n{extra}\n---\n\n\
+                 # {name}\n\nThe card.\n\n<!-- elaboration -->\n\nThe rest.\n"
+            ),
+        )
+        .unwrap();
+    }
+    d
+}
+
+/// The names of the cards in a directory, sorted.
+fn cards(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| {
+            e.unwrap()
+                .file_name()
+                .to_string_lossy()
+                .trim_end_matches(".md")
+                .to_string()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+fn session(role: Option<SessionRole>, place: Place) -> Session {
+    Session {
+        role,
+        place,
+    }
+}
+
+#[test]
+fn a_helper_gets_no_coordinator_card_and_a_coordinator_no_helper_card() {
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+
+    let helper = d.join("helper");
+    c.render_cards(&helper, &session(Some(SessionRole::Helper), Place::Cloud))
+        .unwrap();
+    let got = cards(&helper);
+    assert!(got.contains(&"for-helper".to_string()), "{got:?}");
+    assert!(!got.contains(&"for-coordinator".to_string()), "{got:?}");
+    assert!(
+        got.contains(&"writing-style".to_string()),
+        "an untagged card is for everyone"
+    );
+
+    let coordinator = d.join("coordinator");
+    c.render_cards(
+        &coordinator,
+        &session(Some(SessionRole::Coordinator), Place::Cloud),
+    )
+    .unwrap();
+    let got = cards(&coordinator);
+    assert!(got.contains(&"for-coordinator".to_string()), "{got:?}");
+    assert!(!got.contains(&"for-helper".to_string()), "{got:?}");
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_session_with_no_role_gets_every_role_s_card() {
+    // The control for the two above: nothing is withheld from a session that
+    // has no role file, so a lost file loads more rather than less.
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let out = d.join("out");
+    c.render_cards(&out, &session(None, Place::Local)).unwrap();
+    let got = cards(&out);
+    assert!(got.contains(&"for-coordinator".to_string()), "{got:?}");
+    assert!(got.contains(&"for-helper".to_string()), "{got:?}");
+    assert!(got.contains(&"for-local".to_string()), "{got:?}");
+    assert!(
+        !got.contains(&"for-cloud".to_string()),
+        "a cloud card is not for a local session"
+    );
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_card_follows_the_place() {
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let cloud = d.join("cloud");
+    c.render_cards(&cloud, &session(None, Place::Cloud))
+        .unwrap();
+    let got = cards(&cloud);
+    assert!(got.contains(&"for-cloud".to_string()) && !got.contains(&"for-local".to_string()));
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_card_written_for_another_role_is_removed_by_the_next_render() {
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let out = d.join("out");
+    c.render_cards(&out, &session(Some(SessionRole::Coordinator), Place::Cloud))
+        .unwrap();
+    assert!(out.join("for-coordinator.md").is_file());
+
+    c.render_cards(&out, &session(Some(SessionRole::Helper), Place::Cloud))
+        .unwrap();
+    assert!(
+        !out.join("for-coordinator.md").exists(),
+        "the rule claims it and it is not for this session, so the stale copy goes"
+    );
+    assert!(out.join("for-helper.md").is_file());
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn a_card_no_rule_claims_survives_a_restricting_session() {
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let out = d.join("out");
+    fs::create_dir_all(&out).unwrap();
+    fs::write(out.join("put-here-on-purpose.md"), "mine\n").unwrap();
+    c.render_cards(&out, &session(Some(SessionRole::Helper), Place::Cloud))
+        .unwrap();
+    assert!(out.join("put-here-on-purpose.md").is_file());
+    assert_eq!(c.unclaimed(&out).unwrap(), vec![
+        "put-here-on-purpose".to_string()
+    ]);
+    let _ = fs::remove_dir_all(&d);
+}
+
+#[test]
+fn withheld_admitted_and_bytes_agree_with_what_is_written() {
+    let d = tagged();
+    let c = Corpus::load(&d.join("rules")).unwrap();
+    let s = session(Some(SessionRole::Helper), Place::Cloud);
+    let out = d.join("out");
+    let written = c.render_cards(&out, &s).unwrap();
+
+    let admitted: Vec<&str> = c.admitted(&s).map(|r| r.name.as_str()).collect();
+    let withheld: Vec<&str> = c.withheld(&s).map(|r| r.name.as_str()).collect();
+    assert_eq!(admitted.len(), written.len());
+    assert_eq!(admitted.len() + withheld.len(), c.rules.len());
+    assert!(withheld.contains(&"for-coordinator") && withheld.contains(&"for-local"));
+
+    let total: usize = c.admitted(&s).map(|r| c.card_bytes(r).unwrap()).sum();
+    let on_disk: u64 = written.iter().map(|p| fs::metadata(p).unwrap().len()).sum();
+    assert_eq!(
+        total as u64, on_disk,
+        "the size reported is the size written"
+    );
     let _ = fs::remove_dir_all(&d);
 }
