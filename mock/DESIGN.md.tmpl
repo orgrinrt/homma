@@ -286,7 +286,12 @@ latest in the transcript, and the position in the file is the order everything
 follows, since the harness stamps a queued message with the time it was queued
 and writes it after lines stamped later. So a second run with nothing new writes
 nothing and says so, and there is no state file beside the store to go stale. A
-`through` the transcript does not hold is refused rather than guessed around. A
+`through` the transcript does not hold is refused rather than guessed around,
+except where the transcript is cut: a resumed session in a fresh container gets
+its transcript from its last compaction on, so the file opens on the harness's
+compaction boundary, a line with no parent, and a `through` such a file lacks
+names a line written before it. That capture moves no watermark, since none of
+its words are in the file to be written twice. A
 session no capture has come from yet has no watermark, and `--since` takes an
 RFC 3339 instant as a floor for that first run, keeping only events stamped after
 it; given with a watermark it applies as well, which loses the queued messages
