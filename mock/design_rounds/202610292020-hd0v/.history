@@ -1,0 +1,50 @@
+f3cd6bc chore: lock src changelist for 202610292020-hd0v_changelist.src.lock.md
+590d8c0 chore: record the test history of the session tests
+d7c228e feat: render the cards of a session's role and place
+28b5ced docs: carry every name into the source plan comparison
+c3c2bed feat: read a rule's roles and place and the session they bind
+cd589b2 docs: reopen the source plan for session role and place
+0c8fd98 chore: lock doc changelist for 202610292020-hd0v_changelist.doc.lock.md
+7edbe56 chore: unlock design round (deprecate src CL, unlock doc CL)
+62d5d81 chore: lock src changelist for 202610292020-hd0v_changelist.src.lock.md
+bce27a5 docs: plan the source for session role and place
+9fcf05b chore: lock doc changelist for 202610292020-hd0v_changelist.doc.lock.md
+5574d98 docs: describe cards by session role and place
+516dbab docs: file the round on session role and place for rule cards
+f405aa0 fix: take a capture from a transcript that a compaction has cut
+e7333d9 feat: a console answer lands in one call
+3cd9cff feat: homma what answers tool questions from their readmes
+6693f2c feat: no dashboard where a console is named
+75e1eb9 feat: chain homma's hooks through git-shook and its layers
+1aa8c83 feat: add `homma what` to find the tool for a task
+b8d373a feat: report agent surfaces by adoption and ask homma in the gate
+b66343a docs: file the repo scope every command keeps to as a topic
+a3e732a fix: neutralise the git template dir for every test repository
+b09d0c9 feat: add homma milestone base, mark, partition and stand-ins
+23f9b94 chore: regenerate the structure graph
+7e4139f feat: dispatch the content repository's tools as homma subcommands (#74)
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)
+7500149 chore: track the generated merge attributes (#77)
+a5dc5d9 feat: install a stored local config by name (#73)
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+b4e9548 fix: read the request body in the stub forges before answering
+6dd0a1c fix: check the readme's launcher commands against the launcher
+20384f2 feat: carry every agent hook at its event and drop none
+de5f6a1 feat: declare homma's hooks in a shook.toml
+eef5643 feat: homma owns the rule and skill corpora and generates their cards
+6808e9a chore: take the ask tool from muisti under lint-crates
+42d470b chore: the launcher takes `renki` 0.0.3 from the registry
+3901178 feat: the person's settings, and `homma workspace` on the launcher
+fc70a3d refactor: split the gate tests into a module per concern
+bfb2260 fix: clear the thirteen clippy findings the engine workspace carried
+30302a7 feat: the pre-push gate leaves a poster and gates a tag's commit once
+5055158 feat: the release gate holds the description to the readme tagline
+eb26e80 feat: one entrypoint per git event, read off a hooks table
+c853079 feat: read a repo's kind off root markers declared in homma.toml
+69e8765 docs: drop the coding-agents notice from the readme
