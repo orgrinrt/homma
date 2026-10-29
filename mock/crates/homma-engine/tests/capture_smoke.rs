@@ -552,6 +552,12 @@ fn the_captures_passed_over_in_a_cut_transcript_are_said_on_stderr() {
     .success()
     .stderr(predicate::str::contains(
         "warning: 1 earlier capture(s) of this session end before the transcript's cut and were \
-         passed over",
+         passed over; a message written twice across the cut may have been taken again",
     ));
+    // The point of it: the session is captured again, the earlier capture kept.
+    let names = store(&root);
+    assert_eq!(names.len(), 2, "{names:?}");
+    let new = names.iter().find(|n| !n.contains("before")).unwrap();
+    let body = std::fs::read_to_string(earlier.join(new)).unwrap();
+    assert!(body.contains("> hello there\n"), "{body}");
 }

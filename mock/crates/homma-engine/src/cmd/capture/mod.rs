@@ -210,7 +210,8 @@ pub fn run(
     if passed > 0 {
         eprintln!(
             "warning: {passed} earlier capture(s) of this session end before the transcript's \
-             cut and were passed over; a message written twice across the cut is taken again"
+             cut and were passed over; a message written twice across the cut may have been \
+             taken again"
         );
     }
     let made = make(

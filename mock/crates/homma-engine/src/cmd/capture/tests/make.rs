@@ -34,7 +34,7 @@ fn ask<'a>(bears_on: &'a [String]) -> Ask<'a> {
 /// it made there so the next run sees it.
 fn run_over(store_dir: &Path, text: &str, a: &Ask<'_>) -> Option<Made> {
     let t = read(text).unwrap();
-    let mark = store::watermark(store_dir, "s", &t).unwrap();
+    let mark = store::scan(store_dir, "s", &t).unwrap().mark;
     let made = make(Path::new("/"), &t, "s", mark.as_ref(), a, &TimeZone::UTC).unwrap();
     if let Some(m) = &made {
         std::fs::write(store_dir.join(&m.name), &m.body).unwrap();

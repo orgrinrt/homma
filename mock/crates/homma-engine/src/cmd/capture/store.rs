@@ -184,12 +184,7 @@ pub struct Scan {
 }
 
 /// The `through` of the capture in `store` that reaches furthest into the
-/// session's transcript.
-pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Option<Mark>> {
-    scan(store, session, read).map(|s| s.mark)
-}
-
-/// [`watermark`], with the number of captures passed over.
+/// session's transcript, with the number of captures passed over.
 ///
 /// Furthest in the file, not latest in time, since the file is the order the
 /// harness read things in. A capture naming the session with no `through`, or
