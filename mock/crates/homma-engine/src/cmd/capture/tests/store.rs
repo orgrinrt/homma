@@ -154,6 +154,56 @@ fn a_capture_of_the_session_with_a_through_the_transcript_lacks_is_refused_by_na
     assert_eq!(watermark(dir.path(), "s", &t).unwrap(), mark(0, "a"));
 }
 
+/// The harness's compaction boundary, with the line before it named or not.
+fn boundary(uuid: &str, parent: Option<&str>) -> Value {
+    json!({
+        "type": "system", "subtype": "compact_boundary", "uuid": uuid,
+        "parentUuid": parent, "logicalParentUuid": "gone",
+        "timestamp": "2026-09-24T09:00:00Z", "isSidechain": false,
+        "content": "Conversation compacted",
+    })
+}
+
+#[test]
+fn a_cut_transcript_passes_over_a_through_written_before_the_cut() {
+    let cut = read(&lines(&[
+        boundary("b", None),
+        typed("a", "2026-09-24T10:00:00Z", "x"),
+        typed("c", "2026-09-24T11:00:00Z", "y"),
+    ]))
+    .expect("reads");
+    assert!(cut.cut);
+    let dir = tempfile::tempdir().expect("a directory");
+    let d = dir.path();
+    std::fs::write(d.join("x.md"), capture(Some("s"), Some("gone"))).unwrap();
+    // Every capture before the cut: nothing in the file is captured yet.
+    assert_eq!(watermark(d, "s", &cut).unwrap(), None);
+    // One capture inside the file is the mark, the one before the cut nothing.
+    std::fs::write(d.join("y.md"), capture(Some("s"), Some("a"))).unwrap();
+    assert_eq!(watermark(d, "s", &cut).unwrap(), mark(1, "a"));
+    // A capture with no `through` is refused in a cut transcript too.
+    std::fs::write(d.join("z.md"), capture(Some("s"), None)).unwrap();
+    let err = format!("{:#}", watermark(d, "s", &cut).expect_err("refused"));
+    assert!(err.contains("z.md"), "{err}");
+}
+
+#[test]
+fn a_transcript_that_does_not_open_on_a_parentless_boundary_still_refuses() {
+    // A boundary with the line before it named, and one that is not the
+    // first line, as a local session's file carries every compaction.
+    for t in [vec![boundary("b", Some("p")), typed("a", "2026-09-24T10:00:00Z", "x")], vec![
+        typed("a", "2026-09-24T10:00:00Z", "x"),
+        boundary("b", None),
+    ]] {
+        let t = read(&lines(&t)).expect("reads");
+        assert!(!t.cut);
+        let dir = tempfile::tempdir().expect("a directory");
+        std::fs::write(dir.path().join("x.md"), capture(Some("s"), Some("gone"))).unwrap();
+        let err = format!("{:#}", watermark(dir.path(), "s", &t).expect_err("refused"));
+        assert!(err.contains("x.md"), "{err}");
+    }
+}
+
 #[test]
 fn a_slug_keeps_letters_and_digits_and_one_dash_between() {
     assert_eq!(

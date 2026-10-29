@@ -179,7 +179,9 @@ pub struct Mark {
 /// Furthest in the file, not latest in time, since the file is the order the
 /// harness read things in. A capture naming the session with no `through`, or
 /// one the transcript does not hold, is refused by file: skipping it would
-/// move the watermark back and write its events a second time.
+/// move the watermark back and write its events a second time. The one
+/// exception is a cut transcript, whose missing lines were all written before
+/// the cut: such a capture's words are not in the file, and it moves nothing.
 pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Option<Mark>> {
     let mut latest: Option<Mark> = None;
     let entries = match std::fs::read_dir(store) {
@@ -202,12 +204,15 @@ pub fn watermark(store: &Path, session: &str, read: &Transcript) -> Result<Optio
         }
         let through =
             through.ok_or_else(|| anyhow!("{} names the session and no `through`", p.display()))?;
-        let line = read.line_of(through).ok_or_else(|| {
-            anyhow!(
+        let Some(line) = read.line_of(through) else {
+            if read.cut {
+                continue;
+            }
+            bail!(
                 "{}: `through` {through:?} is no line of the session's transcript",
                 p.display()
-            )
-        })?;
+            );
+        };
         if latest.as_ref().is_none_or(|l| line > l.line) {
             latest = Some(Mark {
                 line,
