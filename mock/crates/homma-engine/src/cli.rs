@@ -267,8 +267,9 @@ pub enum Command {
     /// Reads the session's transcript and writes every message they typed, and
     /// every question put to them with its options and their answer, as one
     /// capture file. Only what came after the last capture from that session is
-    /// taken, and a run with nothing new writes nothing. The file is written and
-    /// left for the caller to commit.
+    /// taken, bar a message the harness wrote twice across a compaction that cut
+    /// the transcript, whose second copy is taken again. A run with nothing new
+    /// writes nothing. The file is written and left for the caller to commit.
     Capture {
         /// The capture's title, which also names its file.
         #[arg(long)]

@@ -221,7 +221,7 @@ pub fn scan(store: &Path, session: &str, read: &Transcript) -> Result<Scan> {
         let through =
             through.ok_or_else(|| anyhow!("{} names the session and no `through`", p.display()))?;
         let Some(line) = read.line_of(through) else {
-            if read.cut {
+            if read.compacted {
                 passed += 1;
                 continue;
             }

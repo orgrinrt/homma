@@ -123,7 +123,7 @@ pub struct Transcript {
     /// The file opens on a compaction boundary naming a line it lacks, which is
     /// how a resumed session in a fresh container gets its transcript: from its
     /// last compaction on, every line before it gone.
-    pub cut:       bool,
+    pub compacted: bool,
 }
 
 impl Transcript {
@@ -234,7 +234,7 @@ pub fn read(text: &str) -> Result<Transcript> {
         }
     }
     // Cut only when the line the opening boundary names is nowhere in the file.
-    out.cut = lost.is_some_and(|u| !out.lines.contains_key(&u));
+    out.compacted = lost.is_some_and(|u| !out.lines.contains_key(&u));
     Ok(out)
 }
 

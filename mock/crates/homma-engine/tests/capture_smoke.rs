@@ -561,3 +561,60 @@ fn the_captures_passed_over_in_a_cut_transcript_are_said_on_stderr() {
     let body = std::fs::read_to_string(earlier.join(new)).unwrap();
     assert!(body.contains("> hello there\n"), "{body}");
 }
+
+#[test]
+fn a_cut_transcript_holding_a_captures_through_says_nothing_of_passed_over_captures() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, home) = workspace(dir.path());
+    let t = dir.path().join("s.jsonl");
+    // A file that opens on the compaction boundary over a line it lacks, and
+    // holds the line `a` that the one capture of the session ended on.
+    let boundary = serde_json::json!({
+        "type": "system", "subtype": "compact_boundary", "uuid": "boundary",
+        "parentUuid": null, "logicalParentUuid": "gone",
+        "timestamp": "2026-09-24T13:00:00Z", "content": "Conversation compacted",
+    });
+    std::fs::write(&t, format!("{boundary}\n{SAID}\n{MORE}\n")).unwrap();
+    let earlier = root.join(".data/op-responses");
+    std::fs::create_dir_all(&earlier).unwrap();
+    let capture_through = |through: &str| {
+        format!(
+            "---\nwhen: 2026-09-24 12:00\nkind: unprompted\nsource: s\nthrough: {through}\ntags: [chat]\n---\n\n# before\n"
+        )
+    };
+    std::fs::write(earlier.join("202609241200_before.md"), capture_through("a")).unwrap();
+    // Nothing is passed over, since the capture's end is in the file: the
+    // run takes what came after it and says nothing.
+    capture(&root, &home, &[
+        "--title",
+        "After",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stdout(predicate::str::contains("1 said, 0 asked"))
+    .stderr(predicate::str::is_empty());
+    // The control: a second capture ending before the cut makes the same run
+    // say so, so the silence above is the absence of the warning and not a
+    // run that never prints one.
+    std::fs::remove_file(earlier.join("202609241200_before.md")).unwrap();
+    for name in store(&root) {
+        std::fs::remove_file(earlier.join(name)).unwrap();
+    }
+    std::fs::write(earlier.join("202609241200_before.md"), capture_through("a")).unwrap();
+    std::fs::write(
+        earlier.join("202609241100_older.md"),
+        capture_through("gone"),
+    )
+    .unwrap();
+    capture(&root, &home, &[
+        "--title",
+        "Again",
+        "--session",
+        t.to_str().unwrap(),
+    ])
+    .success()
+    .stderr(predicate::str::contains(
+        "warning: 1 earlier capture(s) of this session end before the transcript's cut",
+    ));
+}

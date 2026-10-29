@@ -443,7 +443,7 @@ fn a_twin_is_only_what_the_attachment_names() {
 #[test]
 fn a_file_opening_on_a_boundary_over_a_line_it_lacks_is_cut() {
     let cut = read(&lines(&[boundary("b", Some("gone")), typed("a", T0, "x")])).expect("reads");
-    assert!(cut.cut);
+    assert!(cut.compacted);
     // The line is only lost when the file lacks it, and a boundary that names
     // nothing, or one past the first line, says nothing was.
     for whole in [
@@ -454,11 +454,39 @@ fn a_file_opening_on_a_boundary_over_a_line_it_lacks_is_cut() {
         vec![typed("a", T0, "x"), boundary("b", Some("gone"))],
         vec![typed("a", T0, "x")],
     ] {
-        assert!(!read(&lines(&whole)).expect("reads").cut);
+        assert!(!read(&lines(&whole)).expect("reads").compacted);
     }
     // A boundary with a parent is just as cut: the field says nothing.
     let mut parented = boundary("b", Some("gone"));
     parented["parentUuid"] = json!("p");
-    assert!(read(&lines(&[parented])).expect("reads").cut);
-    assert!(!read("").expect("reads").cut);
+    assert!(read(&lines(&[parented])).expect("reads").compacted);
+    assert!(!read("").expect("reads").compacted);
+}
+
+/// A transcript in the shape the harness writes a resumed session's: line 1 a
+/// compaction boundary with no `parentUuid` over a line the file lacks, and a
+/// later boundary naming a line the file holds. The words are replaced.
+#[test]
+fn a_real_shaped_transcript_is_cut_by_its_first_boundary_alone() {
+    let text = include_str!("fixtures/compacted.jsonl");
+    let t = read(text).expect("reads");
+    assert!(t.compacted);
+    let said: Vec<_> = t
+        .events
+        .iter()
+        .filter_map(|e| {
+            match &e.what {
+                Happened::Said(w) => Some(w.as_str()),
+                _ => None,
+            }
+        })
+        .collect();
+    assert_eq!(said, [
+        "first thing typed after the compaction",
+        "second thing typed after the later compaction"
+    ]);
+    // The control: without the first line the file opens on a line that names
+    // nothing lost, and the later boundary over a held line does not cut it.
+    let rest: String = text.lines().skip(1).map(|l| format!("{l}\n")).collect();
+    assert!(!read(&rest).expect("reads").compacted);
 }

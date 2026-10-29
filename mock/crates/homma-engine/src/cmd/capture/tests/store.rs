@@ -162,7 +162,7 @@ fn a_cut_transcript_passes_over_a_through_written_before_the_cut() {
         typed("c", "2026-09-24T11:00:00Z", "y"),
     ]))
     .expect("reads");
-    assert!(cut.cut);
+    assert!(cut.compacted);
     let dir = tempfile::tempdir().expect("a directory");
     let d = dir.path();
     std::fs::write(d.join("x.md"), capture(Some("s"), Some("gone"))).unwrap();
@@ -219,7 +219,7 @@ fn a_transcript_that_does_not_open_on_a_boundary_over_a_lost_line_still_refuses(
         vec![typed("a", "2026-09-24T10:00:00Z", "x"), boundary("b", Some("gone"))],
     ] {
         let t = read(&lines(&t)).expect("reads");
-        assert!(!t.cut);
+        assert!(!t.compacted);
         let dir = tempfile::tempdir().expect("a directory");
         std::fs::write(dir.path().join("x.md"), capture(Some("s"), Some("gone"))).unwrap();
         let err = format!("{:#}", scan(dir.path(), "s", &t).expect_err("refused"));
