@@ -298,8 +298,9 @@ be written twice. One exception is known: a message the harness wrote twice, as
 an attachment and a typed line or as two attachments, with the first copy before
 the cut, reaches the file as the second copy only, and that is taken, since
 dropping it would lose the person's words and no line of the file says it was
-taken. The run says on stderr how many captures it passed over this way, beside
-the lines it recovered and the results it found no question for. A
+taken. The run says on stderr how many captures it passed over, beside the lines
+it recovered and the results it found no question for, and that a message
+written twice across the cut may have been taken again. A
 session no capture has come from yet has no watermark, and `--since` takes an
 RFC 3339 instant as a floor for that first run, keeping only events stamped after
 it; given with a watermark it applies as well, which loses the queued messages
