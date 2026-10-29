@@ -11,10 +11,10 @@ use crate::cmd::capture::store::{
     Which,
     escaped,
     mentioned,
+    scan,
     session_of,
     slug,
     transcript,
-    watermark,
 };
 use crate::cmd::capture::transcript::{Transcript, read};
 
@@ -120,9 +120,9 @@ fn the_watermark_is_the_through_furthest_into_the_transcript_and_no_other_sessio
     std::fs::write(d.join("d.md"), capture(None, None)).unwrap();
     std::fs::write(d.join("e.txt"), capture(Some("s1"), Some("nowhere"))).unwrap();
     std::fs::write(d.join("f.md"), "no front matter at all\n").unwrap();
-    assert_eq!(watermark(d, "s1", &t).unwrap(), mark(2, "early"));
-    assert_eq!(watermark(d, "s2", &t).unwrap(), mark(1, "mid"));
-    assert_eq!(watermark(d, "s3", &t).unwrap(), None);
+    assert_eq!(scan(d, "s1", &t).unwrap().mark, mark(2, "early"));
+    assert_eq!(scan(d, "s2", &t).unwrap().mark, mark(1, "mid"));
+    assert_eq!(scan(d, "s3", &t).unwrap().mark, None);
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn a_store_that_is_not_there_yet_has_no_watermark() {
     let dir = tempfile::tempdir().expect("a directory");
     let t = Transcript::default();
     assert_eq!(
-        watermark(&dir.path().join("absent"), "s", &t).unwrap(),
+        scan(&dir.path().join("absent"), "s", &t).unwrap().mark,
         None
     );
 }
@@ -143,15 +143,88 @@ fn a_capture_of_the_session_with_a_through_the_transcript_lacks_is_refused_by_na
     for bad in [None, Some("2026-09-24T10:00:00Z"), Some("b")] {
         let dir = tempfile::tempdir().expect("a directory");
         std::fs::write(dir.path().join("x.md"), capture(Some("s"), bad)).unwrap();
-        let err = format!("{:#}", watermark(dir.path(), "s", &t).expect_err("refused"));
+        let err = format!("{:#}", scan(dir.path(), "s", &t).expect_err("refused"));
         assert!(err.contains("x.md"), "{err}");
         // The same file under another session is none of this run's business.
-        assert_eq!(watermark(dir.path(), "other", &t).unwrap(), None);
+        assert_eq!(scan(dir.path(), "other", &t).unwrap().mark, None);
     }
     // The control: the same file naming a line the transcript has.
     let dir = tempfile::tempdir().expect("a directory");
     std::fs::write(dir.path().join("x.md"), capture(Some("s"), Some("a"))).unwrap();
-    assert_eq!(watermark(dir.path(), "s", &t).unwrap(), mark(0, "a"));
+    assert_eq!(scan(dir.path(), "s", &t).unwrap().mark, mark(0, "a"));
+}
+
+#[test]
+fn a_cut_transcript_passes_over_a_through_written_before_the_cut() {
+    let cut = read(&lines(&[
+        boundary("b", Some("gone")),
+        typed("a", "2026-09-24T10:00:00Z", "x"),
+        typed("c", "2026-09-24T11:00:00Z", "y"),
+    ]))
+    .expect("reads");
+    assert!(cut.compacted);
+    let dir = tempfile::tempdir().expect("a directory");
+    let d = dir.path();
+    std::fs::write(d.join("x.md"), capture(Some("s"), Some("gone"))).unwrap();
+    // Every capture before the cut: nothing in the file is captured yet.
+    assert_eq!(scan(d, "s", &cut).unwrap().mark, None);
+    // One capture inside the file is the mark, the one before the cut nothing.
+    std::fs::write(d.join("y.md"), capture(Some("s"), Some("a"))).unwrap();
+    assert_eq!(scan(d, "s", &cut).unwrap().mark, mark(1, "a"));
+    // A capture with no `through` is refused in a cut transcript too.
+    std::fs::write(d.join("z.md"), capture(Some("s"), None)).unwrap();
+    let err = format!("{:#}", scan(d, "s", &cut).expect_err("refused"));
+    assert!(err.contains("z.md"), "{err}");
+}
+
+#[test]
+fn the_captures_passed_over_in_a_cut_transcript_are_counted() {
+    let cut = read(&lines(&[
+        boundary("b", Some("gone")),
+        typed("a", "2026-09-24T10:00:00Z", "x"),
+    ]))
+    .expect("reads");
+    let dir = tempfile::tempdir().expect("a directory");
+    let d = dir.path();
+    let passed = |s: &str| scan(d, s, &cut).unwrap().passed;
+    assert_eq!(passed("s"), 0);
+    std::fs::write(d.join("1.md"), capture(Some("s"), Some("gone"))).unwrap();
+    std::fs::write(d.join("2.md"), capture(Some("s"), Some("also-gone"))).unwrap();
+    // One the file holds is not passed over, and another session's is none of
+    // this run's.
+    std::fs::write(d.join("3.md"), capture(Some("s"), Some("a"))).unwrap();
+    std::fs::write(d.join("4.md"), capture(Some("other"), Some("gone"))).unwrap();
+    let got = scan(d, "s", &cut).unwrap();
+    assert_eq!(got.passed, 2);
+    assert_eq!(got.mark, mark(1, "a"));
+}
+
+#[test]
+fn a_transcript_that_does_not_open_on_a_boundary_over_a_lost_line_still_refuses() {
+    let missing_key = {
+        let mut b = boundary("b", None);
+        b.as_object_mut().unwrap().remove("logicalParentUuid");
+        b
+    };
+    for t in [
+        // A boundary naming no line it lost: the key null, and the key absent.
+        vec![boundary("b", None), typed("a", "2026-09-24T10:00:00Z", "x")],
+        vec![missing_key, typed("a", "2026-09-24T10:00:00Z", "x")],
+        // One naming a line the file holds, as a local session's file carries
+        // every compaction.
+        vec![typed("a", "2026-09-24T10:00:00Z", "x"), boundary("b", Some("a"))],
+        // First in the file, over a line the file holds: nothing is lost.
+        vec![boundary("b", Some("a")), typed("a", "2026-09-24T10:00:00Z", "x")],
+        // And one that is not the first line, whatever it names.
+        vec![typed("a", "2026-09-24T10:00:00Z", "x"), boundary("b", Some("gone"))],
+    ] {
+        let t = read(&lines(&t)).expect("reads");
+        assert!(!t.compacted);
+        let dir = tempfile::tempdir().expect("a directory");
+        std::fs::write(dir.path().join("x.md"), capture(Some("s"), Some("gone"))).unwrap();
+        let err = format!("{:#}", scan(dir.path(), "s", &t).expect_err("refused"));
+        assert!(err.contains("x.md"), "{err}");
+    }
 }
 
 #[test]

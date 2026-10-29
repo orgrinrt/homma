@@ -120,6 +120,10 @@ pub struct Transcript {
     pub recovered: Vec<Recovered>,
     /// The tool results whose call no earlier line holds, in file order.
     pub unasked:   Vec<Unasked>,
+    /// The file opens on a compaction boundary naming a line it lacks, which is
+    /// how a resumed session in a fresh container gets its transcript: from its
+    /// last compaction on, every line before it gone.
+    pub compacted: bool,
 }
 
 impl Transcript {
@@ -147,6 +151,10 @@ pub fn read(text: &str) -> Result<Transcript> {
     // The calls the agent made. A tool result is a round when it answers one of
     // the asks among them, and is looked at again when it answers none.
     let mut calls = Calls::default();
+    // Whether the first object is read yet, the one that says the file is cut,
+    // and the line it says came before it.
+    let mut opened = false;
+    let mut lost: Option<String> = None;
     for (at, line) in complete.lines().enumerate() {
         let n = at + 1;
         if line.trim().is_empty() {
@@ -168,6 +176,10 @@ pub fn read(text: &str) -> Result<Transcript> {
         let Some(o) = v.as_object() else {
             bail!("transcript line {n} is not an object");
         };
+        if !opened {
+            lost = compacted_after(o).map(str::to_string);
+            opened = true;
+        }
         let uuid = o.get("uuid").and_then(Value::as_str);
         // A resumed session can replay a line; its uuid says so.
         if let Some(u) = uuid {
@@ -221,7 +233,24 @@ pub fn read(text: &str) -> Result<Transcript> {
             });
         }
     }
+    // Cut only when the line the opening boundary names is nowhere in the file.
+    out.compacted = lost.is_some_and(|u| !out.lines.contains_key(&u));
     Ok(out)
+}
+
+/// The line a compaction boundary says came before it, if `o` is one that
+/// names any.
+///
+/// The harness writes every boundary with no `parentUuid`, so that field says
+/// nothing; `logicalParentUuid` is the one that points at the last line
+/// compacted away.
+fn compacted_after(o: &Map<String, Value>) -> Option<&str> {
+    if o.get("type").and_then(Value::as_str) != Some("system")
+        || o.get("subtype").and_then(Value::as_str) != Some("compact_boundary")
+    {
+        return None;
+    }
+    o.get("logicalParentUuid").and_then(Value::as_str)
 }
 
 /// The `uuid` a queued attachment's typed twin would carry.
