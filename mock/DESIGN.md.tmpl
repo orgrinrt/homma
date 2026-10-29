@@ -289,9 +289,17 @@ nothing and says so, and there is no state file beside the store to go stale. A
 `through` the transcript does not hold is refused rather than guessed around,
 except where the transcript is cut: a resumed session in a fresh container gets
 its transcript from its last compaction on, so the file opens on the harness's
-compaction boundary, a line with no parent, and a `through` such a file lacks
-names a line written before it. That capture moves no watermark, since none of
-its words are in the file to be written twice. A
+compaction boundary, and that boundary's `logicalParentUuid` names the last line
+before the compaction, which the file lacks. Only that is read as the file being
+cut: every boundary the harness writes has no `parentUuid`, so the absence of one
+says nothing. A `through` a cut file lacks names a line written before it, and
+that capture moves no watermark, since the words it took are not in the file to
+be written twice. One exception is known: a message the harness wrote twice, as
+an attachment and a typed line or as two attachments, with the first copy before
+the cut, reaches the file as the second copy only, and that is taken, since
+dropping it would lose the person's words and no line of the file says it was
+taken. The run says on stderr how many captures it passed over this way, beside
+the lines it recovered and the results it found no question for. A
 session no capture has come from yet has no watermark, and `--since` takes an
 RFC 3339 instant as a floor for that first run, keeping only events stamped after
 it; given with a watermark it applies as well, which loses the queued messages
