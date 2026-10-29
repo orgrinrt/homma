@@ -34,7 +34,7 @@ fn ask<'a>(bears_on: &'a [String]) -> Ask<'a> {
 /// it made there so the next run sees it.
 fn run_over(store_dir: &Path, text: &str, a: &Ask<'_>) -> Option<Made> {
     let t = read(text).unwrap();
-    let mark = store::watermark(store_dir, "s", &t).unwrap();
+    let mark = store::scan(store_dir, "s", &t).unwrap().mark;
     let made = make(Path::new("/"), &t, "s", mark.as_ref(), a, &TimeZone::UTC).unwrap();
     if let Some(m) = &made {
         std::fs::write(store_dir.join(&m.name), &m.body).unwrap();
@@ -228,4 +228,109 @@ fn events_with_no_uuid_anywhere_have_nothing_to_mark_the_capture_by() {
         make(Path::new("/"), &t, "s", None, &ask(&[]), &TimeZone::UTC).expect_err("refused")
     );
     assert!(err.contains("`uuid`"), "{err}");
+}
+
+#[test]
+fn a_message_written_twice_across_the_cut_is_written_again_and_said() {
+    let dir = tempfile::tempdir().expect("a directory");
+    // An earlier capture took the first copy, a typed line `gone` with the cut
+    // behind it, and ended on it.
+    std::fs::write(
+        dir.path().join("202609241400_before.md"),
+        "---\nwhen: 2026-09-24 14:00\nkind: unprompted\nsource: s\nthrough: gone\ntags: [chat]\n---\n\n# before\n",
+    )
+    .unwrap();
+    // The file holds only the second copy, an attachment naming the first.
+    let mut second = queued("q", T1, "while you work");
+    second["attachment"]["source_uuid"] = json!("gone");
+    let t = read(&lines(&[boundary("b", Some("gone")), second.clone()])).unwrap();
+    let scan = store::scan(dir.path(), "s", &t).unwrap();
+    assert_eq!((scan.mark, scan.passed), (None, 1));
+    let made = run_over(
+        dir.path(),
+        &lines(&[boundary("b", Some("gone")), second.clone()]),
+        &ask(&[]),
+    )
+    .expect("the second copy is new to the file");
+    assert_eq!(made.said, 1);
+    assert!(made.body.contains("> while you work\n"), "{}", made.body);
+    // The control: the same store over a file that is not cut refuses, since
+    // the `through` it names is nowhere in it.
+    let whole = read(&lines(&[second])).unwrap();
+    assert!(store::scan(dir.path(), "s", &whole).is_err());
+}
+
+/// A store holding one capture of session `s` that ended on `lost`, a line the
+/// transcript's cut took.
+fn store_ending_on(lost: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a directory");
+    std::fs::write(
+        dir.path().join("202609241400_before.md"),
+        format!(
+            "---\nwhen: 2026-09-24 14:00\nkind: unprompted\nsource: s\nthrough: {lost}\ntags: [chat]\n---\n\n# before\n"
+        ),
+    )
+    .unwrap();
+    dir
+}
+
+/// An attachment copy of a message, naming the typed line it is the twin of.
+fn twin_of(uuid: &str, at: &str, words: &str, source: &str) -> Value {
+    let mut copy = queued(uuid, at, words);
+    copy["attachment"]["source_uuid"] = json!(source);
+    copy
+}
+
+/// Runs the store over a file that opens on a boundary over `lost` and holds
+/// `kept`, and returns what the run made.
+fn across_the_cut(lost: &str, kept: Vec<Value>) -> Made {
+    let dir = store_ending_on(lost);
+    let mut file = vec![boundary("b", Some(lost))];
+    file.extend(kept);
+    let text = lines(&file);
+    let scan = store::scan(dir.path(), "s", &read(&text).unwrap()).unwrap();
+    assert_eq!((scan.mark, scan.passed), (None, 1));
+    run_over(dir.path(), &text, &ask(&[])).expect("the copy that is left is new to the file")
+}
+
+#[test]
+fn a_message_written_twice_with_the_attachment_lost_is_taken_by_its_typed_copy() {
+    let made = across_the_cut("att", vec![typed("typed", T1, "while you work")]);
+    assert_eq!(made.said, 1);
+    assert!(made.body.contains("> while you work\n"), "{}", made.body);
+    // The control: with both copies in the file the key collapses them into
+    // one, so the one taken above is the typed copy standing alone, not a
+    // count that was always one.
+    let both = read(&lines(&[
+        twin_of("att", T0, "while you work", "typed"),
+        typed("typed", T1, "while you work"),
+    ]))
+    .unwrap();
+    let kept = make(Path::new("/"), &both, "s", None, &ask(&[]), &TimeZone::UTC)
+        .unwrap()
+        .expect("something new");
+    assert_eq!(kept.said, 1);
+}
+
+#[test]
+fn a_message_written_as_two_attachments_with_the_first_lost_is_taken_by_the_second() {
+    let made = across_the_cut("first", vec![twin_of(
+        "second",
+        T1,
+        "while you work",
+        "typed",
+    )]);
+    assert_eq!(made.said, 1);
+    assert!(made.body.contains("> while you work\n"), "{}", made.body);
+    // The control: both attachments in the file name the one typed line, and
+    // collapse into a single message.
+    let both = read(&lines(&[
+        twin_of("first", T0, "while you work", "typed"),
+        twin_of("second", T1, "while you work", "typed"),
+    ]))
+    .unwrap();
+    let kept = make(Path::new("/"), &both, "s", None, &ask(&[]), &TimeZone::UTC)
+        .unwrap()
+        .expect("something new");
+    assert_eq!(kept.said, 1);
 }

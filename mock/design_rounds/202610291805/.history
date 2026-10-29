@@ -1,0 +1,50 @@
+adc2a89 chore: lock src changelist for round 202610291805
+d7b7d3b fix: carry the cut exception into the capture help and test the rest
+d156ca2 chore: open the round for the capture review fixes
+9d1df3a chore: close round 202610291329-zsen
+c873609 chore: lock src changelist for round 202610291329-zsen
+fbe3078 test: a boundary over a line the file holds is not a cut
+7a3f6b7 chore: open the src changelist of round 202610291329-zsen
+6aa951b docs: the cut exception sits on the claim it belongs to
+75a4545 chore: close round 202610291323-fwbv
+b4c5454 chore: lock src changelist for round 202610291323-fwbv
+f2b563d test: a message written twice across the cut is written again
+b0782a6 chore: open the src changelist of round 202610291323-fwbv
+3b577f5 docs: a capture can repeat a message written twice across a cut
+6ba589d chore: close round 202610291318-m6h4
+b4d3118 chore: lock src changelist for round 202610291318-m6h4
+df98d21 fix: the cut warning is true on every run and the scan stands alone
+db8a169 chore: open the src changelist of round 202610291318-m6h4
+2891382 docs: the cut warning says a message may have been taken again
+f8e4f64 chore: close round 202610291307-s41o
+9302244 chore: lock src changelist for round 202610291307-s41o
+f8b1f32 fix: a cut transcript is known by the line its boundary lost
+ef9033e chore: open the src changelist of round 202610291307-s41o
+222aebb docs: a cut transcript is known by the lost line its boundary names
+168eb07 chore: close round 202610291207-z3uc
+10ea4de chore: lock src changelist for round 202610291207-z3uc
+58c3ccc fix: capture a session whose transcript starts at its last compaction
+ddf3126 chore: reopen round 202610291207-z3uc for its source
+9307541 docs: a `through` a cut transcript lacks moves no watermark
+e7333d9 feat: a console answer lands in one call
+3cd9cff feat: homma what answers tool questions from their readmes
+6693f2c feat: no dashboard where a console is named
+75e1eb9 feat: chain homma's hooks through git-shook and its layers
+1aa8c83 feat: add `homma what` to find the tool for a task
+b8d373a feat: report agent surfaces by adoption and ask homma in the gate
+b66343a docs: file the repo scope every command keeps to as a topic
+a3e732a fix: neutralise the git template dir for every test repository
+b09d0c9 feat: add homma milestone base, mark, partition and stand-ins
+23f9b94 chore: regenerate the structure graph
+7e4139f feat: dispatch the content repository's tools as homma subcommands (#74)
+84f79c3 fix: pin git's identity and default branch in the tests that run it (#76)
+7500149 chore: track the generated merge attributes (#77)
+a5dc5d9 feat: install a stored local config by name (#73)
+41f7d2a fix: name the org registry, remote and finding apart from the core (#75)
+98a9e10 feat: list build directories other than the workspace one in status
+61f07b1 fix: read the object that ends a cut transcript line
+7093371 feat: write generated hooks per clone and render the personas
+ca3c9ea fix: take a tool's paste with line breaks round it as the tool's
+7a13711 feat: add `homma capture` to copy what the person said verbatim
+f821562 feat: add `homma local` for a clone's own `homma.local.toml`
+b4e9548 fix: read the request body in the stub forges before answering
