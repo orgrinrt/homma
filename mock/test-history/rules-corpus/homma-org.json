@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "flavour": "rules_corpus",
+  "member": "homma-org",
+  "green": {
+    "full": "ad1e9a1de10538a8ce733cd49a58210cc55fb9c7ea0f094d4c3d2b680f9ee403",
+    "own": {
+      "homma-api": "a041c5937928d76bd4a74d6ed0c5d51770ab12c913d71bfb825347af010b7cce",
+      "homma-core": "40cc72571b5c396fac7131b080dfaaa35a1879cf457236164aa688794781596c",
+      "homma-org": "758e1f84c2bc65c4277ecc96fd0c174043a84031cefa5048aba9ddae5cd04b26"
+    }
+  },
+  "tests": {},
+  "bins": {}
+}
