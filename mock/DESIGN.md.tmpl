@@ -115,7 +115,8 @@ corpus below already decides for a directory nothing claims.
 
 **A card is for a session, and not for every session.** Two more optional keys
 state whom a rule binds. `roles` is a list of `coordinator` and `helper`, and
-absent means every role. `where` is `cloud` or `local`, and absent means both.
+absent means every role, and so does an empty list; a role named twice is read
+as listed. `where` is `cloud` or `local`, and absent means both.
 A role here is the session's own, which is not the standing a person has in the
 organisation. The session is the role found in `~/.config/clause-dev/role`, the
 file the setup script and the bootstrap write, and the place, which is cloud
