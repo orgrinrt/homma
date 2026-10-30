@@ -141,6 +141,18 @@ pub fn stand_up<G: Git>(ws: &Workspace, root: &AbsPath, handle: &str, git: &G) -
     homma_api::Root::new(root, denied.under_root.clone())
         .with_context(|| format!("standing `{handle}` up at {root}"))?;
 
+    // An authored identity's definition is written by `identity render`, and
+    // `write_definitions` refuses it at the end, after the clone and the links.
+    // Asked here as well so the refusal leaves nothing behind. A root that does
+    // not exist yet holds no character, so there is nothing to ask.
+    if root.as_path().exists() {
+        let layout = Layout::new(root, &ws.paths, denied.under_root.clone())
+            .with_context(|| format!("resolving the workspace root at {root}"))?;
+        let character = homma_org::character::read_text(&layout, id)
+            .with_context(|| format!("reading the character of `{handle}`"))?;
+        homma_org::character::refuse_authored(&character, handle)?;
+    }
+
     // The content repository is configuration, because that is what a workspace
     // is cloned from. An earlier round derived it from the root's own `origin`
     // and justified that by saying a configuration key would be a second place
@@ -577,6 +589,31 @@ domain = "rendering"
         );
         std::fs::write(link.as_path().join("MEMORY.md"), "x").unwrap();
         assert!(out.home.as_path().join("memory/MEMORY.md").exists());
+    }
+
+    #[test]
+    fn standing_up_an_authored_identity_is_refused_before_anything_is_created() {
+        let d = tempfile::tempdir().unwrap();
+        let hands = d.path().join(".shared/hands/paja");
+        std::fs::create_dir_all(&hands).unwrap();
+        std::fs::write(
+            hands.join("character.md"),
+            "---\nname: paja\nrole: a role\n---\n\nVoice.\n",
+        )
+        .unwrap();
+        let git = FakeGit::at_the_content_repo();
+        let err = stand_up(&ws(), &abs(d.path()), "paja", &git)
+            .expect_err("an identity's definition is written by `identity render`");
+        assert!(
+            format!("{err:#}").contains("homma identity render"),
+            "names the command that does write it: {err:#}"
+        );
+        assert!(git.cloned.borrow().is_empty(), "nothing was cloned");
+        assert!(
+            !d.path().join(".claude").exists(),
+            "no definition and no memory link"
+        );
+        assert!(!hands.join("memory").exists());
     }
 
     #[test]

@@ -386,6 +386,35 @@ shared template plus a hand-written character fragment that is never regenerated
 The shared part cannot drift between participants because none of them owns it;
 the character is authored once and belongs to whoever it describes.
 
+An identity is the second way to get a definition. Its source is a character file
+in the hands place, `character.md`, with front matter naming the identity, its role
+as a free description, and the memory directories it keeps, and a body that the
+person editing the character owns. The body is composed verbatim and never
+re-serialised; the definition puts the front matter the harness reads before it, and
+after it the standing discipline and a list of the memories. The definition is
+written through the layout like every other path, and the name and the role are
+written as quoted scalars whenever a plain one would read back as something else.
+
+A memory lives under `.shared`, always. The default is the identity's own memory
+directory there, and a character that names another may only name one under the
+same root, because the harness writes through the link and the root is what keeps
+those writes inside the shared data. A memory has one owner: two identities may not
+keep the same first memory, one directory may not contain another's, and a memory
+below the hands directory of `.shared` sits under the identity's own name, since
+that is where a registry hand keeps its own. A render checks every identity, every
+link and definition slot and every memory directory before it writes the first, so
+a refusal leaves nothing half made.
+
+A launch renders the identity and then replaces itself with `claude --agent <name>`
+in the workspace root. `HOMMA_CLAUDE` names another program in its place, which is
+how a launch runs without a model. The harness reads definitions from
+`.claude/agents` only, so a launch under a configured agents place refuses and names
+the place.
+
+A persona and an identity may not share a name, since both would be written to the
+same definition. A stand-up of an identity refuses before it creates anything,
+because the definition of an identity is not generated from the registry.
+
 The same pass writes the settings and hooks that constrain a workspace. It is the
 sole writer of the agent configuration directory in every workspace it manages,
 which is what makes the constraints uniform and what makes a workspace it did not

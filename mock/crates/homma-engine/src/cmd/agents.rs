@@ -127,10 +127,17 @@ pub mod render {
         let src = authored_dir(cfg);
         let dst = cfg.workspace.path.join(GENERATED);
         let corpus = load(&src)?;
+        // An identity's definition sits in the same directory and is neither a
+        // persona's to overwrite nor stray.
+        let identities = crate::cmd::identity::with_layout(cfg, |layout| {
+            crate::cmd::identity::refuse_collisions(layout, &corpus)?;
+            Ok(homma_org::character::claimed_names(layout))
+        })?;
         corpus
             .render(&dst)
             .with_context(|| format!("generating personas into {}", dst.display()))?;
-        let unclaimed = corpus.unclaimed(&dst)?;
+        let mut unclaimed = corpus.unclaimed(&dst)?;
+        unclaimed.retain(|name| !identities.contains(name));
         emit(
             &RenderReport {
                 authored: src.display().to_string(),
