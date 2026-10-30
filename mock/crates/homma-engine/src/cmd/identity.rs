@@ -18,7 +18,7 @@ use homma_api::{AbsPath, Paths};
 use homma_core::Config;
 use homma_org::Layout;
 use homma_org::agents::Personas;
-use homma_org::character::{self, identities};
+use homma_org::character::{self, claimed_names};
 use serde::Serialize;
 
 use super::agent::denied_for_aggregating;
@@ -73,8 +73,12 @@ pub fn with_layout<T>(cfg: &Config, f: impl FnOnce(&Layout<'_>) -> Result<T>) ->
 
 /// Refuse a persona and an identity of one name: each would write
 /// `.claude/agents/<name>.md`, and whichever ran last would win unannounced.
+///
+/// Asked of the claimed names, not of the checked identities: a persona must not
+/// collide with an identity whose character is broken either, and a broken one
+/// is `identity render`'s to report.
 pub fn refuse_collisions(layout: &Layout<'_>, personas: &Personas) -> Result<()> {
-    let ids = identities(layout)?;
+    let ids = claimed_names(layout);
     for p in &personas.personas {
         if ids.contains(&p.name) {
             bail!(

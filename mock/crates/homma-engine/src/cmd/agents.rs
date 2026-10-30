@@ -131,7 +131,7 @@ pub mod render {
         // persona's to overwrite nor stray.
         let identities = crate::cmd::identity::with_layout(cfg, |layout| {
             crate::cmd::identity::refuse_collisions(layout, &corpus)?;
-            Ok(homma_org::character::identities(layout)?)
+            Ok(homma_org::character::claimed_names(layout))
         })?;
         corpus
             .render(&dst)

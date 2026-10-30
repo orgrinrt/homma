@@ -132,7 +132,9 @@ fn render_reports_a_character_file_it_cannot_read() {
     let (dir, cfg) = workspace();
     let broken = dir.path().join(".shared/hands/broken");
     fs::create_dir_all(broken.join("character.md")).unwrap();
-    run(&cfg, &["render"]).failure();
+    run(&cfg, &["render"])
+        .failure()
+        .stderr(predicate::str::contains("broken/character.md"));
     assert!(
         !dir.path().join(".claude/agents/coord.md").exists(),
         "one that cannot be read stops the pass before anything is written"
@@ -146,7 +148,7 @@ fn a_regular_file_where_the_memory_link_goes_is_refused_by_what_it_is() {
     fs::write(dir.path().join(".claude/agent-memory/coord"), "kept").unwrap();
     run(&cfg, &["render"])
         .failure()
-        .stderr(predicate::str::contains("is not a symlink"));
+        .stderr(predicate::str::contains("is not a link"));
     assert_eq!(
         fs::read_to_string(dir.path().join(".claude/agent-memory/coord")).unwrap(),
         "kept"
@@ -193,6 +195,53 @@ fn an_identitys_definition_is_not_reported_as_stray_by_the_agents_pass() {
         .assert()
         .success()
         .stdout(predicate::str::contains("authored nowhere").not());
+}
+
+#[test]
+fn an_unrelated_broken_character_does_not_stop_the_agents_pass() {
+    let (dir, cfg) = workspace();
+    // Frontmatter that never closes: broken, and not the personas' business.
+    let broken = dir.path().join(".shared/hands/broken");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(broken.join("character.md"), "---\nname: broken\nrole: x\n").unwrap();
+    let personas = dir.path().join(".shared/agents");
+    fs::create_dir_all(&personas).unwrap();
+    fs::write(
+        personas.join("reviewer.md.tmpl"),
+        "---\nname: reviewer\ndescription: A reviewer.\n---\n\nBody.\n",
+    )
+    .unwrap();
+    support::bin()
+        .args(["--config", cfg.to_str().unwrap(), "agents", "render"])
+        .assert()
+        .success();
+    assert!(dir.path().join(".claude/agents/reviewer.md").exists());
+    // And the command about identities still says what is wrong.
+    run(&cfg, &["render"])
+        .failure()
+        .stderr(predicate::str::contains("broken/character.md"));
+}
+
+#[test]
+fn a_persona_of_a_broken_identitys_name_is_still_refused() {
+    let (dir, cfg) = workspace();
+    let broken = dir.path().join(".shared/hands/reviewer");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(broken.join("character.md"), "---\nname: reviewer\n").unwrap();
+    let personas = dir.path().join(".shared/agents");
+    fs::create_dir_all(&personas).unwrap();
+    fs::write(
+        personas.join("reviewer.md.tmpl"),
+        "---\nname: reviewer\ndescription: A reviewer.\n---\n\nBody.\n",
+    )
+    .unwrap();
+    support::bin()
+        .args(["--config", cfg.to_str().unwrap(), "agents", "render"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "both an authored persona and an identity",
+        ));
 }
 
 #[test]

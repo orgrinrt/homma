@@ -18,6 +18,7 @@ pub mod remote;
 pub mod rules;
 pub mod skills;
 pub mod workspace;
+mod yaml;
 
 pub use generate::{Form, Generated, definition, definition_described, write_definitions};
 use homma_api::{Identity, Role, Staffing, Workspace};

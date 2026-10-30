@@ -79,12 +79,6 @@ impl<'a> Layout<'a> {
         self.contain(self.root.as_abs().join(&self.paths.hands))
     }
 
-    /// Where a hand keeps its memory unless its character file names another
-    /// place, spelled as a character file spells it: relative to the root.
-    pub fn default_memory(&self, id: &Identity) -> String {
-        format!("{}/{}/memory", self.paths.hands, id.handle)
-    }
-
     /// Where the harness expects to find this identity's memory.
     pub fn harness_memory(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
         self.contain(

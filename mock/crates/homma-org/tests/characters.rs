@@ -6,10 +6,10 @@
 //! A character file becoming the agent definition a session loads, and its
 //! memories mapped into `.shared` without a copy.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
-use std::{fs, io};
 
 use homma_api::path::RelPath;
 use homma_api::{AbsPath, Denied, Paths};
@@ -308,10 +308,111 @@ fn a_memory_outside_shared_leaving_it_or_shared_itself_is_refused() {
 }
 
 #[test]
-fn a_memory_directory_cannot_be_made_from_outside_the_type() {
+fn the_memory_directory_constructor_refuses_the_root_and_what_leaves_it() {
     assert!(MemoryDir::new(".shared/hands/coord/memory").is_some());
     assert!(MemoryDir::new(".shared").is_none());
     assert!(MemoryDir::new("/.shared/x").is_none());
+    assert!(MemoryDir::new(".shared/../x").is_none());
+}
+
+fn named(name: &str, memory: &str) -> String {
+    COORD
+        .replace("name: coord", &format!("name: {name}"))
+        .replace("# coord", &format!("# {name}"))
+        .replace(".shared/hands/coord/memory", memory)
+}
+
+#[test]
+fn a_memory_inside_another_identitys_memory_is_refused_and_neither_is_written() {
+    let r = root();
+    author(&r, "outer", &named("outer", ".shared/mem"));
+    author(&r, "inner", &named("inner", ".shared/mem/inner"));
+    let err = go(&r, &[]).expect_err("a write through one lands in the other");
+    assert!(matches!(err, CharacterError::MemoryNested { .. }), "{err}");
+    assert!(!r.join(".claude/agents/outer.md").exists());
+    assert!(!r.join(".claude/agents/inner.md").exists());
+}
+
+#[test]
+fn memories_that_only_share_a_name_prefix_do_not_contain_one_another() {
+    let r = root();
+    author(&r, "aa", &named("aa", ".shared/mem"));
+    author(&r, "bb", &named("bb", ".shared/memo"));
+    assert_eq!(go(&r, &[]).unwrap().len(), 2);
+}
+
+#[test]
+fn a_slot_that_cannot_be_replaced_is_found_before_the_first_identity_is_written() {
+    let r = root();
+    author(&r, "aa", &named("aa", ".shared/aa-mem"));
+    author(&r, "bb", &named("bb", ".shared/bb-mem"));
+    // The harness made a real directory where bb's link goes.
+    fs::create_dir_all(r.join(".claude/agent-memory/bb")).unwrap();
+    let err = go(&r, &[]).expect_err("a real directory is not a link");
+    assert!(matches!(err, CharacterError::Occupied { .. }), "{err}");
+    assert!(
+        !r.join(".claude/agents/aa.md").exists(),
+        "the identity before it was left alone"
+    );
+    assert!(!r.join(".claude/agent-memory/aa").exists());
+    assert!(!r.join(".shared/aa-mem").exists());
+}
+
+#[test]
+fn a_directory_where_a_definition_goes_is_found_before_anything_is_written() {
+    let r = root();
+    author(&r, "aa", &named("aa", ".shared/aa-mem"));
+    author(&r, "bb", &named("bb", ".shared/bb-mem"));
+    fs::create_dir_all(r.join(".claude/agents/bb.md")).unwrap();
+    let err = go(&r, &[]).expect_err("a directory is not a definition");
+    assert!(matches!(err, CharacterError::Occupied { .. }), "{err}");
+    assert!(!r.join(".claude/agents/aa.md").exists());
+}
+
+#[test]
+fn a_configured_hands_place_does_not_break_the_default_memory() {
+    let r = root();
+    let dir = r.join("custom/hands/coord");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("character.md"),
+        COORD.replace("memories: [.shared/hands/coord/memory]\n", ""),
+    )
+    .unwrap();
+    let paths = Paths {
+        hands: RelPath::new("custom/hands").unwrap(),
+        ..Paths::default()
+    };
+    let done = go_with(&r, &paths, &["coord"]).unwrap().remove(0);
+    assert_eq!(done.name, "coord");
+    assert!(r.join(".shared/hands/coord/memory").is_dir());
+    assert!(
+        fs::read_to_string(r.join(".claude/agents/coord.md"))
+            .unwrap()
+            .contains("`.shared/hands/coord/memory`")
+    );
+}
+
+#[test]
+fn a_handle_cannot_start_with_a_dash() {
+    let r = root();
+    for bad in ["-x", "--agent"] {
+        assert!(
+            matches!(go(&r, &[bad]), Err(CharacterError::BadName(_))),
+            "{bad}"
+        );
+    }
+    assert!(homma_org::character::is_handle("a-b_c"));
+    assert!(!homma_org::character::is_handle("-ab"));
+}
+
+#[test]
+fn an_older_persona_text_is_not_authored_and_a_frontmatter_one_is() {
+    use homma_org::character::is_authored;
+    assert!(is_authored(COORD));
+    assert!(is_authored("---  \nname: x\n"));
+    assert!(!is_authored("# Aku\n\n---\n"));
+    assert!(!is_authored(""));
 }
 
 #[test]
@@ -413,17 +514,21 @@ fn a_real_directory_where_the_link_goes_is_not_replaced() {
     fs::create_dir_all(r.join(".claude/agent-memory/coord")).unwrap();
     fs::write(r.join(".claude/agent-memory/coord/note.md"), "kept").unwrap();
     match go(&r, &["coord"]) {
-        Err(CharacterError::Write {
-            cause,
+        Err(CharacterError::Occupied {
+            path,
             ..
         }) => {
-            assert_eq!(cause.kind(), io::ErrorKind::AlreadyExists)
+            assert_eq!(path, r.join(".claude/agent-memory/coord"))
         },
         other => panic!("{other:?}"),
     }
     assert_eq!(
         fs::read_to_string(r.join(".claude/agent-memory/coord/note.md")).unwrap(),
         "kept"
+    );
+    assert!(
+        !r.join(".claude/agents/coord.md").exists(),
+        "found before anything was written"
     );
 }
 
@@ -434,7 +539,8 @@ fn a_regular_file_where_the_link_goes_is_reported_as_what_it_is() {
     fs::create_dir_all(r.join(".claude/agent-memory")).unwrap();
     fs::write(r.join(".claude/agent-memory/coord"), "kept").unwrap();
     let err = go(&r, &["coord"]).expect_err("a file is not a link");
-    assert!(err.to_string().contains("is not a symlink"), "{err}");
+    assert!(matches!(err, CharacterError::Occupied { .. }), "{err}");
+    assert!(err.to_string().contains("is not a link"), "{err}");
     assert_eq!(
         fs::read_to_string(r.join(".claude/agent-memory/coord")).unwrap(),
         "kept"

@@ -22,17 +22,22 @@
 //! from `.claude/agent-memory/<name>`, and that is a relative link to the first
 //! memory directory the file names, which stays under `.shared`. Any further
 //! directory is named in the definition to be read in place. A memory has one
-//! owner, so two identities may not name the same first directory. A file
-//! without a frontmatter block is an older persona and is not an identity.
+//! owner, so two identities may not name the same first directory, nor one
+//! inside the other's. A file without a frontmatter block is an older persona
+//! and is not an identity.
 
 use std::path::{Component, Path, PathBuf};
 use std::{fs, io};
 
 use homma_api::frontmatter::{self, FrontmatterError};
-use homma_api::{ContainedPath, Escapes, Identity, Role};
+use homma_api::{Escapes, Identity, Role};
 
 use crate::generate::{Form, definition_described};
-use crate::workspace::{Layout, link_memory};
+use crate::workspace::Layout;
+
+mod render;
+
+pub use render::{Rendered, claimed_names, identities, render};
 
 /// Where the memories of an identity may live, relative to the workspace root.
 pub const MEMORY_ROOT: &str = ".shared";
@@ -109,6 +114,20 @@ pub enum CharacterError {
         first:  String,
         second: String,
     },
+    /// One identity's first memory directory lies inside another's, so a write
+    /// through either lands in the other.
+    MemoryNested {
+        outer:       String,
+        inner:       String,
+        outer_owner: String,
+        inner_owner: String,
+    },
+    /// A place a render would write to holds something that is not what it
+    /// writes there, found before anything was written.
+    Occupied {
+        path: PathBuf,
+        what: &'static str,
+    },
     /// A path the layout refuses: outside the root, or somewhere denied.
     Escaped(String),
     Write {
@@ -147,7 +166,8 @@ impl std::fmt::Display for CharacterError {
             Self::BadName(n) => {
                 write!(
                     f,
-                    "`{n}` is not a plain handle: letters, digits, `-` and `_` only"
+                    "`{n}` is not a plain handle: letters, digits, `-` and `_` only, and not \
+                     starting with `-`"
                 )
             },
             Self::BadMemory {
@@ -172,6 +192,22 @@ impl std::fmt::Display for CharacterError {
                      has one owner"
                 )
             },
+            Self::MemoryNested {
+                outer,
+                inner,
+                outer_owner,
+                inner_owner,
+            } => {
+                write!(
+                    f,
+                    "`{inner}` of `{inner_owner}` lies inside `{outer}` of `{outer_owner}`, so a \
+                     write to one lands in the other and a memory has one owner"
+                )
+            },
+            Self::Occupied {
+                path,
+                what,
+            } => write!(f, "{}: {what}", path.display()),
             Self::Escaped(why) => write!(f, "{why}"),
         }
     }
@@ -183,12 +219,60 @@ fn escaped(e: Escapes) -> CharacterError {
     CharacterError::Escaped(e.to_string())
 }
 
-/// Whether `name` is a plain handle, safe as a directory and a file stem.
+/// Whether `name` is a plain handle, safe as a directory and a file stem, and
+/// not readable as an option when it is passed on a command line.
 pub fn is_handle(name: &str) -> bool {
     !name.is_empty()
+        && !name.starts_with('-')
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Whether the text of a `character.md` is an authored identity: it opens with a
+/// frontmatter fence. The one predicate that separates an identity from an older
+/// persona, so listing, rendering and standing up cannot disagree about it.
+pub fn is_authored(text: &str) -> bool {
+    text.lines().next().map(str::trim_end) == Some("---")
+}
+
+/// The text of `id`'s `character.md` where the layout places it, empty when
+/// there is none. Only absence is absence: any other failure is the caller's.
+pub fn read_text(layout: &Layout<'_>, id: &Identity) -> io::Result<String> {
+    let path = layout
+        .character(id)
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    match fs::read_to_string(path.as_path()) {
+        Ok(t) => Ok(t),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Refuse to generate a registry definition for a name whose character is an
+/// authored identity's. Its definition is written by `homma identity render`
+/// into the same file, so a second writer would be pasting the raw frontmatter
+/// block into a body. Asked by `write_definitions` and, before it creates
+/// anything, by a stand-up, so the two cannot disagree.
+pub fn refuse_authored(text: &str, handle: &str) -> io::Result<()> {
+    if is_authored(text) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "`{handle}` has a character file with frontmatter, so it is an identity and its \
+                 definition is generated by `homma identity render`"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Where an identity keeps its memory when its file names none. Fixed, and not
+/// derived from the configured hands place: the rule that a memory lives under
+/// [`MEMORY_ROOT`] is the character format's, and a layout that puts the
+/// characters elsewhere must not make the default fail it.
+fn default_memory(name: &str) -> String {
+    format!("{MEMORY_ROOT}/hands/{name}/memory")
 }
 
 /// The registry entry a definition is made from: a hand by this name.
@@ -199,13 +283,8 @@ fn identity_of(name: &str) -> Identity {
 impl Character {
     /// Read `source`, the content of `path`, which sits in the directory `dir`.
     ///
-    /// `default_memory` is the directory used when the file names none.
-    pub fn parse(
-        source: &str,
-        dir: &str,
-        path: &Path,
-        default_memory: &str,
-    ) -> Result<Self, CharacterError> {
+    /// A file naming no memory keeps it in `.shared/hands/<name>/memory`.
+    pub fn parse(source: &str, dir: &str, path: &Path) -> Result<Self, CharacterError> {
         let fm = |cause| {
             CharacterError::Frontmatter {
                 path: path.to_path_buf(),
@@ -224,7 +303,7 @@ impl Character {
         }
         let mut raw = block.list("memories").map_err(fm)?;
         if raw.is_empty() {
-            raw.push(default_memory.to_string());
+            raw.push(default_memory(dir));
         }
         let memories = raw
             .iter()
@@ -258,7 +337,7 @@ impl Character {
                 cause,
             }
         })?;
-        Self::parse(&source, name, path.as_path(), &layout.default_memory(&id))
+        Self::parse(&source, name, path.as_path())
     }
 
     pub fn name(&self) -> &str {
@@ -309,166 +388,4 @@ impl Character {
     fn first_memory(&self) -> &MemoryDir {
         &self.memories[0]
     }
-}
-
-/// What a render wrote.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Rendered {
-    pub name:        String,
-    pub definition:  ContainedPath,
-    pub memory_link: ContainedPath,
-}
-
-/// Every name under the hands directory whose `character.md` opens with a
-/// frontmatter block, sorted. An older persona without one is left out, and so
-/// is a directory with no `character.md`; anything else that goes wrong is
-/// reported, because skipping it would render fewer identities and say nothing.
-pub fn identities(layout: &Layout<'_>) -> Result<Vec<String>, CharacterError> {
-    let hands = layout.hands().map_err(escaped)?;
-    let entries = match fs::read_dir(hands.as_path()) {
-        Ok(e) => e,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(cause) => {
-            return Err(CharacterError::Unreadable {
-                path: hands.as_path().to_path_buf(),
-                cause,
-            });
-        },
-    };
-    let unreadable = |path: &Path| {
-        let path = path.to_path_buf();
-        move |cause| {
-            CharacterError::Unreadable {
-                path: path.clone(),
-                cause,
-            }
-        }
-    };
-    let mut names = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(unreadable(hands.as_path()))?;
-        if !entry.path().is_dir() {
-            continue;
-        }
-        let file = entry.path().join("character.md");
-        let text = match fs::read_to_string(&file) {
-            Ok(t) => t,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-            Err(cause) => return Err(unreadable(&file)(cause)),
-        };
-        if text.lines().next().map(str::trim_end) != Some("---") {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !is_handle(&name) {
-            return Err(CharacterError::BadName(name));
-        }
-        names.push(name);
-    }
-    names.sort();
-    Ok(names)
-}
-
-/// Whether `name` is an identity: it has a character file with frontmatter.
-pub fn is_identity(layout: &Layout<'_>, name: &str) -> bool {
-    identities(layout).is_ok_and(|all| all.iter().any(|n| n == name))
-}
-
-/// Refuse two identities that keep their memory in the same first directory,
-/// among the ones about to be written and every other identity there is.
-///
-/// A sibling that cannot be read is left to say so when it is rendered itself;
-/// it cannot be written and so cannot be sharing anything yet.
-fn check_owners(layout: &Layout<'_>, batch: &[Character]) -> Result<(), CharacterError> {
-    let mut owners: Vec<(String, String)> = batch
-        .iter()
-        .map(|c| (c.first_memory().as_str().to_string(), c.name.clone()))
-        .collect();
-    for name in identities(layout)? {
-        if batch.iter().any(|c| c.name == name) {
-            continue;
-        }
-        if let Ok(c) = Character::load(layout, &name) {
-            owners.push((c.first_memory().as_str().to_string(), name));
-        }
-    }
-    owners.sort();
-    for pair in owners.windows(2) {
-        if pair[0].0 == pair[1].0 {
-            return Err(CharacterError::MemoryShared {
-                memory: pair[0].0.clone(),
-                first:  pair[0].1.clone(),
-                second: pair[1].1.clone(),
-            });
-        }
-    }
-    Ok(())
-}
-
-/// Write the definition of each of `names`, or of every identity when none is
-/// named, and link each one's memory where the harness reads it.
-///
-/// **All of them are read and checked before any is written**, so one that
-/// cannot be rendered leaves the others as they were.
-pub fn render(
-    layout: &Layout<'_>,
-    names: &[String],
-    discipline: &str,
-) -> Result<Vec<Rendered>, CharacterError> {
-    let names = if names.is_empty() { identities(layout)? } else { names.to_vec() };
-    let batch = names
-        .iter()
-        .map(|n| Character::load(layout, n))
-        .collect::<Result<Vec<_>, _>>()?;
-    check_owners(layout, &batch)?;
-    batch
-        .iter()
-        .map(|c| write_one(layout, c, discipline))
-        .collect()
-}
-
-fn write_one(
-    layout: &Layout<'_>,
-    character: &Character,
-    discipline: &str,
-) -> Result<Rendered, CharacterError> {
-    let root = layout.contained_root();
-    let id = identity_of(&character.name);
-    let write = |path: &ContainedPath| {
-        let path = path.as_path().to_path_buf();
-        move |cause| {
-            CharacterError::Write {
-                path: path.clone(),
-                cause,
-            }
-        }
-    };
-    // A parent derived from a proven path is proven again before it is created.
-    let parent_of = |p: &ContainedPath| -> Result<ContainedPath, CharacterError> {
-        let parent = p.as_abs().parent().ok_or_else(|| {
-            CharacterError::Escaped(format!("{} has no parent", p.as_path().display()))
-        })?;
-        root.contain(&parent).map_err(escaped)
-    };
-
-    let definition = layout.definition(&id).map_err(escaped)?;
-    let dir = parent_of(&definition)?;
-    root.create_dir_all(&dir).map_err(write(&dir))?;
-    root.write(&definition, character.definition(discipline))
-        .map_err(write(&definition))?;
-
-    let target = root
-        .contain(&root.as_abs().join(character.first_memory().as_str()))
-        .map_err(escaped)?;
-    root.create_dir_all(&target).map_err(write(&target))?;
-    let link = layout.harness_memory(&id).map_err(escaped)?;
-    let dir = parent_of(&link)?;
-    root.create_dir_all(&dir).map_err(write(&dir))?;
-    link_memory(&link, &target).map_err(write(&link))?;
-
-    Ok(Rendered {
-        name: character.name.clone(),
-        definition,
-        memory_link: link,
-    })
 }
