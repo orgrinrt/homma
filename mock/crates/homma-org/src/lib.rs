@@ -10,6 +10,7 @@
 //! starting it again restores a participant rather than creating a new one.
 
 pub mod agents;
+pub mod character;
 pub mod configs;
 pub mod generate;
 pub mod provision;
@@ -18,7 +19,7 @@ pub mod rules;
 pub mod skills;
 pub mod workspace;
 
-pub use generate::{Form, Generated, definition, write_definitions};
+pub use generate::{Form, Generated, definition, definition_described, write_definitions};
 use homma_api::{Identity, Role, Staffing, Workspace};
 pub use provision::{ProvisionError, Provisioned, provision};
 pub use remote::{repo_name, same_repo};

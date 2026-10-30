@@ -188,6 +188,17 @@ pub enum Command {
         op: AgentsOp,
     },
 
+    /// The identities a session can be launched as: generating their agent
+    /// definitions, and starting a session as one.
+    ///
+    /// An identity is a character file, `.shared/hands/<name>/character.md`,
+    /// whose frontmatter names it (`name`, `role`, `memories`) and whose body
+    /// is composed into the agent definition as written.
+    Identity {
+        #[command(subcommand)]
+        op: IdentityOp,
+    },
+
     /// The release: a gate run on the pushing machine, its record and commit
     /// status, and the merge, tag, changelog, forge release and registry
     /// publish that carry the working trunk onto the release line.
@@ -598,6 +609,34 @@ pub enum AgentsOp {
     /// the edit on the next run. A generated persona whose template is gone is
     /// named and left where it is.
     Render {},
+}
+
+/// `identity` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum IdentityOp {
+    /// Generate the agent definition of each named identity, or of every one
+    /// when none is named, into `.claude/agents/<name>.md`, and link its
+    /// memory at `.claude/agent-memory/<name>`.
+    ///
+    /// A character file without a frontmatter block is an older persona and is
+    /// not an identity. A memory outside `.shared` is refused.
+    Render {
+        /// Identities to render; every identity when empty.
+        names: Vec<String>,
+    },
+
+    /// Render an identity, then start a session as it with `claude --agent`.
+    ///
+    /// The session finds its own name in `HOMMA_IDENTITY`. Everything after the
+    /// name goes to `claude` as it is; `HOMMA_CLAUDE` names another program.
+    Launch {
+        /// The identity to be.
+        name: String,
+
+        /// Arguments for `claude`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 /// `release` subcommands: the gate, the record it leaves, and the merge, tag,

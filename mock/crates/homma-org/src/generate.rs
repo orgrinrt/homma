@@ -49,13 +49,26 @@ pub enum Form {
 /// the shared standing instruction. Neither is invented here: this function
 /// assembles, it does not author.
 pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) -> Generated {
+    definition_described(id, form, &describe(id, form), discipline, character)
+}
+
+/// [`definition`] with the sentence saying when to reach for the agent given
+/// rather than derived from the registry, for an identity whose own file
+/// states what it is for.
+pub fn definition_described(
+    id: &Identity,
+    form: Form,
+    description: &str,
+    discipline: &str,
+    character: &str,
+) -> Generated {
     let mut fm = String::new();
     let name = match form {
         Form::Prime => id.handle.clone(),
         Form::Twin => format!("{}-twin", id.handle),
     };
     fm.push_str(&format!("name: {name}\n"));
-    fm.push_str(&format!("description: {}\n", describe(id, form)));
+    fm.push_str(&format!("description: {description}\n"));
     // The memory key is present for a prime and absent for a twin. This is the
     // whole mechanism behind "a twin may not write memory".
     if form == Form::Prime {

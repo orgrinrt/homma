@@ -22,6 +22,7 @@ use crate::cli::{
     ConfigOp,
     DocsOp,
     ForgeOp,
+    IdentityOp,
     OrgOp,
     RepoOp,
     RulesOp,
@@ -43,6 +44,7 @@ pub mod fake_git;
 pub mod forge;
 pub mod gates;
 pub mod hook;
+pub mod identity;
 pub mod local;
 pub mod migrate;
 pub mod milestone;
@@ -464,6 +466,26 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 AgentsOp::Render {} => {
                     let cfg = load_config(&cli)?;
                     agents::render::run(&cfg, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+            }
+        },
+        Command::Identity {
+            op,
+        } => {
+            let cfg = load_config(&cli)?;
+            match op {
+                IdentityOp::Render {
+                    names,
+                } => {
+                    identity::render(&cfg, names, cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                IdentityOp::Launch {
+                    name,
+                    args,
+                } => {
+                    identity::launch(&cfg, name, args)?;
                     Ok(Outcome::Ok)
                 },
             }
