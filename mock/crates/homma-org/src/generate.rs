@@ -15,11 +15,12 @@
 //! omits the memory key. That restriction has to be structural: a definition
 //! carrying the key grants the write path whatever its prose says.
 
-use std::{fs, io};
+use std::io;
 
 use homma_api::{ContainedPath, Escapes, Identity};
 
 use crate::workspace::Layout;
+use crate::{character, yaml};
 
 /// What a generated definition is made of.
 pub struct Generated {
@@ -41,6 +42,10 @@ pub enum Form {
     Prime,
     /// Dispatched as a subagent. Carries no memory, only notes.
     Twin,
+    /// Runs as a session's own agent and is authored in a character file.
+    /// Carries memory like a prime, and says nothing of a twin or of notes it
+    /// has none of; the authored body brings its own heading.
+    Authored,
 }
 
 /// Build the definition for an identity.
@@ -49,21 +54,36 @@ pub enum Form {
 /// the shared standing instruction. Neither is invented here: this function
 /// assembles, it does not author.
 pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) -> Generated {
+    definition_described(id, form, &describe(id, form), discipline, character)
+}
+
+/// [`definition`] with the sentence saying when to reach for the agent given
+/// rather than derived from the registry, for an identity whose own file
+/// states what it is for.
+pub fn definition_described(
+    id: &Identity,
+    form: Form,
+    description: &str,
+    discipline: &str,
+    character: &str,
+) -> Generated {
     let mut fm = String::new();
     let name = match form {
-        Form::Prime => id.handle.clone(),
+        Form::Prime | Form::Authored => id.handle.clone(),
         Form::Twin => format!("{}-twin", id.handle),
     };
-    fm.push_str(&format!("name: {name}\n"));
-    fm.push_str(&format!("description: {}\n", describe(id, form)));
+    fm.push_str(&format!("name: {}\n", yaml::scalar(&name)));
+    fm.push_str(&format!("description: {}\n", yaml::scalar(description)));
     // The memory key is present for a prime and absent for a twin. This is the
     // whole mechanism behind "a twin may not write memory".
-    if form == Form::Prime {
+    if form != Form::Twin {
         fm.push_str("memory: project\n");
     }
 
     let mut body = String::new();
-    body.push_str(&format!("# {}\n\n", display_name(id)));
+    if form != Form::Authored {
+        body.push_str(&format!("# {}\n\n", display_name(id)));
+    }
     if let Some(domain) = &id.domain {
         body.push_str(&format!("Domain: {domain}.\n\n"));
     }
@@ -77,12 +97,12 @@ pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) 
              to someone else and is not yours.\n\n"
         ));
     }
+    if form != Form::Twin {
+        body.push_str(KEEPS_MEMORY);
+    }
     match form {
+        Form::Authored => {},
         Form::Prime => {
-            body.push_str(
-                "You keep your own memory. Read it before you start and write to it \
-                 what will still be true next week.\n\n",
-            );
             // Stated because the Hand answered this wrongly when asked. The
             // twin's definition genuinely carries no memory key, so the
             // mechanism was right and the belief was not, which is a thing it
@@ -118,6 +138,10 @@ pub fn definition(id: &Identity, form: Form, discipline: &str, character: &str) 
     }
 }
 
+/// What every form that has a memory is told about it.
+const KEEPS_MEMORY: &str = "You keep your own memory. Read it before you start and write to it \
+                            what will still be true next week.\n\n";
+
 fn display_name(id: &Identity) -> String {
     id.full_name
         .clone()
@@ -128,8 +152,8 @@ fn display_name(id: &Identity) -> String {
 fn describe(id: &Identity, form: Form) -> String {
     let who = id.nickname.clone().unwrap_or_else(|| id.handle.clone());
     match (form, &id.domain) {
-        (Form::Prime, Some(d)) => format!("{who}, who works on {d}."),
-        (Form::Prime, None) => format!("{who}."),
+        (Form::Prime | Form::Authored, Some(d)) => format!("{who}, who works on {d}."),
+        (Form::Prime | Form::Authored, None) => format!("{who}."),
         (Form::Twin, Some(d)) => {
             format!("{who} dispatched as a subagent, without session history. Works on {d}.")
         },
@@ -149,11 +173,8 @@ pub fn write_definitions(
 
     // Only absence is absence. Swallowing every error shipped a Hand without
     // its voice and reported nothing.
-    let character = match fs::read_to_string(layout.character(id).map_err(escaped)?) {
-        Ok(t) => t,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e),
-    };
+    let character = character::read_text(layout, id)?;
+    character::refuse_authored(&character, &id.handle)?;
     let prime = layout.definition(id).map_err(escaped)?;
     let twin = layout.twin_definition(id).map_err(escaped)?;
     if let Some(parent) = prime.as_abs().parent() {
@@ -278,6 +299,68 @@ mod tests {
         let id = hand();
         let twin = definition(&id, Form::Twin, DISCIPLINE, "").body;
         assert!(twin.contains("do not write to channels"));
+    }
+
+    #[test]
+    fn an_identity_character_is_refused_by_write_definitions_and_nothing_is_written() {
+        let d = tempfile::tempdir().unwrap();
+        let p = Paths::default();
+        let l = Layout::new(
+            &abs(d.path()),
+            &p,
+            homma_api::Denied::under_home(&homma_api::AbsPath::new("/nonexistent-home").unwrap()),
+        )
+        .unwrap();
+        let id = hand();
+        crate::workspace::prepare(&l, &id).unwrap();
+        std::fs::write(
+            l.character(&id).unwrap(),
+            "---\nname: paja\nrole: a role\n---\n\nVoice.\n",
+        )
+        .unwrap();
+
+        let err = write_definitions(&l, &id, DISCIPLINE)
+            .expect_err("an identity's definition is written by `identity render` only");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{err}");
+        assert!(
+            err.to_string().contains("homma identity render"),
+            "names the command that does write it: {err}"
+        );
+        assert!(!l.definition(&id).unwrap().as_path().exists());
+        assert!(!l.twin_definition(&id).unwrap().as_path().exists());
+    }
+
+    #[test]
+    fn a_description_with_a_colon_is_written_quoted_in_the_definition() {
+        let id = Identity::new(Role::Hand, "coord");
+        let out = definition_described(
+            &id,
+            Form::Authored,
+            "the coordinator: lands branches",
+            DISCIPLINE,
+            "",
+        )
+        .render();
+        assert!(
+            out.contains("description: \"the coordinator: lands branches\"\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn an_authored_form_has_memory_and_is_told_nothing_about_a_twin() {
+        let id = Identity::new(Role::Hand, "coord");
+        let out =
+            definition_described(&id, Form::Authored, "a role", DISCIPLINE, "# coord\n").render();
+        assert!(out.contains("memory: project\n"), "{out}");
+        assert!(out.contains("You keep your own memory."), "{out}");
+        assert!(!out.contains("twin"), "{out}");
+        assert!(!out.contains("notes"), "{out}");
+        assert_eq!(
+            out.matches("\n# ").count() + usize::from(out.starts_with("# ")),
+            1,
+            "the authored body brings the one heading: {out}"
+        );
     }
 
     #[test]

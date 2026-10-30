@@ -50,6 +50,7 @@ into anything that has to keep running unattended just yet.
 | `homma org <op>` | The registry of who works here, and standing an entry up with its directories and its own clone |
 | `homma agent <op>` | Reports which member repos have adopted mockspace, which is carrying a `mockspace.toml`, and which of their surfaces are missing, and drives each one's regeneration, placing the shared tool configs on the way in every member that is on disk, then aggregates the rules and hooks into the workspace, writes the commit gate and merges the local settings |
 | `homma agents <op>` | Lists the agent personas and what each is for, and generates them from what is authored, naming any generated one nothing authored claims |
+| `homma identity <op>` | Generates the agent definition of each identity from its character file, mapping its memories under `.shared`, and starts a session as one with `claude --agent` |
 | `homma docs status` | Reports which documentation surfaces each member repo currently has |
 | `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored, only those of the session's role and place, with `rules load` reporting what each kind of session loads |
 | `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |

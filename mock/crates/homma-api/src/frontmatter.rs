@@ -223,10 +223,12 @@ pub fn split(source: &str, known: &[&str]) -> Result<Block, FrontmatterError> {
     };
 
     // The body starts after the closing fence. Counted from the same walk the
-    // fields came from, so it cannot disagree about where that was.
+    // fields came from, so it cannot disagree about where that was: `closed_at`
+    // is the fence's one-based line, which is also how many lines come before
+    // the first line of the body.
     let body = source
         .lines()
-        .skip(closed_at + 1)
+        .skip(closed_at)
         .collect::<Vec<_>>()
         .join("\n");
 

@@ -38,7 +38,7 @@ fn the_root_is_the_manifests_directory_made_absolute() {
 
 /// The groups the design names. A command that gains verbs is a group the moment it does, and this list
 /// is what says so out loud: the design's paragraph on the built-ins and this must agree.
-const THE_DESIGNS_GROUPS: [&str; 13] = [
+const THE_DESIGNS_GROUPS: [&str; 14] = [
     "org",
     "repo",
     "forge",
@@ -52,6 +52,7 @@ const THE_DESIGNS_GROUPS: [&str; 13] = [
     "milestone",
     "hook",
     "answers",
+    "identity",
 ];
 
 #[test]

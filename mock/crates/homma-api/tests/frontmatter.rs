@@ -23,6 +23,14 @@ fn the_body_starts_after_the_closing_fence() {
 }
 
 #[test]
+fn a_body_that_starts_on_the_line_after_the_fence_keeps_that_line() {
+    // The setup the other tests share leaves a blank line after the fence, which
+    // steers around a count that is one too many and drops the first line.
+    let block = split("---\nkind: reflex\n---\n# Title\n\nProse.\n").unwrap();
+    assert_eq!(block.body, "# Title\n\nProse.");
+}
+
+#[test]
 fn a_fence_inside_the_body_is_not_the_closing_one() {
     // A horizontal rule in prose is spelled the same as the fence. The walk
     // stops at the first one after the opening, so a later one is body text.
