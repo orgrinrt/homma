@@ -74,6 +74,17 @@ impl<'a> Layout<'a> {
         self.under_home(id, "character.md")
     }
 
+    /// The directory the characters are authored in.
+    pub fn hands(&self) -> Result<ContainedPath, Escapes> {
+        self.contain(self.root.as_abs().join(&self.paths.hands))
+    }
+
+    /// Where a hand keeps its memory unless its character file names another
+    /// place, spelled as a character file spells it: relative to the root.
+    pub fn default_memory(&self, id: &Identity) -> String {
+        format!("{}/{}/memory", self.paths.hands, id.handle)
+    }
+
     /// Where the harness expects to find this identity's memory.
     pub fn harness_memory(&self, id: &Identity) -> Result<ContainedPath, Escapes> {
         self.contain(
@@ -205,7 +216,7 @@ fn escaped(e: Escapes) -> io::Error {
 /// claim was true in practice and false as stated, which is the failure mode
 /// this branch has been correcting since. The claim itself has since been
 /// narrowed everywhere it appears: see the module header.
-fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
+pub(crate) fn link_memory(link: &ContainedPath, target: &ContainedPath) -> io::Result<()> {
     // **The body of a symlink is a path**, in exactly the sense `Root` exists to
     // prove: the kernel follows it on every `open`. Nothing proved it, and both
     // arguments being proven was mistaken for the whole job.

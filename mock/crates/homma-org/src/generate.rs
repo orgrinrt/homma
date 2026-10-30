@@ -41,6 +41,10 @@ pub enum Form {
     Prime,
     /// Dispatched as a subagent. Carries no memory, only notes.
     Twin,
+    /// Runs as a session's own agent and is authored in a character file.
+    /// Carries memory like a prime, and says nothing of a twin or of notes it
+    /// has none of; the authored body brings its own heading.
+    Authored,
 }
 
 /// Build the definition for an identity.
@@ -64,19 +68,21 @@ pub fn definition_described(
 ) -> Generated {
     let mut fm = String::new();
     let name = match form {
-        Form::Prime => id.handle.clone(),
+        Form::Prime | Form::Authored => id.handle.clone(),
         Form::Twin => format!("{}-twin", id.handle),
     };
     fm.push_str(&format!("name: {name}\n"));
-    fm.push_str(&format!("description: {description}\n"));
+    fm.push_str(&format!("description: {}\n", yaml_scalar(description)));
     // The memory key is present for a prime and absent for a twin. This is the
     // whole mechanism behind "a twin may not write memory".
-    if form == Form::Prime {
+    if form != Form::Twin {
         fm.push_str("memory: project\n");
     }
 
     let mut body = String::new();
-    body.push_str(&format!("# {}\n\n", display_name(id)));
+    if form != Form::Authored {
+        body.push_str(&format!("# {}\n\n", display_name(id)));
+    }
     if let Some(domain) = &id.domain {
         body.push_str(&format!("Domain: {domain}.\n\n"));
     }
@@ -90,12 +96,12 @@ pub fn definition_described(
              to someone else and is not yours.\n\n"
         ));
     }
+    if form != Form::Twin {
+        body.push_str(KEEPS_MEMORY);
+    }
     match form {
+        Form::Authored => {},
         Form::Prime => {
-            body.push_str(
-                "You keep your own memory. Read it before you start and write to it \
-                 what will still be true next week.\n\n",
-            );
             // Stated because the Hand answered this wrongly when asked. The
             // twin's definition genuinely carries no memory key, so the
             // mechanism was right and the belief was not, which is a thing it
@@ -131,6 +137,47 @@ pub fn definition_described(
     }
 }
 
+/// What every form that has a memory is told about it.
+const KEEPS_MEMORY: &str = "You keep your own memory. Read it before you start and write to it \
+                            what will still be true next week.\n\n";
+
+/// `value` as one YAML scalar: plain when a plain scalar reads back as the same
+/// text, double quoted otherwise.
+///
+/// A description is prose that other people edit, so a `: `, a ` #`, a leading
+/// indicator or a word YAML reads as something else would change what the
+/// harness is given, or make the file unreadable, without any error here.
+fn yaml_scalar(value: &str) -> String {
+    const INDICATORS: &str = "-?:,[]{}#&*!|>'\"%@`";
+    const RESERVED: [&str; 9] = ["true", "false", "null", "yes", "no", "on", "off", "~", ""];
+    let plain = value == value.trim()
+        && !value.contains(['\n', '\r', '\t'])
+        && !value.contains(": ")
+        && !value.contains(" #")
+        && !value.ends_with(':')
+        && !value.starts_with(|c| INDICATORS.contains(c))
+        && !RESERVED.contains(&value.to_ascii_lowercase().as_str())
+        && value.parse::<f64>().is_err();
+    if plain {
+        return value.to_string();
+    }
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn display_name(id: &Identity) -> String {
     id.full_name
         .clone()
@@ -141,8 +188,8 @@ fn display_name(id: &Identity) -> String {
 fn describe(id: &Identity, form: Form) -> String {
     let who = id.nickname.clone().unwrap_or_else(|| id.handle.clone());
     match (form, &id.domain) {
-        (Form::Prime, Some(d)) => format!("{who}, who works on {d}."),
-        (Form::Prime, None) => format!("{who}."),
+        (Form::Prime | Form::Authored, Some(d)) => format!("{who}, who works on {d}."),
+        (Form::Prime | Form::Authored, None) => format!("{who}."),
         (Form::Twin, Some(d)) => {
             format!("{who} dispatched as a subagent, without session history. Works on {d}.")
         },
@@ -167,6 +214,19 @@ pub fn write_definitions(
         Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
+    // A character with a frontmatter block is an identity's, rendered by its own
+    // command into the same file; pasting its raw block into a body would be a
+    // second writer of one definition.
+    if character.lines().next().map(str::trim_end) == Some("---") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "`{}` has a character file with frontmatter, so it is an identity and its \
+                 definition is generated by `homma identity render`",
+                id.handle
+            ),
+        ));
+    }
     let prime = layout.definition(id).map_err(escaped)?;
     let twin = layout.twin_definition(id).map_err(escaped)?;
     if let Some(parent) = prime.as_abs().parent() {
@@ -291,6 +351,78 @@ mod tests {
         let id = hand();
         let twin = definition(&id, Form::Twin, DISCIPLINE, "").body;
         assert!(twin.contains("do not write to channels"));
+    }
+
+    #[test]
+    fn prose_that_a_plain_scalar_would_misread_is_quoted() {
+        for (given, written) in [
+            (
+                "the coordinator: lands branches",
+                "\"the coordinator: lands branches\"",
+            ),
+            (
+                "lands branches # and reads",
+                "\"lands branches # and reads\"",
+            ),
+            ("[bracketed] role", "\"[bracketed] role\""),
+            ("\"quoted\" at the start", "\"\\\"quoted\\\" at the start\""),
+            ("a: \"b\" \\ c", "\"a: \\\"b\\\" \\\\ c\""),
+            ("two\nlines", "\"two\\nlines\""),
+            ("ends with a colon:", "\"ends with a colon:\""),
+            (" padded ", "\" padded \""),
+            ("true", "\"true\""),
+            ("12", "\"12\""),
+            ("", "\"\""),
+        ] {
+            assert_eq!(yaml_scalar(given), written, "{given:?}");
+        }
+    }
+
+    #[test]
+    fn prose_that_reads_back_the_same_stays_plain() {
+        for plain in [
+            "the kaski coordinator, who dispatches helpers",
+            "Paja, who works on tooling.",
+            "keeps a file-size limit of 500 lines",
+            "a colon:without a space",
+            "issue#12 is open",
+            "says \"hi\" and \\ leaves",
+        ] {
+            assert_eq!(yaml_scalar(plain), plain);
+        }
+    }
+
+    #[test]
+    fn a_description_with_a_colon_is_written_quoted_in_the_definition() {
+        let id = Identity::new(Role::Hand, "coord");
+        let out = definition_described(
+            &id,
+            Form::Authored,
+            "the coordinator: lands branches",
+            DISCIPLINE,
+            "",
+        )
+        .render();
+        assert!(
+            out.contains("description: \"the coordinator: lands branches\"\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn an_authored_form_has_memory_and_is_told_nothing_about_a_twin() {
+        let id = Identity::new(Role::Hand, "coord");
+        let out =
+            definition_described(&id, Form::Authored, "a role", DISCIPLINE, "# coord\n").render();
+        assert!(out.contains("memory: project\n"), "{out}");
+        assert!(out.contains("You keep your own memory."), "{out}");
+        assert!(!out.contains("twin"), "{out}");
+        assert!(!out.contains("notes"), "{out}");
+        assert_eq!(
+            out.matches("\n# ").count() + usize::from(out.starts_with("# ")),
+            1,
+            "the authored body brings the one heading: {out}"
+        );
     }
 
     #[test]

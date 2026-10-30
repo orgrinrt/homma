@@ -188,17 +188,6 @@ pub enum Command {
         op: AgentsOp,
     },
 
-    /// The identities a session can be launched as: generating their agent
-    /// definitions, and starting a session as one.
-    ///
-    /// An identity is a character file, `.shared/hands/<name>/character.md`,
-    /// whose frontmatter names it (`name`, `role`, `memories`) and whose body
-    /// is composed into the agent definition as written.
-    Identity {
-        #[command(subcommand)]
-        op: IdentityOp,
-    },
-
     /// The release: a gate run on the pushing machine, its record and commit
     /// status, and the merge, tag, changelog, forge release and registry
     /// publish that carry the working trunk onto the release line.
@@ -315,6 +304,16 @@ pub enum Command {
     Answers {
         #[command(subcommand)]
         op: AnswersOp,
+    },
+    /// The identities a session can be launched as: generating their agent
+    /// definitions, and starting a session as one.
+    ///
+    /// An identity is a character file in the hands directory, whose
+    /// frontmatter names it (`name`, `role`, `memories`) and whose body is
+    /// composed into the agent definition as written.
+    Identity {
+        #[command(subcommand)]
+        op: IdentityOp,
     },
     /// The content repository's own tools.
     ///
@@ -619,7 +618,8 @@ pub enum IdentityOp {
     /// memory at `.claude/agent-memory/<name>`.
     ///
     /// A character file without a frontmatter block is an older persona and is
-    /// not an identity. A memory outside `.shared` is refused.
+    /// not an identity. A memory outside `.shared`, or one that another identity
+    /// already keeps, is refused, and so is a persona of the same name.
     Render {
         /// Identities to render; every identity when empty.
         names: Vec<String>,
@@ -627,8 +627,8 @@ pub enum IdentityOp {
 
     /// Render an identity, then start a session as it with `claude --agent`.
     ///
-    /// The session finds its own name in `HOMMA_IDENTITY`. Everything after the
-    /// name goes to `claude` as it is; `HOMMA_CLAUDE` names another program.
+    /// Everything after the name goes to `claude` as it is; `HOMMA_CLAUDE` names
+    /// another program.
     Launch {
         /// The identity to be.
         name: String,
