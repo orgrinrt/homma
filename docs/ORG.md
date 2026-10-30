@@ -386,6 +386,26 @@ shared template plus a hand-written character fragment that is never regenerated
 The shared part cannot drift between participants because none of them owns it;
 the character is authored once and belongs to whoever it describes.
 
+An identity is the second way to get a definition. Its source is a character file
+in the hands place, `character.md`, with front matter naming the identity, its role
+as a free description, and the memory directories it keeps, and a body that the
+person editing the character owns. Nothing in the body is generated and nothing
+else is added to it. The definition is that body under the front matter the harness
+reads, written through the layout like every other path, and the role is quoted
+whenever a plain scalar would read back as something else.
+
+A memory lives under `.shared`, always. The default is the identity's own memory
+directory there, and a character that names another may only name one under the
+same root, because the harness writes through the link and the root is what keeps
+those writes inside the shared data. A memory has one owner: two identities may not
+keep the same first memory, and one directory may not contain another's. A render
+checks every identity and every link slot before it writes the first, so a refusal
+leaves nothing half made.
+
+A persona and an identity may not share a name, since both would be written to the
+same definition. A stand-up of an identity refuses before it creates anything,
+because the definition of an identity is not generated from the registry.
+
 The same pass writes the settings and hooks that constrain a workspace. It is the
 sole writer of the agent configuration directory in every workspace it manages,
 which is what makes the constraints uniform and what makes a workspace it did not
