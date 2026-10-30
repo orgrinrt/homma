@@ -1,0 +1,6 @@
+17f36a2 chore: lock the src changelist for the identity round
+34e8867 feat: generate an agent identity from a character file and launch it
+121a499 chore: lock the doc changelist for the identity round
+5dfcd98 docs: list homma identity in the command listing and the readme
+c04dae7 docs: record the round on an identity from a character file
+408bd44 feat: render only the rule cards that bind the session role and place
