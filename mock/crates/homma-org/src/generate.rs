@@ -72,7 +72,7 @@ pub fn definition_described(
         Form::Prime | Form::Authored => id.handle.clone(),
         Form::Twin => format!("{}-twin", id.handle),
     };
-    fm.push_str(&format!("name: {name}\n"));
+    fm.push_str(&format!("name: {}\n", yaml::scalar(&name)));
     fm.push_str(&format!("description: {}\n", yaml::scalar(description)));
     // The memory key is present for a prime and absent for a twin. This is the
     // whole mechanism behind "a twin may not write memory".

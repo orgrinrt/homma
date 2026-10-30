@@ -146,7 +146,8 @@ fn check_owners(layout: &Layout<'_>, batch: &[Character]) -> Result<(), Characte
 
 /// Refuse, before anything is written, a place the render would write to that
 /// holds something it cannot replace: a real directory or file where the
-/// memory link goes, or a directory where the definition goes.
+/// memory link goes, a directory where the definition goes, or something that
+/// is not a directory where the memory is kept.
 fn check_slots(layout: &Layout<'_>, batch: &[Character]) -> Result<(), CharacterError> {
     for c in batch {
         let id = identity_of(&c.name);
@@ -181,6 +182,33 @@ fn check_slots(layout: &Layout<'_>, batch: &[Character]) -> Result<(), Character
                     });
                 },
             }
+        }
+        // The directory the link points at, followed: a file there fails the
+        // write after the identities before it were written.
+        let memory = layout
+            .contained_root()
+            .contain(
+                &layout
+                    .contained_root()
+                    .as_abs()
+                    .join(c.first_memory().as_str()),
+            )
+            .map_err(escaped)?;
+        match fs::metadata(memory.as_path()) {
+            Ok(m) if !m.is_dir() => {
+                return Err(CharacterError::Occupied {
+                    path: memory.as_path().to_path_buf(),
+                    what: "is not a directory, and it is where this identity keeps its memory",
+                });
+            },
+            Ok(_) => {},
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+            Err(cause) => {
+                return Err(CharacterError::Write {
+                    path: memory.as_path().to_path_buf(),
+                    cause,
+                });
+            },
         }
     }
     Ok(())

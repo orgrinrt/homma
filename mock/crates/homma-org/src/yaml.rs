@@ -116,24 +116,18 @@ mod tests {
         }
     }
 
-    /// The law the whitelist exists for: nothing it writes plain contains a
-    /// character with a meaning of its own to a YAML reader.
+    /// A character with a meaning of its own to a YAML reader never survives
+    /// in a plain scalar. The set is spelled out here and not read from the
+    /// writer's own constant, which a test of the constant could never fail.
     #[test]
-    fn nothing_written_plain_holds_a_character_that_means_something() {
-        for c in (0u32 .. 0x250).filter_map(char::from_u32) {
+    fn a_character_with_a_meaning_in_yaml_forces_quoting() {
+        for c in ":#[]{}&*!|>\"%@`\\?\t\n\r\u{7}\u{7f}ä".chars() {
             let given = format!("word{c}word");
             let written = scalar(&given);
-            if written == given {
-                assert!(
-                    c.is_ascii_alphanumeric() || c == ' ' || PLAIN_PUNCTUATION.contains(c),
-                    "{c:?} came out plain: {written}"
-                );
-            } else {
-                assert!(
-                    written.starts_with('"') && written.ends_with('"'),
-                    "{written}"
-                );
-            }
+            assert!(
+                written.starts_with('"') && written.ends_with('"'),
+                "{c:?} came out plain: {written}"
+            );
         }
     }
 }

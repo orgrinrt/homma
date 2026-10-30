@@ -16,7 +16,9 @@
 //! **Every path comes from the [`Layout`]**, the one owner of where things sit in
 //! a workspace and of proving they stay inside it, so the configured `hands` and
 //! `agents` places count and a link in the tree cannot carry a write out of the
-//! root. Nothing here builds a path by hand.
+//! root. The one place named without the layout is the default memory,
+//! `.shared/hands/<name>/memory`: where a memory lives is the character format's
+//! rule, so it does not follow a configured `hands` place.
 //!
 //! **Memories are mapped, never copied.** The harness reads an agent's memory
 //! from `.claude/agent-memory/<name>`, and that is a relative link to the first
@@ -41,6 +43,9 @@ pub use render::{Rendered, claimed_names, identities, render};
 
 /// Where the memories of an identity may live, relative to the workspace root.
 pub const MEMORY_ROOT: &str = ".shared";
+/// Where the hands keep their own memories, below [`MEMORY_ROOT`]. A memory
+/// below it sits under the identity's own name.
+const HANDS_MEMORY_ROOT: &str = ".shared/hands";
 /// The keys the frontmatter may carry.
 const KNOWN: &[&str] = &["name", "role", "memories"];
 
@@ -107,6 +112,13 @@ pub enum CharacterError {
     BadMemory {
         path:   PathBuf,
         memory: String,
+    },
+    /// A memory below the hands directory that is under another name, where
+    /// that name keeps its own.
+    MemoryUnderAnother {
+        path:   PathBuf,
+        memory: String,
+        name:   String,
     },
     /// Two identities name the same first memory directory.
     MemoryShared {
@@ -190,6 +202,18 @@ impl std::fmt::Display for CharacterError {
                     f,
                     "`{first}` and `{second}` both keep their memory in `{memory}`, and a memory \
                      has one owner"
+                )
+            },
+            Self::MemoryUnderAnother {
+                path,
+                memory,
+                name,
+            } => {
+                write!(
+                    f,
+                    "{}: memory `{memory}` is below `{HANDS_MEMORY_ROOT}` and not under `{name}`, \
+                     which is where another name keeps its own",
+                    path.display()
                 )
             },
             Self::MemoryNested {
@@ -316,6 +340,18 @@ impl Character {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        for m in &memories {
+            let rest = Path::new(m.as_str()).strip_prefix(HANDS_MEMORY_ROOT);
+            if let Ok(rest) = rest {
+                if rest.components().next() != Some(Component::Normal(std::ffi::OsStr::new(dir))) {
+                    return Err(CharacterError::MemoryUnderAnother {
+                        path:   path.to_path_buf(),
+                        memory: m.as_str().to_string(),
+                        name:   dir.to_string(),
+                    });
+                }
+            }
+        }
         Ok(Self {
             name,
             role,

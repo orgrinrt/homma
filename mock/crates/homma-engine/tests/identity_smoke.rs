@@ -87,9 +87,12 @@ fn render_refuses_two_identities_that_keep_one_memory_and_writes_neither() {
     let (dir, cfg) = workspace();
     let twin = dir.path().join(".shared/hands/second");
     fs::create_dir_all(&twin).unwrap();
+    // A memory outside the hands directory, which nobody keeps by default.
+    let common = COORD.replace(".shared/hands/coord/memory", ".shared/common-mem");
+    fs::write(dir.path().join(".shared/hands/coord/character.md"), &common).unwrap();
     fs::write(
         twin.join("character.md"),
-        COORD
+        common
             .replace("name: coord", "name: second")
             .replace("# coord", "# second"),
     )
@@ -282,4 +285,25 @@ fn launch_as_an_unknown_identity_starts_nothing() {
         .assert()
         .failure();
     assert!(!out.exists());
+}
+
+#[test]
+fn launch_under_a_configured_agents_place_refuses_and_starts_nothing() {
+    let (dir, cfg) = workspace();
+    let mut text = fs::read_to_string(&cfg).unwrap();
+    text.push_str("\n[paths]\nagents = \"elsewhere/agents\"\n");
+    fs::write(&cfg, text).unwrap();
+    let out = dir.path().join("seen");
+    let stub = stub(dir.path(), &format!("echo ran > '{}'", out.display()));
+    support::bin()
+        .env("HOMMA_CLAUDE", &stub)
+        .args(["--config", cfg.to_str().unwrap(), "identity", "launch", "coord"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("elsewhere/agents"));
+    assert!(!out.exists(), "no session was started");
+    assert!(
+        !dir.path().join("elsewhere/agents/coord.md").exists(),
+        "and nothing was rendered for it"
+    );
 }

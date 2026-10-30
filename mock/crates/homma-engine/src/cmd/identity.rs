@@ -136,6 +136,15 @@ pub fn launch_command(root: &Path, name: &str, extra: &[String]) -> Command {
 
 /// Render `name`, then replace this process with a session running as it.
 pub fn launch(cfg: &Config, name: &str, extra: &[String]) -> Result<()> {
+    // The harness reads definitions from `.claude/agents` only, so a definition
+    // written to a configured place would be rendered and never found.
+    let agents = paths_of(cfg)?.agents;
+    if agents != Paths::default().agents {
+        bail!(
+            "`[paths] agents` is `{agents}` and the harness reads definitions from \
+             `.claude/agents` only, so a session launched as `{name}` would not find its own"
+        );
+    }
     render_into(cfg, &[name.to_string()])?;
     match exec(launch_command(&cfg.workspace.path, name, extra)) {
         Err(e) => Err(e.context(format!("starting the session as `{name}`"))),
