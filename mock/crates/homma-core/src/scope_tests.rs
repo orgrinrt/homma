@@ -65,3 +65,43 @@ fn a_local_file_that_does_not_parse_widens_the_scope_and_returns_why() {
         "silently ignoring a broken file is the failure"
     );
 }
+
+#[test]
+fn the_repos_a_project_declares_are_the_scope_of_a_clone_that_names_it() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(crate::local::STORE_DIR)).unwrap();
+    std::fs::write(
+        d.path().join(crate::local::STORE_DIR).join("k.toml"),
+        "[instance]\nwork = \"k\"\nrepos = [\"a\", \"b\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.path().join(crate::local::LOCAL_FILE),
+        "[instance]\nproject = \"k\"\n",
+    )
+    .unwrap();
+    let (s, err) = Scope::load(d.path());
+    assert!(err.is_none(), "{err:?}");
+    assert!(s.admits("a") && s.admits("b") && !s.admits("c"));
+    // The control: the file's own list overrides the project's, whole.
+    std::fs::write(
+        d.path().join(crate::local::LOCAL_FILE),
+        "[instance]\nproject = \"k\"\nrepos = [\"c\"]\n",
+    )
+    .unwrap();
+    let (s, _) = Scope::load(d.path());
+    assert!(s.admits("c") && !s.admits("a"));
+}
+
+#[test]
+fn a_named_project_the_store_lacks_widens_the_scope_and_returns_why() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(
+        d.path().join(crate::local::LOCAL_FILE),
+        "[instance]\nproject = \"gone\"\n",
+    )
+    .unwrap();
+    let (s, err) = Scope::load(d.path());
+    assert_eq!(s, Scope::everything());
+    assert!(err.is_some());
+}

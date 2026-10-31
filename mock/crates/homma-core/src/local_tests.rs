@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::Config;
+use crate::migrate::migrate;
 
 const MANIFEST: &str = "[workspace]\nname = \"w\"\n";
 
@@ -413,116 +414,10 @@ fn the_leftovers_line_ignores_exactly_what_set_leaves_behind() {
 }
 
 // ---------------------------------------------------------------------------
-// filling an installed file from the stored config
+// the stored config
 // ---------------------------------------------------------------------------
 
 const STORED: &str = "# the stored one\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n";
-
-#[test]
-fn fill_adds_every_key_the_file_lacks_and_names_each() {
-    let (out, added) = fill("[instance]\nwork = \"k\"\n", STORED).unwrap();
-    let l = Local::parse(&out).unwrap();
-    assert_eq!(l.instance.title.as_deref(), Some("stored title"));
-    assert_eq!(l.instance.repos, vec!["a".to_owned()]);
-    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
-    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
-    assert_eq!(added, [
-        "instance.title",
-        "instance.repos",
-        "tools.goal.active",
-        "tools.goal.objective",
-        "tools.msg.as"
-    ]);
-}
-
-#[test]
-fn fill_never_changes_a_key_the_file_has() {
-    let have = "[instance]\nwork = \"k\"\ntitle = \"mine\"\nrepos = []\n\n[tools.goal]\nactive = \"true\"\n";
-    let (out, added) = fill(have, STORED).unwrap();
-    let l = Local::parse(&out).unwrap();
-    assert_eq!(l.instance.title.as_deref(), Some("mine"));
-    assert!(
-        l.instance.repos.is_empty(),
-        "a list is a value, not merged into"
-    );
-    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
-    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
-    assert_eq!(added, ["tools.goal.objective", "tools.msg.as"]);
-}
-
-#[test]
-fn fill_keeps_what_a_tool_recorded_and_the_store_never_held() {
-    let have = "[instance]\nwork = \"k\"\n\n[tools.dashboard]\npublished = \"abc\"\nurl = \"u\"\n";
-    let (out, _) = fill(have, STORED).unwrap();
-    let l = Local::parse(&out).unwrap();
-    assert_eq!(l.tools["dashboard"]["published"].as_str(), Some("abc"));
-    assert_eq!(l.tools["dashboard"]["url"].as_str(), Some("u"));
-}
-
-#[test]
-fn fill_keeps_the_files_own_comments() {
-    let have = "# mine\n[instance]\nwork = \"k\" # why\n";
-    let (out, _) = fill(have, STORED).unwrap();
-    assert!(out.starts_with("# mine\n"), "{out}");
-    assert!(out.contains("work = \"k\" # why"), "{out}");
-}
-
-#[test]
-fn fill_of_a_complete_file_adds_nothing_and_changes_no_byte() {
-    let (once, _) = fill("[instance]\nwork = \"k\"\n", STORED).unwrap();
-    let (twice, added) = fill(&once, STORED).unwrap();
-    assert!(added.is_empty(), "{added:?}");
-    assert_eq!(once, twice);
-}
-
-#[test]
-fn fill_enters_an_inline_table_in_the_file_and_adds_the_key_it_lacks() {
-    let have = "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"true\" }\n";
-    let (out, added) = fill(have, STORED).unwrap();
-    let l = Local::parse(&out).unwrap();
-    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
-    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
-    assert_eq!(added, [
-        "instance.title",
-        "instance.repos",
-        "tools.goal.objective",
-        "tools.msg.as"
-    ]);
-}
-
-#[test]
-fn fill_names_each_key_of_an_inline_stored_table_that_the_file_lacks() {
-    let stored =
-        "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"false\", objective = \"o\" }\n";
-    let (out, added) = fill("[instance]\nwork = \"k\"\n", stored).unwrap();
-    let l = Local::parse(&out).unwrap();
-    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
-    assert_eq!(added, ["tools.goal.active", "tools.goal.objective"]);
-    let (again, added) = fill(&out, stored).unwrap();
-    assert!(added.is_empty(), "{added:?}");
-    assert_eq!(out, again);
-}
-
-#[test]
-fn fill_enters_an_inline_stored_table_over_a_file_that_writes_it_as_a_table() {
-    let stored =
-        "[instance]\nwork = \"k\"\n\n[tools]\ngoal = { active = \"false\", objective = \"o\" }\n";
-    let have = "[instance]\nwork = \"k\"\n\n[tools.goal]\nactive = \"true\"\n";
-    let (out, added) = fill(have, stored).unwrap();
-    let l = Local::parse(&out).unwrap();
-    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
-    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
-    assert_eq!(added, ["tools.goal.objective"]);
-}
-
-#[test]
-fn fill_refuses_text_that_is_not_toml() {
-    assert!(matches!(fill("[[", STORED), Err(LocalError::Edit(_))));
-    assert!(matches!(
-        fill("[instance]\nwork = \"k\"\n", "[["),
-        Err(LocalError::Edit(_))
-    ));
-}
 
 #[test]
 fn a_stored_config_is_the_one_its_name_says() {
@@ -606,14 +501,279 @@ fn naming_a_console_beside_a_dashboard_is_refused_by_set() {
     assert!(set(WITH_DASHBOARD, "tools.dashboard.url", "https://x").is_ok());
 }
 
+// ---------------------------------------------------------------------------
+// inheriting a project
+// ---------------------------------------------------------------------------
+
+const BASE: &str = "[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\", \"b\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n";
+
+fn with_store(base: &str, local: &str) -> tempfile::TempDir {
+    let d = ws();
+    std::fs::create_dir_all(d.path().join(STORE_DIR)).unwrap();
+    std::fs::write(d.path().join(STORE_DIR).join("k.toml"), base).unwrap();
+    std::fs::write(d.path().join(LOCAL_FILE), local).unwrap();
+    d
+}
+
+fn loaded(d: &tempfile::TempDir) -> Local {
+    Local::load(d.path()).unwrap().unwrap()
+}
+
 #[test]
-fn fill_refuses_a_console_that_would_land_beside_a_dashboard() {
-    match fill(WITH_DASHBOARD, WITH_CONSOLE) {
-        Err(LocalError::DashboardWhereConsole(key)) => assert_eq!(key, "tools.dashboard"),
+fn a_file_of_one_project_line_is_the_whole_stored_config() {
+    let d = with_store(BASE, "[instance]\nproject = \"k\"\n");
+    let l = loaded(&d);
+    assert_eq!(l.instance.work, "k");
+    assert_eq!(l.instance.title.as_deref(), Some("stored title"));
+    assert_eq!(l.instance.repos, ["a", "b"]);
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
+    let p = l.provenance.unwrap();
+    assert_eq!(p.project, "k");
+    assert!(p.local.is_empty() && p.overridden.is_empty() && p.unset.is_empty());
+}
+
+#[test]
+fn the_file_adds_to_the_base_and_overrides_it() {
+    let d = with_store(
+        BASE,
+        "[instance]\nproject = \"k\"\ntitle = \"mine\"\nrepos = [\"c\"]\n[tools.goal]\nactive = \"true\"\n[tools.extra]\nx = \"1\"\n",
+    );
+    let l = loaded(&d);
+    assert_eq!(l.instance.title.as_deref(), Some("mine"));
+    assert_eq!(l.instance.repos, ["c"]);
+    assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
+    assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
+    assert_eq!(l.tools["extra"]["x"].as_str(), Some("1"));
+    let p = l.provenance.unwrap();
+    assert_eq!(p.overridden, [
+        "instance.repos",
+        "instance.title",
+        "tools.goal.active"
+    ]);
+    assert_eq!(p.local, ["tools.extra.x"]);
+    assert_eq!(p.inherited, [
+        "instance.work",
+        "tools.goal.objective",
+        "tools.msg.as"
+    ]);
+}
+
+#[test]
+fn a_change_to_the_store_reaches_a_clone_that_names_it() {
+    let d = with_store(BASE, "[instance]\nproject = \"k\"\n");
+    assert_eq!(loaded(&d).instance.title.as_deref(), Some("stored title"));
+    std::fs::write(
+        d.path().join(STORE_DIR).join("k.toml"),
+        BASE.replace("stored title", "newer title"),
+    )
+    .unwrap();
+    assert_eq!(loaded(&d).instance.title.as_deref(), Some("newer title"));
+}
+
+#[test]
+fn the_file_may_set_the_work_itself_and_a_file_without_a_project_must() {
+    let d = with_store(BASE, "[instance]\nproject = \"k\"\nwork = \"other\"\n");
+    assert_eq!(loaded(&d).instance.work, "other");
+    assert!(Local::parse("[instance]\nproject = \"k\"\n").is_ok());
+    let e = Local::parse("[instance]\ntitle = \"t\"\n").unwrap_err();
+    assert!(e.to_string().contains("work"), "{e}");
+}
+
+#[test]
+fn unset_removes_an_inherited_value_and_a_table() {
+    let d = with_store(
+        BASE,
+        "[instance]\nproject = \"k\"\nunset = [\"instance.title\", \"tools.msg\"]\n",
+    );
+    let l = loaded(&d);
+    assert_eq!(l.instance.title, None);
+    assert!(!l.tools.contains_key("msg"));
+    assert!(l.tools.contains_key("goal"));
+    assert_eq!(l.provenance.unwrap().unset, ["instance.title", "tools.msg"]);
+}
+
+#[test]
+fn unset_of_the_mechanism_or_a_malformed_path_is_refused_naming_it() {
+    for bad in ["instance.project", "a..b", ""] {
+        let d = with_store(
+            BASE,
+            &format!("[instance]\nproject = \"k\"\nunset = [\"{bad}\"]\n"),
+        );
+        match Local::load(d.path()) {
+            Err(LocalError::Unset(p)) => assert_eq!(p, bad),
+            other => panic!("{bad:?}: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_project_the_store_lacks_is_an_error_naming_it_and_the_file() {
+    let d = ws();
+    std::fs::write(
+        d.path().join(LOCAL_FILE),
+        "[instance]\nproject = \"nope\"\n",
+    )
+    .unwrap();
+    let e = Local::load(d.path()).unwrap_err();
+    assert!(matches!(e, LocalError::Project { .. }), "{e:?}");
+    let s = e.to_string();
+    assert!(s.contains("`nope`") && s.contains("nope.toml"), "{s}");
+}
+
+#[test]
+fn a_project_name_that_could_leave_the_store_is_refused() {
+    let d = ws();
+    std::fs::write(
+        d.path().join(LOCAL_FILE),
+        "[instance]\nproject = \"../x\"\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        Local::load(d.path()),
+        Err(LocalError::Project { .. })
+    ));
+}
+
+#[test]
+fn a_stored_config_that_names_a_project_is_not_a_base() {
+    let d = with_store(
+        "[instance]\nwork = \"k\"\nproject = \"j\"\n",
+        "[instance]\nproject = \"k\"\n",
+    );
+    let e = Local::load(d.path()).unwrap_err();
+    assert!(e.to_string().contains("names a project"), "{e}");
+}
+
+#[test]
+fn a_base_whose_work_is_not_its_name_is_refused() {
+    let d = with_store(
+        "[instance]\nwork = \"zzz\"\n",
+        "[instance]\nproject = \"k\"\n",
+    );
+    assert!(Local::load(d.path()).is_err());
+}
+
+#[test]
+fn the_console_check_runs_on_the_merged_config_and_unset_resolves_it() {
+    let base = "[instance]\nwork = \"k\"\n[tools.dashboard]\nregistry = [\"k\"]\n";
+    let console = "[tools.console]\nchannel = \"k\"\n";
+    let d = with_store(base, &format!("[instance]\nproject = \"k\"\n{console}"));
+    assert!(matches!(
+        Local::load(d.path()),
+        Err(LocalError::DashboardWhereConsole(_))
+    ));
+    let d = with_store(
+        base,
+        &format!("[instance]\nproject = \"k\"\nunset = [\"tools.dashboard\"]\n{console}"),
+    );
+    let l = loaded(&d);
+    assert!(!l.tools.contains_key("dashboard") && l.names_console());
+}
+
+#[test]
+fn the_merged_table_is_what_the_layers_read() {
+    let d = with_store(
+        "[instance]\nwork = \"k\"\n[[hooks.post-merge]]\nrun = \"from-store\"\n",
+        "[instance]\nproject = \"k\"\n",
+    );
+    let t = Local::load_table(d.path()).unwrap().unwrap();
+    assert_eq!(
+        t["hooks"]["post-merge"][0]["run"].as_str(),
+        Some("from-store")
+    );
+}
+
+#[test]
+fn a_file_without_a_project_loads_as_written_with_no_provenance() {
+    let d = ws();
+    std::fs::write(d.path().join(LOCAL_FILE), "[instance]\nwork = \"k\"\n").unwrap();
+    assert_eq!(loaded(&d).provenance, None);
+}
+
+// ---------------------------------------------------------------------------
+// migrating a copy
+// ---------------------------------------------------------------------------
+
+#[test]
+fn migrating_a_copy_drops_what_equals_the_store_and_keeps_the_rest() {
+    let copy = "# mine\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\", \"b\"]\n\n[tools.goal]\nactive = \"true\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n\n[tools.console]\ndeployed = \"abc\"\n";
+    let m = migrate(copy, BASE, "k").unwrap();
+    assert_eq!(m.dropped, [
+        "instance.work",
+        "instance.title",
+        "instance.repos",
+        "tools.goal.objective",
+        "tools.msg.as"
+    ]);
+    assert_eq!(m.kept, ["tools.goal.active", "tools.console.deployed"]);
+    assert!(m.text.contains("# mine") && m.text.contains("project = \"k\""));
+    assert!(!m.text.contains("tools.msg"));
+}
+
+#[test]
+fn a_migrated_copy_means_what_the_copy_meant() {
+    let copy = "[instance]\nwork = \"k\"\ntitle = \"my title\"\nrepos = [\"a\", \"b\"]\n[tools.goal]\nactive = \"true\"\nobjective = \"o\"\n[tools.msg]\nas = \"coord\"\n[tools.recorded]\nsha = \"abc\"\n";
+    let m = migrate(copy, BASE, "k").unwrap();
+    let d = with_store(BASE, &m.text);
+    let before = Local::parse(copy).unwrap();
+    let after = loaded(&d);
+    assert_eq!(after.instance.work, before.instance.work);
+    assert_eq!(after.instance.title, before.instance.title);
+    assert_eq!(after.instance.repos, before.instance.repos);
+    assert_eq!(after.tools, before.tools);
+}
+
+#[test]
+fn migrating_a_copy_that_replaced_the_dashboard_with_a_console_unsets_it() {
+    let base = "[instance]\nwork = \"k\"\n[tools.dashboard]\nregistry = [\"k\"]\n";
+    let copy = "[instance]\nwork = \"k\"\n[tools.console]\nchannel = \"k\"\n";
+    let m = migrate(copy, base, "k").unwrap();
+    let d = with_store(base, &m.text);
+    let l = loaded(&d);
+    assert!(l.names_console() && !l.tools.contains_key("dashboard"));
+}
+
+#[test]
+fn migrating_twice_changes_nothing_more() {
+    let copy = "[instance]\nwork = \"k\"\ntitle = \"mine\"\n";
+    let once = migrate(copy, BASE, "k").unwrap();
+    let twice = migrate(&once.text, BASE, "k").unwrap();
+    assert_eq!(once.text, twice.text);
+    assert!(twice.dropped.is_empty());
+}
+
+#[test]
+fn migrate_refuses_text_that_is_not_toml() {
+    assert!(matches!(migrate("[[", BASE, "k"), Err(LocalError::Edit(_))));
+}
+
+#[test]
+fn unsetting_the_work_leaves_none_and_is_refused_naming_the_path() {
+    let d = with_store(
+        BASE,
+        "[instance]\nproject = \"k\"\nunset = [\"instance.work\"]\n",
+    );
+    match Local::load(d.path()) {
+        Err(LocalError::EmptyWork) => {},
         other => panic!("{other:?}"),
     }
-    // The controls: a console filled into a file without a dashboard, and a dashboard
-    // filled into a file without a console.
-    assert!(fill("[instance]\nwork = \"k\"\n", WITH_CONSOLE).is_ok());
-    assert!(fill("[instance]\nwork = \"k\"\n", WITH_DASHBOARD).is_ok());
+    // The control: the same file setting its own work is fine.
+    let d = with_store(
+        BASE,
+        "[instance]\nproject = \"k\"\nwork = \"mine\"\nunset = [\"instance.work\"]\n",
+    );
+    assert_eq!(loaded(&d).instance.work, "mine");
+}
+
+#[test]
+fn a_copied_array_of_tables_equal_to_the_stores_is_dropped_by_the_migration() {
+    let base = "[instance]\nwork = \"k\"\n[[hooks.post-merge]]\nrun = \"a\"\n[[hooks.post-merge]]\nrun = \"b\"\n";
+    let m = migrate(base, base, "k").unwrap();
+    assert_eq!(m.dropped, ["instance.work", "hooks.post-merge"]);
+    assert!(!m.text.contains("post-merge"), "{}", m.text);
+    // The control: a copy whose list differs keeps it whole.
+    let copy = "[instance]\nwork = \"k\"\n[[hooks.post-merge]]\nrun = \"a\"\n";
+    let m = migrate(copy, base, "k").unwrap();
+    assert_eq!(m.kept, ["hooks.post-merge"]);
 }

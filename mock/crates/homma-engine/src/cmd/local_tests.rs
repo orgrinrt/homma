@@ -292,14 +292,17 @@ fn file(d: &tempfile::TempDir) -> String {
 }
 
 #[test]
-fn install_copies_the_stored_config_byte_for_byte_where_there_is_no_file() {
+fn install_writes_the_one_project_line_and_no_copy_where_there_is_no_file() {
     let d = ws();
     store(&d, &[("kaski", KASKI)]);
     assert_eq!(
         install(d.path(), "kaski", false).unwrap(),
         Installed::Written
     );
-    assert_eq!(file(&d), KASKI);
+    assert_eq!(file(&d), local::project_skeleton("kaski"));
+    let l = Local::load(d.path()).unwrap().unwrap();
+    assert_eq!(l.instance.work, "kaski");
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
     assert!(
         !std::fs::symlink_metadata(d.path().join(LOCAL_FILE))
             .unwrap()
@@ -350,7 +353,7 @@ fn what_a_tool_records_after_the_install_never_reaches_the_store() {
 }
 
 #[test]
-fn a_link_does_not_survive_the_first_write_which_is_why_install_copies() {
+fn a_set_replaces_a_link_with_a_file_and_leaves_what_it_pointed_at() {
     let d = ws();
     store(&d, &[("kaski", KASKI)]);
     let stored = d.path().join(local::STORE_DIR).join("kaski.toml");
@@ -362,24 +365,30 @@ fn a_link_does_not_survive_the_first_write_which_is_why_install_copies() {
 }
 
 #[test]
-fn install_over_the_same_work_adds_what_is_missing_and_changes_nothing_else() {
+fn install_over_a_copy_of_the_same_work_migrates_it_and_keeps_what_differs() {
     let d = ws();
     store(&d, &[("kaski", KASKI)]);
-    std::fs::write(
-        d.path().join(LOCAL_FILE),
-        "[instance]\nwork = \"kaski\"\n\n[tools.goal]\nactive = \"true\"\n\n[tools.dashboard]\npublished = \"abc\"\n",
-    )
-    .unwrap();
+    let copy = "[instance]\nwork = \"kaski\"\ntitle = \"the colony sim\"\n\n[tools.goal]\nactive = \"true\"\n\n[tools.dashboard]\npublished = \"abc\"\n";
+    std::fs::write(d.path().join(LOCAL_FILE), copy).unwrap();
+    let before = Local::parse(copy).unwrap();
     match install(d.path(), "kaski", false).unwrap() {
-        Installed::Filled(added) => {
-            assert_eq!(added, ["instance.title", "instance.repos", "tools.msg.as"]);
-        },
+        Installed::Migrated {
+            dropped,
+            kept,
+        } => assert_eq!((dropped, kept), (2, 2)),
         other => panic!("{other:?}"),
     }
+    let text = file(&d);
+    assert!(
+        text.contains("project = \"kaski\"") && !text.contains("work ="),
+        "{text}"
+    );
     let l = Local::load(d.path()).unwrap().unwrap();
     assert_eq!(l.tools["goal"]["active"].as_str(), Some("true"));
     assert_eq!(l.tools["dashboard"]["published"].as_str(), Some("abc"));
-    assert_eq!(l.instance.title.as_deref(), Some("the colony sim"));
+    assert_eq!(l.instance.title, before.instance.title);
+    // The control: what the copy lacked, the store now supplies.
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
 }
 
 #[test]
@@ -390,7 +399,24 @@ fn installing_twice_is_the_same_as_once() {
     let once = file(&d);
     assert_eq!(
         install(d.path(), "kaski", false).unwrap(),
-        Installed::Filled(vec![])
+        Installed::Unchanged
+    );
+    assert_eq!(file(&d), once);
+}
+
+#[test]
+fn a_migrated_copy_is_not_migrated_again() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    std::fs::write(d.path().join(LOCAL_FILE), KASKI).unwrap();
+    assert!(matches!(
+        install(d.path(), "kaski", false).unwrap(),
+        Installed::Migrated { .. }
+    ));
+    let once = file(&d);
+    assert_eq!(
+        install(d.path(), "kaski", false).unwrap(),
+        Installed::Unchanged
     );
     assert_eq!(file(&d), once);
 }
@@ -424,7 +450,11 @@ fn replace_moves_the_old_file_aside_whole_and_installs_the_stored_one() {
         },
         other => panic!("{other:?}"),
     }
-    assert_eq!(file(&d), KASKI);
+    assert_eq!(file(&d), local::project_skeleton("kaski"));
+    assert_eq!(
+        Local::load(d.path()).unwrap().unwrap().instance.work,
+        "kaski"
+    );
 }
 
 #[test]
@@ -634,7 +664,7 @@ fn install_writes_the_console_form_and_refuses_a_stored_dashboard_beside_it() {
         install(d.path(), "kaski", false).unwrap(),
         Installed::Written
     );
-    assert_eq!(file(&d), KASKI_CONSOLE);
+    assert_eq!(file(&d), local::project_skeleton("kaski"));
     let (parsed, _) = show(d.path()).unwrap().unwrap();
     assert!(parsed.names_console());
 
@@ -647,7 +677,7 @@ fn install_writes_the_console_form_and_refuses_a_stored_dashboard_beside_it() {
         err.contains("tools.dashboard") && err.contains("console"),
         "{err}"
     );
-    assert_eq!(file(&d), KASKI_CONSOLE);
+    assert_eq!(file(&d), local::project_skeleton("kaski"));
 }
 
 #[test]
@@ -672,4 +702,59 @@ fn install_into_a_clone_keeping_its_dashboard_does_not_add_a_console() {
         "{err}"
     );
     assert_eq!(file(&d), old);
+}
+
+#[test]
+fn show_gives_the_merged_document_while_the_text_stays_as_written() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    let (parsed, text) = show(d.path()).unwrap().unwrap();
+    assert_eq!(text, local::project_skeleton("kaski"));
+    assert_eq!(parsed.instance.title.as_deref(), Some("the colony sim"));
+    assert_eq!(parsed.instance.project.as_deref(), Some("kaski"));
+    let doc = serde_json::to_value(&parsed).unwrap();
+    assert_eq!(doc["tools"]["msg"]["as"], "coord");
+}
+
+#[test]
+fn list_marks_the_project_a_file_names_and_the_work_a_copy_is_for() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    install(d.path(), "kenno", false).unwrap();
+    assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("kenno"));
+    std::fs::write(d.path().join(LOCAL_FILE), KASKI).unwrap();
+    assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("kaski"));
+}
+
+#[test]
+fn set_refuses_what_leaves_an_inheriting_file_unable_to_load() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    let before = file(&d);
+    assert!(set(d.path(), "instance.project", "nope").is_err());
+    assert!(set(d.path(), "instance.work", "").is_err());
+    assert_eq!(file(&d), before);
+    // The controls: a value that still loads is written, and so is another project.
+    assert!(set(d.path(), "instance.title", "mine").is_ok());
+    store(&d, &[("kenno", KENNO)]);
+    assert!(set(d.path(), "instance.project", "kenno").is_ok());
+}
+
+#[test]
+fn set_can_repair_a_file_whose_project_is_missing() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    std::fs::write(
+        d.path().join(LOCAL_FILE),
+        "[instance]\nproject = \"gone\"\n",
+    )
+    .unwrap();
+    assert!(set(d.path(), "tools.msg.as", "x").is_ok());
+    assert!(set(d.path(), "instance.project", "kaski").is_ok());
+    assert_eq!(
+        Local::load(d.path()).unwrap().unwrap().instance.work,
+        "kaski"
+    );
 }

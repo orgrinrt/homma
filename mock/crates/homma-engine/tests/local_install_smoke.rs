@@ -29,16 +29,24 @@ fn homma(dir: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
 }
 
 #[test]
-fn a_fresh_clone_gets_the_named_config_in_one_command() {
+fn a_fresh_clone_inherits_the_named_config_in_one_command() {
     let d = workspace();
     homma(d.path(), &["install", "kaski"]).success();
-    assert_eq!(
-        std::fs::read_to_string(d.path().join("homma.local.toml")).unwrap(),
-        KASKI
+    let text = std::fs::read_to_string(d.path().join("homma.local.toml")).unwrap();
+    assert!(
+        text.contains("project = \"kaski\"") && !text.contains("the colony sim"),
+        "{text}"
     );
     let shown = homma(d.path(), &["show", "--output", "json"]).success();
     let json: serde_json::Value = serde_json::from_slice(&shown.get_output().stdout).unwrap();
     assert_eq!(json["instance"]["work"], "kaski");
+    assert_eq!(json["instance"]["title"], "the colony sim");
+    // The written text, and the document in force in words.
+    let written = homma(d.path(), &["show"]).success();
+    assert!(String::from_utf8_lossy(&written.get_output().stdout).contains("project = \"kaski\""));
+    let effective = homma(d.path(), &["show", "--effective"]).success();
+    let words = String::from_utf8_lossy(&effective.get_output().stdout).into_owned();
+    assert!(words.contains("title = \"the colony sim\""), "{words}");
 }
 
 #[test]
@@ -83,13 +91,15 @@ fn another_works_file_is_refused_with_a_failing_exit() {
         .failure()
         .stderr(predicates::str::contains("--replace"));
     homma(d.path(), &["install", "kenno", "--replace"]).success();
-    assert_eq!(
-        std::fs::read_to_string(d.path().join("homma.local.toml")).unwrap(),
-        KENNO
+    assert!(
+        std::fs::read_to_string(d.path().join("homma.local.toml"))
+            .unwrap()
+            .contains("project = \"kenno\"")
     );
-    assert_eq!(
-        std::fs::read_to_string(d.path().join("homma.local.toml.replaced")).unwrap(),
-        KASKI
+    assert!(
+        std::fs::read_to_string(d.path().join("homma.local.toml.replaced"))
+            .unwrap()
+            .contains("project = \"kaski\"")
     );
 }
 
@@ -112,4 +122,27 @@ fn list_without_a_store_prints_an_empty_list_in_the_document_and_exits_one() {
         .code(1);
     let rows: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
     assert_eq!(rows, serde_json::json!([]));
+}
+
+#[test]
+fn show_prints_a_file_whose_project_cannot_be_read_and_the_merged_view_fails() {
+    let d = workspace();
+    std::fs::write(
+        d.path().join("homma.local.toml"),
+        "[instance]\nproject = \"gone\"\n",
+    )
+    .unwrap();
+    let shown = homma(d.path(), &["show"]).success();
+    assert!(String::from_utf8_lossy(&shown.get_output().stdout).contains("project = \"gone\""));
+    homma(d.path(), &["show", "--effective"])
+        .failure()
+        .stderr(predicates::str::contains("`gone`"));
+}
+
+#[test]
+fn show_fails_on_a_file_that_does_not_parse_as_written_and_merged() {
+    let d = workspace();
+    std::fs::write(d.path().join("homma.local.toml"), "[instance\n").unwrap();
+    homma(d.path(), &["show"]).failure();
+    homma(d.path(), &["show", "--effective"]).failure();
 }
