@@ -493,21 +493,31 @@ pub enum LocalOp {
         work: String,
     },
     /// Print the file. Exit 1 where there is none.
-    Show,
+    ///
+    /// As written by default. With `--effective`, the document in force, the
+    /// file merged over the stored config of its project; `--output json` is
+    /// always that one.
+    Show {
+        /// Print the merged document rather than the file's own text.
+        #[arg(long)]
+        effective: bool,
+    },
     /// The stored configs by name, and which one is installed. Exit 1 where
     /// there is no store.
     ///
     /// The store is `.shared/local/` under the workspace root. A name is
-    /// installed where the file's `instance.work` is that name.
+    /// installed where the file's `instance.project` is that name, or its
+    /// `instance.work` is, for a full copy.
     List,
-    /// Put a stored config in place as this clone's `homma.local.toml`.
+    /// Make this clone inherit a stored config.
     ///
-    /// A copy, which the clone then owns: what tools record goes into it and
-    /// never back into the store. Where no file exists it is written. Where
-    /// one exists for the same work it gains the keys it lacks and no key it
-    /// has is changed, so running it again is safe. Where it is for another
-    /// work, or is a link, it is refused unless `--replace` is given, which
-    /// moves the old file aside to `homma.local.toml.replaced`.
+    /// Writes a `homma.local.toml` of one line naming the project, which is
+    /// read over the stored config with no copy and no link. A file already
+    /// naming it is left alone. A full copy of the same work is migrated: what
+    /// equals the store is dropped and the rest stays as overrides and
+    /// additions. A file for another work, or a link, is refused unless
+    /// `--replace` is given, which moves the old file aside to
+    /// `homma.local.toml.replaced`.
     Install {
         /// The stored name, which is the work it is for.
         name:    String,

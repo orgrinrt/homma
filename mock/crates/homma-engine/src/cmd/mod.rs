@@ -92,7 +92,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             // Read here rather than by the manifest's loader, which every
             // command runs and none of the others has a use for.
             let local = homma_core::local::Local::load(&local::manifest_dir(&cli));
-            status::run(&cfg, local, *full, cli.output)
+            status::run(&cfg, local, &local::manifest_dir(&cli), *full, cli.output)
         },
         Command::Org {
             op,

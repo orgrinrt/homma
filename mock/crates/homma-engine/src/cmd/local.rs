@@ -31,8 +31,29 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
             }
             Ok(Outcome::Ok)
         },
-        LocalOp::Show => {
-            let Some((parsed, text)) = show(&dir)? else {
+        LocalOp::Show {
+            effective,
+        } => {
+            // The file as written needs no project to be readable, so the
+            // command that repairs a file with a missing project still prints it.
+            let as_written = matches!(cli.output, OutputFormat::Human) && !*effective;
+            let found = if as_written {
+                homma_core::resolve::written(&dir)?
+                    .map(|(path, text)| {
+                        // Parsed as written, with no merge: a file that does not
+                        // parse is refused, one whose project is missing is not.
+                        Local::parse(&text).map(|_| (None, text)).map_err(|source| {
+                            local::LocalError::Parse {
+                                path,
+                                source,
+                            }
+                        })
+                    })
+                    .transpose()?
+            } else {
+                show(&dir)?.map(|(parsed, text)| (Some(parsed), text))
+            };
+            let Some((parsed, text)) = found else {
                 println!(
                     "no {LOCAL_FILE} beside {}",
                     dir.join("homma.toml").display()
@@ -40,12 +61,16 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
                 return Ok(Outcome::ReportedFailure);
             };
             let mut out = std::io::stdout().lock();
-            match cli.output {
-                OutputFormat::Human => out.write_all(text.as_bytes())?,
-                OutputFormat::Json => {
+            match (cli.output, parsed) {
+                (OutputFormat::Human, Some(parsed)) => {
+                    out.write_all(toml::to_string_pretty(&parsed)?.as_bytes())?;
+                },
+                (OutputFormat::Human, None) => out.write_all(text.as_bytes())?,
+                (OutputFormat::Json, Some(parsed)) => {
                     serde_json::to_writer_pretty(&mut out, &parsed)?;
                     writeln!(out)?;
                 },
+                (OutputFormat::Json, None) => unreachable!("json is always the merged document"),
             }
             Ok(Outcome::Ok)
         },
@@ -97,19 +122,24 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
         } => {
             let path = dir.join(LOCAL_FILE);
             match install(&dir, name, *replace)? {
-                Installed::Written => println!("wrote {} from the stored {name}", path.display()),
-                Installed::Filled(added) if added.is_empty() => {
+                Installed::Written => {
+                    println!("wrote {}, which inherits the stored {name}", path.display())
+                },
+                Installed::Unchanged => {
+                    println!("{} already inherits the stored {name}", path.display())
+                },
+                Installed::Migrated {
+                    dropped,
+                    kept,
+                } => {
                     println!(
-                        "{} already holds everything the stored {name} has",
+                        "migrated {} to inherit the stored {name}: {dropped} values now inherited, {kept} kept as overrides or additions",
                         path.display()
                     );
                 },
-                Installed::Filled(added) => {
-                    println!("added to {}: {}", path.display(), added.join(", "));
-                },
                 Installed::Replaced(aside) => {
                     println!(
-                        "wrote {} from the stored {name}; the file it replaced is {}",
+                        "wrote {}, which inherits the stored {name}; the file it replaced is {}",
                         path.display(),
                         aside.display()
                     );
@@ -155,12 +185,17 @@ pub fn init(dir: &Path, work: &str) -> Result<bool> {
 /// What `install` did.
 #[derive(Debug, PartialEq)]
 pub enum Installed {
-    /// There was no file; the stored one was copied.
+    /// There was no file; the one-line project file was written.
     Written,
-    /// There was a file for the same work; these keys, possibly none, were
-    /// added to it.
-    Filled(Vec<String>),
-    /// The old file was moved here and the stored one copied.
+    /// The file already names this project.
+    Unchanged,
+    /// A full copy of the same work became a file that inherits it: this many
+    /// values are inherited now, and this many stay.
+    Migrated {
+        dropped: usize,
+        kept:    usize,
+    },
+    /// The old file was moved here and the project file written.
     Replaced(PathBuf),
 }
 
@@ -175,14 +210,7 @@ pub struct Stored {
 
 /// A stored name is a file stem and nothing that could leave the store.
 fn check_name(name: &str) -> Result<()> {
-    let ok = !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if !ok {
-        bail!("`{name}` is not a stored name: letters, digits, `-` and `_` only");
-    }
-    Ok(())
+    Ok(local::check_name(name)?)
 }
 
 /// The stored configs, sorted, and the work of the installed file where it
@@ -216,17 +244,10 @@ pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
             });
             continue;
         }
-        let checked = std::fs::read_to_string(&path)
-            .map_err(|e| format!("{}: {e}", path.display()))
-            .and_then(|text| {
-                local::parse_stored(&path, &name, &text).map_err(|e| {
-                    use std::error::Error;
-                    match e.source() {
-                        Some(s) => format!("{e}: {s}"),
-                        None => e.to_string(),
-                    }
-                })
-            });
+        let checked = homma_core::resolve::stored(dir, &name)
+            .map(|(_, text)| text)
+            .and_then(|text| local::parse_stored(&path, &name, &text))
+            .map_err(|e| homma_core::resolve::chain(&e));
         entries.push(match checked {
             Ok(l) => {
                 Stored {
@@ -245,16 +266,22 @@ pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
         });
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    let installed = Local::load(dir).ok().flatten().map(|l| l.instance.work);
+    // The name the installed file stands for, read as written: the project it
+    // names, or for a copy the work it is for. Not the merged document, which
+    // fails where the project is the thing that is missing.
+    let installed = homma_core::resolve::written(dir)
+        .ok()
+        .flatten()
+        .and_then(|(_, t)| Local::parse(&t).ok())
+        .map(|l| l.instance.project.unwrap_or(l.instance.work));
     Ok(Some((entries, installed)))
 }
 
-/// Put the stored config `name` in place as the clone's own file.
+/// Make the clone inherit the stored config `name`.
 ///
-/// A copy, not a link: a tool's `set` renames a temporary file over the path,
-/// which ends a link at the first write, and writes through one would be edits
-/// of a tracked file. Under the lock `set` takes, so neither lands on the
-/// other's half.
+/// No copy and no link: the file written names the project and the stored
+/// config is read under it by [`Local::load`], so a change to the store reaches
+/// the clone. Under the lock `set` takes, so neither lands on the other's half.
 pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
     if !dir.join("homma.toml").is_file() {
         bail!(
@@ -262,11 +289,12 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
             dir.display()
         );
     }
-    check_name(name)?;
-    let stored_path = dir.join(local::STORE_DIR).join(format!("{name}.toml"));
-    let stored = match std::fs::read_to_string(&stored_path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+    let (_, stored) = match homma_core::resolve::stored(dir, name) {
+        Ok(found) => found,
+        Err(local::LocalError::Io {
+            source,
+            ..
+        }) if source.kind() == std::io::ErrorKind::NotFound => {
             let names = list(dir)?
                 .map(|(es, _)| {
                     es.into_iter()
@@ -281,15 +309,15 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
                 if names.is_empty() { "none".to_owned() } else { names }
             );
         },
-        Err(e) => return Err(e).with_context(|| format!("reading {}", stored_path.display())),
+        Err(e) => return Err(e.into()),
     };
-    local::parse_stored(&stored_path, name, &stored)?;
+    let fresh = local::project_skeleton(name);
 
     let path = dir.join(LOCAL_FILE);
     let _lock = Lock::take(dir.join(format!("{LOCAL_FILE}.lock")), LOCK_WAIT)?;
     let done = match std::fs::symlink_metadata(&path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            write_atomic(dir, &path, &stored)?;
+            write_atomic(dir, &path, &fresh)?;
             Installed::Written
         },
         Err(e) => return Err(e).with_context(|| format!("looking at {}", path.display())),
@@ -298,41 +326,44 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
                 bail!(
                     "{} is a link; a tool's write replaces a link with a plain file, and writes through \
                      one would edit what it points at. `--replace` moves it aside and \
-                     installs a copy",
+                     installs a file that inherits `{name}`",
                     path.display()
                 );
             }
-            replace_with(dir, &path, &stored)?
+            replace_with(dir, &path, &fresh)?
         },
         Ok(_) => {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            let have = Local::parse(&text).map(|l| l.instance.work);
-            if have.as_deref().ok() == Some(name) {
-                let (out, added) = local::fill(&text, &stored)?;
-                if !added.is_empty() {
-                    write_atomic(dir, &path, &out)?;
-                }
-                Installed::Filled(added)
-            } else if replace {
-                replace_with(dir, &path, &stored)?
-            } else {
-                match have {
-                    Ok(work) => {
-                        bail!(
-                            "{} is for `{work}`, not `{name}`; `--replace` moves it aside and \
-                         installs `{name}`",
-                            path.display()
-                        )
-                    },
-                    Err(e) => {
-                        bail!(
-                            "{} does not parse ({e}); fix it, or `--replace` moves it aside \
-                         and installs `{name}`",
-                            path.display()
-                        )
-                    },
-                }
+            let (_, text) = homma_core::resolve::written(dir)?
+                .with_context(|| format!("{} vanished", path.display()))?;
+            match Local::parse(&text) {
+                Ok(l) if l.instance.project.as_deref() == Some(name) => Installed::Unchanged,
+                Ok(l) if l.instance.project.is_none() && l.instance.work == name => {
+                    let m = homma_core::migrate::migrate(&text, &stored, name)?;
+                    // The merged file must load: a dashboard kept here beside a
+                    // console the store names is the contradiction, refused.
+                    Local::resolve(dir, &path, &m.text)?;
+                    write_atomic(dir, &path, &m.text)?;
+                    Installed::Migrated {
+                        dropped: m.dropped.len(),
+                        kept:    m.kept.len(),
+                    }
+                },
+                _ if replace => replace_with(dir, &path, &fresh)?,
+                Ok(l) => {
+                    let of = l.instance.project.unwrap_or(l.instance.work);
+                    bail!(
+                        "{} is for `{of}`, not `{name}`; `--replace` moves it aside and \
+                         installs a file that inherits `{name}`",
+                        path.display()
+                    )
+                },
+                Err(e) => {
+                    bail!(
+                        "{} does not parse ({e}); fix it, or `--replace` moves it aside \
+                         and installs a file that inherits `{name}`",
+                        path.display()
+                    )
+                },
             }
         },
     };
@@ -400,7 +431,9 @@ pub fn show(dir: &Path) -> Result<Option<(Local, String)>> {
     let Some(parsed) = Local::load(dir)? else {
         return Ok(None);
     };
-    let text = std::fs::read_to_string(dir.join(LOCAL_FILE))?;
+    let text = homma_core::resolve::written(dir)?
+        .map(|(_, t)| t)
+        .unwrap_or_default();
     Ok(Some((parsed, text)))
 }
 
@@ -453,19 +486,24 @@ pub fn set(dir: &Path, key: &str, value: &str) -> Result<()> {
 }
 
 fn set_waiting(dir: &Path, key: &str, value: &str, wait: std::time::Duration) -> Result<()> {
-    let path = dir.join(LOCAL_FILE);
     let _lock = Lock::take(dir.join(format!("{LOCAL_FILE}.lock")), wait)?;
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            bail!(
-                "no {}; `homma local init --work <name>` makes one",
-                path.display()
-            )
-        },
-        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
-    };
+    let (path, text) = homma_core::resolve::written(dir)?.with_context(|| {
+        format!(
+            "no {}; `homma local init --work <name>` makes one",
+            dir.join(LOCAL_FILE).display()
+        )
+    })?;
     let out = local::set(&text, key, value)?;
+    // The checks on the file alone cannot see the project it inherits. A result
+    // that stops loading where the text before it loaded is refused, and a
+    // file already broken can still be repaired by a set.
+    if Local::resolve(dir, &path, &text).is_ok() {
+        Local::resolve(dir, &path, &out)?;
+    } else if let Err(e @ local::LocalError::DashboardWhereConsole(_)) =
+        Local::resolve(dir, &path, &out)
+    {
+        return Err(e.into());
+    }
     write_atomic(dir, &path, &out)
 }
 
