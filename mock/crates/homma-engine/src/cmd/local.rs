@@ -31,7 +31,9 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
             }
             Ok(Outcome::Ok)
         },
-        LocalOp::Show => {
+        LocalOp::Show {
+            effective,
+        } => {
             let Some((parsed, text)) = show(&dir)? else {
                 println!(
                     "no {LOCAL_FILE} beside {}",
@@ -41,6 +43,9 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
             };
             let mut out = std::io::stdout().lock();
             match cli.output {
+                OutputFormat::Human if *effective => {
+                    out.write_all(toml::to_string_pretty(&parsed)?.as_bytes())?;
+                },
                 OutputFormat::Human => out.write_all(text.as_bytes())?,
                 OutputFormat::Json => {
                     serde_json::to_writer_pretty(&mut out, &parsed)?;
@@ -97,15 +102,20 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
         } => {
             let path = dir.join(LOCAL_FILE);
             match install(&dir, name, *replace)? {
-                Installed::Written => println!("wrote {} from the stored {name}", path.display()),
-                Installed::Filled(added) if added.is_empty() => {
+                Installed::Written => {
+                    println!("wrote {}, which inherits the stored {name}", path.display())
+                },
+                Installed::Unchanged => {
+                    println!("{} already inherits the stored {name}", path.display())
+                },
+                Installed::Migrated {
+                    dropped,
+                    kept,
+                } => {
                     println!(
-                        "{} already holds everything the stored {name} has",
+                        "migrated {} to inherit the stored {name}: {dropped} values now inherited, {kept} kept as overrides or additions",
                         path.display()
                     );
-                },
-                Installed::Filled(added) => {
-                    println!("added to {}: {}", path.display(), added.join(", "));
                 },
                 Installed::Replaced(aside) => {
                     println!(
@@ -155,12 +165,17 @@ pub fn init(dir: &Path, work: &str) -> Result<bool> {
 /// What `install` did.
 #[derive(Debug, PartialEq)]
 pub enum Installed {
-    /// There was no file; the stored one was copied.
+    /// There was no file; the one-line project file was written.
     Written,
-    /// There was a file for the same work; these keys, possibly none, were
-    /// added to it.
-    Filled(Vec<String>),
-    /// The old file was moved here and the stored one copied.
+    /// The file already names this project.
+    Unchanged,
+    /// A full copy of the same work became a file that inherits it: this many
+    /// values are inherited now, and this many stay.
+    Migrated {
+        dropped: usize,
+        kept:    usize,
+    },
+    /// The old file was moved here and the project file written.
     Replaced(PathBuf),
 }
 
@@ -175,14 +190,7 @@ pub struct Stored {
 
 /// A stored name is a file stem and nothing that could leave the store.
 fn check_name(name: &str) -> Result<()> {
-    let ok = !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if !ok {
-        bail!("`{name}` is not a stored name: letters, digits, `-` and `_` only");
-    }
-    Ok(())
+    Ok(local::check_name(name)?)
 }
 
 /// The stored configs, sorted, and the work of the installed file where it
@@ -245,16 +253,21 @@ pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
         });
     }
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    let installed = Local::load(dir).ok().flatten().map(|l| l.instance.work);
+    // The name the installed file stands for, read as written: the project it
+    // names, or for a copy the work it is for. Not the merged document, which
+    // fails where the project is the thing that is missing.
+    let installed = std::fs::read_to_string(dir.join(LOCAL_FILE))
+        .ok()
+        .and_then(|t| Local::parse(&t).ok())
+        .map(|l| l.instance.project.unwrap_or(l.instance.work));
     Ok(Some((entries, installed)))
 }
 
-/// Put the stored config `name` in place as the clone's own file.
+/// Make the clone inherit the stored config `name`.
 ///
-/// A copy, not a link: a tool's `set` renames a temporary file over the path,
-/// which ends a link at the first write, and writes through one would be edits
-/// of a tracked file. Under the lock `set` takes, so neither lands on the
-/// other's half.
+/// No copy and no link: the file written names the project and the stored
+/// config is read under it by [`Local::load`], so a change to the store reaches
+/// the clone. Under the lock `set` takes, so neither lands on the other's half.
 pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
     if !dir.join("homma.toml").is_file() {
         bail!(
@@ -284,12 +297,13 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
         Err(e) => return Err(e).with_context(|| format!("reading {}", stored_path.display())),
     };
     local::parse_stored(&stored_path, name, &stored)?;
+    let fresh = local::project_skeleton(name);
 
     let path = dir.join(LOCAL_FILE);
     let _lock = Lock::take(dir.join(format!("{LOCAL_FILE}.lock")), LOCK_WAIT)?;
     let done = match std::fs::symlink_metadata(&path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            write_atomic(dir, &path, &stored)?;
+            write_atomic(dir, &path, &fresh)?;
             Installed::Written
         },
         Err(e) => return Err(e).with_context(|| format!("looking at {}", path.display())),
@@ -298,41 +312,44 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
                 bail!(
                     "{} is a link; a tool's write replaces a link with a plain file, and writes through \
                      one would edit what it points at. `--replace` moves it aside and \
-                     installs a copy",
+                     installs a file that inherits `{name}`",
                     path.display()
                 );
             }
-            replace_with(dir, &path, &stored)?
+            replace_with(dir, &path, &fresh)?
         },
         Ok(_) => {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            let have = Local::parse(&text).map(|l| l.instance.work);
-            if have.as_deref().ok() == Some(name) {
-                let (out, added) = local::fill(&text, &stored)?;
-                if !added.is_empty() {
-                    write_atomic(dir, &path, &out)?;
-                }
-                Installed::Filled(added)
-            } else if replace {
-                replace_with(dir, &path, &stored)?
-            } else {
-                match have {
-                    Ok(work) => {
-                        bail!(
-                            "{} is for `{work}`, not `{name}`; `--replace` moves it aside and \
-                         installs `{name}`",
-                            path.display()
-                        )
-                    },
-                    Err(e) => {
-                        bail!(
-                            "{} does not parse ({e}); fix it, or `--replace` moves it aside \
-                         and installs `{name}`",
-                            path.display()
-                        )
-                    },
-                }
+            match Local::parse(&text) {
+                Ok(l) if l.instance.project.as_deref() == Some(name) => Installed::Unchanged,
+                Ok(l) if l.instance.project.is_none() && l.instance.work == name => {
+                    let m = homma_core::migrate::migrate(&text, &stored, name)?;
+                    // The merged file must load: a dashboard kept here beside a
+                    // console the store names is the contradiction, refused.
+                    Local::resolve(dir, &path, &m.text)?;
+                    write_atomic(dir, &path, &m.text)?;
+                    Installed::Migrated {
+                        dropped: m.dropped.len(),
+                        kept:    m.kept.len(),
+                    }
+                },
+                _ if replace => replace_with(dir, &path, &fresh)?,
+                Ok(l) => {
+                    let of = l.instance.project.unwrap_or(l.instance.work);
+                    bail!(
+                        "{} is for `{of}`, not `{name}`; `--replace` moves it aside and \
+                         installs a file that inherits `{name}`",
+                        path.display()
+                    )
+                },
+                Err(e) => {
+                    bail!(
+                        "{} does not parse ({e}); fix it, or `--replace` moves it aside \
+                         and installs a file that inherits `{name}`",
+                        path.display()
+                    )
+                },
             }
         },
     };
@@ -466,6 +483,12 @@ fn set_waiting(dir: &Path, key: &str, value: &str, wait: std::time::Duration) ->
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
     let out = local::set(&text, key, value)?;
+    // The check on the file alone cannot see a dashboard the project holds.
+    // Any other trouble resolving it is the file's existing state, reported
+    // where it is read, and must not stop a repair.
+    if let Err(e @ local::LocalError::DashboardWhereConsole(_)) = Local::resolve(dir, &path, &out) {
+        return Err(e.into());
+    }
     write_atomic(dir, &path, &out)
 }
 

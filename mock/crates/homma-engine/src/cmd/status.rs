@@ -50,6 +50,12 @@ pub struct StatusReport {
     /// Why `homma.local.toml` did not load, where it is there and does not.
     /// The one place a broken file is reported; the loader reads only `repos` from it and widens the scope.
     pub instance_error: Option<String>,
+    /// Where the instance's values came from, where the file names a project: the
+    /// project, and the dotted paths inherited, set here, overridden and unset.
+    pub project:        Option<homma_core::inherit::Provenance>,
+    /// The stored config a clone holds a full copy of, with no project line, so
+    /// a change to the store will not reach it. `homma local install` migrates.
+    pub holds_copy_of:  Option<String>,
     /// Repositories the instance's scope names that no clone provides. Not an error: a
     /// container that has not attached one yet is ordinary. Empty with no scope.
     pub not_cloned:     Vec<String>,
@@ -139,6 +145,7 @@ pub fn run(
     let mut report = build_report(cfg, injected, agent, configs, worktrees);
     report.stray_targets = stray_targets::collect(&cfg.workspace.path, &cfg.scope);
     report.carry_local(local);
+    report.note_copy(&cfg.workspace.path);
     // The human rendering summarises and the document does not, so the flag
     // reaches only the first. A machine handed a document with the healthy
     // members dropped would be reading a lie about the population, and it has
@@ -236,6 +243,8 @@ fn build_report(
         workspace,
         instance: None,
         instance_error: None,
+        project: None,
+        holds_copy_of: None,
         not_cloned: cfg
             .scope
             .unmet(cfg.repos.keys().map(String::as_str))
@@ -263,7 +272,10 @@ impl StatusReport {
     /// Carry what reading `homma.local.toml` gave: the instance, or why not.
     fn carry_local(&mut self, local: Result<Option<Local>, LocalError>) {
         match local {
-            Ok(l) => self.instance = l.map(|l| l.instance),
+            Ok(l) => {
+                self.project = l.as_ref().and_then(|l| l.provenance.clone());
+                self.instance = l.map(|l| l.instance);
+            },
             Err(e) => {
                 // The whole chain, since the parse error under the file's name
                 // is what says which line to fix.
@@ -276,6 +288,20 @@ impl StatusReport {
                 }
                 self.instance_error = Some(msg);
             },
+        }
+    }
+
+    /// Note a clone that holds a full copy of the stored config of its work,
+    /// which `workspace` is the root of.
+    fn note_copy(&mut self, workspace: &std::path::Path) {
+        let Some(i) = &self.instance else { return };
+        if i.project.is_none()
+            && workspace
+                .join(homma_core::local::STORE_DIR)
+                .join(format!("{}.toml", i.work))
+                .is_file()
+        {
+            self.holds_copy_of = Some(i.work.clone());
         }
     }
 
@@ -296,6 +322,23 @@ impl StatusReport {
                 Some(title) => writeln!(out, "  this clone is for {} ({title})", i.work)?,
                 None => writeln!(out, "  this clone is for {}", i.work)?,
             }
+        }
+        if let Some(p) = &self.project {
+            writeln!(
+                out,
+                "  inherits {}: {} inherited, {} set here, {} overridden, {} unset",
+                p.project,
+                p.inherited.len(),
+                p.local.len(),
+                p.overridden.len(),
+                p.unset.len()
+            )?;
+        }
+        if let Some(w) = &self.holds_copy_of {
+            writeln!(
+                out,
+                "  holds a copy of the stored {w}; `homma local install {w}` makes it inherit"
+            )?;
         }
         if let Some(e) = &self.instance_error {
             writeln!(out, "  what this clone is for is unknown: {e}")?;
@@ -689,6 +732,66 @@ mod tests {
             "{}",
             rendered(&r)
         );
+    }
+
+    /// The report for a workspace holding the stored `k` and the given local file.
+    fn inheriting(local: &str) -> (StatusReport, String) {
+        let d = tempfile::tempdir().expect("a temp dir");
+        let store = d.path().join(homma_core::local::STORE_DIR);
+        std::fs::create_dir_all(&store).expect("writable");
+        std::fs::write(
+            store.join("k.toml"),
+            "[instance]\nwork = \"k\"\ntitle = \"stored\"\n[tools.a]\nx = \"1\"\ny = \"2\"\n",
+        )
+        .expect("writable");
+        std::fs::write(d.path().join(homma_core::local::LOCAL_FILE), local).expect("writable");
+        let cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a minimal manifest parses");
+        let mut r = build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new());
+        r.carry_local(Local::load(d.path()));
+        r.note_copy(d.path());
+        let mut out = Vec::new();
+        r.render(&mut out, false).expect("renders");
+        (r, String::from_utf8(out).expect("utf8"))
+    }
+
+    #[test]
+    fn an_inheriting_clone_says_what_it_inherits_and_what_it_sets() {
+        let (r, text) = inheriting(
+            "[instance]\nproject = \"k\"\nunset = [\"tools.a.y\"]\n[tools.a]\nx = \"9\"\n[tools.b]\nz = \"1\"\n",
+        );
+        assert!(
+            text.contains("inherits k: 2 inherited, 1 set here, 1 overridden, 1 unset"),
+            "{text}"
+        );
+        assert!(r.holds_copy_of.is_none());
+        assert_eq!(r.instance.as_ref().map(|i| i.work.as_str()), Some("k"));
+        let doc = serde_json::to_value(&r).unwrap();
+        assert_eq!(doc["project"]["project"], "k");
+        assert_eq!(doc["project"]["overridden"][0], "tools.a.x");
+        assert_eq!(doc["project"]["unset"][0], "tools.a.y");
+    }
+
+    #[test]
+    fn a_clone_holding_a_copy_is_told_to_install_and_one_inheriting_is_not() {
+        let (r, text) = inheriting("[instance]\nwork = \"k\"\n");
+        assert_eq!(r.holds_copy_of.as_deref(), Some("k"));
+        assert!(text.contains("homma local install k"), "{text}");
+        assert!(!text.contains("inherits"), "{text}");
+        let (r, text) = inheriting("[instance]\nproject = \"k\"\n");
+        assert!(
+            r.holds_copy_of.is_none() && !text.contains("holds a copy"),
+            "{text}"
+        );
+        // A work with no stored config is nobody's copy.
+        let (r, _) = inheriting("[instance]\nwork = \"other\"\n");
+        assert!(r.holds_copy_of.is_none());
+    }
+
+    #[test]
+    fn a_project_the_store_lacks_is_the_instance_error() {
+        let (r, text) = inheriting("[instance]\nproject = \"gone\"\n");
+        assert!(r.instance.is_none() && r.project.is_none());
+        assert!(text.contains("`gone`"), "{text}");
     }
 
     #[test]

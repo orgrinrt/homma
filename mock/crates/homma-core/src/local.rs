@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::inherit::{self, Provenance};
+
 /// The file's name, beside the manifest.
 pub const LOCAL_FILE: &str = "homma.local.toml";
 
@@ -32,46 +34,94 @@ const IGNORE_LINE: &str = "/homma.local.toml";
 /// beside the file and leaves behind when it dies halfway.
 const IGNORE_LEFTOVERS: &str = "/homma.local.toml.*";
 
-/// Parsed `homma.local.toml`.
+/// Parsed `homma.local.toml`, as written, or merged over its project's stored
+/// config where [`Local::load`] gives it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Local {
-    pub instance: Instance,
+    pub instance:   Instance,
     /// One table per workspace tool, untyped: homma holds a tool's settings
     /// without growing an opinion about them, the way `[[status.inject]]` runs
     /// a tool without knowing it.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub tools:    BTreeMap<String, toml::Table>,
+    pub tools:      BTreeMap<String, toml::Table>,
     /// `[hooks]` and `[agent.hooks]`, the clone's own layer of the two hooks
     /// tables. Read by [`crate::layers`], which owns their shape; carried here
     /// untyped so `deny_unknown_fields` accepts a file that declares them, the
     /// way `Config` carries `paths` and `org` for the reader that owns those.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hooks:    Option<toml::Value>,
+    pub hooks:      Option<toml::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent:    Option<toml::Value>,
+    pub agent:      Option<toml::Value>,
+    /// Where each value came from, set by [`Local::load`] when the file names a
+    /// project and `None` for a file as written.
+    #[serde(skip)]
+    pub provenance: Option<Provenance>,
 }
 
 /// `[instance]`: what this clone is for.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawInstance")]
 pub struct Instance {
-    /// The body of work, the one key required.
-    pub work:  String,
+    /// The body of work. Required of a file that names no project; a file that
+    /// does inherits it from the stored config.
+    pub work:    String,
+    /// The stored config this file inherits from, by name. See [`crate::inherit`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Dotted paths removed from the inherited config before this file is
+    /// applied over it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unset:   Vec<String>,
     /// What to call it where a name is shown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title:   Option<String>,
     /// Which members the work spans. Empty means all of them.
-    #[serde(default)]
-    pub repos: Vec<String>,
+    pub repos:   Vec<String>,
     /// The document carrying the work's current state, from the workspace
     /// root.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state:   Option<PathBuf>,
     /// The document carrying what the work is trying to reach, from the
     /// workspace root.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub goal:  Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal:    Option<PathBuf>,
+}
+
+/// `[instance]` as written, where `work` may be left to the project.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawInstance {
+    work:    Option<String>,
+    project: Option<String>,
+    #[serde(default)]
+    unset:   Vec<String>,
+    title:   Option<String>,
+    #[serde(default)]
+    repos:   Vec<String>,
+    state:   Option<PathBuf>,
+    goal:    Option<PathBuf>,
+}
+
+impl TryFrom<RawInstance> for Instance {
+    type Error = String;
+
+    fn try_from(raw: RawInstance) -> Result<Self, String> {
+        let work = match (raw.work, &raw.project) {
+            (Some(work), _) => work,
+            (None, Some(_)) => String::new(),
+            (None, None) => return Err("missing field `work`".to_owned()),
+        };
+        Ok(Self {
+            work,
+            project: raw.project,
+            unset: raw.unset,
+            title: raw.title,
+            repos: raw.repos,
+            state: raw.state,
+            goal: raw.goal,
+        })
+    }
 }
 
 impl Local {
@@ -92,7 +142,7 @@ impl Local {
     }
 
     /// The one contradiction check: a config that names a console and also
-    /// carries `[tools.dashboard]`. `set`, `fill` and `parse_stored` all run it
+    /// carries `[tools.dashboard]`. `set`, `migrate`, `load` and `parse_stored` all run it
     /// over what they produce.
     pub fn check_console(&self) -> Result<(), LocalError> {
         if self.names_console() && self.tools.contains_key("dashboard") {
@@ -103,30 +153,147 @@ impl Local {
         Ok(())
     }
 
-    /// Read the file beside the manifest in `dir`.
+    /// Read the file beside the manifest in `dir`, merged over its project's
+    /// stored config where it names one.
     ///
     /// `Ok(None)` where there is no file, which is the ordinary case. A file
     /// that is there and does not parse is an error naming it: a setting
-    /// silently ignored is worse than a command that refuses.
+    /// silently ignored is worse than a command that refuses. This is the one
+    /// reader of the file; the scope, the layers, `status` and `local` all take
+    /// what it returns.
     pub fn load(dir: &Path) -> Result<Option<Self>, LocalError> {
-        let path = dir.join(LOCAL_FILE);
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(source) => {
-                return Err(LocalError::Io {
-                    path,
-                    source,
-                });
-            },
+        let Some((path, text)) = read_text(dir)? else {
+            return Ok(None);
         };
-        Self::parse(&text).map(Some).map_err(|source| {
+        Self::resolve(dir, &path, &text).map(Some)
+    }
+
+    /// `text`, as the content of the file at `path` in `dir`, read over its
+    /// project's stored config. What [`Local::load`] does once the file is
+    /// read, and what a writer asks of the text it is about to write.
+    pub fn resolve(dir: &Path, path: &Path, text: &str) -> Result<Self, LocalError> {
+        let parse_err = |source| {
             LocalError::Parse {
-                path,
+                path: path.to_path_buf(),
                 source,
             }
-        })
+        };
+        let raw = Self::parse(text).map_err(parse_err)?;
+        let Some(project) = raw.instance.project.clone() else {
+            return Ok(raw);
+        };
+        let (table, provenance) = merged(dir, path, text, &project, &raw.instance.unset)?;
+        let mut local: Local = toml::Value::Table(table).try_into().map_err(parse_err)?;
+        local.check_console()?;
+        local.provenance = Some(provenance);
+        Ok(local)
     }
+
+    /// The parsed document of the file in `dir` after the merge, for a reader
+    /// that owns tables this module does not type (the layers). `None` where
+    /// there is no file. It checks the merge and nothing the schema says.
+    pub fn load_table(dir: &Path) -> Result<Option<toml::Table>, LocalError> {
+        let Some((path, text)) = read_text(dir)? else {
+            return Ok(None);
+        };
+        let parse_err = |source| {
+            LocalError::Parse {
+                path: path.clone(),
+                source,
+            }
+        };
+        let table: toml::Table = toml::from_str(&text).map_err(parse_err)?;
+        let head: Head = toml::Value::Table(table.clone())
+            .try_into()
+            .map_err(parse_err)?;
+        let Some(project) = head.instance.project else {
+            return Ok(Some(table));
+        };
+        merged(dir, &path, &text, &project, &head.instance.unset).map(|(t, _)| Some(t))
+    }
+}
+
+/// The two keys of `[instance]` the merge reads, taken from a document whose
+/// other keys may be anything.
+#[derive(Deserialize)]
+struct Head {
+    #[serde(default)]
+    instance: HeadInstance,
+}
+
+#[derive(Deserialize, Default)]
+struct HeadInstance {
+    project: Option<String>,
+    #[serde(default)]
+    unset:   Vec<String>,
+}
+
+fn read_text(dir: &Path) -> Result<Option<(PathBuf, String)>, LocalError> {
+    let path = dir.join(LOCAL_FILE);
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(Some((path, text))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => {
+            Err(LocalError::Io {
+                path,
+                source,
+            })
+        },
+    }
+}
+
+/// The stored config `project` names, parsed and checked, as a table.
+fn base_of(dir: &Path, project: &str) -> Result<toml::Table, LocalError> {
+    let path = dir.join(STORE_DIR).join(format!("{project}.toml"));
+    let unusable = |reason: String| {
+        LocalError::Project {
+            name: project.to_owned(),
+            path: path.clone(),
+            reason,
+        }
+    };
+    check_name(project).map_err(|e| unusable(e.to_string()))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| unusable(e.to_string()))?;
+    parse_stored(&path, project, &text).map_err(|e| unusable(chain(&e)))?;
+    toml::from_str(&text).map_err(|e| unusable(e.to_string()))
+}
+
+fn merged(
+    dir: &Path,
+    path: &Path,
+    text: &str,
+    project: &str,
+    unset: &[String],
+) -> Result<(toml::Table, Provenance), LocalError> {
+    let base = base_of(dir, project)?;
+    let local: toml::Table = toml::from_str(text).map_err(|source| {
+        LocalError::Parse {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    inherit::merge(project, &base, &local, unset).map_err(|e| LocalError::Unset(e.0))
+}
+
+/// The error and what is under it, on one line.
+fn chain(e: &dyn std::error::Error) -> String {
+    let mut msg = e.to_string();
+    let mut src = e.source();
+    while let Some(s) = src {
+        msg.push_str(": ");
+        msg.push_str(s.to_string().trim_end());
+        src = s.source();
+    }
+    msg
+}
+
+/// A stored name is a file stem and nothing that could leave the store.
+pub fn check_name(name: &str) -> Result<(), LocalError> {
+    let ok = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if ok { Ok(()) } else { Err(LocalError::Name(name.to_owned())) }
 }
 
 /// The text `homma local init` writes: every key, the optional ones commented
@@ -144,6 +311,19 @@ pub fn skeleton(work: &str) -> String {
          \n\
          # The workspace's own tools keep their settings here, one table each,\n\
          # as [tools.<name>].\n"
+    )
+}
+
+/// The text `homma local install` writes for a clone that inherits `project`:
+/// the one line, and a comment saying where the rest comes from.
+pub fn project_skeleton(project: &str) -> String {
+    let project = toml_edit::Value::from(project).to_string();
+    format!(
+        "# This clone inherits the stored config of its project from {STORE_DIR}/.\n\
+         # What is written here adds to it, and what is set again overrides it.\n\
+         # `unset = [\"tools.x\"]` under [instance] removes an inherited value.\n\
+         [instance]\n\
+         project = {project}\n"
     )
 }
 
@@ -193,59 +373,6 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String, LocalError> {
     Ok(out)
 }
 
-/// Add to the file's text every key the stored config has and the file lacks.
-///
-/// Returns the new text and the dotted path of each key added. A key the file
-/// already has is left exactly as it is, whatever the stored value says: the
-/// file is the clone's own and a tool or a person may have changed it since it
-/// was installed, so the store only fills what is missing. Lists are values and
-/// are never merged into, and a table is entered whether it is written as a
-/// `[table]` or inline. A result that would not load is refused.
-pub fn fill(existing: &str, stored: &str) -> Result<(String, Vec<String>), LocalError> {
-    let mut doc: toml_edit::DocumentMut = existing.parse().map_err(LocalError::Edit)?;
-    let from: toml_edit::DocumentMut = stored.parse().map_err(LocalError::Edit)?;
-    let mut added = Vec::new();
-    fill_table(doc.as_table_mut(), from.as_table(), "", &mut added);
-    let out = doc.to_string();
-    Local::parse(&out)
-        .map_err(LocalError::Refused)?
-        .check_console()?;
-    Ok((out, added))
-}
-
-fn fill_table(
-    into: &mut dyn toml_edit::TableLike,
-    from: &dyn toml_edit::TableLike,
-    at: &str,
-    added: &mut Vec<String>,
-) {
-    for (key, item) in from.iter() {
-        let path = if at.is_empty() { key.to_owned() } else { format!("{at}.{key}") };
-        match into.get_mut(key) {
-            None => {
-                into.insert(key, item.clone());
-                leaves(item, &path, added);
-            },
-            Some(have) => {
-                if let (Some(have), Some(item)) = (have.as_table_like_mut(), item.as_table_like()) {
-                    fill_table(have, item, &path, added);
-                }
-            },
-        }
-    }
-}
-
-fn leaves(item: &toml_edit::Item, path: &str, out: &mut Vec<String>) {
-    match item.as_table_like() {
-        Some(t) => {
-            for (key, inner) in t.iter() {
-                leaves(inner, &format!("{path}.{key}"), out);
-            }
-        },
-        None => out.push(path.to_owned()),
-    }
-}
-
 /// Parse a stored config and check it is the one its name says.
 ///
 /// The name of a stored file is the work it is for, because that is the only
@@ -258,6 +385,9 @@ pub fn parse_stored(path: &Path, name: &str, text: &str) -> Result<Local, LocalE
         }
     })?;
     parsed.check_console()?;
+    if parsed.instance.project.is_some() {
+        return Err(LocalError::StoredInherits(name.to_owned()));
+    }
     if parsed.instance.work != name {
         return Err(LocalError::StoredWork {
             name: name.to_owned(),
@@ -324,6 +454,18 @@ pub enum LocalError {
     /// A `tools.dashboard` key written or stored in a config that names a
     /// console, which replaces the dashboard.
     DashboardWhereConsole(String),
+    /// A stored name with a character that could leave the store.
+    Name(String),
+    /// The project a file names cannot be read from the store.
+    Project {
+        name:   String,
+        path:   PathBuf,
+        reason: String,
+    },
+    /// A stored config that itself names a project; a base is not a clone.
+    StoredInherits(String),
+    /// A path in `unset` that is empty, malformed or part of the mechanism.
+    Unset(String),
     /// A stored config whose `instance.work` is not its file's name.
     StoredWork {
         name: String,
@@ -351,6 +493,35 @@ impl std::fmt::Display for LocalError {
                 )
             },
             Self::Edit(_) => write!(f, "{LOCAL_FILE} is not TOML"),
+            Self::Name(name) => {
+                write!(
+                    f,
+                    "`{name}` is not a stored name: letters, digits, `-` and `_` only"
+                )
+            },
+            Self::Project {
+                name,
+                path,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "the project `{name}` named by {LOCAL_FILE} cannot be read from {}: {reason}",
+                    path.display()
+                )
+            },
+            Self::StoredInherits(name) => {
+                write!(
+                    f,
+                    "the stored config `{name}` names a project; a stored config is a base and inherits from nothing"
+                )
+            },
+            Self::Unset(path) => {
+                write!(
+                    f,
+                    "`{path}` in `instance.unset` is not a path that can be removed: dotted keys, and not `instance.project` or `instance.unset`"
+                )
+            },
             Self::DashboardWhereConsole(key) => {
                 write!(
                     f,
@@ -382,7 +553,14 @@ impl std::error::Error for LocalError {
                 source,
                 ..
             } => Some(source),
-            Self::Key(_) | Self::DashboardWhereConsole(_) => None,
+            Self::Key(_)
+            | Self::DashboardWhereConsole(_)
+            | Self::Name(_)
+            | Self::Project {
+                ..
+            }
+            | Self::StoredInherits(_)
+            | Self::Unset(_) => None,
             Self::Edit(e) => Some(e),
             Self::Refused(e) => Some(e),
             Self::StoredWork {

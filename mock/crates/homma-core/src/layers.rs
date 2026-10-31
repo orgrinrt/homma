@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 use homma_api::layers::{DEFAULT_LAYER, MANIFEST};
 use homma_api::{AgentHooks, Hooks, Layers};
 
+use crate::local::{Local, LocalError};
+
 /// What one overlay file declares.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Overlay {
@@ -43,6 +45,12 @@ pub enum LayerError {
         path:  PathBuf,
         table: String,
     },
+    /// The file inherits a project that cannot be read, so what it adds to the
+    /// project's tables is unknown.
+    Inherit {
+        path:   PathBuf,
+        reason: String,
+    },
     /// `[agent]` carrying something other than `hooks`.
     AgentKey {
         path: PathBuf,
@@ -61,6 +69,16 @@ impl fmt::Display for LayerError {
                 path,
                 ..
             } => write!(f, "the layer {} does not parse", path.display()),
+            LayerError::Inherit {
+                path,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "the layer {} cannot be read over its project: {reason}",
+                    path.display()
+                )
+            },
             LayerError::Table {
                 path,
                 table,
@@ -112,6 +130,9 @@ impl std::error::Error for LayerError {
                 ..
             } => Some(source),
             LayerError::Table {
+                ..
+            }
+            | LayerError::Inherit {
                 ..
             }
             | LayerError::AgentKey {
@@ -177,6 +198,46 @@ pub fn parse(path: &Path, text: &str, own_tables: bool) -> Result<Overlay, Layer
 /// which is the ordinary case for a clone with no `homma.local.toml`.
 pub fn read(dir: &Path, name: &str) -> Result<Option<Overlay>, LayerError> {
     let path = dir.join(name);
+    if name == DEFAULT_LAYER {
+        // The clone's own file is read by its one reader, which merges it over
+        // the stored config of the project it names.
+        return match Local::load_table(dir) {
+            Ok(None) => Ok(None),
+            Ok(Some(table)) => {
+                let text = toml::to_string(&table).map_err(|e| {
+                    LayerError::Inherit {
+                        path:   path.clone(),
+                        reason: e.to_string(),
+                    }
+                })?;
+                parse(&path, &text, true).map(Some)
+            },
+            Err(LocalError::Parse {
+                source,
+                ..
+            }) => {
+                Err(LayerError::Parse {
+                    path,
+                    source,
+                })
+            },
+            Err(LocalError::Io {
+                source,
+                ..
+            }) => {
+                Err(LayerError::Io {
+                    path,
+                    source,
+                })
+            },
+            Err(e) => {
+                Err(LayerError::Inherit {
+                    path,
+                    reason: e.to_string(),
+                })
+            },
+        };
+    }
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
