@@ -506,7 +506,8 @@ pub enum LocalOp {
     /// there is no store.
     ///
     /// The store is `.shared/local/` under the workspace root. A name is
-    /// installed where the file's `instance.work` is that name.
+    /// installed where the file's `instance.project` is that name, or its
+    /// `instance.work` is, for a full copy.
     List,
     /// Make this clone inherit a stored config.
     ///

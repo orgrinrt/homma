@@ -49,7 +49,7 @@ impl Local {
         let (table, provenance) = merge_file(dir, path, text)?;
         let mut local: Local = toml::Value::Table(table).try_into().map_err(parse_err)?;
         if local.instance.work.is_empty() {
-            return Err(LocalError::Unset("instance.work".to_owned()));
+            return Err(LocalError::EmptyWork);
         }
         local.check_console()?;
         local.provenance = provenance;

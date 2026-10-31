@@ -331,6 +331,8 @@ pub enum LocalError {
     },
     /// A stored config that itself names a project; a base is not a clone.
     StoredInherits(String),
+    /// The merged config has no `work`: the file unsets it or sets it empty.
+    EmptyWork,
     /// A path in `unset` that is empty, malformed or part of the mechanism.
     Unset(String),
     /// A stored config whose `instance.work` is not its file's name.
@@ -383,6 +385,12 @@ impl std::fmt::Display for LocalError {
                     "the stored config `{name}` names a project; a stored config is a base and inherits from nothing"
                 )
             },
+            Self::EmptyWork => {
+                write!(
+                    f,
+                    "the config in force has no `work`: {LOCAL_FILE} unsets it or sets it empty, and the project does not supply it"
+                )
+            },
             Self::Unset(path) => {
                 write!(
                     f,
@@ -427,6 +435,7 @@ impl std::error::Error for LocalError {
                 ..
             }
             | Self::StoredInherits(_)
+            | Self::EmptyWork
             | Self::Unset(_) => None,
             Self::Edit(e) => Some(e),
             Self::Refused(e) => Some(e),

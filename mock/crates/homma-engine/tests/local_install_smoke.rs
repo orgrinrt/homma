@@ -138,3 +138,11 @@ fn show_prints_a_file_whose_project_cannot_be_read_and_the_merged_view_fails() {
         .failure()
         .stderr(predicates::str::contains("`gone`"));
 }
+
+#[test]
+fn show_fails_on_a_file_that_does_not_parse_as_written_and_merged() {
+    let d = workspace();
+    std::fs::write(d.path().join("homma.local.toml"), "[instance\n").unwrap();
+    homma(d.path(), &["show"]).failure();
+    homma(d.path(), &["show", "--effective"]).failure();
+}

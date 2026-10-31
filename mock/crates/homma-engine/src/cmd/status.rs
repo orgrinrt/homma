@@ -132,6 +132,7 @@ impl WorktreeLine {
 pub fn run(
     cfg: &Config,
     local: Result<Option<Local>, LocalError>,
+    manifest_dir: &std::path::Path,
     full: bool,
     format: OutputFormat,
 ) -> Result<Outcome> {
@@ -145,7 +146,7 @@ pub fn run(
     let mut report = build_report(cfg, injected, agent, configs, worktrees);
     report.stray_targets = stray_targets::collect(&cfg.workspace.path, &cfg.scope);
     report.carry_local(local);
-    report.note_copy(&cfg.workspace.path);
+    report.note_copy(manifest_dir);
     // The human rendering summarises and the document does not, so the flag
     // reaches only the first. A machine handed a document with the healthy
     // members dropped would be reading a lie about the population, and it has
@@ -279,28 +280,17 @@ impl StatusReport {
             Err(e) => {
                 // The whole chain, since the parse error under the file's name
                 // is what says which line to fix.
-                let mut msg = e.to_string();
-                let mut src = std::error::Error::source(&e);
-                while let Some(s) = src {
-                    msg.push_str(": ");
-                    msg.push_str(s.to_string().trim_end());
-                    src = s.source();
-                }
+                let msg = homma_core::resolve::chain(&e);
                 self.instance_error = Some(msg);
             },
         }
     }
 
     /// Note a clone that holds a full copy of the stored config of its work,
-    /// which `workspace` is the root of.
-    fn note_copy(&mut self, workspace: &std::path::Path) {
+    /// which `manifest_dir` holds the store of.
+    fn note_copy(&mut self, manifest_dir: &std::path::Path) {
         let Some(i) = &self.instance else { return };
-        if i.project.is_none()
-            && workspace
-                .join(homma_core::local::STORE_DIR)
-                .join(format!("{}.toml", i.work))
-                .is_file()
-        {
+        if i.project.is_none() && homma_core::resolve::stored(manifest_dir, &i.work).is_ok() {
             self.holds_copy_of = Some(i.work.clone());
         }
     }

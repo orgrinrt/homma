@@ -755,7 +755,7 @@ fn unsetting_the_work_leaves_none_and_is_refused_naming_the_path() {
         "[instance]\nproject = \"k\"\nunset = [\"instance.work\"]\n",
     );
     match Local::load(d.path()) {
-        Err(LocalError::Unset(p)) => assert_eq!(p, "instance.work"),
+        Err(LocalError::EmptyWork) => {},
         other => panic!("{other:?}"),
     }
     // The control: the same file setting its own work is fine.

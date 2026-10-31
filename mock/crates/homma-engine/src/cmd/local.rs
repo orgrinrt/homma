@@ -38,7 +38,18 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
             // command that repairs a file with a missing project still prints it.
             let as_written = matches!(cli.output, OutputFormat::Human) && !*effective;
             let found = if as_written {
-                homma_core::resolve::written(&dir)?.map(|(_, text)| (None, text))
+                homma_core::resolve::written(&dir)?
+                    .map(|(path, text)| {
+                        // Parsed as written, with no merge: a file that does not
+                        // parse is refused, one whose project is missing is not.
+                        Local::parse(&text).map(|_| (None, text)).map_err(|source| {
+                            local::LocalError::Parse {
+                                path,
+                                source,
+                            }
+                        })
+                    })
+                    .transpose()?
             } else {
                 show(&dir)?.map(|(parsed, text)| (Some(parsed), text))
             };
@@ -488,10 +499,14 @@ fn set_waiting(dir: &Path, key: &str, value: &str, wait: std::time::Duration) ->
         Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
     };
     let out = local::set(&text, key, value)?;
-    // The check on the file alone cannot see a dashboard the project holds.
-    // Any other trouble resolving it is the file's existing state, reported
-    // where it is read, and must not stop a repair.
-    if let Err(e @ local::LocalError::DashboardWhereConsole(_)) = Local::resolve(dir, &path, &out) {
+    // The checks on the file alone cannot see the project it inherits. A result
+    // that stops loading where the text before it loaded is refused, and a
+    // file already broken can still be repaired by a set.
+    if Local::resolve(dir, &path, &text).is_ok() {
+        Local::resolve(dir, &path, &out)?;
+    } else if let Err(e @ local::LocalError::DashboardWhereConsole(_)) =
+        Local::resolve(dir, &path, &out)
+    {
         return Err(e.into());
     }
     write_atomic(dir, &path, &out)

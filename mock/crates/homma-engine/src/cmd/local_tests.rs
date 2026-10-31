@@ -726,3 +726,35 @@ fn list_marks_the_project_a_file_names_and_the_work_a_copy_is_for() {
     std::fs::write(d.path().join(LOCAL_FILE), KASKI).unwrap();
     assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("kaski"));
 }
+
+#[test]
+fn set_refuses_what_leaves_an_inheriting_file_unable_to_load() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    install(d.path(), "kaski", false).unwrap();
+    let before = file(&d);
+    assert!(set(d.path(), "instance.project", "nope").is_err());
+    assert!(set(d.path(), "instance.work", "").is_err());
+    assert_eq!(file(&d), before);
+    // The controls: a value that still loads is written, and so is another project.
+    assert!(set(d.path(), "instance.title", "mine").is_ok());
+    store(&d, &[("kenno", KENNO)]);
+    assert!(set(d.path(), "instance.project", "kenno").is_ok());
+}
+
+#[test]
+fn set_can_repair_a_file_whose_project_is_missing() {
+    let d = ws();
+    store(&d, &[("kaski", KASKI)]);
+    std::fs::write(
+        d.path().join(LOCAL_FILE),
+        "[instance]\nproject = \"gone\"\n",
+    )
+    .unwrap();
+    assert!(set(d.path(), "tools.msg.as", "x").is_ok());
+    assert!(set(d.path(), "instance.project", "kaski").is_ok());
+    assert_eq!(
+        Local::load(d.path()).unwrap().unwrap().instance.work,
+        "kaski"
+    );
+}
