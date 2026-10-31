@@ -51,6 +51,8 @@ pub enum MilestoneError {
     StillOpen(usize),
     /// A pin with no milestone open.
     NotOpen,
+    /// A pin on an open milestone with no freeze recorded; its number.
+    NoFreeze(usize),
     /// A pin on a milestone already pinned; its number.
     AlreadyPinned(usize),
     /// A mark of a milestone not yet pinned; its number.
@@ -98,6 +100,7 @@ impl fmt::Display for MilestoneError {
             MilestoneError::NotOpen => {
                 f.write_str("no milestone is open; `homma milestone freeze` opens one")
             },
+            MilestoneError::NoFreeze(n) => write!(f, "milestone {n} has no freeze recorded"),
             MilestoneError::AlreadyPinned(n) => write!(f, "milestone {n} is already pinned"),
             MilestoneError::NotPinned(n) => {
                 write!(

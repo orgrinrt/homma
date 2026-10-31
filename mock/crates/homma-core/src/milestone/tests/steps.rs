@@ -306,3 +306,123 @@ fn a_tagged_mark_of_an_open_row_makes_the_tag_of_its_number() {
     assert_eq!(fx.git(&["tag", "--list", "milestone/*"]), "milestone/2");
     assert_eq!(fx.git(&["rev-list", "-n1", "milestone/2"]), c5);
 }
+
+/// A trunk of two commits and a record that `make` writes naming the first, put
+/// through freeze, pin and mark: the record as written, the text it ends as, and
+/// the repository.
+fn through_the_steps(make: impl Fn(&str) -> String) -> (String, String, Fx) {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    fx.commit("a.txt", "2\n");
+    let old = make(&c1);
+    std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
+    std::fs::write(fx.root().join(RECORD_PATH), &old).unwrap();
+    fx.commit_record();
+    freeze(fx.root(), "dev").unwrap();
+    fx.commit_record();
+    pin(fx.root(), "dev", None).unwrap();
+    fx.commit_record();
+    let c3 = fx.commit("a.txt", "3\n");
+    mark(fx.root(), "dev", &c3, false).unwrap();
+    let text = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    (old, text, fx)
+}
+
+#[test]
+fn the_steps_leave_a_records_line_endings_and_byte_order_mark_as_they_were() {
+    for (name, head, eol) in [
+        ("crlf", "", "\r\n"),
+        ("bom", "\u{feff}", "\n"),
+        ("crlf and bom", "\u{feff}", "\r\n"),
+    ] {
+        let (old, text, fx) = through_the_steps(|c1| {
+            format!("{head}[[milestone]]{eol}n = 1{eol}sha = \"{c1}\"{eol}at = \"2026-10-27\"{eol}")
+        });
+        assert!(text.starts_with(&old), "{name}: {text:?}");
+        // every line the steps added ends as the file's own do
+        assert_eq!(
+            text.matches('\n').count(),
+            text.matches(eol).count(),
+            "{name}: {text:?}"
+        );
+        assert_eq!(rows(fx.root()).unwrap().len(), 2, "{name}");
+    }
+}
+
+#[test]
+fn a_comment_after_a_key_a_step_replaces_stays_on_its_line() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
+    std::fs::write(
+        fx.root().join(RECORD_PATH),
+        format!("[[milestone]]\nn = 1\nfreeze = \"{c1}\"\nat = \"old\" # to be replaced\n"),
+    )
+    .unwrap();
+    fx.commit_record();
+    pin(fx.root(), "dev", None).unwrap();
+    let c2 = fx.commit("a.txt", "2\n");
+    mark(fx.root(), "dev", &c2, false).unwrap();
+    let text = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    assert!(
+        text.contains(&format!("at = \"{}\" # to be replaced\n", date(&fx, &c2))),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_record_that_is_not_written_as_tables_is_refused_and_left_alone() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    fx.commit("a.txt", "2\n");
+    let inline = format!("milestone = [{{ sha = \"{c1}\", at = \"2026-10-27\" }}]\n");
+    std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
+    std::fs::write(fx.root().join(RECORD_PATH), &inline).unwrap();
+    fx.commit_record();
+    assert!(matches!(
+        freeze(fx.root(), "dev"),
+        Err(MilestoneError::Record(_))
+    ));
+    assert_eq!(
+        std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap(),
+        inline
+    );
+}
+
+#[test]
+fn a_freeze_and_a_pin_take_origins_trunk_over_a_stale_local_one() {
+    let origin = Fx::new();
+    origin.commit("a.txt", "1\n");
+    let dir = tempfile::tempdir().unwrap();
+    let url = origin.root().to_str().unwrap().to_string();
+    let out = std::process::Command::new("git")
+        .args(["clone", "-q", "--branch", "dev", &url])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let ahead = origin.commit("a.txt", "2\n");
+    let fetched = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["fetch", "-q", "origin"])
+        .output()
+        .unwrap();
+    assert!(fetched.status.success(), "{fetched:?}");
+    // the local dev is a commit behind origin/dev
+    let row = freeze(dir.path(), "dev").unwrap();
+    assert_eq!(row.freeze.as_deref(), Some(ahead.as_str()));
+    let pinned = pin(dir.path(), "dev", None).unwrap();
+    assert_eq!(pinned.head.as_deref(), Some(ahead.as_str()));
+}
+
+#[test]
+fn an_open_row_with_no_freeze_is_refused_by_a_pin_saying_the_freeze_is_missing() {
+    let fx = Fx::new();
+    fx.commit("a.txt", "1\n");
+    std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
+    std::fs::write(fx.root().join(RECORD_PATH), "[[milestone]]\nn = 1\n").unwrap();
+    fx.commit_record();
+    let err = pin(fx.root(), "dev", None).unwrap_err();
+    assert!(err.to_string().contains("no freeze"), "{err}");
+}

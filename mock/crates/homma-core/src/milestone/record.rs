@@ -56,7 +56,7 @@ impl Row {
 
     /// The row as the lines of a new table, in the order of the design, each key it
     /// holds and no other.
-    fn lines(&self) -> String {
+    fn lines(&self, eol: &str) -> String {
         let text = [
             ("base", &self.base),
             ("freeze", &self.freeze),
@@ -67,9 +67,9 @@ impl Row {
             ("at", &self.at),
         ]
         .into_iter()
-        .filter_map(|(key, value)| value.as_ref().map(|v| format!("{key} = \"{v}\"\n")));
+        .filter_map(|(key, value)| value.as_ref().map(|v| format!("{key} = \"{v}\"{eol}")));
         self.n
-            .map(|n| format!("n = {n}\n"))
+            .map(|n| format!("n = {n}{eol}"))
             .into_iter()
             .chain(text)
             .collect()
@@ -119,40 +119,154 @@ fn parse(text: &str) -> Result<Vec<Row>, MilestoneError> {
     Ok(file.milestone)
 }
 
+/// The file's own line ending: CRLF where its first line ends in one, LF
+/// otherwise.
+fn eol(text: &str) -> &'static str {
+    match text.find('\n') {
+        Some(i) if text[.. i].ends_with('\r') => "\r\n",
+        _ => "\n",
+    }
+}
+
+/// The body of each `[[milestone]]` table in `text`, as the byte range from the
+/// line after its header to the next table header or the end. A leading byte
+/// order mark does not hide the first header.
+fn tables(text: &str) -> Vec<(usize, usize)> {
+    let mut found: Vec<(usize, usize)> = Vec::new();
+    let mut at = 0;
+    for line in text.split_inclusive('\n') {
+        let end = at + line.len();
+        let head = line.trim_start_matches('\u{feff}').trim();
+        if head.starts_with('[') {
+            if let Some(last) = found.last_mut() {
+                if last.1 == usize::MAX {
+                    last.1 = at;
+                }
+            }
+            if head == "[[milestone]]" {
+                found.push((end, usize::MAX));
+            }
+        }
+        at = end;
+    }
+    if let Some(last) = found.last_mut() {
+        if last.1 == usize::MAX {
+            last.1 = text.len();
+        }
+    }
+    found
+}
+
+/// The record's text with the tables a step may edit, refused where the rows it
+/// parses as are not exactly those tables (an inline array, say).
+fn editable(text: &str) -> Result<Vec<(usize, usize)>, MilestoneError> {
+    let spans = tables(text);
+    if parse(text)?.len() == spans.len() {
+        Ok(spans)
+    } else {
+        Err(MilestoneError::Record(
+            "the record is not written as `[[milestone]]` tables, so a step cannot edit it".into(),
+        ))
+    }
+}
+
 /// Add `row` to the record as a new table at its end, creating the file and its
-/// directory. Every byte already there stays as it was.
+/// directory. Every byte already there stays as it was, and the lines added end
+/// as the file's own do.
 pub fn append(root: &Path, row: &Row) -> Result<(), MilestoneError> {
     let path = root.join(RECORD_PATH);
-    let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(MilestoneError::Io(e)),
+    };
+    editable(&text)?;
+    let eol = eol(&text);
     if !text.is_empty() {
         if !text.ends_with('\n') {
-            text.push('\n');
+            text.push_str(eol);
         }
-        text.push('\n');
+        text.push_str(eol);
     }
-    text.push_str("[[milestone]]\n");
-    text.push_str(&row.lines());
+    text.push_str("[[milestone]]");
+    text.push_str(eol);
+    text.push_str(&row.lines(eol));
     store(&path, &text)
 }
 
-/// Set `pairs` on the table at `index`, each key where it stands or at the end
-/// of that table. Nothing else in the file is touched: a comment, the order of
-/// keys and a key this shape does not name all stay as written.
+/// The text of `line` with the value of `key` replaced by `value`, keeping the
+/// indent, and whatever follows the old value on the line, when the line sets
+/// `key`.
+fn replaced(line: &str, key: &str, value: &str) -> Option<String> {
+    let indent = line.len() - line.trim_start().len();
+    let rest = line[indent ..]
+        .strip_prefix(key)?
+        .trim_start()
+        .strip_prefix('=')?;
+    let rest = rest.trim_start();
+    let kept = match rest.strip_prefix('"') {
+        Some(inner) => {
+            let mut escaped = false;
+            let close = inner.char_indices().find(|&(_, c)| {
+                let end = c == '"' && !escaped;
+                escaped = c == '\\' && !escaped;
+                end
+            })?;
+            &inner[close.0 + 1 ..]
+        },
+        None => {
+            rest.find(|c: char| c.is_whitespace() || c == '#')
+                .map_or("", |i| &rest[i ..])
+        },
+    };
+    Some(format!("{}{key} = \"{value}\"{kept}", &line[.. indent]))
+}
+
+/// Set `pairs` on the table at `index`: a key already there has its value
+/// replaced where it stands, and a key not there is added after the table's last
+/// key. Every other byte of the file, a comment, the order of keys, a key this
+/// shape does not name, the line endings and a leading byte order mark, stays.
 pub fn set(root: &Path, index: usize, pairs: &[(&str, &str)]) -> Result<(), MilestoneError> {
     let path = root.join(RECORD_PATH);
     let text = std::fs::read_to_string(&path).map_err(MilestoneError::Io)?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .map_err(|e: toml_edit::TomlError| MilestoneError::Record(e.to_string()))?;
-    let table = doc
-        .get_mut("milestone")
-        .and_then(toml_edit::Item::as_array_of_tables_mut)
-        .and_then(|tables| tables.get_mut(index))
+    let spans = editable(&text)?;
+    let &(start, end) = spans
+        .get(index)
         .ok_or_else(|| MilestoneError::Record(format!("no table at index {index}")))?;
+    let eol = eol(&text);
+    let mut body = text[start .. end].to_string();
     for (key, value) in pairs {
-        table.insert(key, toml_edit::value(*value));
+        let mut at = 0;
+        let mut after_last_key = 0;
+        let mut done = false;
+        for line in body.clone().split_inclusive('\n') {
+            if let Some(new) = replaced(line, key, value) {
+                body.replace_range(at .. at + line.len(), &new);
+                done = true;
+                break;
+            }
+            at += line.len();
+            let code = line.trim_start();
+            if code.contains('=') && !code.starts_with('#') {
+                after_last_key = at;
+            }
+        }
+        if !done {
+            let mut add = format!("{key} = \"{value}\"{eol}");
+            if after_last_key > 0 && !body[.. after_last_key].ends_with('\n') {
+                add.insert_str(0, eol);
+            }
+            body.insert_str(after_last_key, &add);
+        }
     }
-    store(&path, &doc.to_string())
+    let mut out = text[.. start].to_string();
+    // a header on the last line of a file with no line ending takes one first
+    if start == text.len() && !out.ends_with('\n') {
+        out.push_str(eol);
+    }
+    out.push_str(&body);
+    out.push_str(&text[end ..]);
+    store(&path, &out)
 }
 
 fn store(path: &Path, text: &str) -> Result<(), MilestoneError> {

@@ -97,7 +97,7 @@ pub fn pin(root: &Path, trunk: &str, rev: Option<&str>) -> Result<Row, Milestone
     let mut all = rows(root)?;
     let i = open(&all).ok_or(MilestoneError::NotOpen)?;
     let n = number(&all, i);
-    let freeze = all[i].freeze.clone().ok_or(MilestoneError::NotOpen)?;
+    let freeze = all[i].freeze.clone().ok_or(MilestoneError::NoFreeze(n))?;
     if all[i].head.is_some() {
         return Err(MilestoneError::AlreadyPinned(n));
     }
@@ -207,26 +207,7 @@ fn range(from: &Option<String>, to: &Option<String>) -> Option<String> {
 /// where `n` is given. A row with no base of its own takes the previous tip.
 pub fn show(root: &Path, trunk: &str, n: Option<usize>) -> Result<Vec<Shown>, MilestoneError> {
     let all = trunk_rows(root, &trunk_here(root, trunk))?;
-    let shown: Vec<Shown> = (0 .. all.len())
-        .map(|i| {
-            let r = &all[i];
-            let base = r.base.clone().or_else(|| {
-                i.checked_sub(1)
-                    .and_then(|p| all[p].tip().map(str::to_string))
-            });
-            Shown {
-                n: number(&all, i),
-                epoch: range(&base, &r.freeze),
-                review: range(&base, &r.head),
-                base,
-                freeze: r.freeze.clone(),
-                freeze_at: r.freeze_at.clone(),
-                head: r.head.clone(),
-                tip: r.tip().map(str::to_string),
-                at: r.at.clone(),
-            }
-        })
-        .collect();
+    let shown: Vec<Shown> = (0 .. all.len()).map(|i| shown_at(&all, i)).collect();
     match n {
         None => Ok(shown),
         Some(n) => {
@@ -234,4 +215,32 @@ pub fn show(root: &Path, trunk: &str, n: Option<usize>) -> Result<Vec<Shown>, Mi
             if one.is_empty() { Err(MilestoneError::NoSuchMilestone(n)) } else { Ok(one) }
         },
     }
+}
+
+/// Row `i` of `all` with its ranges; a row with no base of its own takes the
+/// previous tip. The one place a row becomes a `Shown`.
+fn shown_at(all: &[Row], i: usize) -> Shown {
+    let r = &all[i];
+    let base = r.base.clone().or_else(|| {
+        i.checked_sub(1)
+            .and_then(|p| all[p].tip().map(str::to_string))
+    });
+    Shown {
+        n: number(all, i),
+        epoch: range(&base, &r.freeze),
+        review: range(&base, &r.head),
+        base,
+        freeze: r.freeze.clone(),
+        freeze_at: r.freeze_at.clone(),
+        head: r.head.clone(),
+        tip: r.tip().map(str::to_string),
+        at: r.at.clone(),
+    }
+}
+
+/// The newest row of the working tree's record as `show` prints it: what a
+/// step has just written.
+pub fn latest(root: &Path) -> Result<Option<Shown>, MilestoneError> {
+    let all = rows(root)?;
+    Ok(all.len().checked_sub(1).map(|i| shown_at(&all, i)))
 }

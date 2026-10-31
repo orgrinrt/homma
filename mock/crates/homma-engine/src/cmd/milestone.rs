@@ -12,7 +12,7 @@ use anyhow::Result;
 use homma_core::milestone::branches::{Branch, branches};
 use homma_core::milestone::range::{Partition, StandIn, partition, stand_ins};
 use homma_core::milestone::record::{Mark, Row, Source, base};
-use homma_core::milestone::steps::{Shown, freeze, mark, pin, show};
+use homma_core::milestone::steps::{Shown, freeze, latest, mark, pin, show};
 use serde::Serialize;
 
 use crate::cli::{Cli, MilestoneOp, OutputFormat};
@@ -48,17 +48,21 @@ impl HumanRender for MarkReport {
     }
 }
 
-/// A row written by `freeze` or `pin`; a person is told nothing, a pipe gets
-/// the row.
+/// A row written by `freeze` or `pin`: a person gets it as `show` prints it, a
+/// pipe gets the row.
 #[derive(Debug, Serialize)]
 struct RowReport {
-    repo: String,
-    row:  Row,
+    repo:  String,
+    row:   Row,
+    shown: Option<Shown>,
 }
 
 impl HumanRender for RowReport {
-    fn render_human(&self, _out: &mut dyn Write) -> std::io::Result<()> {
-        Ok(())
+    fn render_human(&self, out: &mut dyn Write) -> std::io::Result<()> {
+        match &self.shown {
+            Some(s) => write!(out, "{}", block(s)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -196,15 +200,14 @@ pub fn run(cli: &Cli, op: &MilestoneOp) -> Result<Outcome> {
             let (name, _, root) = repo_of(repo)?;
             let (trunk, _) = branches_for(&cfg, &root);
             let row = freeze(&root, trunk)?;
-            if matches!(cli.output, OutputFormat::Json) {
-                emit(
-                    &RowReport {
-                        repo: name.to_string(),
-                        row,
-                    },
-                    cli.output,
-                )?;
-            }
+            emit(
+                &RowReport {
+                    repo: name.to_string(),
+                    row,
+                    shown: latest(&root)?,
+                },
+                cli.output,
+            )?;
         },
         MilestoneOp::Pin {
             repo,
@@ -213,15 +216,14 @@ pub fn run(cli: &Cli, op: &MilestoneOp) -> Result<Outcome> {
             let (name, _, root) = repo_of(repo)?;
             let (trunk, _) = branches_for(&cfg, &root);
             let row = pin(&root, trunk, sha.as_deref())?;
-            if matches!(cli.output, OutputFormat::Json) {
-                emit(
-                    &RowReport {
-                        repo: name.to_string(),
-                        row,
-                    },
-                    cli.output,
-                )?;
-            }
+            emit(
+                &RowReport {
+                    repo: name.to_string(),
+                    row,
+                    shown: latest(&root)?,
+                },
+                cli.output,
+            )?;
         },
         MilestoneOp::Show {
             repo,
