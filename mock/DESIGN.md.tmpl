@@ -967,7 +967,9 @@ about that clone alone. It lives in `homma.local.toml`, beside the manifest and
 never committed.
 
 Two tables. `[instance]` is homma's and typed: `work` names the body of work and
-is the one key required, `title` is what to call it, `repos` narrows which
+is the one key required unless `project` is given, `project` names a stored config
+this file inherits from (see the end of this section), `unset` lists the inherited
+values the file removes, `title` is what to call it, `repos` narrows which
 members the work spans and means all of them when empty, and `state` and `goal`
 are paths from the workspace root to the document carrying the work's current
 state and the one carrying what it is trying to reach. The file points at those
@@ -977,7 +979,9 @@ workspace's tools and is carried untyped, for the reason `[[status.inject]]`
 runs a tool without knowing it: homma holds a tool's settings without growing
 an opinion about them.
 
-The manifest's loader reads two things from it. `repos` under `[instance]` is read
+The file is read in one place, which returns it merged over its project's stored
+config where it names one, so every reader below sees the config in force and none
+reads the file's text itself. The manifest's loader reads two things from it. `repos` under `[instance]` is read
 only through the scope module: that key decides which directories the loader
 treats as members, so every command that walks the members is narrowed by it
 without knowing. The `hooks` and `agent.hooks` tables are read as a layer of the
@@ -1012,35 +1016,60 @@ new one and never a half, and two writers at once both land.
 A workspace keeps one config per body of work, so a fresh clone does not start
 from `init` and a hand-filled skeleton. They are stored in the content
 repository as `.shared/local/<work>.toml`, each a whole `homma.local.toml` named
-for the work it is for, and `homma local install <name>` puts the named one in
-place, as a copy, because a link would make every write a tool records, a publish
-digest or a deployed commit, an edit of a tracked file, and `set` renames a
-temporary file over the path, which replaces a link with a plain file at the
-first write without a word. So the split between what is declared and what is
-recorded is by where each lives: the stored file holds what is declared, the
-installed copy is the clone's own and takes what tools record, and nothing
-flows back. A value that proves durable is moved into the store by editing the
-stored file. Homma holds no list of which keys are which. A stored file's name
-is its `instance.work`, which is also how the installed file says which config
-it came from, and one whose two differ is refused. Where there is no file
-`install` writes the stored one byte for byte and ignores it as `init` does.
-Where one exists for the same work it adds the keys it lacks and changes none it
-has, so running it again is safe and a goal switched on locally stays on; lists
-are values and are not merged into, and a table is entered whether the file
-writes it as a `[table]` or inline, so a key inside `goal = { active = "true" }`
-is added when it is missing and reported like any other. Where the file is for another work, does not
-parse, or is a link, it refuses and says why, and `--replace` writes the stored one beside it and then moves the old one aside
-to `homma.local.toml.replaced` instead of deleting it, refusing if that name is
-taken, so a write that fails leaves the old file where it was. `homma local list` names the stored configs sorted, marks the one whose
-work the installed file has, shows a stored file that cannot be installed with
-the reason instead of leaving it out, whether it is the name that `install` would
-refuse, a name that is not UTF-8, or the content, and exits `1` where there is no
-store; the document carries the same as a list of rows, empty where there is no
-store.
+for the work it is for. A clone does not copy one. Its file names the project in
+one line, `project = "<name>"` under `[instance]`, and the stored config is the
+base the file is read over: no copy, no link. What the stored file declares
+reaches every clone that names it the moment the store changes, and what a tool
+records, a publish digest or a deployed commit, goes into the clone's own file
+by `set`, which a stored file never receives. The stored file's name is its
+`instance.work`, and one whose two differ is refused. A stored config is a base
+and may not name a project itself, so there is no chain and no cycle. A project
+that is named and not in the store, or whose stored file does not load, is an
+error naming both, treated as a file that does not parse is: the scope is then
+everything and `status` says so.
 
-`homma status` carries the instance, one line in the human output and the
-table whole in the document, `null` where there is no file. Where the file does
-not parse the instance is `null` and `instance_error` carries the message.
+The merge runs over the parsed tables, before anything is typed. A table in both
+is merged key by key. A scalar in both takes the local value. An array in both is
+replaced whole by the local one, since arrays are values and a merge that
+interleaved two lists could not be undone by reading the local file. A key only
+in the local file is added, a key only in the base is inherited, and a value of
+one kind over a value of another, a scalar over a table or the reverse, takes the
+local one whole. `unset` under `[instance]` lists dotted paths to remove from the
+base before the local file is applied; a table path removes the table, a path the
+base lacks removes nothing and is no error, since the store changes under a clone,
+and the local file may set the same path again, which then counts as local.
+`instance.project` and `instance.unset` cannot be unset. The `work` of the merged
+config is the base's unless the local file sets it, and a file without a project
+needs its own. The console check runs on the merged config, so a clone that names
+a console removes the project's dashboard with `unset = ["tools.dashboard"]`.
+
+`homma local install <name>` writes a file of the one project line and ignores it
+as `init` does. Where a file exists naming that project it changes nothing and
+says so. Where it is a copy of the same work with no project line it is migrated:
+the project line is added, every key whose value equals the base is dropped, and
+every key that differs or is absent from the base stays, as an override or an
+addition. A key the base has and the copy lacks is inherited from then on. Where
+it is for another work, does not parse, or is a link, it refuses and says why, and
+`--replace` moves the old one aside to `homma.local.toml.replaced`, refusing if
+that name is taken, and writes the project line, so a write that fails leaves
+the old file where it was. `homma local show` prints the file as written, and with
+`--effective` the merged document; `--output json` is always the merged one,
+because a script reading a tool's setting wants the value in force. `homma local
+list` names the stored configs sorted, marks the one the installed file names or
+holds a copy of, shows a stored file that cannot be used with the reason instead
+of leaving it out, whether it is the name that `install` would refuse, a name that
+is not UTF-8, or the content, and exits `1` where there is no store; the document
+carries the same as a list of rows, empty where there is no store.
+
+`homma status` carries the instance as in force, one line in the human output and
+the table whole in the document, `null` where there is no file. Where the file
+inherits it adds a line, `inherits <project>`, counting the leaf values inherited
+unchanged, set in the file, overridden by it and unset by it, and the document
+carries a `project` object with the name and the four lists of dotted paths. A
+clone that holds a copy of a stored config with no project line is told so and
+told the install that makes it inherit, which is how a clone finds out it needs
+migrating. Where the file does not parse the instance is `null` and
+`instance_error` carries the message.
 
 A file names a console when `[tools.console]` carries a non-empty `channel`, and a
 clone that does keeps no dashboard, the console being its replacement. Homma
@@ -1050,10 +1079,10 @@ result that names a console and also carries a `tools.dashboard` table is
 refused, whichever key made it so. `local set` refuses a key under
 `tools.dashboard` in such a file, which would otherwise put a recorded page back
 into a clone that has none, and the `channel` of a console in a file that
-still holds a dashboard. `local install` into an existing clone fills the
-stored config's missing keys through the same check, so a clone keeping its old
-`[tools.dashboard]` is not given a console beside it, and a stored config that
-holds both is refused, so a fresh clone is never started from the contradiction.
+still holds a dashboard. The check runs on the merged config, so an
+inheriting clone that names a console and whose project holds a dashboard is
+refused until the file unsets `tools.dashboard`, and a stored config that holds
+both is refused, so no clone is started from the contradiction.
 The tool that builds the page reads the same fact from the parsed file and
 refuses its own verbs.
 
