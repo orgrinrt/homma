@@ -977,12 +977,13 @@ workspace's tools and is carried untyped, for the reason `[[status.inject]]`
 runs a tool without knowing it: homma holds a tool's settings without growing
 an opinion about them.
 
-The manifest's loader reads one thing from it, `repos` under `[instance]`, and
+The manifest's loader reads two things from it. `repos` under `[instance]` is read
 only through the scope module: that key decides which directories the loader
 treats as members, so every command that walks the members is narrowed by it
-without knowing. The rest of the file is read by `status` and `local`, anchored
-beside the manifest, because every other command, the commit and push gates among
-them, has nothing to learn from it and no reason to refuse over it. Absent is the
+without knowing. The `hooks` and `agent.hooks` tables are read as a layer of the
+hooks tables, which is how `hook run` finds a hook declared only here. The rest of
+the file is read by `status` and `local`, anchored beside the manifest, because
+every other command has nothing to learn from it and no reason to refuse over it. Absent is the
 ordinary case, nothing notices, and every repository is in scope. A name in
 `repos` that no clone provides is not an error, since a container that has not
 attached it yet is ordinary, and `status` names it as not cloned. Present and not

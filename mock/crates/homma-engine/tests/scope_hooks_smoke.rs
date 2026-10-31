@@ -101,3 +101,15 @@ fn naming_a_clone_outside_the_scope_says_it_is_outside_the_scope() {
         .failure()
         .stderr(predicate::str::contains("outside this clone's scope"));
 }
+
+#[test]
+fn archive_and_migrate_name_a_clone_outside_the_scope_as_outside_it() {
+    let (_d, root) = workspace();
+    for args in [vec!["archive", "b"], vec!["migrate", "b", "--to", "github"]] {
+        homma(&root)
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("outside this clone's scope"));
+    }
+}
