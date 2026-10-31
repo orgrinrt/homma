@@ -121,7 +121,7 @@ pub fn run(
 ) -> Result<Outcome> {
     let repo_cfg = cfg
         .repo(repo_name)
-        .ok_or_else(|| anyhow!("no repository named `{repo_name}` under the workspace root"))?;
+        .ok_or_else(|| crate::cmd::util::no_such_member(cfg, repo_name))?;
     // The flag wins, then the clone's own remote. Neither is an error rather
     // than a guess: a migration that starts from the wrong source reads the
     // wrong repository and mirrors it somewhere real.

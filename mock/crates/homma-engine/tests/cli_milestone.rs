@@ -86,7 +86,7 @@ fn milestone_is_listed_and_a_mark_is_quiet_while_base_prints_the_sha() {
         .args(["-c", &cfg, "milestone", "base", "nowhere"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("`nowhere` is not a repository"));
+        .stderr(predicate::str::contains("no repository named `nowhere`"));
 }
 
 #[test]

@@ -389,9 +389,10 @@ fn a_local_config_that_does_not_parse_widens_the_scope_and_says_so() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("homma.local.toml"), "= = not toml [").unwrap();
     let (repos, gap) = super::scope(dir.path());
-    assert!(
-        repos.is_empty(),
-        "no repository is named by a config nobody could read"
+    assert_eq!(
+        repos,
+        homma_core::scope::Scope::everything(),
+        "a config nobody could read narrows nothing"
     );
     let gap = gap.expect("the footer names it");
     assert!(

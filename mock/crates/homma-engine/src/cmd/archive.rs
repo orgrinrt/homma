@@ -51,7 +51,7 @@ pub fn run(
 ) -> Result<()> {
     let repo_cfg = cfg
         .repo(repo_name)
-        .ok_or_else(|| anyhow!("no repository named `{repo_name}` under the workspace root"))?;
+        .ok_or_else(|| crate::cmd::util::no_such_member(cfg, repo_name))?;
     // The flag wins, then what the clone's own remote says. Neither is an
     // error rather than a guess: a repository with a local remote has no forge
     // and no owner, and archiving is an outward act that has to land where it

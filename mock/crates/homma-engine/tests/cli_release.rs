@@ -191,7 +191,7 @@ fn hook_install_writes_one_entrypoint_per_event_and_says_how_git_reaches_them() 
         .args(["-c", cfg.to_str().unwrap(), "hook", "install", "nope"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("`nope` is not a repository"));
+        .stderr(predicate::str::contains("no repository named `nope`"));
     // a table naming an event git has no hook for refuses the manifest
     std::fs::write(
         &cfg,

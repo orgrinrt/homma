@@ -48,8 +48,11 @@ pub struct StatusReport {
     /// clone has no such file, or has one that does not load.
     pub instance:       Option<homma_core::local::Instance>,
     /// Why `homma.local.toml` did not load, where it is there and does not.
-    /// The one place a broken file is reported, since nothing else reads it.
+    /// The one place a broken file is reported; the loader reads only `repos` from it and widens the scope.
     pub instance_error: Option<String>,
+    /// Repositories the instance's scope names that no clone provides. Not an error: a
+    /// container that has not attached one yet is ordinary. Empty with no scope.
+    pub not_cloned:     Vec<String>,
     pub forges:         Vec<ForgeLine>,
     pub repos:          Vec<RepoLine>,
     /// What the workspace's own tools said, in the order `[[status.inject]]`
@@ -134,7 +137,7 @@ pub fn run(
     let configs = config::collect(cfg, None)?;
     let worktrees = worktrees(cfg);
     let mut report = build_report(cfg, injected, agent, configs, worktrees);
-    report.stray_targets = stray_targets::collect(&cfg.workspace.path);
+    report.stray_targets = stray_targets::collect(&cfg.workspace.path, &cfg.scope);
     report.carry_local(local);
     // The human rendering summarises and the document does not, so the flag
     // reaches only the first. A machine handed a document with the healthy
@@ -233,6 +236,12 @@ fn build_report(
         workspace,
         instance: None,
         instance_error: None,
+        not_cloned: cfg
+            .scope
+            .unmet(cfg.repos.keys().map(String::as_str))
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
         forges,
         repos,
         injected,
@@ -290,6 +299,13 @@ impl StatusReport {
         }
         if let Some(e) = &self.instance_error {
             writeln!(out, "  what this clone is for is unknown: {e}")?;
+        }
+        if !self.not_cloned.is_empty() {
+            writeln!(
+                out,
+                "  in scope and not cloned: {}",
+                self.not_cloned.join(", ")
+            )?;
         }
         if !self.forges.is_empty() && full {
             writeln!(out)?;
@@ -592,6 +608,27 @@ mod tests {
         let mut r = build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new());
         r.carry_local(Local::load(d.path()));
         r
+    }
+
+    #[test]
+    fn a_scoped_name_with_no_clone_is_reported_as_not_cloned() {
+        let mut cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a manifest parses");
+        cfg.scope = homma_core::scope::Scope::named(["kaski", "letkajenkka"]);
+        cfg.repos.insert("kaski".into(), homma_core::RepoConfig {
+            forge:      None,
+            owner:      None,
+            local_path: "kaski".into(),
+        });
+        let r = build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new());
+        assert_eq!(r.not_cloned, ["letkajenkka"]);
+        assert!(rendered(&r).contains("in scope and not cloned: letkajenkka"));
+    }
+
+    #[test]
+    fn no_scope_reports_nothing_as_not_cloned() {
+        let cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a manifest parses");
+        let r = build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new());
+        assert!(r.not_cloned.is_empty());
     }
 
     #[test]

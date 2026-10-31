@@ -43,7 +43,11 @@ name = "demo"
 "#,
     )
     .unwrap();
-    config.detect_members(root.path(), &homma_core::repo::GixGit);
+    config.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
 
     let env = TemplateEnv::new();
     let out = env

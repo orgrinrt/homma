@@ -77,7 +77,11 @@ fn a_clone_is_a_member_and_its_remote_says_where_it_lives() {
     );
 
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
 
     let notko = cfg.repo("notko").expect("a clone is a member");
     assert_eq!(notko.forge.as_deref(), Some("github"));
@@ -104,7 +108,11 @@ fn a_clone_with_no_forge_is_still_a_member() {
     );
 
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
 
     for name in ["fresh", "local", "elsewhere"] {
         let member = cfg
@@ -133,7 +141,11 @@ fn a_directory_that_is_not_a_repository_is_not_a_member() {
     std::fs::write(root.path().join("README.md"), "hello\n").unwrap();
 
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
 
     let names: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
     assert_eq!(names, vec!["real"], "something other than a clone got in");
@@ -184,7 +196,11 @@ fn a_worktree_is_not_a_second_member() {
     );
 
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
 
     let names: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
     assert_eq!(names, vec!["notko"], "the worktree was counted as a member");
@@ -205,7 +221,11 @@ fn a_repository_inside_a_member_is_that_member_s_business() {
     );
 
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
 
     let names: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
     assert_eq!(names, vec!["outer"], "the walk went a level too deep");
@@ -218,7 +238,11 @@ fn the_order_is_the_names_in_order() {
         clone_at(root.path(), name, None);
     }
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
     let names: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
     assert_eq!(names, vec!["alpha", "mu", "zeta"]);
 }
@@ -233,12 +257,20 @@ fn detecting_again_replaces_rather_than_accumulates() {
     clone_at(second.path(), "two", None);
 
     let mut cfg = config();
-    cfg.detect_members(first.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        first.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
     assert_eq!(
         cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(),
         vec!["one"]
     );
-    cfg.detect_members(second.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        second.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
     assert_eq!(
         cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(),
         vec!["two"]
@@ -253,6 +285,7 @@ fn a_root_that_is_not_there_is_a_workspace_with_no_members() {
     cfg.detect_members(
         Path::new("/nonexistent/nowhere/at/all"),
         &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
     );
     assert!(cfg.repos.is_empty());
 }
@@ -269,7 +302,11 @@ fn the_detection_can_actually_fail() {
         clone_at(root.path(), name, None);
     }
     let mut cfg = config();
-    cfg.detect_members(root.path(), &homma_core::repo::GixGit);
+    cfg.detect_members(
+        root.path(),
+        &homma_core::repo::GixGit,
+        &homma_core::scope::Scope::everything(),
+    );
     assert_eq!(
         cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(),
         vec!["notes", "scripts", "seat"],

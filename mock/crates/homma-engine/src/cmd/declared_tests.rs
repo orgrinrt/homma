@@ -9,6 +9,7 @@
 use std::path::Path;
 
 use homma_api::AgentHook;
+use homma_core::scope::Scope;
 
 use super::*;
 use crate::cmd::aggregate::chains_tests::run_with_payload;
@@ -63,6 +64,84 @@ fn writing(file: &Path) -> String {
 }
 
 #[test]
+fn a_row_narrowed_to_a_repository_outside_the_scope_is_skipped_without_a_problem() {
+    let ws = tempfile::tempdir().unwrap();
+    plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
+    let d = install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &["elsewhere"])]),
+        &repos(),
+        &Scope::named(["alpha"]),
+    )
+    .unwrap();
+    assert!(d.problems.is_empty(), "{:?}", d.problems);
+    assert!(d.entries.is_empty());
+}
+
+#[test]
+fn a_row_naming_one_repository_inside_and_one_outside_the_scope_keeps_the_inside_one() {
+    let ws = tempfile::tempdir().unwrap();
+    plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
+    let d = install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &[
+            "arvo",
+            "elsewhere",
+        ])]),
+        &repos(),
+        &Scope::named(["arvo"]),
+    )
+    .unwrap();
+    assert!(d.problems.is_empty(), "{:?}", d.problems);
+    assert_eq!(
+        d.entries.len(),
+        1,
+        "the row stays for the repository in scope"
+    );
+    let body = std::fs::read_to_string(wrapper(
+        ws.path(),
+        "_declared--PreToolUse--scripts_guard.sh",
+    ))
+    .unwrap();
+    assert!(body.contains("arvo"), "{body}");
+}
+
+#[test]
+fn a_row_whose_every_repository_is_outside_the_scope_is_dropped_and_not_widened() {
+    let ws = tempfile::tempdir().unwrap();
+    plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
+    let d = install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &[
+            "elsewhere",
+            "other",
+        ])]),
+        &repos(),
+        &Scope::named(["arvo"]),
+    )
+    .unwrap();
+    assert!(
+        d.entries.is_empty(),
+        "a row with no names would apply to every call"
+    );
+    assert!(d.problems.is_empty());
+}
+
+#[test]
+fn a_row_narrowed_to_an_unknown_name_is_still_a_problem_when_nothing_is_scoped() {
+    let ws = tempfile::tempdir().unwrap();
+    plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
+    let d = install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &["elsewhere"])]),
+        &repos(),
+        &Scope::everything(),
+    )
+    .unwrap();
+    assert_eq!(d.problems.len(), 1, "{:?}", d.problems);
+}
+
+#[test]
 fn a_row_becomes_a_marked_wrapper_registered_under_its_event_and_matcher() {
     let ws = tempfile::tempdir().unwrap();
     plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
@@ -70,6 +149,7 @@ fn a_row_becomes_a_marked_wrapper_registered_under_its_event_and_matcher() {
         &test_root(ws.path()),
         &table(&[("PreToolUse", "Bash", "scripts/guard", &[])]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     assert!(d.problems.is_empty(), "{:?}", d.problems);
@@ -95,6 +175,7 @@ fn a_row_naming_no_repositories_sees_every_call() {
         &test_root(ws.path()),
         &table(&[("PreToolUse", "", "scripts/guard", &[])]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
@@ -115,6 +196,7 @@ fn a_row_narrowed_to_repositories_runs_only_for_calls_landing_in_them() {
         &test_root(ws.path()),
         &table(&[("PreToolUse", "Bash", "scripts/guard", &["kolli"])]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
@@ -145,6 +227,7 @@ fn a_row_sees_a_shell_call_at_the_root_that_names_its_repository_by_path() {
         &test_root(ws.path()),
         &table(&[("PreToolUse", "Bash", "scripts/guard", &["kolli"])]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
@@ -179,6 +262,7 @@ fn a_row_naming_nothing_it_can_run_is_reported_and_not_registered() {
             ("Stop", "", "scripts/guard", &["nowhere"]),
         ]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     assert!(d.entries.is_empty(), "{:?}", d.entries);
@@ -207,6 +291,7 @@ fn two_rows_running_one_script_under_one_event_get_a_wrapper_each() {
             ("PreToolUse", "Edit", "scripts/guard", &["arvo"]),
         ]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     let got: Vec<(&str, &str)> = d
@@ -231,7 +316,13 @@ fn a_declared_wrapper_no_row_wants_is_removed_and_one_homma_did_not_write_is_not
     let mine = wrapper(ws.path(), "_declared--Stop--mine.sh");
     fs::write(&mine, "#!/bin/sh\n").unwrap();
 
-    install_declared(&test_root(ws.path()), &AgentHooks::default(), &repos()).unwrap();
+    install_declared(
+        &test_root(ws.path()),
+        &AgentHooks::default(),
+        &repos(),
+        &Scope::everything(),
+    )
+    .unwrap();
     assert!(!old.exists(), "a wrapper whose row is gone survived");
     assert!(mine.exists(), "a file homma did not write was removed");
 }
@@ -247,6 +338,7 @@ fn a_file_homma_did_not_write_under_a_rows_name_is_refused() {
         &test_root(ws.path()),
         &table(&[("PreToolUse", "Bash", "scripts/guard", &[])]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     assert!(d.entries.is_empty());
@@ -285,6 +377,7 @@ fn a_row_reaches_settings_and_leaves_it_when_it_goes() {
         &root,
         &table(&[("PreToolUse", "Bash", "scripts/guard", &[])]),
         &repos(),
+        &Scope::everything(),
     )
     .unwrap();
     aggregate::merge_settings(&root, &[], &[], &d.entries, None).unwrap();
@@ -294,7 +387,13 @@ fn a_row_reaches_settings_and_leaves_it_when_it_goes() {
             .to_string(),
     ]);
 
-    let d = install_declared(&root, &AgentHooks::default(), &repos()).unwrap();
+    let d = install_declared(
+        &root,
+        &AgentHooks::default(),
+        &repos(),
+        &Scope::everything(),
+    )
+    .unwrap();
     aggregate::merge_settings(&root, &[], &[], &d.entries, None).unwrap();
     assert_eq!(commands(), vec![".claude/hooks/hand.sh".to_string()]);
 }

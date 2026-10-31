@@ -13,6 +13,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use homma_core::scope::Scope;
+
 use super::super::doc::{Doc, Gap, Gathered, Kind};
 
 /// How long one repository's listing may take.
@@ -20,21 +22,32 @@ pub(super) const LIMIT: Duration = Duration::from_secs(60);
 
 /// The repositories to ask: those directly under the root with a `mockspace.toml`, within `scope`
 /// where it is not empty.
-pub fn repos(root: &Path, scope: &[String]) -> Vec<String> {
+pub fn repos(root: &Path, scope: &Scope) -> Vec<String> {
+    repos_probing(root, scope, &mut |dir| dir.join("mockspace.toml").is_file())
+}
+
+/// [`repos`] with the probe for a repository passed in, so a test can record which directories
+/// were probed: the work done, which printing the right rows does not show.
+pub fn repos_probing(
+    root: &Path,
+    scope: &Scope,
+    probe: &mut dyn FnMut(&Path) -> bool,
+) -> Vec<String> {
     let Ok(read) = std::fs::read_dir(root) else {
         return Vec::new();
     };
+    // the scope is asked on the name, before the directory is probed
     let mut out: Vec<String> = read
         .flatten()
-        .filter(|e| e.path().join("mockspace.toml").is_file())
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| scope.is_empty() || scope.contains(n))
+        .filter(|n| scope.admits(n))
+        .filter(|n| probe(&root.join(n)))
         .collect();
     out.sort();
     out
 }
 
-pub fn gather(root: &Path, scope: &[String]) -> Gathered {
+pub fn gather(root: &Path, scope: &Scope) -> Gathered {
     let names = repos(root, scope);
     if names.is_empty() {
         return Gathered {

@@ -7,6 +7,8 @@
 
 use std::process::Command;
 
+use homma_core::scope::Scope;
+
 use super::sources::mock;
 
 #[cfg(unix)]
@@ -90,11 +92,28 @@ fn the_mockspace_repositories_are_those_in_scope() {
         std::fs::write(dir.path().join(r).join("mockspace.toml"), "").unwrap();
     }
     std::fs::create_dir(dir.path().join("d")).unwrap();
-    assert_eq!(mock::repos(dir.path(), &[]), ["a", "b", "c"]);
+    std::fs::write(dir.path().join("d").join("mockspace.toml"), "").unwrap();
+    assert_eq!(mock::repos(dir.path(), &Scope::everything()), [
+        "a", "b", "c", "d"
+    ]);
+    assert_eq!(mock::repos(dir.path(), &Scope::named(["b", "e"])), ["b"]);
+
+    // the work, not the rows: which directories were probed for a mockspace.toml. The unscoped
+    // run is the control, so the scoped assertion can fail.
+    let probed = |scope: &Scope| {
+        let mut seen = Vec::new();
+        mock::repos_probing(dir.path(), scope, &mut |p| {
+            seen.push(p.file_name().unwrap().to_string_lossy().into_owned());
+            p.join("mockspace.toml").is_file()
+        });
+        seen.sort();
+        seen
+    };
+    assert_eq!(probed(&Scope::everything()), ["a", "b", "c", "d"]);
     assert_eq!(
-        mock::repos(dir.path(), &["b".to_string(), "d".to_string()]),
+        probed(&Scope::named(["b", "e"])),
         ["b"],
-        "a repository outside the scope is not asked"
+        "a repository outside the scope is not probed"
     );
 }
 
@@ -103,7 +122,7 @@ fn a_repository_where_the_listing_fails_is_named_in_the_footer() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("a")).unwrap();
     std::fs::write(dir.path().join("a/mockspace.toml"), "").unwrap();
-    let g = mock::gather(dir.path(), &[]);
+    let g = mock::gather(dir.path(), &Scope::everything());
     assert!(g.docs.is_empty());
     assert!(
         g.gaps[0]

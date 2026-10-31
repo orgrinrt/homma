@@ -105,6 +105,13 @@ pub struct Config {
     #[serde(skip)]
     pub layers_dir: PathBuf,
 
+    /// The repositories the work is for, read by [`crate::scope::Scope`] from
+    /// the local file beside the manifest and applied by
+    /// [`Config::detect_members`], so `repos` holds none outside it. Everything
+    /// for a config built from a string.
+    #[serde(skip)]
+    pub scope: crate::scope::Scope,
+
     /// `[agent]`: the hooks a workspace declares for the agent host, one array
     /// per host event under `[agent.hooks]`. `homma agent regen` writes a
     /// wrapper for each row and registers it; see `homma_api::AgentHooks`.
@@ -219,7 +226,11 @@ impl Config {
         // that disagree about which `tools/` was meant. The two are the same
         // wherever `workspace.path` is left at `.`, which is the ordinary case.
         crate::inject::settle(&mut cfg.status, &root);
-        cfg.detect_members(&root, &crate::repo::GixGit);
+        // a local file that cannot be read widens the scope to everything; `status` reports
+        // the file itself, so the error is not kept here
+        let (scope, _unread) = crate::scope::Scope::load(beside);
+        cfg.detect_members(&root, &crate::repo::GixGit, &scope);
+        cfg.scope = scope;
         Ok(cfg)
     }
 
@@ -240,19 +251,26 @@ impl Config {
     ///
     /// Replaces whatever is there, so calling it twice with different roots
     /// gives the second root's answer rather than the union.
-    pub fn detect_members<G: homma_api::Git>(&mut self, root: &Path, git: &G) {
+    pub fn detect_members<G: homma_api::Git>(
+        &mut self,
+        root: &Path,
+        git: &G,
+        scope: &crate::scope::Scope,
+    ) {
         self.repos = BTreeMap::new();
         let Ok(entries) = std::fs::read_dir(root) else {
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.join(".git").is_dir() {
-                continue;
-            }
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
+            // Asked on the name alone, before the directory is touched: a clone
+            // out of scope is skipped, never opened and then dropped.
+            if !scope.admits(name) || !path.join(".git").is_dir() {
+                continue;
+            }
             let origin = self.read_origin_of(git, &path);
             self.repos.insert(name.to_string(), RepoConfig {
                 forge:      origin.as_ref().and_then(|o| self.forge_at(&o.host)),

@@ -46,6 +46,14 @@ pub(crate) fn resolve_local_path(workspace_root: &Path, repo_path: &Path) -> Pat
 /// workspace root, so the honest answer names what was found rather than what
 /// the operator should have written.
 pub(crate) fn no_such_member(cfg: &Config, name: &str) -> anyhow::Error {
+    // a clone the scope leaves out is not a member, and saying "no such repository" of one that
+    // is on disk would send the operator looking for the wrong thing
+    if !cfg.scope.admits(name) {
+        return anyhow::anyhow!(
+            "`{name}` is outside this clone's scope (`repos` under `[instance]` in \
+             homma.local.toml)"
+        );
+    }
     let mut found: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
     found.sort_unstable();
     if found.is_empty() {
@@ -65,6 +73,20 @@ pub(crate) fn no_such_member(cfg: &Config, name: &str) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_outside_the_scope_is_said_to_be_outside_it_and_a_stranger_is_not() {
+        let mut cfg = Config::parse("[workspace]\nname = \"w\"\n").unwrap();
+        cfg.scope = homma_core::scope::Scope::named(["kaski"]);
+        let outside = no_such_member(&cfg, "arvo").to_string();
+        assert!(outside.contains("outside this clone's scope"), "{outside}");
+        cfg.scope = homma_core::scope::Scope::everything();
+        let stranger = no_such_member(&cfg, "arvo").to_string();
+        assert!(
+            stranger.contains("no repository named `arvo`"),
+            "{stranger}"
+        );
+    }
 
     #[test]
     fn a_relative_path_anchors_at_the_root() {
@@ -178,6 +200,40 @@ mod relative_str_tests {
     }
 }
 
+/// The clone `dir` is in, when the scope leaves that clone out of the members.
+///
+/// A clone directly under the workspace root whose name the scope does not admit: the case where
+/// the manifest lists no clone for the working directory and refusing would lock the clone out
+/// of its own git hooks. The workspace repository, a clone elsewhere, and a directory the scope
+/// admits but detection missed are not it, and keep their refusal.
+pub(crate) fn out_of_scope_clone(cfg: &Config, dir: &Path) -> Option<PathBuf> {
+    let clone = clone_of(dir)?;
+    let root = cfg.workspace.path.canonicalize().ok()?;
+    let name = clone.strip_prefix(&root).ok()?;
+    let mut parts = name.components();
+    let first = parts.next()?;
+    let direct = parts.next().is_none();
+    let name = first.as_os_str().to_str()?;
+    (direct && !cfg.scope.admits(name)).then_some(clone)
+}
+
+/// The clone `dir` sits in or hangs off, found through git rather than through the manifest.
+///
+/// A worktree sits beside the clones rather than under one, and a hook runs with it as the
+/// working directory; the clone it hangs off is the parent of the common git directory. This
+/// holds for a plain clone too, whose common directory is its own `.git`.
+pub(crate) fn clone_of(dir: &Path) -> Option<PathBuf> {
+    let common = std::process::Command::new("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))?;
+    let clone = common.parent()?;
+    Some(clone.canonicalize().unwrap_or_else(|_| clone.to_path_buf()))
+}
+
 /// The repo named, or the one the working directory is inside, with its
 /// root made absolute against the workspace.
 pub(crate) fn resolve_repo<'a>(
@@ -191,7 +247,7 @@ pub(crate) fn resolve_repo<'a>(
             .repos
             .get_key_value(n)
             .map(|(k, r)| (k.as_str(), r, root_of(r)))
-            .ok_or_else(|| anyhow!("`{n}` is not a repository in this workspace"));
+            .ok_or_else(|| no_such_member(cfg, n));
     }
     let here = std::env::current_dir()?;
     let here = here.canonicalize().unwrap_or(here);
@@ -208,18 +264,7 @@ pub(crate) fn resolve_repo<'a>(
     if let Some(found) = containing(&here) {
         return Ok(found);
     }
-    // a worktree sits beside the clones rather than under one, and a hook
-    // runs with it as the working directory; the clone it hangs off is the
-    // parent of the common git directory
-    let common = std::process::Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .current_dir(&here)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
-    if let Some(clone) = common.as_deref().and_then(Path::parent) {
-        let clone = clone.canonicalize().unwrap_or_else(|_| clone.to_path_buf());
+    if let Some(clone) = clone_of(&here) {
         if let Some(found) = containing(&clone) {
             return Ok(found);
         }
