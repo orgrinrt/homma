@@ -6,7 +6,7 @@
 //! The steps that write a row: `freeze`, `pin` and `mark`, and `show` over them.
 
 use super::super::MilestoneError;
-use super::super::record::{RECORD_PATH, Source, base, rows};
+use super::super::record::{RECORD_PATH, Row, Source, base, rows};
 use super::super::steps::{freeze, mark, pin, show};
 use super::Fx;
 
@@ -54,6 +54,17 @@ fn a_milestone_goes_through_freeze_pin_and_mark_and_the_row_holds_each_revision(
     );
     let pinned = pin(fx.root(), "dev", None).unwrap();
     assert_eq!(pinned.head.as_deref(), Some(c3.as_str()));
+    // each step leaves the revisions the earlier ones recorded
+    let expected = Row {
+        n: Some(2),
+        base: Some(c1.clone()),
+        freeze: Some(at_freeze.clone()),
+        freeze_at: Some(date(&fx, &at_freeze)),
+        head: Some(c3.clone()),
+        ..Row::default()
+    };
+    assert_eq!(pinned, expected);
+    assert_eq!(rows(fx.root()).unwrap()[1], expected);
     fx.commit_record();
     let c4 = fx.commit("a.txt", "4\n");
     let closed = mark(fx.root(), "dev", &c4, false).unwrap();
@@ -64,9 +75,11 @@ fn a_milestone_goes_through_freeze_pin_and_mark_and_the_row_holds_each_revision(
     fx.commit_record();
     let all = rows(fx.root()).unwrap();
     assert_eq!(all.len(), 2);
-    let row = &all[1];
-    assert_eq!(row.n, Some(2));
-    assert_eq!(row.tip(), Some(c4.as_str()));
+    assert_eq!(all[1], Row {
+        tip: Some(c4.clone()),
+        at: Some(date(&fx, &c4)),
+        ..expected
+    });
     assert_eq!(base(fx.root(), "dev").unwrap().0, c4);
 }
 
@@ -118,7 +131,7 @@ fn a_pin_is_refused_with_no_open_row_twice_off_the_trunk_and_before_the_freeze()
         pin(fx.root(), "dev", Some(&c3)),
         Err(MilestoneError::NotOpen)
     ));
-    // the freeze stands at c4: a head before it does not contain it
+    // the freeze stands at the record commit after c4: a head before it does not contain it
     freeze(fx.root(), "dev").unwrap();
     fx.commit_record();
     assert!(matches!(
@@ -177,7 +190,11 @@ fn a_row_of_the_old_shape_is_read_as_it_is_and_its_sha_is_its_tip() {
     let fx = Fx::new();
     let c1 = fx.commit("a.txt", "1\n");
     fx.commit("a.txt", "2\n");
-    let old = format!("[[milestone]]\nsha = \"{c1}\"\nat = \"2026-10-27\"\n");
+    // written by hand: a comment, a key out of order and a key the shape does not name
+    let old = format!(
+        "# picked by op\n[[milestone]]\n# hand-numbered\nat = \"2026-10-27\"\nsha = \"{c1}\"\nn = \
+         1\nnote = \"picked by op\"\n"
+    );
     std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
     std::fs::write(fx.root().join(RECORD_PATH), &old).unwrap();
     fx.commit_record();
@@ -191,9 +208,51 @@ fn a_row_of_the_old_shape_is_read_as_it_is_and_its_sha_is_its_tip() {
         (opened.n, opened.base.as_deref()),
         (Some(2), Some(c1.as_str()))
     );
-    // the recorded row is left exactly as it was written
-    let text = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    let read = || std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    // the recorded row is left byte for byte as it was written
+    assert!(read().starts_with(&old), "{}", read());
+    // a hand edit on the open row survives the steps that set its own keys
+    let mut edited = read();
+    let open_table = edited.rfind("[[milestone]]\n").unwrap() + "[[milestone]]\n".len();
+    edited.insert_str(open_table, "# the open one\nextra = 7\n");
+    std::fs::write(fx.root().join(RECORD_PATH), edited).unwrap();
+    fx.commit_record();
+    pin(fx.root(), "dev", None).unwrap();
+    let c3 = fx.commit("a.txt", "3\n");
+    mark(fx.root(), "dev", &c3, false).unwrap();
+    let text = read();
     assert!(text.starts_with(&old), "{text}");
+    assert!(text.contains("# the open one\nextra = 7\n"), "{text}");
+    let last = &rows(fx.root()).unwrap()[1];
+    assert_eq!(last.tip(), Some(c3.as_str()));
+    assert!(last.head.is_some() && last.freeze.is_some());
+}
+
+#[test]
+fn a_milestone_tag_never_gives_the_first_row_a_base() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    fx.commit("a.txt", "2\n");
+    fx.git(&["tag", "-a", "milestone/1", &c1, "-m", "m"]);
+    let row = freeze(fx.root(), "dev").unwrap();
+    assert_eq!(row.n, Some(1));
+    assert!(row.base.is_none());
+    // the tag still answers the base command
+    assert_eq!(base(fx.root(), "dev").unwrap(), (c1, Source::Tag));
+}
+
+#[test]
+fn a_refused_pin_and_a_refused_mark_write_nothing() {
+    let (fx, [c1, c2, ..]) = after_one_milestone();
+    freeze(fx.root(), "dev").unwrap();
+    let before = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    assert!(pin(fx.root(), "dev", Some(&c2)).is_err());
+    assert!(mark(fx.root(), "dev", &c2, false).is_err());
+    assert!(mark(fx.root(), "dev", &c1, false).is_err());
+    assert_eq!(
+        std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap(),
+        before
+    );
 }
 
 #[test]

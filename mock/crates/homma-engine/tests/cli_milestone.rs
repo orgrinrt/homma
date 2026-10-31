@@ -294,6 +294,7 @@ fn a_milestone_is_frozen_pinned_marked_and_shown_with_its_ranges() {
         )));
     run(&["show", "x", "1"])
         .success()
+        .stdout(predicate::str::contains("milestone 1"))
         .stdout(predicate::str::contains("milestone 2").not());
     run(&["show", "x", "9"])
         .failure()
@@ -302,7 +303,7 @@ fn a_milestone_is_frozen_pinned_marked_and_shown_with_its_ranges() {
         .args(["-c", &cfg, "--output", "json", "milestone", "show", "x", "2"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"epoch\""))
+        .stdout(predicate::str::contains(format!("\"epoch\": \"{first}..")))
         .stdout(predicate::str::contains(format!("\"tip\": \"{tip}\"")));
     run(&["base", "x"]).success().stdout(format!("{tip}\n"));
 }

@@ -53,6 +53,27 @@ impl Row {
     pub fn tip(&self) -> Option<&str> {
         self.tip.as_deref().or(self.sha.as_deref())
     }
+
+    /// The row as the lines of a new table, in the order of the design, each key it
+    /// holds and no other.
+    fn lines(&self) -> String {
+        let text = [
+            ("base", &self.base),
+            ("freeze", &self.freeze),
+            ("freeze_at", &self.freeze_at),
+            ("head", &self.head),
+            ("tip", &self.tip),
+            ("sha", &self.sha),
+            ("at", &self.at),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| value.as_ref().map(|v| format!("{key} = \"{v}\"\n")));
+        self.n
+            .map(|n| format!("n = {n}\n"))
+            .into_iter()
+            .chain(text)
+            .collect()
+    }
 }
 
 /// A close made: the tip and the date of its commit.
@@ -70,7 +91,7 @@ pub enum Source {
     Tag,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Deserialize, Default)]
 struct File {
     #[serde(default)]
     milestone: Vec<Row>,
@@ -98,17 +119,46 @@ fn parse(text: &str) -> Result<Vec<Row>, MilestoneError> {
     Ok(file.milestone)
 }
 
-/// Write `rows` as the record, creating its directory. A row is written in the
-/// shape it was read in: the fields it has and no others.
-pub fn write(root: &Path, rows: Vec<Row>) -> Result<(), MilestoneError> {
-    let text = toml::to_string(&File {
-        milestone: rows,
-    })
-    .map_err(|e| MilestoneError::Record(e.to_string()))?;
+/// Add `row` to the record as a new table at its end, creating the file and its
+/// directory. Every byte already there stays as it was.
+pub fn append(root: &Path, row: &Row) -> Result<(), MilestoneError> {
     let path = root.join(RECORD_PATH);
+    let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+    if !text.is_empty() {
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push('\n');
+    }
+    text.push_str("[[milestone]]\n");
+    text.push_str(&row.lines());
+    store(&path, &text)
+}
+
+/// Set `pairs` on the table at `index`, each key where it stands or at the end
+/// of that table. Nothing else in the file is touched: a comment, the order of
+/// keys and a key this shape does not name all stay as written.
+pub fn set(root: &Path, index: usize, pairs: &[(&str, &str)]) -> Result<(), MilestoneError> {
+    let path = root.join(RECORD_PATH);
+    let text = std::fs::read_to_string(&path).map_err(MilestoneError::Io)?;
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| MilestoneError::Record(e.to_string()))?;
+    let table = doc
+        .get_mut("milestone")
+        .and_then(toml_edit::Item::as_array_of_tables_mut)
+        .and_then(|tables| tables.get_mut(index))
+        .ok_or_else(|| MilestoneError::Record(format!("no table at index {index}")))?;
+    for (key, value) in pairs {
+        table.insert(key, toml_edit::value(*value));
+    }
+    store(&path, &doc.to_string())
+}
+
+fn store(path: &Path, text: &str) -> Result<(), MilestoneError> {
     path.parent()
         .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(&path, text))
+        .and_then(|()| std::fs::write(path, text))
         .map_err(MilestoneError::Io)
 }
 

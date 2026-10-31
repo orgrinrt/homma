@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::record::{Mark, Row, TAG_PREFIX, newest_tag, number, on_trunk, rows, trunk_rows, write};
+use super::record::{Mark, Row, TAG_PREFIX, append, number, on_trunk, rows, set, trunk_rows};
 use super::{MilestoneError, commit, contains, exists, git, trunk_here};
 
 /// The trunk's tip as a freeze or a pin reads it: `origin`'s where the clone
@@ -30,6 +30,11 @@ fn open(rows: &[Row]) -> Option<usize> {
     rows.len()
         .checked_sub(1)
         .filter(|&i| rows[i].tip().is_none())
+}
+
+/// The number of the milestone after the last row.
+fn next(rows: &[Row]) -> usize {
+    rows.len().checked_sub(1).map_or(1, |i| number(rows, i) + 1)
 }
 
 /// `sha` as a commit on the trunk that contains `of`.
@@ -60,16 +65,13 @@ fn after(
 /// Open the next milestone: its `base` is the last tip, its `freeze` the
 /// trunk's tip now. Commits nothing.
 pub fn freeze(root: &Path, trunk: &str) -> Result<Row, MilestoneError> {
-    let mut all = rows(root)?;
+    let all = rows(root)?;
     if let Some(i) = open(&all) {
         return Err(MilestoneError::StillOpen(number(&all, i)));
     }
     let at = trunk_tip(root, trunk)?;
-    let base = match all.last().and_then(|r| r.tip().map(str::to_string)) {
-        Some(tip) => Some(tip),
-        None if all.is_empty() => newest_tag(root, &trunk_here(root, trunk))?,
-        None => None,
-    };
+    // the first row has no base: a tag answers the `base` command and nothing else
+    let base = all.last().and_then(|r| r.tip().map(str::to_string));
     if let Some(base) = &base {
         if !contains(root, &at, base)? {
             return Err(MilestoneError::NotAncestor {
@@ -79,14 +81,13 @@ pub fn freeze(root: &Path, trunk: &str) -> Result<Row, MilestoneError> {
         }
     }
     let row = Row {
-        n: Some(all.len().checked_sub(1).map_or(1, |i| number(&all, i) + 1)),
+        n: Some(next(&all)),
         base,
         freeze_at: Some(date(root, &at)?),
         freeze: Some(at),
         ..Row::default()
     };
-    all.push(row.clone());
-    write(root, all)?;
+    append(root, &row)?;
     Ok(row)
 }
 
@@ -104,10 +105,9 @@ pub fn pin(root: &Path, trunk: &str, rev: Option<&str>) -> Result<Row, Milestone
         Some(rev) => after(root, trunk, rev, &freeze, "freeze")?,
         None => after(root, trunk, &trunk_tip(root, trunk)?, &freeze, "freeze")?,
     };
+    set(root, i, &[("head", &head)])?;
     all[i].head = Some(head);
-    let row = all[i].clone();
-    write(root, all)?;
-    Ok(row)
+    Ok(all[i].clone())
 }
 
 /// Close the open milestone at `rev`, setting its `tip` and `at`; with no
@@ -121,36 +121,35 @@ pub fn mark(root: &Path, trunk: &str, rev: &str, tag: bool) -> Result<Mark, Mile
             trunk: trunk.to_string(),
         });
     }
-    let mut all = rows(root)?;
+    let all = rows(root)?;
     if all.iter().any(|r| r.tip() == Some(sha.as_str())) {
         return Err(MilestoneError::AlreadyMarked(rev.to_string()));
     }
     let at = date(root, &sha)?;
-    let index = match open(&all) {
-        Some(i) => {
-            let head = all[i]
-                .head
-                .clone()
-                .ok_or(MilestoneError::NotPinned(number(&all, i)))?;
-            after(root, trunk, rev, &head, "head")?;
-            all[i].tip = Some(sha.clone());
-            all[i].at = Some(at.clone());
-            i
-        },
+    let open = open(&all);
+    if let Some(i) = open {
+        let head = all[i]
+            .head
+            .clone()
+            .ok_or(MilestoneError::NotPinned(number(&all, i)))?;
+        after(root, trunk, rev, &head, "head")?;
+    }
+    let n = open.map_or_else(|| next(&all), |i| number(&all, i));
+    // the tag first: a refused tag then leaves the record as it was, and a
+    // rerun is not met by "already marked"
+    let tagged = if tag { Some(make_tag(root, n, &sha)?) } else { None };
+    let written = match open {
+        Some(i) => set(root, i, &[("tip", &sha), ("at", &at)]),
         None => {
-            all.push(Row {
-                n: Some(all.len().checked_sub(1).map_or(1, |i| number(&all, i) + 1)),
+            append(root, &Row {
+                n: Some(n),
                 tip: Some(sha.clone()),
                 at: Some(at.clone()),
                 ..Row::default()
-            });
-            all.len() - 1
+            })
         },
     };
-    // the tag first: a refused tag then leaves the record as it was, and a
-    // rerun is not met by "already marked"
-    let tagged = if tag { Some(make_tag(root, number(&all, index), &sha)?) } else { None };
-    if let Err(e) = write(root, all) {
+    if let Err(e) = written {
         if let Some(name) = tagged {
             let _ = git(root, &["tag", "-d", &name]);
         }
