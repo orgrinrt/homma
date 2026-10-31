@@ -1038,7 +1038,7 @@ local one whole. `unset` under `[instance]` lists dotted paths to remove from th
 base before the local file is applied; a table path removes the table, a path the
 base lacks removes nothing and is no error, since the store changes under a clone,
 and the local file may set the same path again, which then counts as local.
-`instance.project` and `instance.unset` cannot be unset. The `work` of the merged
+`instance.project` and `instance.unset` cannot be unset. A merged config that leaves `work` empty, by unsetting it, is refused naming the path. The `work` of the merged
 config is the base's unless the local file sets it, and a file without a project
 needs its own. The console check runs on the merged config, so a clone that names
 a console removes the project's dashboard with `unset = ["tools.dashboard"]`.
@@ -1052,7 +1052,7 @@ addition. A key the base has and the copy lacks is inherited from then on. Where
 it is for another work, does not parse, or is a link, it refuses and says why, and
 `--replace` moves the old one aside to `homma.local.toml.replaced`, refusing if
 that name is taken, and writes the project line, so a write that fails leaves
-the old file where it was. `homma local show` prints the file as written, and with
+the old file where it was. `homma local show` prints the file as written, whether or not its project can be read, and with
 `--effective` the merged document; `--output json` is always the merged one,
 because a script reading a tool's setting wants the value in force. `homma local
 list` names the stored configs sorted, marks the one the installed file names or
