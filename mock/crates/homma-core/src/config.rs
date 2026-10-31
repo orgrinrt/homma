@@ -112,11 +112,6 @@ pub struct Config {
     #[serde(skip)]
     pub scope: crate::scope::Scope,
 
-    /// Why the scope was not applied, where the local file is there and cannot
-    /// be read. `None` otherwise.
-    #[serde(skip)]
-    pub scope_error: Option<String>,
-
     /// `[agent]`: the hooks a workspace declares for the agent host, one array
     /// per host event under `[agent.hooks]`. `homma agent regen` writes a
     /// wrapper for each row and registers it; see `homma_api::AgentHooks`.
@@ -231,8 +226,9 @@ impl Config {
         // that disagree about which `tools/` was meant. The two are the same
         // wherever `workspace.path` is left at `.`, which is the ordinary case.
         crate::inject::settle(&mut cfg.status, &root);
-        let (scope, bad) = crate::scope::Scope::load(beside);
-        cfg.scope_error = bad.map(|e| e.to_string());
+        // a local file that cannot be read widens the scope to everything; `status` reports
+        // the file itself, so the error is not kept here
+        let (scope, _unread) = crate::scope::Scope::load(beside);
         cfg.detect_members(&root, &crate::repo::GixGit, &scope);
         cfg.scope = scope;
         Ok(cfg)

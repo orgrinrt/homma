@@ -153,11 +153,10 @@ fn loading_a_manifest_applies_the_local_file_beside_it() {
     assert_eq!(cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(), [
         "kaski"
     ]);
-    assert!(cfg.scope_error.is_none());
 }
 
 #[test]
-fn a_broken_local_file_loads_everything_and_says_so() {
+fn a_broken_local_file_loads_everything() {
     let root = workspace();
     std::fs::write(
         root.path().join("homma.toml"),
@@ -168,5 +167,4 @@ fn a_broken_local_file_loads_everything_and_says_so() {
 
     let cfg = Config::from_path(&root.path().join("homma.toml")).unwrap();
     assert_eq!(cfg.repos.len(), 5);
-    assert!(cfg.scope_error.is_some());
 }

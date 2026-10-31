@@ -149,7 +149,7 @@ fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outc
         Ok((_, _, root)) => root,
         Err(e) => {
             let here = std::env::current_dir()?;
-            crate::cmd::util::clone_of(&here).ok_or(e)?
+            crate::cmd::util::out_of_scope_clone(cfg, &here).ok_or(e)?
         },
     };
     // git hands some events their input on stdin; read it once, for those

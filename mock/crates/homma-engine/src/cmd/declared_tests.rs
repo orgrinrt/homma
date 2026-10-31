@@ -79,6 +79,55 @@ fn a_row_narrowed_to_a_repository_outside_the_scope_is_skipped_without_a_problem
 }
 
 #[test]
+fn a_row_naming_one_repository_inside_and_one_outside_the_scope_keeps_the_inside_one() {
+    let ws = tempfile::tempdir().unwrap();
+    plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
+    let d = install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &[
+            "arvo",
+            "elsewhere",
+        ])]),
+        &repos(),
+        &Scope::named(["arvo"]),
+    )
+    .unwrap();
+    assert!(d.problems.is_empty(), "{:?}", d.problems);
+    assert_eq!(
+        d.entries.len(),
+        1,
+        "the row stays for the repository in scope"
+    );
+    let body = std::fs::read_to_string(wrapper(
+        ws.path(),
+        "_declared--PreToolUse--scripts_guard.sh",
+    ))
+    .unwrap();
+    assert!(body.contains("arvo"), "{body}");
+}
+
+#[test]
+fn a_row_whose_every_repository_is_outside_the_scope_is_dropped_and_not_widened() {
+    let ws = tempfile::tempdir().unwrap();
+    plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));
+    let d = install_declared(
+        &test_root(ws.path()),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &[
+            "elsewhere",
+            "other",
+        ])]),
+        &repos(),
+        &Scope::named(["arvo"]),
+    )
+    .unwrap();
+    assert!(
+        d.entries.is_empty(),
+        "a row with no names would apply to every call"
+    );
+    assert!(d.problems.is_empty());
+}
+
+#[test]
 fn a_row_narrowed_to_an_unknown_name_is_still_a_problem_when_nothing_is_scoped() {
     let ws = tempfile::tempdir().unwrap();
     plant_script(ws.path(), "scripts/guard", &ws.path().join("fired"));

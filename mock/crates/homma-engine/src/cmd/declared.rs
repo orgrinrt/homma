@@ -78,14 +78,17 @@ pub(crate) fn install_declared(
             continue;
         }
         let mut roots = Vec::new();
+        let mut outside = 0usize;
         for r in row.repos() {
             match repos.iter().find(|(n, _)| n == r) {
                 Some((_, p)) => roots.push(crate::cmd::util::relative_str(std::path::Path::new(p))),
                 None => {
-                    // a repository outside this clone's scope is skipped without a word:
-                    // it exists, the work is just not this clone's
+                    // a repository outside this clone's scope is left out without a word: it
+                    // exists, the work is just not this clone's. The row keeps the names that
+                    // are in scope.
                     if !scope.admits(r) {
-                        continue 'rows;
+                        outside += 1;
+                        continue;
                     }
                     out.problems.push(format!(
                         "{shown} is narrowed to `{r}`, which the workspace has no repository \
@@ -94,6 +97,11 @@ pub(crate) fn install_declared(
                     continue 'rows;
                 },
             }
+        }
+        // a row with no names reads as applying to every call, so one whose every name is
+        // outside the scope is dropped rather than widened
+        if outside > 0 && roots.is_empty() {
+            continue;
         }
 
         let base = format!("{DECLARED_PREFIX}{event}--{}", slug(row.run()));

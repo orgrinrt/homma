@@ -33,13 +33,17 @@ command that works on the members never opens a clone outside the scope for its
 remote, and the stray-build walk of `status` does not enter one either. One
 module reads the scope, and the config is built with it; no command reads the
 key for itself. Two walks are not scoped: the launcher's workspace survey, which
-runs git in every clone so that nothing is reaped unseen, and the stray-build
-walk of the `.worktrees` directories, since a worktree is not a top-level clone.
+runs git in every clone, for the reap so that nothing is removed unseen and for
+the workspace status it displays, and the stray-build walk of the `.worktrees`
+directories, since a worktree is not a top-level clone.
 A clone outside the scope is not a member and still has its git hooks: the
 entrypoint finds its clone through git, and the commit and push gates never
-refuse over the scope. Naming such a clone on a command line says that it is
-outside the scope. A hook row narrowed to one is skipped by `agent regen`
-without a word.
+refuse over the scope, which also means the workspace gate makes no
+adoption check there, since its table of repositories is the members. Naming such
+a clone on a command line says that it is outside the scope. A hook row narrowed
+to repositories outside the scope loses those names in `agent regen` without a
+word, and is dropped when every name it carries is outside, since a row with no
+names would read as applying to every call.
 
 **Minimal, and delegating.** Where a member repository has its own tooling, homma
 drives it rather than reimplementing it. Releasing is the case where the tooling
@@ -983,7 +987,7 @@ ordinary case, nothing notices, and every repository is in scope. A name in
 `repos` that no clone provides is not an error, since a container that has not
 attached it yet is ordinary, and `status` names it as not cloned. Present and not
 parsing is never silently ignored either, and never refuses the loader: the scope
-is then everything, the loader records why, `status` gives the file a line of its
+is then everything, `status` gives the file a line of its
 own naming the error, and `local show` fails on it.
 
 `homma local init --work <name>` writes the file with every key in it, refuses

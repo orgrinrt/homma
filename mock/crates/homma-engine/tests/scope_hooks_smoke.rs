@@ -74,6 +74,25 @@ fn a_hook_runs_in_a_clone_inside_the_scope_too() {
 }
 
 #[test]
+fn the_workspace_repository_itself_still_refuses_a_hook_run() {
+    // the fallback is for a clone outside the scope and for nothing else
+    let (_d, root) = workspace();
+    assert!(
+        git()
+            .args(["init", "-q", "-b", "main"])
+            .current_dir(&root)
+            .status()
+            .unwrap()
+            .success()
+    );
+    homma(&root)
+        .current_dir(&root)
+        .args(["hook", "run", "post-merge"])
+        .assert()
+        .failure();
+}
+
+#[test]
 fn naming_a_clone_outside_the_scope_says_it_is_outside_the_scope() {
     let (_d, root) = workspace();
     homma(&root)
