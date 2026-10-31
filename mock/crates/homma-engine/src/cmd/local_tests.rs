@@ -353,7 +353,7 @@ fn what_a_tool_records_after_the_install_never_reaches_the_store() {
 }
 
 #[test]
-fn a_link_does_not_survive_the_first_write_which_is_why_install_copies() {
+fn a_set_replaces_a_link_with_a_file_and_leaves_what_it_pointed_at() {
     let d = ws();
     store(&d, &[("kaski", KASKI)]);
     let stored = d.path().join(local::STORE_DIR).join("kaski.toml");

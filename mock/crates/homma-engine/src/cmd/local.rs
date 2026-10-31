@@ -486,18 +486,13 @@ pub fn set(dir: &Path, key: &str, value: &str) -> Result<()> {
 }
 
 fn set_waiting(dir: &Path, key: &str, value: &str, wait: std::time::Duration) -> Result<()> {
-    let path = dir.join(LOCAL_FILE);
     let _lock = Lock::take(dir.join(format!("{LOCAL_FILE}.lock")), wait)?;
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            bail!(
-                "no {}; `homma local init --work <name>` makes one",
-                path.display()
-            )
-        },
-        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
-    };
+    let (path, text) = homma_core::resolve::written(dir)?.with_context(|| {
+        format!(
+            "no {}; `homma local init --work <name>` makes one",
+            dir.join(LOCAL_FILE).display()
+        )
+    })?;
     let out = local::set(&text, key, value)?;
     // The checks on the file alone cannot see the project it inherits. A result
     // that stops loading where the text before it loaded is refused, and a
