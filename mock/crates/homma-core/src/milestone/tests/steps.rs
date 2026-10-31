@@ -345,6 +345,9 @@ fn the_steps_leave_a_records_line_endings_and_byte_order_mark_as_they_were() {
             text.matches(eol).count(),
             "{name}: {text:?}"
         );
+        if eol == "\n" {
+            assert!(!text.contains('\r'), "{name}: {text:?}");
+        }
         assert_eq!(rows(fx.root()).unwrap().len(), 2, "{name}");
     }
 }
@@ -425,4 +428,90 @@ fn an_open_row_with_no_freeze_is_refused_by_a_pin_saying_the_freeze_is_missing()
     fx.commit_record();
     let err = pin(fx.root(), "dev", None).unwrap_err();
     assert!(err.to_string().contains("no freeze"), "{err}");
+}
+
+/// A trunk with milestone 1 recorded and milestone 2 frozen, and `extra`
+/// written on the end of the open row and committed: `(fx, [c1, c2, c3, c4])`.
+fn open_row_with(extra: &str) -> (Fx, [String; 4]) {
+    let (fx, shas) = after_one_milestone();
+    freeze(fx.root(), "dev").unwrap();
+    let path = fx.root().join(RECORD_PATH);
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(extra);
+    std::fs::write(&path, text).unwrap();
+    fx.commit_record();
+    (fx, shas)
+}
+
+fn record(fx: &Fx) -> String {
+    std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap()
+}
+
+#[test]
+fn a_value_over_several_lines_on_the_open_row_is_never_written_into() {
+    for extra in ["notes = [\n  \"first\",\n]\n", "note = \"\"\"\nhead = later\n\"\"\"\n"] {
+        let (fx, _) = open_row_with(extra);
+        let before = record(&fx);
+        let refused = pin(fx.root(), "dev", None);
+        assert!(
+            matches!(refused, Err(MilestoneError::Record(_))),
+            "{extra:?}: {refused:?}"
+        );
+        assert_eq!(record(&fx), before, "{extra:?}");
+        // the record still reads, and no step is made to refuse for it afterwards
+        assert_eq!(rows(fx.root()).unwrap().len(), 2, "{extra:?}");
+    }
+}
+
+#[test]
+fn a_literal_string_value_is_replaced_whole_and_the_row_reads_back() {
+    let (fx, _) = open_row_with("at = 'not yet' # kept\n");
+    pin(fx.root(), "dev", None).unwrap();
+    fx.commit_record();
+    let c3 = fx.git(&["rev-parse", "dev"]);
+    mark(fx.root(), "dev", &c3, false).unwrap();
+    let text = record(&fx);
+    assert!(
+        text.contains(&format!("at = \"{}\" # kept\n", date(&fx, &c3))),
+        "{text}"
+    );
+    assert!(!text.contains("not yet"), "{text}");
+    assert_eq!(
+        rows(fx.root()).unwrap()[1].at.as_deref(),
+        Some(date(&fx, &c3).as_str())
+    );
+}
+
+#[test]
+fn a_table_header_with_spaces_or_a_comment_is_still_a_milestone_table() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    fx.commit("a.txt", "2\n");
+    let path = fx.root().join(RECORD_PATH);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        format!("[[ milestone ]] # one\nsha = \"{c1}\"\nat = \"2026-10-27\"\n"),
+    )
+    .unwrap();
+    fx.commit_record();
+    let opened = freeze(fx.root(), "dev").unwrap();
+    assert_eq!(opened.base.as_deref(), Some(c1.as_str()));
+    assert_eq!(rows(fx.root()).unwrap().len(), 2);
+}
+
+#[test]
+fn a_mark_below_the_last_tip_is_refused_and_writes_nothing() {
+    let (fx, [_, c2, _, _]) = after_one_milestone();
+    // a later commit is marked as a tip, then an earlier one is offered
+    let later = fx.git(&["rev-parse", "dev~1"]);
+    mark(fx.root(), "dev", &later, false).unwrap();
+    fx.commit_record();
+    let before_second = record(&fx);
+    let refused = mark(fx.root(), "dev", &c2, false);
+    assert!(
+        matches!(refused, Err(MilestoneError::NotDescendant { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(record(&fx), before_second);
 }

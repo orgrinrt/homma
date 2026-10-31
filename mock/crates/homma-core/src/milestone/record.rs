@@ -49,6 +49,21 @@ pub struct Row {
 }
 
 impl Row {
+    /// Set the key named `key` to `value`; false where a row has no such key.
+    fn put(&mut self, key: &str, value: &str) -> bool {
+        let slot = match key {
+            "base" => &mut self.base,
+            "freeze" => &mut self.freeze,
+            "freeze_at" => &mut self.freeze_at,
+            "head" => &mut self.head,
+            "tip" => &mut self.tip,
+            "at" => &mut self.at,
+            _ => return false,
+        };
+        *slot = Some(value.to_string());
+        true
+    }
+
     /// Where the milestone closed: `tip`, or `sha` on a row of the old shape.
     pub fn tip(&self) -> Option<&str> {
         self.tip.as_deref().or(self.sha.as_deref())
@@ -137,13 +152,20 @@ fn tables(text: &str) -> Vec<(usize, usize)> {
     for line in text.split_inclusive('\n') {
         let end = at + line.len();
         let head = line.trim_start_matches('\u{feff}').trim();
+        let name: String = head
+            .split('#')
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         if head.starts_with('[') {
             if let Some(last) = found.last_mut() {
                 if last.1 == usize::MAX {
                     last.1 = at;
                 }
             }
-            if head == "[[milestone]]" {
+            if name == "[[milestone]]" {
                 found.push((end, usize::MAX));
             }
         }
@@ -159,10 +181,11 @@ fn tables(text: &str) -> Vec<(usize, usize)> {
 
 /// The record's text with the tables a step may edit, refused where the rows it
 /// parses as are not exactly those tables (an inline array, say).
-fn editable(text: &str) -> Result<Vec<(usize, usize)>, MilestoneError> {
+fn editable(text: &str) -> Result<(Vec<(usize, usize)>, Vec<Row>), MilestoneError> {
     let spans = tables(text);
-    if parse(text)?.len() == spans.len() {
-        Ok(spans)
+    let rows = parse(text)?;
+    if rows.len() == spans.len() {
+        Ok((spans, rows))
     } else {
         Err(MilestoneError::Record(
             "the record is not written as `[[milestone]]` tables, so a step cannot edit it".into(),
@@ -180,7 +203,7 @@ pub fn append(root: &Path, row: &Row) -> Result<(), MilestoneError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(MilestoneError::Io(e)),
     };
-    editable(&text)?;
+    let (_, before) = editable(&text)?;
     let eol = eol(&text);
     if !text.is_empty() {
         if !text.ends_with('\n') {
@@ -191,6 +214,9 @@ pub fn append(root: &Path, row: &Row) -> Result<(), MilestoneError> {
     text.push_str("[[milestone]]");
     text.push_str(eol);
     text.push_str(&row.lines(eol));
+    let mut expected = before;
+    expected.push(row.clone());
+    reads_back(&text, &expected)?;
     store(&path, &text)
 }
 
@@ -204,7 +230,15 @@ fn replaced(line: &str, key: &str, value: &str) -> Option<String> {
         .trim_start()
         .strip_prefix('=')?;
     let rest = rest.trim_start();
-    let kept = match rest.strip_prefix('"') {
+    let kept = match rest.strip_prefix('\'') {
+        Some(inner) => &inner[inner.find('\'')? + 1 ..],
+        None => rest_after_basic(rest)?,
+    };
+    Some(format!("{}{key} = \"{value}\"{kept}", &line[.. indent]))
+}
+
+fn rest_after_basic(rest: &str) -> Option<&str> {
+    Some(match rest.strip_prefix('"') {
         Some(inner) => {
             let mut escaped = false;
             let close = inner.char_indices().find(|&(_, c)| {
@@ -218,8 +252,7 @@ fn replaced(line: &str, key: &str, value: &str) -> Option<String> {
             rest.find(|c: char| c.is_whitespace() || c == '#')
                 .map_or("", |i| &rest[i ..])
         },
-    };
-    Some(format!("{}{key} = \"{value}\"{kept}", &line[.. indent]))
+    })
 }
 
 /// Set `pairs` on the table at `index`: a key already there has its value
@@ -229,7 +262,7 @@ fn replaced(line: &str, key: &str, value: &str) -> Option<String> {
 pub fn set(root: &Path, index: usize, pairs: &[(&str, &str)]) -> Result<(), MilestoneError> {
     let path = root.join(RECORD_PATH);
     let text = std::fs::read_to_string(&path).map_err(MilestoneError::Io)?;
-    let spans = editable(&text)?;
+    let (spans, before) = editable(&text)?;
     let &(start, end) = spans
         .get(index)
         .ok_or_else(|| MilestoneError::Record(format!("no table at index {index}")))?;
@@ -266,7 +299,30 @@ pub fn set(root: &Path, index: usize, pairs: &[(&str, &str)]) -> Result<(), Mile
     }
     out.push_str(&body);
     out.push_str(&text[end ..]);
+    let mut expected = before;
+    for (key, value) in pairs {
+        if !expected[index].put(key, value) {
+            return Err(MilestoneError::Record(format!(
+                "`{key}` is no key of a milestone row"
+            )));
+        }
+    }
+    reads_back(&out, &expected)?;
     store(&path, &out)
+}
+
+/// Refuse text that does not read back as exactly `expected`: a step writes by
+/// position, so what it wrote is checked by parsing it, which is what keeps a
+/// multi-line value or a quoting it did not expect from being broken in silence.
+fn reads_back(text: &str, expected: &[Row]) -> Result<(), MilestoneError> {
+    if parse(text)? == expected {
+        Ok(())
+    } else {
+        Err(MilestoneError::Record(
+            "the step would not read back as the row it sets, so the record is left as it is"
+                .into(),
+        ))
+    }
 }
 
 fn store(path: &Path, text: &str) -> Result<(), MilestoneError> {

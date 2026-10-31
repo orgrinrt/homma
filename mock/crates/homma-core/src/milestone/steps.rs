@@ -133,6 +133,8 @@ pub fn mark(root: &Path, trunk: &str, rev: &str, tag: bool) -> Result<Mark, Mile
             .clone()
             .ok_or(MilestoneError::NotPinned(number(&all, i)))?;
         after(root, trunk, rev, &head, "head")?;
+    } else if let Some(last) = all.last().and_then(|r| r.tip()) {
+        after(root, trunk, rev, last, "tip")?;
     }
     let n = open.map_or_else(|| next(&all), |i| number(&all, i));
     // the tag first: a refused tag then leaves the record as it was, and a
