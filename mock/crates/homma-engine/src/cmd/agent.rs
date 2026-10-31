@@ -588,6 +588,7 @@ pub mod regen {
                 &root,
                 &cfg.agent.hooks,
                 &repo_paths,
+                &cfg.scope,
             ) {
                 Ok(d) => {
                     if !d.problems.is_empty() {

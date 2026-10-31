@@ -23,6 +23,7 @@ pub mod local;
 pub mod milestone;
 pub mod release;
 pub mod repo;
+pub mod scope;
 pub mod testing;
 
 pub use config::{

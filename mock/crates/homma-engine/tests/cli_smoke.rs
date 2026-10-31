@@ -343,9 +343,7 @@ fn migrate_a_repo_the_workspace_does_not_hold_errors_cleanly() {
         .args(["-c", cfg.to_str().unwrap(), "migrate", "missing", "--to", "github"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "no repository named `missing` under the workspace root",
-        ));
+        .stderr(predicate::str::contains("no repository named `missing`"));
 }
 
 #[test]
@@ -356,9 +354,7 @@ fn archive_a_repo_the_workspace_does_not_hold_errors_cleanly() {
         .args(["-c", cfg.to_str().unwrap(), "archive", "missing"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "no repository named `missing` under the workspace root",
-        ));
+        .stderr(predicate::str::contains("no repository named `missing`"));
 }
 
 #[test]
