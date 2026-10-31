@@ -43,10 +43,14 @@ pub(crate) struct Declared {
 ///
 /// `repos` is the manifest's `(name, workspace-relative path)` pairs, the same
 /// list the workspace gate is written from.
+///
+/// A row narrowed to a repository outside `scope` is skipped quietly; one narrowed to a name
+/// that is neither in `repos` nor outside the scope is a problem.
 pub(crate) fn install_declared(
     root: &Root,
     hooks: &AgentHooks,
     repos: &[(String, String)],
+    scope: &homma_core::scope::Scope,
 ) -> Result<Declared> {
     let hooks_dir = root
         .contain(&root.as_abs().join(".claude/hooks"))
@@ -78,6 +82,11 @@ pub(crate) fn install_declared(
             match repos.iter().find(|(n, _)| n == r) {
                 Some((_, p)) => roots.push(crate::cmd::util::relative_str(std::path::Path::new(p))),
                 None => {
+                    // a repository outside this clone's scope is skipped without a word:
+                    // it exists, the work is just not this clone's
+                    if !scope.admits(r) {
+                        continue 'rows;
+                    }
                     out.problems.push(format!(
                         "{shown} is narrowed to `{r}`, which the workspace has no repository \
                          by; not registered"

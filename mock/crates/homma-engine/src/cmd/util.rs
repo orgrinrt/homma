@@ -178,6 +178,23 @@ mod relative_str_tests {
     }
 }
 
+/// The clone `dir` sits in or hangs off, found through git rather than through the manifest.
+///
+/// A worktree sits beside the clones rather than under one, and a hook runs with it as the
+/// working directory; the clone it hangs off is the parent of the common git directory. This
+/// holds for a plain clone too, whose common directory is its own `.git`.
+pub(crate) fn clone_of(dir: &Path) -> Option<PathBuf> {
+    let common = std::process::Command::new("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))?;
+    let clone = common.parent()?;
+    Some(clone.canonicalize().unwrap_or_else(|_| clone.to_path_buf()))
+}
+
 /// The repo named, or the one the working directory is inside, with its
 /// root made absolute against the workspace.
 pub(crate) fn resolve_repo<'a>(
@@ -191,7 +208,13 @@ pub(crate) fn resolve_repo<'a>(
             .repos
             .get_key_value(n)
             .map(|(k, r)| (k.as_str(), r, root_of(r)))
-            .ok_or_else(|| anyhow!("`{n}` is not a repository in this workspace"));
+            .ok_or_else(|| {
+                if cfg.scope.admits(n) {
+                    anyhow!("`{n}` is not a repository in this workspace")
+                } else {
+                    anyhow!("`{n}` is outside this clone's scope (`repos` under `[instance]` in homma.local.toml)")
+                }
+            });
     }
     let here = std::env::current_dir()?;
     let here = here.canonicalize().unwrap_or(here);
@@ -208,18 +231,7 @@ pub(crate) fn resolve_repo<'a>(
     if let Some(found) = containing(&here) {
         return Ok(found);
     }
-    // a worktree sits beside the clones rather than under one, and a hook
-    // runs with it as the working directory; the clone it hangs off is the
-    // parent of the common git directory
-    let common = std::process::Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .current_dir(&here)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
-    if let Some(clone) = common.as_deref().and_then(Path::parent) {
-        let clone = clone.canonicalize().unwrap_or_else(|_| clone.to_path_buf());
+    if let Some(clone) = clone_of(&here) {
         if let Some(found) = containing(&clone) {
             return Ok(found);
         }

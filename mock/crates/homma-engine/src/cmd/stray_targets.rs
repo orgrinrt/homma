@@ -39,16 +39,34 @@ pub struct StrayTarget {
 /// A top-level clone the `scope` does not admit is not entered: its build directories are
 /// outside the work, and sizing them is exactly the work the scope exists to skip.
 pub fn collect(root: &Path, scope: &Scope) -> Vec<StrayTarget> {
+    collect_visiting(root, scope, &mut |_| {})
+}
+
+/// [`collect`], telling `visit` each directory it lists. The seam the tests measure the work
+/// through: what was listed, not what was printed.
+pub fn collect_visiting(
+    root: &Path,
+    scope: &Scope,
+    visit: &mut dyn FnMut(&Path),
+) -> Vec<StrayTarget> {
     let mut out = Vec::new();
-    walk(root, root, 0, scope, &mut out);
+    walk(root, root, 0, scope, visit, &mut out);
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out
 }
 
-fn walk(root: &Path, dir: &Path, depth: usize, scope: &Scope, out: &mut Vec<StrayTarget>) {
+fn walk(
+    root: &Path,
+    dir: &Path,
+    depth: usize,
+    scope: &Scope,
+    visit: &mut dyn FnMut(&Path),
+    out: &mut Vec<StrayTarget>,
+) {
     if depth >= MAX_DEPTH {
         return;
     }
+    visit(dir);
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -78,7 +96,7 @@ fn walk(root: &Path, dir: &Path, depth: usize, scope: &Scope, out: &mut Vec<Stra
             }
             continue;
         }
-        walk(root, &path, depth + 1, scope, out);
+        walk(root, &path, depth + 1, scope, visit, out);
     }
 }
 
@@ -150,7 +168,27 @@ mod tests {
             plant(d.path(), &format!("{clone}/target/debug"));
         }
         plant(d.path(), "tools/target/debug");
-        let found = collect(d.path(), &Scope::named(["kaski"]));
+        let mut listed = Vec::new();
+        let found = collect_visiting(d.path(), &Scope::named(["kaski"]), &mut |p| {
+            listed.push(p.to_path_buf());
+        });
+        assert!(
+            listed.iter().any(|p| p.starts_with(d.path().join("kaski"))),
+            "{listed:?}"
+        );
+        assert!(
+            !listed.iter().any(|p| p.starts_with(d.path().join("arvo"))),
+            "an out-of-scope clone was listed: {listed:?}"
+        );
+        // the control: with no scope the same fixture does list it
+        let mut all = Vec::new();
+        collect_visiting(d.path(), &Scope::everything(), &mut |p| {
+            all.push(p.to_path_buf())
+        });
+        assert!(
+            all.iter().any(|p| p.starts_with(d.path().join("arvo"))),
+            "{all:?}"
+        );
         let paths: Vec<_> = found.iter().map(|s| s.path.clone()).collect();
         let at = |p: &str| d.path().join(p).display().to_string();
         assert!(paths.contains(&at("kaski/target")), "{paths:?}");

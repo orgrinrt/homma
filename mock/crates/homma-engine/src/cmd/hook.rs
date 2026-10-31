@@ -141,7 +141,17 @@ fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outc
     }
     // the entrypoint runs with the repository as its working directory, and
     // a worktree's clone is found through its common git directory
-    let (_, _, root) = resolve_repo(cfg, None)?;
+    //
+    // a clone outside the scope is not a member, and it still carries the entrypoint:
+    // refusing its commits and pushes over a key the gate has no business with would
+    // lock it out, so the clone is found through git instead
+    let root = match resolve_repo(cfg, None) {
+        Ok((_, _, root)) => root,
+        Err(e) => {
+            let here = std::env::current_dir()?;
+            crate::cmd::util::clone_of(&here).ok_or(e)?
+        },
+    };
     // git hands some events their input on stdin; read it once, for those
     // events and no other, and replay it to every entry. A hook for any other
     // event may be handed an open pipe by whatever wraps git, and a read there

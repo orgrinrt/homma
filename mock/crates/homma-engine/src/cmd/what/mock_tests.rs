@@ -96,10 +96,24 @@ fn the_mockspace_repositories_are_those_in_scope() {
     assert_eq!(mock::repos(dir.path(), &Scope::everything()), [
         "a", "b", "c", "d"
     ]);
+    assert_eq!(mock::repos(dir.path(), &Scope::named(["b", "e"])), ["b"]);
+
+    // the work, not the rows: which directories were probed for a mockspace.toml. The unscoped
+    // run is the control, so the scoped assertion can fail.
+    let probed = |scope: &Scope| {
+        let mut seen = Vec::new();
+        mock::repos_probing(dir.path(), scope, &mut |p| {
+            seen.push(p.file_name().unwrap().to_string_lossy().into_owned());
+            p.join("mockspace.toml").is_file()
+        });
+        seen.sort();
+        seen
+    };
+    assert_eq!(probed(&Scope::everything()), ["a", "b", "c", "d"]);
     assert_eq!(
-        mock::repos(dir.path(), &Scope::named(["b", "e"])),
+        probed(&Scope::named(["b", "e"])),
         ["b"],
-        "a repository outside the scope is not asked"
+        "a repository outside the scope is not probed"
     );
 }
 

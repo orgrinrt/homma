@@ -28,10 +28,18 @@ A clone of the workspace can be for fewer of them. A cloud container holds
 clones of more repositories than the work uses, because the environment attaches
 them for reasons of its own, and the clone's `homma.local.toml` names the ones
 the work does use. Membership is then those directories, and the others are not
-members: they are skipped where the tree is walked, by name and before the
-directory is touched, so no command opens, fetches, sizes or runs git in a
-repository outside the scope and then drops its rows. One module reads the
-scope, and the config is built with it; no command reads the key for itself.
+members: the loader skips them by name, before the directory is touched, so a
+command that works on the members never opens a clone outside the scope for its
+remote, and the stray-build walk of `status` does not enter one either. One
+module reads the scope, and the config is built with it; no command reads the
+key for itself. Two walks are not scoped: the launcher's workspace survey, which
+runs git in every clone so that nothing is reaped unseen, and the stray-build
+walk of the `.worktrees` directories, since a worktree is not a top-level clone.
+A clone outside the scope is not a member and still has its git hooks: the
+entrypoint finds its clone through git, and the commit and push gates never
+refuse over the scope. Naming such a clone on a command line says that it is
+outside the scope. A hook row narrowed to one is skipped by `agent regen`
+without a word.
 
 **Minimal, and delegating.** Where a member repository has its own tooling, homma
 drives it rather than reimplementing it. Releasing is the case where the tooling

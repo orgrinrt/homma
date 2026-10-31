@@ -23,6 +23,16 @@ pub(super) const LIMIT: Duration = Duration::from_secs(60);
 /// The repositories to ask: those directly under the root with a `mockspace.toml`, within `scope`
 /// where it is not empty.
 pub fn repos(root: &Path, scope: &Scope) -> Vec<String> {
+    repos_probing(root, scope, &mut |dir| dir.join("mockspace.toml").is_file())
+}
+
+/// [`repos`] with the probe for a repository passed in, so a test can record which directories
+/// were probed: the work done, which printing the right rows does not show.
+pub fn repos_probing(
+    root: &Path,
+    scope: &Scope,
+    probe: &mut dyn FnMut(&Path) -> bool,
+) -> Vec<String> {
     let Ok(read) = std::fs::read_dir(root) else {
         return Vec::new();
     };
@@ -31,7 +41,7 @@ pub fn repos(root: &Path, scope: &Scope) -> Vec<String> {
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| scope.admits(n))
-        .filter(|n| root.join(n).join("mockspace.toml").is_file())
+        .filter(|n| probe(&root.join(n)))
         .collect();
     out.sort();
     out
