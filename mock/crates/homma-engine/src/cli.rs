@@ -717,15 +717,30 @@ pub enum ReleaseOp {
     },
 }
 
-/// `milestone` subcommands: one record and four reports over a range.
+/// `milestone` subcommands: one record, the steps that write it and four
+/// reports.
 #[derive(Debug, Subcommand)]
 pub enum MilestoneOp {
-    /// Print the sha of the current milestone, the last one marked.
+    /// Print the sha the current milestone began from, the last tip.
     Base {
         /// The repository's directory name under the workspace root.
         repo: String,
     },
-    /// Record a milestone in `.homma/milestones.toml`, committing nothing.
+    /// Open the next milestone: its base is the last tip, its freeze the
+    /// trunk's tip now. Writes `.homma/milestones.toml`, committing nothing.
+    Freeze {
+        /// The repository's directory name under the workspace root.
+        repo: String,
+    },
+    /// Set the open milestone's head, the trunk's tip where no sha is given.
+    Pin {
+        /// The repository's directory name under the workspace root.
+        repo: String,
+        /// A commit the trunk contains that contains the freeze.
+        sha:  Option<String>,
+    },
+    /// Close the open milestone at a sha, or record one with no steps before
+    /// it, in `.homma/milestones.toml`, committing nothing.
     Mark {
         /// The repository's directory name under the workspace root.
         repo: String,
@@ -735,6 +750,13 @@ pub enum MilestoneOp {
         /// of tags works.
         #[arg(long)]
         tag:  bool,
+    },
+    /// The recorded milestones with the epoch and review range of each.
+    Show {
+        /// The repository's directory name under the workspace root.
+        repo: String,
+        /// One milestone by its number, every one where none is given.
+        n:    Option<usize>,
     },
     /// The range split by crate and by document, with changed lines each.
     Partition {

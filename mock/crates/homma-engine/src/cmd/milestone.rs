@@ -2,16 +2,17 @@
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
-//! `homma milestone`: where the current milestone began, and the reports over
-//! the range since. The logic lives in `homma_core::milestone`; this wires it
-//! to the manifest and the terminal.
+//! `homma milestone`: where the current milestone began, the steps that record
+//! it, and the reports over the range since. The logic lives in
+//! `homma_core::milestone`; this wires it to the manifest and the terminal.
 
 use std::io::Write;
 
 use anyhow::Result;
 use homma_core::milestone::branches::{Branch, branches};
 use homma_core::milestone::range::{Partition, StandIn, partition, stand_ins};
-use homma_core::milestone::record::{Mark, Source, base, mark};
+use homma_core::milestone::record::{Mark, Row, Source, base};
+use homma_core::milestone::steps::{Shown, freeze, mark, pin, show};
 use serde::Serialize;
 
 use crate::cli::{Cli, MilestoneOp, OutputFormat};
@@ -45,6 +46,52 @@ impl HumanRender for MarkReport {
     fn render_human(&self, _out: &mut dyn Write) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+/// A row written by `freeze` or `pin`; a person is told nothing, a pipe gets
+/// the row.
+#[derive(Debug, Serialize)]
+struct RowReport {
+    repo: String,
+    row:  Row,
+}
+
+impl HumanRender for RowReport {
+    fn render_human(&self, _out: &mut dyn Write) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The recorded milestones with their ranges.
+#[derive(Debug, Serialize)]
+struct ShowReport {
+    repo:       String,
+    milestones: Vec<Shown>,
+}
+
+impl HumanRender for ShowReport {
+    fn render_human(&self, out: &mut dyn Write) -> std::io::Result<()> {
+        let blocks: Vec<String> = self.milestones.iter().map(block).collect();
+        write!(out, "{}", blocks.join("\n\n"))
+    }
+}
+
+/// One milestone as lines, each revision named and each unset one left out.
+fn block(s: &Shown) -> String {
+    let mut lines = vec![format!("milestone {}", s.n)];
+    let mut line = |name: &str, value: &Option<String>, date: &Option<String>| {
+        if let Some(v) = value {
+            let day = date.as_ref().map_or(String::new(), |d| format!("  {d}"));
+            lines.push(format!("  {name:<7} {v}{day}"));
+        }
+    };
+    line("base", &s.base, &None);
+    line("freeze", &s.freeze, &s.freeze_at);
+    line("head", &s.head, &None);
+    line("tip", &s.tip, &s.at);
+    line("epoch", &s.epoch, &None);
+    line("review", &s.review, &None);
+    lines.join("\n")
 }
 
 #[derive(Debug, Serialize)]
@@ -139,6 +186,54 @@ pub fn run(cli: &Cli, op: &MilestoneOp) -> Result<Outcome> {
                     repo: name.to_string(),
                     sha,
                     source,
+                },
+                cli.output,
+            )?;
+        },
+        MilestoneOp::Freeze {
+            repo,
+        } => {
+            let (name, _, root) = repo_of(repo)?;
+            let (trunk, _) = branches_for(&cfg, &root);
+            let row = freeze(&root, trunk)?;
+            if matches!(cli.output, OutputFormat::Json) {
+                emit(
+                    &RowReport {
+                        repo: name.to_string(),
+                        row,
+                    },
+                    cli.output,
+                )?;
+            }
+        },
+        MilestoneOp::Pin {
+            repo,
+            sha,
+        } => {
+            let (name, _, root) = repo_of(repo)?;
+            let (trunk, _) = branches_for(&cfg, &root);
+            let row = pin(&root, trunk, sha.as_deref())?;
+            if matches!(cli.output, OutputFormat::Json) {
+                emit(
+                    &RowReport {
+                        repo: name.to_string(),
+                        row,
+                    },
+                    cli.output,
+                )?;
+            }
+        },
+        MilestoneOp::Show {
+            repo,
+            n,
+        } => {
+            let (name, _, root) = repo_of(repo)?;
+            let (trunk, _) = branches_for(&cfg, &root);
+            let milestones = show(&root, trunk, *n)?;
+            emit(
+                &ShowReport {
+                    repo: name.to_string(),
+                    milestones,
                 },
                 cli.output,
             )?;

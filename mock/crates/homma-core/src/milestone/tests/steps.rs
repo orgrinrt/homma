@@ -1,0 +1,249 @@
+//--------------------------------------------------------------------------------------------------
+// Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
+// SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
+//--------------------------------------------------------------------------------------------------
+//! The milestone reports over repositories built here, never the live workspace.
+//! The steps that write a row: `freeze`, `pin` and `mark`, and `show` over them.
+
+use super::super::MilestoneError;
+use super::super::record::{RECORD_PATH, Source, base, rows};
+use super::super::steps::{freeze, mark, pin, show};
+use super::Fx;
+
+/// A trunk of four commits, the first of them marked as milestone 1 and
+/// committed: `[c1, c2, c3, c4]`.
+fn after_one_milestone() -> (Fx, [String; 4]) {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    let c2 = fx.commit("a.txt", "2\n");
+    let c3 = fx.commit("a.txt", "3\n");
+    let c4 = fx.commit("a.txt", "4\n");
+    mark(fx.root(), "dev", &c1, false).unwrap();
+    fx.commit_record();
+    (fx, [c1, c2, c3, c4])
+}
+
+fn date(fx: &Fx, sha: &str) -> String {
+    fx.git(&["show", "-s", "--format=%cs", sha])
+}
+
+#[test]
+fn a_milestone_goes_through_freeze_pin_and_mark_and_the_row_holds_each_revision() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    fx.commit("a.txt", "2\n");
+    mark(fx.root(), "dev", &c1, false).unwrap();
+    fx.commit_record();
+    // the trunk stands at the record commit when the freeze begins, then moves on
+    let at_freeze = fx.git(&["rev-parse", "dev"]);
+    let opened = freeze(fx.root(), "dev").unwrap();
+    assert_eq!(opened.n, Some(2));
+    assert_eq!(opened.base.as_deref(), Some(c1.as_str()));
+    assert_eq!(opened.freeze.as_deref(), Some(at_freeze.as_str()));
+    assert_eq!(
+        opened.freeze_at.as_deref(),
+        Some(date(&fx, &at_freeze).as_str())
+    );
+    assert!(opened.head.is_none() && opened.tip().is_none());
+    fx.commit_record();
+    let c3 = fx.commit("a.txt", "3\n");
+    // base is the last tip while the milestone is open
+    assert_eq!(
+        base(fx.root(), "dev").unwrap(),
+        (c1.clone(), Source::Record)
+    );
+    let pinned = pin(fx.root(), "dev", None).unwrap();
+    assert_eq!(pinned.head.as_deref(), Some(c3.as_str()));
+    fx.commit_record();
+    let c4 = fx.commit("a.txt", "4\n");
+    let closed = mark(fx.root(), "dev", &c4, false).unwrap();
+    assert_eq!(
+        (closed.sha.as_str(), closed.at.as_str()),
+        (c4.as_str(), date(&fx, &c4).as_str())
+    );
+    fx.commit_record();
+    let all = rows(fx.root()).unwrap();
+    assert_eq!(all.len(), 2);
+    let row = &all[1];
+    assert_eq!(row.n, Some(2));
+    assert_eq!(row.tip(), Some(c4.as_str()));
+    assert_eq!(base(fx.root(), "dev").unwrap().0, c4);
+}
+
+#[test]
+fn a_freeze_while_the_last_milestone_is_open_is_refused_and_writes_nothing() {
+    let (fx, _) = after_one_milestone();
+    freeze(fx.root(), "dev").unwrap();
+    let before = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    assert!(matches!(
+        freeze(fx.root(), "dev"),
+        Err(MilestoneError::StillOpen(2))
+    ));
+    assert_eq!(
+        std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn the_first_row_has_no_base_where_nothing_is_recorded() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    let row = freeze(fx.root(), "dev").unwrap();
+    assert_eq!(row.n, Some(1));
+    assert!(row.base.is_none());
+    assert_eq!(row.freeze.as_deref(), Some(c1.as_str()));
+}
+
+#[test]
+fn a_freeze_from_a_trunk_that_does_not_hold_the_last_tip_is_refused() {
+    let (fx, [c1, c2, ..]) = after_one_milestone();
+    // the second tip is marked, then the trunk is pulled back behind it
+    mark(fx.root(), "dev", &c2, false).unwrap();
+    fx.commit_record();
+    let record = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    fx.git(&["reset", "-q", "--hard", &c1]);
+    std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
+    std::fs::write(fx.root().join(RECORD_PATH), record).unwrap();
+    assert!(matches!(
+        freeze(fx.root(), "dev"),
+        Err(MilestoneError::NotAncestor { .. })
+    ));
+}
+
+#[test]
+fn a_pin_is_refused_with_no_open_row_twice_off_the_trunk_and_before_the_freeze() {
+    let (fx, [c1, c2, c3, _]) = after_one_milestone();
+    assert!(matches!(
+        pin(fx.root(), "dev", Some(&c3)),
+        Err(MilestoneError::NotOpen)
+    ));
+    // the freeze stands at c4: a head before it does not contain it
+    freeze(fx.root(), "dev").unwrap();
+    fx.commit_record();
+    assert!(matches!(
+        pin(fx.root(), "dev", Some(&c2)),
+        Err(MilestoneError::NotDescendant { .. })
+    ));
+    assert!(matches!(
+        pin(fx.root(), "dev", Some("deadbeef")),
+        Err(MilestoneError::NotACommit(_))
+    ));
+    fx.git(&["switch", "-qc", "side", &c1]);
+    let off = fx.commit("b.txt", "side\n");
+    fx.git(&["switch", "-q", "dev"]);
+    assert!(matches!(
+        pin(fx.root(), "dev", Some(&off)),
+        Err(MilestoneError::NotOnTrunk { .. })
+    ));
+    pin(fx.root(), "dev", None).unwrap();
+    assert!(matches!(
+        pin(fx.root(), "dev", None),
+        Err(MilestoneError::AlreadyPinned(2))
+    ));
+    assert_eq!(
+        rows(fx.root()).unwrap()[1].head.as_deref(),
+        Some(fx.git(&["rev-parse", "dev"]).as_str())
+    );
+}
+
+#[test]
+fn a_mark_is_refused_before_the_pin_below_the_head_and_on_a_tip_already_taken() {
+    let (fx, [c1, ..]) = after_one_milestone();
+    let c5 = fx.commit("a.txt", "5\n");
+    freeze(fx.root(), "dev").unwrap();
+    assert!(matches!(
+        mark(fx.root(), "dev", &c5, false),
+        Err(MilestoneError::NotPinned(2))
+    ));
+    let c6 = fx.commit("a.txt", "6\n");
+    pin(fx.root(), "dev", Some(&c6)).unwrap();
+    // c5 is on the trunk and does not contain the head c6
+    assert!(matches!(
+        mark(fx.root(), "dev", &c5, false),
+        Err(MilestoneError::NotDescendant { .. })
+    ));
+    // c1 is the first row's tip
+    assert!(matches!(
+        mark(fx.root(), "dev", &c1, false),
+        Err(MilestoneError::AlreadyMarked(_))
+    ));
+    let row = &rows(fx.root()).unwrap()[1];
+    assert!(row.tip().is_none() && row.head.as_deref() == Some(c6.as_str()));
+}
+
+#[test]
+fn a_row_of_the_old_shape_is_read_as_it_is_and_its_sha_is_its_tip() {
+    let fx = Fx::new();
+    let c1 = fx.commit("a.txt", "1\n");
+    fx.commit("a.txt", "2\n");
+    let old = format!("[[milestone]]\nsha = \"{c1}\"\nat = \"2026-10-27\"\n");
+    std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
+    std::fs::write(fx.root().join(RECORD_PATH), &old).unwrap();
+    fx.commit_record();
+    assert_eq!(
+        base(fx.root(), "dev").unwrap(),
+        (c1.clone(), Source::Record)
+    );
+    assert_eq!(rows(fx.root()).unwrap()[0].tip(), Some(c1.as_str()));
+    let opened = freeze(fx.root(), "dev").unwrap();
+    assert_eq!(
+        (opened.n, opened.base.as_deref()),
+        (Some(2), Some(c1.as_str()))
+    );
+    // the recorded row is left exactly as it was written
+    let text = std::fs::read_to_string(fx.root().join(RECORD_PATH)).unwrap();
+    assert!(text.starts_with(&old), "{text}");
+}
+
+#[test]
+fn show_prints_each_row_with_its_epoch_and_review_ranges_and_reads_what_the_trunk_commits() {
+    let (fx, [c1, ..]) = after_one_milestone();
+    // the first row is the old call: no freeze and no head, so no ranges
+    let shown = show(fx.root(), "dev", None).unwrap();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].tip.as_deref(), Some(c1.as_str()));
+    assert!(shown[0].epoch.is_none() && shown[0].review.is_none());
+    let frozen = freeze(fx.root(), "dev").unwrap().freeze.unwrap();
+    // the open row is not committed, so the trunk does not show it yet
+    assert_eq!(show(fx.root(), "dev", None).unwrap().len(), 1);
+    fx.commit_record();
+    let pinned = pin(fx.root(), "dev", None).unwrap().head.unwrap();
+    fx.commit_record();
+    assert_ne!(frozen, pinned);
+    let shown = show(fx.root(), "dev", Some(2)).unwrap();
+    assert_eq!(shown.len(), 1);
+    let s = &shown[0];
+    assert_eq!(s.epoch.as_deref(), Some(format!("{c1}..{frozen}").as_str()));
+    assert_eq!(
+        s.review.as_deref(),
+        Some(format!("{c1}..{pinned}").as_str())
+    );
+    assert!(s.tip.is_none());
+    assert!(matches!(
+        show(fx.root(), "dev", Some(9)),
+        Err(MilestoneError::NoSuchMilestone(9))
+    ));
+}
+
+#[test]
+fn a_row_with_no_base_of_its_own_takes_the_previous_tip_in_show() {
+    let (fx, [c1, ..]) = after_one_milestone();
+    let c5 = fx.commit("a.txt", "5\n");
+    mark(fx.root(), "dev", &c5, false).unwrap();
+    fx.commit_record();
+    let shown = show(fx.root(), "dev", Some(2)).unwrap();
+    assert_eq!(shown[0].base.as_deref(), Some(c1.as_str()));
+    assert!(shown[0].epoch.is_none());
+}
+
+#[test]
+fn a_tagged_mark_of_an_open_row_makes_the_tag_of_its_number() {
+    let (fx, _) = after_one_milestone();
+    freeze(fx.root(), "dev").unwrap();
+    pin(fx.root(), "dev", None).unwrap();
+    let c5 = fx.commit("a.txt", "5\n");
+    mark(fx.root(), "dev", &c5, true).unwrap();
+    assert_eq!(fx.git(&["tag", "--list", "milestone/*"]), "milestone/2");
+    assert_eq!(fx.git(&["rev-list", "-n1", "milestone/2"]), c5);
+}
