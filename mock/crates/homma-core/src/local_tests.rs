@@ -747,3 +747,33 @@ fn migrating_twice_changes_nothing_more() {
 fn migrate_refuses_text_that_is_not_toml() {
     assert!(matches!(migrate("[[", BASE, "k"), Err(LocalError::Edit(_))));
 }
+
+#[test]
+fn unsetting_the_work_leaves_none_and_is_refused_naming_the_path() {
+    let d = with_store(
+        BASE,
+        "[instance]\nproject = \"k\"\nunset = [\"instance.work\"]\n",
+    );
+    match Local::load(d.path()) {
+        Err(LocalError::Unset(p)) => assert_eq!(p, "instance.work"),
+        other => panic!("{other:?}"),
+    }
+    // The control: the same file setting its own work is fine.
+    let d = with_store(
+        BASE,
+        "[instance]\nproject = \"k\"\nwork = \"mine\"\nunset = [\"instance.work\"]\n",
+    );
+    assert_eq!(loaded(&d).instance.work, "mine");
+}
+
+#[test]
+fn a_copied_array_of_tables_equal_to_the_stores_is_dropped_by_the_migration() {
+    let base = "[instance]\nwork = \"k\"\n[[hooks.post-merge]]\nrun = \"a\"\n[[hooks.post-merge]]\nrun = \"b\"\n";
+    let m = migrate(base, base, "k").unwrap();
+    assert_eq!(m.dropped, ["instance.work", "hooks.post-merge"]);
+    assert!(!m.text.contains("post-merge"), "{}", m.text);
+    // The control: a copy whose list differs keeps it whole.
+    let copy = "[instance]\nwork = \"k\"\n[[hooks.post-merge]]\nrun = \"a\"\n";
+    let m = migrate(copy, base, "k").unwrap();
+    assert_eq!(m.kept, ["hooks.post-merge"]);
+}

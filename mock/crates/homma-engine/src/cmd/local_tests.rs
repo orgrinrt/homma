@@ -375,7 +375,7 @@ fn install_over_a_copy_of_the_same_work_migrates_it_and_keeps_what_differs() {
         Installed::Migrated {
             dropped,
             kept,
-        } => assert!(dropped >= 1 && kept == 2, "{dropped} {kept}"),
+        } => assert_eq!((dropped, kept), (2, 2)),
         other => panic!("{other:?}"),
     }
     let text = file(&d);

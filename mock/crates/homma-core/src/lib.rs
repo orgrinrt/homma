@@ -25,6 +25,7 @@ pub mod migrate;
 pub mod milestone;
 pub mod release;
 pub mod repo;
+pub mod resolve;
 pub mod scope;
 pub mod testing;
 

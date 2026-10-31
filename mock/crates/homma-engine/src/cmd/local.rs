@@ -34,7 +34,15 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
         LocalOp::Show {
             effective,
         } => {
-            let Some((parsed, text)) = show(&dir)? else {
+            // The file as written needs no project to be readable, so the
+            // command that repairs a file with a missing project still prints it.
+            let as_written = matches!(cli.output, OutputFormat::Human) && !*effective;
+            let found = if as_written {
+                homma_core::resolve::written(&dir)?.map(|(_, text)| (None, text))
+            } else {
+                show(&dir)?.map(|(parsed, text)| (Some(parsed), text))
+            };
+            let Some((parsed, text)) = found else {
                 println!(
                     "no {LOCAL_FILE} beside {}",
                     dir.join("homma.toml").display()
@@ -42,15 +50,16 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
                 return Ok(Outcome::ReportedFailure);
             };
             let mut out = std::io::stdout().lock();
-            match cli.output {
-                OutputFormat::Human if *effective => {
+            match (cli.output, parsed) {
+                (OutputFormat::Human, Some(parsed)) => {
                     out.write_all(toml::to_string_pretty(&parsed)?.as_bytes())?;
                 },
-                OutputFormat::Human => out.write_all(text.as_bytes())?,
-                OutputFormat::Json => {
+                (OutputFormat::Human, None) => out.write_all(text.as_bytes())?,
+                (OutputFormat::Json, Some(parsed)) => {
                     serde_json::to_writer_pretty(&mut out, &parsed)?;
                     writeln!(out)?;
                 },
+                (OutputFormat::Json, None) => unreachable!("json is always the merged document"),
             }
             Ok(Outcome::Ok)
         },
@@ -119,7 +128,7 @@ pub fn run(cli: &Cli, op: &LocalOp) -> Result<Outcome> {
                 },
                 Installed::Replaced(aside) => {
                     println!(
-                        "wrote {} from the stored {name}; the file it replaced is {}",
+                        "wrote {}, which inherits the stored {name}; the file it replaced is {}",
                         path.display(),
                         aside.display()
                     );
@@ -224,17 +233,10 @@ pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
             });
             continue;
         }
-        let checked = std::fs::read_to_string(&path)
-            .map_err(|e| format!("{}: {e}", path.display()))
-            .and_then(|text| {
-                local::parse_stored(&path, &name, &text).map_err(|e| {
-                    use std::error::Error;
-                    match e.source() {
-                        Some(s) => format!("{e}: {s}"),
-                        None => e.to_string(),
-                    }
-                })
-            });
+        let checked = homma_core::resolve::stored(dir, &name)
+            .map(|(_, text)| text)
+            .and_then(|text| local::parse_stored(&path, &name, &text))
+            .map_err(|e| homma_core::resolve::chain(&e));
         entries.push(match checked {
             Ok(l) => {
                 Stored {
@@ -256,9 +258,10 @@ pub fn list(dir: &Path) -> Result<Option<(Vec<Stored>, Option<String>)>> {
     // The name the installed file stands for, read as written: the project it
     // names, or for a copy the work it is for. Not the merged document, which
     // fails where the project is the thing that is missing.
-    let installed = std::fs::read_to_string(dir.join(LOCAL_FILE))
+    let installed = homma_core::resolve::written(dir)
         .ok()
-        .and_then(|t| Local::parse(&t).ok())
+        .flatten()
+        .and_then(|(_, t)| Local::parse(&t).ok())
         .map(|l| l.instance.project.unwrap_or(l.instance.work));
     Ok(Some((entries, installed)))
 }
@@ -275,11 +278,12 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
             dir.display()
         );
     }
-    check_name(name)?;
-    let stored_path = dir.join(local::STORE_DIR).join(format!("{name}.toml"));
-    let stored = match std::fs::read_to_string(&stored_path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+    let (_, stored) = match homma_core::resolve::stored(dir, name) {
+        Ok(found) => found,
+        Err(local::LocalError::Io {
+            source,
+            ..
+        }) if source.kind() == std::io::ErrorKind::NotFound => {
             let names = list(dir)?
                 .map(|(es, _)| {
                     es.into_iter()
@@ -294,9 +298,8 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
                 if names.is_empty() { "none".to_owned() } else { names }
             );
         },
-        Err(e) => return Err(e).with_context(|| format!("reading {}", stored_path.display())),
+        Err(e) => return Err(e.into()),
     };
-    local::parse_stored(&stored_path, name, &stored)?;
     let fresh = local::project_skeleton(name);
 
     let path = dir.join(LOCAL_FILE);
@@ -319,8 +322,8 @@ pub fn install(dir: &Path, name: &str, replace: bool) -> Result<Installed> {
             replace_with(dir, &path, &fresh)?
         },
         Ok(_) => {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
+            let (_, text) = homma_core::resolve::written(dir)?
+                .with_context(|| format!("{} vanished", path.display()))?;
             match Local::parse(&text) {
                 Ok(l) if l.instance.project.as_deref() == Some(name) => Installed::Unchanged,
                 Ok(l) if l.instance.project.is_none() && l.instance.work == name => {
@@ -417,7 +420,9 @@ pub fn show(dir: &Path) -> Result<Option<(Local, String)>> {
     let Some(parsed) = Local::load(dir)? else {
         return Ok(None);
     };
-    let text = std::fs::read_to_string(dir.join(LOCAL_FILE))?;
+    let text = homma_core::resolve::written(dir)?
+        .map(|(_, t)| t)
+        .unwrap_or_default();
     Ok(Some((parsed, text)))
 }
 

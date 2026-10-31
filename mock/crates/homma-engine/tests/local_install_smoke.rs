@@ -123,3 +123,18 @@ fn list_without_a_store_prints_an_empty_list_in_the_document_and_exits_one() {
     let rows: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
     assert_eq!(rows, serde_json::json!([]));
 }
+
+#[test]
+fn show_prints_a_file_whose_project_cannot_be_read_and_the_merged_view_fails() {
+    let d = workspace();
+    std::fs::write(
+        d.path().join("homma.local.toml"),
+        "[instance]\nproject = \"gone\"\n",
+    )
+    .unwrap();
+    let shown = homma(d.path(), &["show"]).success();
+    assert!(String::from_utf8_lossy(&shown.get_output().stdout).contains("project = \"gone\""));
+    homma(d.path(), &["show", "--effective"])
+        .failure()
+        .stderr(predicates::str::contains("`gone`"));
+}

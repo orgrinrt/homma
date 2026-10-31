@@ -302,7 +302,7 @@ mod through_the_config {
 }
 
 #[test]
-fn a_hook_declared_in_the_stored_config_reaches_a_clone_that_names_it() {
+fn a_clones_own_hook_list_replaces_the_projects_for_that_event() {
     let d = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(d.path().join(crate::local::STORE_DIR)).unwrap();
     std::fs::write(
@@ -354,4 +354,32 @@ fn a_project_the_store_lacks_fails_the_layer_naming_it() {
         "{}",
         failed[0].report()
     );
+}
+
+#[test]
+fn a_hook_declared_only_in_the_stored_config_reaches_a_clone_that_names_it() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(crate::local::STORE_DIR)).unwrap();
+    std::fs::write(
+        d.path().join(crate::local::STORE_DIR).join("k.toml"),
+        "[instance]\nwork = \"k\"\n[[hooks.post-merge]]\nrun = \"from-store\"\n",
+    )
+    .unwrap();
+    write(
+        d.path(),
+        "homma.local.toml",
+        "[instance]\nproject = \"k\"\n",
+    );
+    let mut hooks = Hooks::default();
+    let mut agent = AgentHooks::default();
+    assert!(
+        apply(
+            d.path(),
+            &layers(&["homma.local.toml"]),
+            &mut hooks,
+            &mut agent
+        )
+        .is_empty()
+    );
+    assert_eq!(runs(&hooks, "post-merge"), vec!["from-store"]);
 }

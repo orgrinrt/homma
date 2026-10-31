@@ -94,9 +94,11 @@ fn drop_equal(
     }
 }
 
-/// A value item as the typed value it parses to, `None` for a table.
+/// A value or array-of-tables item as the typed value it parses to.
 fn item_value(item: &toml_edit::Item) -> Option<toml::Value> {
-    let value = item.as_value()?;
+    // An array of tables reads as the array of inline tables it is, so a copied
+    // `[[hooks.x]]` equal to the store's compares equal.
+    let value = item.clone().into_value().ok()?;
     let mut parsed: toml::Table = toml::from_str(&format!("v = {value}")).ok()?;
     parsed.remove("v")
 }

@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::inherit::{self, Provenance};
+use crate::inherit::Provenance;
 
 /// The file's name, beside the manifest.
 pub const LOCAL_FILE: &str = "homma.local.toml";
@@ -152,139 +152,6 @@ impl Local {
         }
         Ok(())
     }
-
-    /// Read the file beside the manifest in `dir`, merged over its project's
-    /// stored config where it names one.
-    ///
-    /// `Ok(None)` where there is no file, which is the ordinary case. A file
-    /// that is there and does not parse is an error naming it: a setting
-    /// silently ignored is worse than a command that refuses. This is the one
-    /// reader of the file; the scope, the layers, `status` and `local` all take
-    /// what it returns.
-    pub fn load(dir: &Path) -> Result<Option<Self>, LocalError> {
-        let Some((path, text)) = read_text(dir)? else {
-            return Ok(None);
-        };
-        Self::resolve(dir, &path, &text).map(Some)
-    }
-
-    /// `text`, as the content of the file at `path` in `dir`, read over its
-    /// project's stored config. What [`Local::load`] does once the file is
-    /// read, and what a writer asks of the text it is about to write.
-    pub fn resolve(dir: &Path, path: &Path, text: &str) -> Result<Self, LocalError> {
-        let parse_err = |source| {
-            LocalError::Parse {
-                path: path.to_path_buf(),
-                source,
-            }
-        };
-        let raw = Self::parse(text).map_err(parse_err)?;
-        let Some(project) = raw.instance.project.clone() else {
-            return Ok(raw);
-        };
-        let (table, provenance) = merged(dir, path, text, &project, &raw.instance.unset)?;
-        let mut local: Local = toml::Value::Table(table).try_into().map_err(parse_err)?;
-        local.check_console()?;
-        local.provenance = Some(provenance);
-        Ok(local)
-    }
-
-    /// The parsed document of the file in `dir` after the merge, for a reader
-    /// that owns tables this module does not type (the layers). `None` where
-    /// there is no file. It checks the merge and nothing the schema says.
-    pub fn load_table(dir: &Path) -> Result<Option<toml::Table>, LocalError> {
-        let Some((path, text)) = read_text(dir)? else {
-            return Ok(None);
-        };
-        let parse_err = |source| {
-            LocalError::Parse {
-                path: path.clone(),
-                source,
-            }
-        };
-        let table: toml::Table = toml::from_str(&text).map_err(parse_err)?;
-        let head: Head = toml::Value::Table(table.clone())
-            .try_into()
-            .map_err(parse_err)?;
-        let Some(project) = head.instance.project else {
-            return Ok(Some(table));
-        };
-        merged(dir, &path, &text, &project, &head.instance.unset).map(|(t, _)| Some(t))
-    }
-}
-
-/// The two keys of `[instance]` the merge reads, taken from a document whose
-/// other keys may be anything.
-#[derive(Deserialize)]
-struct Head {
-    #[serde(default)]
-    instance: HeadInstance,
-}
-
-#[derive(Deserialize, Default)]
-struct HeadInstance {
-    project: Option<String>,
-    #[serde(default)]
-    unset:   Vec<String>,
-}
-
-fn read_text(dir: &Path) -> Result<Option<(PathBuf, String)>, LocalError> {
-    let path = dir.join(LOCAL_FILE);
-    match std::fs::read_to_string(&path) {
-        Ok(text) => Ok(Some((path, text))),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(source) => {
-            Err(LocalError::Io {
-                path,
-                source,
-            })
-        },
-    }
-}
-
-/// The stored config `project` names, parsed and checked, as a table.
-fn base_of(dir: &Path, project: &str) -> Result<toml::Table, LocalError> {
-    let path = dir.join(STORE_DIR).join(format!("{project}.toml"));
-    let unusable = |reason: String| {
-        LocalError::Project {
-            name: project.to_owned(),
-            path: path.clone(),
-            reason,
-        }
-    };
-    check_name(project).map_err(|e| unusable(e.to_string()))?;
-    let text = std::fs::read_to_string(&path).map_err(|e| unusable(e.to_string()))?;
-    parse_stored(&path, project, &text).map_err(|e| unusable(chain(&e)))?;
-    toml::from_str(&text).map_err(|e| unusable(e.to_string()))
-}
-
-fn merged(
-    dir: &Path,
-    path: &Path,
-    text: &str,
-    project: &str,
-    unset: &[String],
-) -> Result<(toml::Table, Provenance), LocalError> {
-    let base = base_of(dir, project)?;
-    let local: toml::Table = toml::from_str(text).map_err(|source| {
-        LocalError::Parse {
-            path: path.to_path_buf(),
-            source,
-        }
-    })?;
-    inherit::merge(project, &base, &local, unset).map_err(|e| LocalError::Unset(e.0))
-}
-
-/// The error and what is under it, on one line.
-fn chain(e: &dyn std::error::Error) -> String {
-    let mut msg = e.to_string();
-    let mut src = e.source();
-    while let Some(s) = src {
-        msg.push_str(": ");
-        msg.push_str(s.to_string().trim_end());
-        src = s.source();
-    }
-    msg
 }
 
 /// A stored name is a file stem and nothing that could leave the store.
