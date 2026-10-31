@@ -246,3 +246,81 @@ fn a_merge_git_refuses_to_make_is_listed_unreadable_with_its_reason_and_its_line
             "\"reason\": \"fatal: shim refuses merge-tree\"",
         ));
 }
+
+fn head_of(root: &Path) -> String {
+    let out = support::git()
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+fn commit_record(root: &Path) {
+    git_in(root, &["add", ".homma/milestones.toml"]);
+    git_in(root, &["commit", "-qm", "test: record the milestone"]);
+}
+
+#[test]
+fn a_milestone_is_frozen_pinned_marked_and_shown_with_its_ranges() {
+    let (dir, cfg) = workspace();
+    let root = dir.path().join("x");
+    let first = commit_file(&root, "a.txt", "one\n");
+    let run = |args: &[&str]| {
+        let mut all = vec!["-c", cfg.as_str(), "milestone"];
+        all.extend_from_slice(args);
+        bin().args(all).assert()
+    };
+    run(&["mark", "x", &first])
+        .success()
+        .stdout(predicate::str::is_empty());
+    commit_record(&root);
+    let frozen = head_of(&root);
+    run(&["freeze", "x"])
+        .success()
+        .stdout(predicate::str::contains("milestone 2"))
+        .stdout(predicate::str::contains(format!("  base    {first}")))
+        .stdout(predicate::str::contains(format!("  freeze  {frozen}")));
+    commit_record(&root);
+    let tip = commit_file(&root, "a.txt", "two\n");
+    // a step out of order is refused, naming the step that comes first
+    run(&["mark", "x", &tip])
+        .failure()
+        .stderr(predicate::str::contains("milestone 2 is not pinned"));
+    run(&["freeze", "x"])
+        .failure()
+        .stderr(predicate::str::contains("milestone 2 is still open"));
+    run(&["pin", "x", &tip])
+        .success()
+        .stdout(predicate::str::contains(format!("  head    {tip}")));
+    run(&["pin", "x"])
+        .failure()
+        .stderr(predicate::str::contains("milestone 2 is already pinned"));
+    run(&["mark", "x", &tip]).success();
+    commit_record(&root);
+    run(&["show", "x"])
+        .success()
+        .stdout(predicate::str::contains("milestone 1"))
+        .stdout(predicate::str::contains("milestone 2"))
+        .stdout(predicate::str::contains(format!("  head    {tip}")))
+        .stdout(predicate::str::contains(format!(
+            "  review  {first}..{tip}"
+        )));
+    run(&["show", "x", "1"])
+        .success()
+        .stdout(predicate::str::contains("milestone 1"))
+        .stdout(predicate::str::contains("milestone 2").not());
+    run(&["show", "x", "9"])
+        .failure()
+        .stderr(predicate::str::contains("no milestone 9 is recorded"));
+    bin()
+        .args(["-c", &cfg, "--output", "json", "milestone", "show", "x", "2"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "\"epoch\": \"{first}..{frozen}\""
+        )))
+        .stdout(predicate::str::contains(format!("\"tip\": \"{tip}\"")));
+    run(&["base", "x"]).success().stdout(format!("{tip}\n"));
+}

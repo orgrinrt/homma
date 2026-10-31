@@ -14,6 +14,7 @@ use crate::release::sh;
 pub mod branches;
 pub mod range;
 pub mod record;
+pub mod steps;
 
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,24 @@ pub enum MilestoneError {
     },
     /// A mark of a commit already marked.
     AlreadyMarked(String),
+    /// A freeze while the last milestone has no tip; its number.
+    StillOpen(usize),
+    /// A pin with no milestone open.
+    NotOpen,
+    /// A pin on an open milestone with no freeze recorded; its number.
+    NoFreeze(usize),
+    /// A pin on a milestone already pinned; its number.
+    AlreadyPinned(usize),
+    /// A mark of a milestone not yet pinned; its number.
+    NotPinned(usize),
+    /// A revision that does not contain the one it must follow.
+    NotDescendant {
+        sha:  String,
+        of:   String,
+        what: &'static str,
+    },
+    /// A milestone number no row has.
+    NoSuchMilestone(usize),
     /// A repository with no record and no milestone tag.
     NoMilestone,
     /// The record file could not be read as the shape it has.
@@ -72,6 +91,29 @@ impl fmt::Display for MilestoneError {
                 trunk,
             } => write!(f, "`{sha}` is not on `{trunk}`"),
             MilestoneError::AlreadyMarked(sha) => write!(f, "`{sha}` is already marked"),
+            MilestoneError::StillOpen(n) => {
+                write!(
+                    f,
+                    "milestone {n} is still open; `homma milestone mark` closes it"
+                )
+            },
+            MilestoneError::NotOpen => {
+                f.write_str("no milestone is open; `homma milestone freeze` opens one")
+            },
+            MilestoneError::NoFreeze(n) => write!(f, "milestone {n} has no freeze recorded"),
+            MilestoneError::AlreadyPinned(n) => write!(f, "milestone {n} is already pinned"),
+            MilestoneError::NotPinned(n) => {
+                write!(
+                    f,
+                    "milestone {n} is not pinned; `homma milestone pin` sets its head"
+                )
+            },
+            MilestoneError::NotDescendant {
+                sha,
+                of,
+                what,
+            } => write!(f, "`{sha}` does not contain the {what} `{of}`"),
+            MilestoneError::NoSuchMilestone(n) => write!(f, "no milestone {n} is recorded"),
             MilestoneError::NoMilestone => f.write_str(NO_MILESTONE),
             MilestoneError::Record(why) => write!(f, "the milestone record is unreadable: {why}"),
             MilestoneError::Io(e) => write!(f, "the milestone record could not be written: {e}"),

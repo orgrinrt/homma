@@ -9,7 +9,8 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::MilestoneError;
-use super::record::{RECORD_PATH, Source, base, mark, marks};
+use super::record::{RECORD_PATH, Source, base, rows};
+use super::steps::mark;
 
 /// A repository on `dev`, with a committed identity and nothing else.
 struct Fx {
@@ -80,8 +81,8 @@ fn a_mark_is_appended_with_the_commits_own_date_and_base_reads_the_last() {
         (first.clone(), Source::Record)
     );
     mark(fx.root(), "dev", &second, false).unwrap();
-    let all = marks(fx.root()).unwrap();
-    assert_eq!(all.iter().map(|m| m.sha.as_str()).collect::<Vec<_>>(), [
+    let all = rows(fx.root()).unwrap();
+    assert_eq!(all.iter().filter_map(|m| m.tip()).collect::<Vec<_>>(), [
         first.as_str(),
         second.as_str()
     ]);
@@ -101,7 +102,7 @@ fn base_answers_as_the_trunk_does_from_a_clone_checked_out_on_another_branch() {
     mark(fx.root(), "dev", &second, false).unwrap();
     fx.commit_record();
     // the side branch's record names two marks, the trunk's names one
-    assert_eq!(marks(fx.root()).unwrap().len(), 2);
+    assert_eq!(rows(fx.root()).unwrap().len(), 2);
     assert_eq!(base(fx.root(), "dev").unwrap(), (first, Source::Record));
 }
 
@@ -126,7 +127,7 @@ fn a_mark_that_is_no_commit_off_the_trunk_or_already_marked_is_refused() {
         Err(MilestoneError::AlreadyMarked(_))
     ));
     // nothing but the one good mark was written
-    assert_eq!(marks(fx.root()).unwrap().len(), 1);
+    assert_eq!(rows(fx.root()).unwrap().len(), 1);
 }
 
 #[test]
@@ -161,11 +162,11 @@ fn a_refused_tag_leaves_no_mark_and_a_rerun_is_not_already_marked() {
         mark(fx.root(), "dev", &first, true),
         Err(MilestoneError::Git { .. })
     ));
-    assert!(marks(fx.root()).unwrap().is_empty());
+    assert!(rows(fx.root()).unwrap().is_empty());
     assert!(!fx.root().join(RECORD_PATH).exists());
     fx.git(&["tag", "-d", "milestone"]);
     mark(fx.root(), "dev", &first, true).unwrap();
-    assert_eq!(marks(fx.root()).unwrap().len(), 1);
+    assert_eq!(rows(fx.root()).unwrap().len(), 1);
     assert_eq!(fx.git(&["tag", "--list", "milestone/*"]), "milestone/1");
 }
 
@@ -204,7 +205,7 @@ fn a_clone_with_only_origins_trunk_is_answered_by_its_tags_and_marks() {
         (first.clone(), Source::Tag)
     );
     mark(dir.path(), "dev", &first, false).unwrap();
-    assert_eq!(marks(dir.path()).unwrap().len(), 1);
+    assert_eq!(rows(dir.path()).unwrap().len(), 1);
 }
 
 fn exists_local(root: &Path, branch: &str) -> bool {
@@ -221,3 +222,4 @@ fn exists_local(root: &Path, branch: &str) -> bool {
 
 mod branches;
 mod range;
+mod steps;
