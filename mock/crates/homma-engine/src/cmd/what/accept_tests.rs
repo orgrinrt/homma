@@ -37,7 +37,12 @@ fn everything() -> &'static (Vec<super::doc::Doc>, Vec<super::doc::Gap>) {
     static ALL: std::sync::OnceLock<(Vec<super::doc::Doc>, Vec<super::doc::Gap>)> =
         std::sync::OnceLock::new();
     ALL.get_or_init(|| {
-        let g = gather(&workspace(), &[], false, &[]);
+        let g = gather(
+            &workspace(),
+            &[],
+            false,
+            &homma_core::scope::Scope::everything(),
+        );
         (g.docs, g.gaps)
     })
 }
@@ -112,7 +117,12 @@ fn a_sourced_library_is_never_an_answer() {
 
 #[test]
 fn what_a_kind_filter_leaves_out_is_said_in_the_footer() {
-    let g = gather(&workspace(), &[Kind::Rule], true, &[]);
+    let g = gather(
+        &workspace(),
+        &[Kind::Rule],
+        true,
+        &homma_core::scope::Scope::everything(),
+    );
     let a = answer(&g.docs, g.gaps, "free disk", 5);
     assert!(
         a.gaps
@@ -340,7 +350,12 @@ fn the_json_carries_the_query_the_terms_the_hits_and_the_gaps() {
 /// the repositories of the workspace.
 #[test]
 fn the_default_path_reads_the_mockspace_commands_beside_the_rest() {
-    let g = gather(&workspace(), &[], false, &[]);
+    let g = gather(
+        &workspace(),
+        &[],
+        false,
+        &homma_core::scope::Scope::everything(),
+    );
     assert!(
         g.docs
             .iter()

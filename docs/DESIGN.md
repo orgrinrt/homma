@@ -33,6 +33,15 @@ where a push lands and is therefore the only honest source for either. A
 workspace that renames a repository, clones a new one, or drops one is correct
 the moment the tree is, with nothing left saying otherwise.
 
+A clone of the workspace can be for fewer of them. A cloud container holds
+clones of more repositories than the work uses, because the environment attaches
+them for reasons of its own, and the clone's `homma.local.toml` names the ones
+the work does use. Membership is then those directories, and the others are not
+members: they are skipped where the tree is walked, by name and before the
+directory is touched, so no command opens, fetches, sizes or runs git in a
+repository outside the scope and then drops its rows. One module reads the
+scope, and the config is built with it; no command reads the key for itself.
+
 **Minimal, and delegating.** Where a member repository has its own tooling, homma
 drives it rather than reimplementing it. Releasing is the case where the tooling
 is the workspace's own: a release is a merge of `dev` onto `main` tagged,
@@ -965,12 +974,18 @@ workspace's tools and is carried untyped, for the reason `[[status.inject]]`
 runs a tool without knowing it: homma holds a tool's settings without growing
 an opinion about them.
 
-The manifest's loader does not read it. Only `status` and `local` use the file,
-and they read it themselves, anchored beside the manifest, because every other
-command, the commit and push gates among them, has nothing to learn from it and
-no reason to refuse over it. Absent is the ordinary case and nothing notices.
-Present and not parsing is never silently ignored either: `status` gives it a
-line of its own naming the file and the error, and `local show` fails on it.
+The manifest's loader reads one thing from it, `repos` under `[instance]`, and
+only through the scope module: that key decides which directories the loader
+treats as members, so every command that walks the members is narrowed by it
+without knowing. The rest of the file is read by `status` and `local`, anchored
+beside the manifest, because every other command, the commit and push gates among
+them, has nothing to learn from it and no reason to refuse over it. Absent is the
+ordinary case, nothing notices, and every repository is in scope. A name in
+`repos` that no clone provides is not an error, since a container that has not
+attached it yet is ordinary, and `status` names it as not cloned. Present and not
+parsing is never silently ignored either, and never refuses the loader: the scope
+is then everything, the loader records why, `status` gives the file a line of its
+own naming the error, and `local show` fails on it.
 
 `homma local init --work <name>` writes the file with every key in it, refuses
 to overwrite one that exists, and adds `/homma.local.toml` and

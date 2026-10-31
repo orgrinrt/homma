@@ -19,6 +19,7 @@
 use std::fs;
 use std::path::Path;
 
+use homma_core::scope::Scope;
 use serde::Serialize;
 
 /// How far below the workspace root a build directory is looked for.
@@ -35,14 +36,16 @@ pub struct StrayTarget {
 }
 
 /// Every stray build directory under `root`, in path order.
-pub fn collect(root: &Path) -> Vec<StrayTarget> {
+/// A top-level clone the `scope` does not admit is not entered: its build directories are
+/// outside the work, and sizing them is exactly the work the scope exists to skip.
+pub fn collect(root: &Path, scope: &Scope) -> Vec<StrayTarget> {
     let mut out = Vec::new();
-    walk(root, root, 0, &mut out);
+    walk(root, root, 0, scope, &mut out);
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out
 }
 
-fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<StrayTarget>) {
+fn walk(root: &Path, dir: &Path, depth: usize, scope: &Scope, out: &mut Vec<StrayTarget>) {
     if depth >= MAX_DEPTH {
         return;
     }
@@ -63,6 +66,9 @@ fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<StrayTarget>) {
         if SKIPPED.iter().any(|s| name == *s) {
             continue;
         }
+        if depth == 0 && is_clone_out_of_scope(&path, &name, scope) {
+            continue;
+        }
         if name == "target" {
             if is_build_dir(&path) && path != root.join("target") {
                 out.push(StrayTarget {
@@ -72,8 +78,13 @@ fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<StrayTarget>) {
             }
             continue;
         }
-        walk(root, &path, depth + 1, out);
+        walk(root, &path, depth + 1, scope, out);
     }
+}
+
+/// Whether a top-level directory is a clone (it has a `.git`) that the scope leaves out.
+fn is_clone_out_of_scope(path: &Path, name: &std::ffi::OsStr, scope: &Scope) -> bool {
+    name.to_str().is_some_and(|n| !scope.admits(n)) && path.join(".git").exists()
 }
 
 fn is_build_dir(dir: &Path) -> bool {
@@ -132,11 +143,30 @@ mod tests {
     }
 
     #[test]
+    fn a_clone_out_of_scope_is_not_entered_and_a_stray_in_scope_is_found() {
+        let d = tempfile::tempdir().unwrap();
+        for clone in ["kaski", "arvo"] {
+            plant(d.path(), &format!("{clone}/.git"));
+            plant(d.path(), &format!("{clone}/target/debug"));
+        }
+        plant(d.path(), "tools/target/debug");
+        let found = collect(d.path(), &Scope::named(["kaski"]));
+        let paths: Vec<_> = found.iter().map(|s| s.path.clone()).collect();
+        let at = |p: &str| d.path().join(p).display().to_string();
+        assert!(paths.contains(&at("kaski/target")), "{paths:?}");
+        assert!(
+            paths.contains(&at("tools/target")),
+            "a directory that is no clone is not a repository: {paths:?}"
+        );
+        assert!(!paths.contains(&at("arvo/target")), "{paths:?}");
+    }
+
+    #[test]
     fn the_workspaces_own_target_alone_is_nothing() {
         let d = tempfile::tempdir().unwrap();
         plant(d.path(), "target/debug");
         plant(d.path(), "repo/src");
-        assert!(collect(d.path()).is_empty());
+        assert!(collect(d.path(), &Scope::everything()).is_empty());
     }
 
     #[test]
@@ -146,7 +176,7 @@ mod tests {
         plant(d.path(), ".worktrees/w/target/debug");
         plant(d.path(), "repo/mock/target/mockspace-bench-test");
         fs::write(d.path().join("repo/mock/target/CACHEDIR.TAG"), "x").unwrap();
-        let found = collect(d.path());
+        let found = collect(d.path(), &Scope::everything());
         assert_eq!(paths(&found, d.path()), [
             ".worktrees/w/target",
             "repo/mock/target"
@@ -158,7 +188,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         plant(d.path(), "repo/src/target");
         fs::write(d.path().join("repo/src/target/lib.rs"), "x").unwrap();
-        assert!(collect(d.path()).is_empty());
+        assert!(collect(d.path(), &Scope::everything()).is_empty());
     }
 
     #[test]
@@ -167,7 +197,7 @@ mod tests {
         plant(d.path(), "w/target/debug/deps");
         fs::write(d.path().join("w/target/debug/a"), vec![0u8; 1000]).unwrap();
         fs::write(d.path().join("w/target/debug/deps/b"), vec![0u8; 24]).unwrap();
-        assert_eq!(collect(d.path())[0].bytes, 1024);
+        assert_eq!(collect(d.path(), &Scope::everything())[0].bytes, 1024);
     }
 
     #[test]
@@ -175,7 +205,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         plant(d.path(), ".git/target/debug");
         plant(d.path(), "web/node_modules/x/target/debug");
-        assert!(collect(d.path()).is_empty());
+        assert!(collect(d.path(), &Scope::everything()).is_empty());
     }
 
     #[test]
@@ -183,7 +213,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         plant(d.path(), "a/b/c/d/e/target/debug");
         plant(d.path(), "a/b/c/d/e/f/target/debug");
-        let found = collect(d.path());
+        let found = collect(d.path(), &Scope::everything());
         assert_eq!(paths(&found, d.path()), ["a/b/c/d/e/target"]);
     }
 
@@ -194,7 +224,7 @@ mod tests {
         plant(d.path(), "elsewhere/debug");
         plant(d.path(), "w");
         std::os::unix::fs::symlink(d.path().join("elsewhere"), d.path().join("w/target")).unwrap();
-        assert!(collect(d.path()).is_empty());
+        assert!(collect(d.path(), &Scope::everything()).is_empty());
     }
 
     #[test]

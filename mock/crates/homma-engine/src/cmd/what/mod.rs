@@ -15,6 +15,7 @@ use std::io::Write;
 use std::path::Path;
 
 use anyhow::Result;
+use homma_core::scope::Scope;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
@@ -205,7 +206,7 @@ impl HumanRender for Answer {
 }
 
 /// Everything the wanted kinds are read from under `root`.
-pub fn gather(root: &Path, kinds: &[Kind], no_mock: bool, scope: &[String]) -> Gathered {
+pub fn gather(root: &Path, kinds: &[Kind], no_mock: bool, scope: &Scope) -> Gathered {
     let mut all = Gathered::default();
     let mut add = |g: Gathered| {
         all.docs.extend(g.docs);
@@ -267,14 +268,14 @@ pub fn gather(root: &Path, kinds: &[Kind], no_mock: bool, scope: &[String]) -> G
     all
 }
 
-/// The repositories the instance's scope names, empty where it names none or there is no local config,
-/// and the gap where the local config is there and cannot be read.
-fn scope(root: &Path) -> (Vec<String>, Option<Gap>) {
-    match homma_core::local::Local::load(root) {
-        Ok(l) => (l.map(|l| l.instance.repos).unwrap_or_default(), None),
-        Err(e) => {
+/// The instance's scope, from the one owner, and the gap where the local config is there and
+/// cannot be read.
+fn scope(root: &Path) -> (Scope, Option<Gap>) {
+    match Scope::load(root) {
+        (scope, None) => (scope, None),
+        (scope, Some(e)) => {
             (
-                Vec::new(),
+                scope,
                 Some(Gap {
                     source: "mock",
                     count:  1,
