@@ -10,7 +10,7 @@ description = "One command for a directory of repositories that belong together.
 # The repository's own, since this crate is the whole of what an operator
 # installs. Cargo ships whatever `readme` names whether or not `include`
 # mentions it, which is the only way to reach a file above the package.
-readme = "../README.md"
+readme = "README.md"
 # `renki` is the floor and it declares 1.88. Stated here too, or an older
 # toolchain fails somewhere inside a dependency instead of at this manifest.
 rust-version = "1.88"
