@@ -27,14 +27,86 @@ the whole set, drives each member's own tooling, moves a repository from one
 forge to another and archives the source behind it, and stands up the people and
 the directories the workspace is organised around.
 
-## Status
+## Usage
+
+What goes on `PATH` is a small launcher. It finds the workspace, reads the
+engine version the workspace pins, builds that once into a shared cache, and
+hands over. So the workspace decides which homma runs in it, and a checkout
+installed months ago does not.
+
+```bash
+cargo install homma
+```
+
+```bash
+cargo install --path launcher
+```
+
+The second one works from a checkout and is what to use while changing the
+launcher itself. Do note that it installs from a path rather than a remote, so
+there is nothing for the update check to compare against and it stays exactly as
+current as the checkout it came from. `HOMMA_NO_SELF_UPDATE` turns the check off
+where it isn't wanted, on a build machine say.
+
+The engine is a separate package and isn't installed by hand. The launcher
+builds the pinned one on first use, and `--engine <path>` points it at a
+checkout while you're working on the engine instead.
+
+The pin is one key at the top of the manifest, and which key decides where the
+engine is fetched from:
+
+```toml
+homma_version = "0.0.1"   # a release
+homma_tag     = "0.0.1"   # a tag in the repository
+homma_rev     = "f2b0c4e" # one commit, which is what a workspace wants
+homma_branch  = "dev"     # a moving target, so the engine moves under you
+```
+
+`homma_git` names a different repository to take the engine from, for a fork.
+With no key at all the launcher says so rather than guessing, because a
+workspace that has not decided which engine it runs has not decided.
+
+## Example
+
+```bash
+# from the workspace root, where homma.toml lives
+homma status
+homma verify --forge
+
+# read one repo's metadata off its forge
+homma forge show github orgrinrt/notko
+
+# move a repo across, then archive what it came from
+homma migrate notko --to codeberg
+homma archive notko --from github
+```
+
+The manifest is a `homma.toml` at the root of the directory holding the clones:
+
+```toml
+[workspace]
+name = "my-stack"
+
+[forges.github]
+kind = "github"
+base_url = "https://github.com"
+api_url = "https://api.github.com"
+token_env = "MY_GITHUB_TOKEN"
+```
+## Motivation
+
+The shell scripts that keep a set of repositories moving tend to grow one flag at a time, and a provider cli knows one forge only, so a handful of repositories that are refactored together ends up held by a pile nobody can vouch for. A single binary that reads a manifest and walks the set puts that in one place, with the forge apis spoken directly instead of through a provider cli.
+
+## Extras
+
+### Status
 
 Working, but narrow, and the api is nowhere near settled so breaking changes
 should be expected. What's here is the manifest, the per-repo reporting, the
 registry, the forge reads and the migration path. I'd caution against wiring it
 into anything that has to keep running unattended just yet.
 
-## What it does
+### Commands
 
 | Command | What it's for |
 |---|---|
@@ -71,34 +143,7 @@ The settings file is the person's and the manifest is the workspace's, and the
 two don't overlap. `homma config schema` lists what the file may hold; a fresh
 install refuses to spawn anything until `spawn.content_repo` names a
 repository, because there's no sensible default for whose repository that is.
-
-## Usage
-
-```bash
-# from the workspace root, where homma.toml lives
-homma status
-homma verify --forge
-
-# read one repo's metadata off its forge
-homma forge show github orgrinrt/notko
-
-# move a repo across, then archive what it came from
-homma migrate notko --to codeberg
-homma archive notko --from github
-```
-
-The manifest is a `homma.toml` at the root of the directory holding the clones:
-
-```toml
-[workspace]
-name = "my-stack"
-
-[forges.github]
-kind = "github"
-base_url = "https://github.com"
-api_url = "https://api.github.com"
-token_env = "MY_GITHUB_TOKEN"
-```
+### The manifest
 
 The repos are not in there, and there is nothing to add when one arrives. A
 directory one level under the workspace root that is its own repository is a
@@ -184,46 +229,9 @@ of it down. The block says what happened and carries the first line the tool put
 on stderr, and everything else still prints. Same warning as `token_cmd` here
 though: these are programs the manifest picks.
 
-## Installation
-
-What goes on `PATH` is a small launcher. It finds the workspace, reads the
-engine version the workspace pins, builds that once into a shared cache, and
-hands over. So the workspace decides which homma runs in it, and a checkout
-installed months ago does not.
-
-```bash
-cargo install homma
-```
-
-```bash
-cargo install --path launcher
-```
-
-The second one works from a checkout and is what to use while changing the
-launcher itself. Do note that it installs from a path rather than a remote, so
-there is nothing for the update check to compare against and it stays exactly as
-current as the checkout it came from. `HOMMA_NO_SELF_UPDATE` turns the check off
-where it isn't wanted, on a build machine say.
-
-The engine is a separate package and isn't installed by hand. The launcher
-builds the pinned one on first use, and `--engine <path>` points it at a
-checkout while you're working on the engine instead.
-
-The pin is one key at the top of the manifest, and which key decides where the
-engine is fetched from:
-
-```toml
-homma_version = "0.0.1"   # a release
-homma_tag     = "0.0.1"   # a tag in the repository
-homma_rev     = "f2b0c4e" # one commit, which is what a workspace wants
-homma_branch  = "dev"     # a moving target, so the engine moves under you
-```
-
-`homma_git` names a different repository to take the engine from, for a fork.
-With no key at all the launcher says so rather than guessing, because a
-workspace that has not decided which engine it runs has not decided.
-
 ## Support
+
+Feel free to contribute! If unsure about wasting work, the best practice is to throw in an issue describing what you'd do, and only then commit to writing a big PR, because chances are, it might not be something that belongs here. However, forks are always a valid choice and we'd encourage everyone to experiment and have their own takes on this. When doing this, do mind the license(s) though!
 
 Whether you use this project, have learned something from it, or just like it, please consider supporting it by buying me a coffee, so I can dedicate more time on open-source projects like this :)
 
@@ -235,4 +243,4 @@ Whether you use this project, have learned something from it, or just like it, p
 
 `SPDX-License-Identifier: MPL-2.0`
 
-> You can check out the full license [here](https://github.com/orgrinrt/homma/blob/main/LICENSE)
+> You can check out the full license [here](https://github.com/orgrinrt/homma/blob/dev/LICENSE)
