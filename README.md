@@ -50,7 +50,7 @@ where it isn't wanted, on a build machine say.
 
 The engine is a separate package and isn't installed by hand. The launcher
 builds the pinned one on first use, and `--engine <path>` points it at a
-checkout while you're working on the engine instead.
+checkout while the engine itself is being worked on.
 
 The pin is one key at the top of the manifest, and which key decides where the
 engine is fetched from:
@@ -59,7 +59,7 @@ engine is fetched from:
 homma_version = "0.0.1"   # a release
 homma_tag     = "0.0.1"   # a tag in the repository
 homma_rev     = "f2b0c4e" # one commit, which is what a workspace wants
-homma_branch  = "dev"     # a moving target, so the engine moves under you
+homma_branch  = "dev"     # a moving target, so the engine moves under the workspace
 ```
 
 `homma_git` names a different repository to take the engine from, for a fork.
@@ -93,6 +93,7 @@ base_url = "https://github.com"
 api_url = "https://api.github.com"
 token_env = "MY_GITHUB_TOKEN"
 ```
+
 ## Motivation
 
 The shell scripts that keep a set of repositories moving tend to grow one flag at a time, and a provider cli knows one forge only, so a handful of repositories that are refactored together ends up held by a pile nobody can vouch for. A single binary that reads a manifest and walks the set puts that in one place, with the forge apis spoken directly instead of through a provider cli.
@@ -110,7 +111,7 @@ into anything that has to keep running unattended just yet.
 
 | Command | What it's for |
 |---|---|
-| `homma status` | What state the workspace is in: every repo it found, its forge and owner, which of the repos that carry a `mockspace.toml` are missing a surface (the mock directory, `.claude/`, `.github/instructions/` or the git hooks path) with `homma agent regen` named as the fix, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless you pass `--full`. Whether homma's own hook entrypoints are installed is `homma hook install`'s to report, not this one's |
+| `homma status` | What state the workspace is in: every repo it found, its forge and owner, which of the repos that carry a `mockspace.toml` are missing a surface (the mock directory, `.claude/`, `.github/instructions/` or the git hooks path) with `homma agent regen` named as the fix, which shared tool configs are missing, and which trees are dirty. Shows only what is wrong unless `--full` is passed. Whether homma's own hook entrypoints are installed is `homma hook install`'s to report, not this one's |
 | `homma local <op>` | This clone's own `homma.local.toml`, beside the manifest and never committed: which body of work the clone is for, which repositories it works on (`repos` limits every command to them, and `status` names one that is not cloned), where that work keeps its state and its goal, and the settings of the workspace's own tools. `init --work <name>` writes it and adds it to `.gitignore`, `show` prints it, `set <table.key> <value>` writes one value and keeps the comments. `list` names the configs a workspace stores under `.shared/local/` and marks the installed one, and `install <name>` makes the clone inherit the named one with a single `project` line, migrating a full copy of the same work, and `show --effective` prints the config in force. `homma status` names what the clone is for |
 | `homma verify` | Checks the manifest parses, its forges are declared, and their tokens resolve. `--forge` also asks each forge whether the repo is really there |
 | `homma repo <op>` | Per-repo work against the local tree, without the `cd`. `repo config check` compares a repo against the shared tool configs and `repo config init` places the ones it is missing |
@@ -127,15 +128,15 @@ into anything that has to keep running unattended just yet.
 | `homma rules <op>` | Asks which rules govern a subject, for somebody who does not know the filename, and generates the always-loaded cards from what is authored, only those of the session's role and place, with `rules load` reporting what each kind of session loads |
 | `homma skills <op>` | Lists the skills and what each is for, and generates the tree from what is authored |
 | `homma tools` | The content repository's own tools, the `tools/<name>/tool.toml` directories: lists them with their verbs, names any descriptor that cannot be read (`tools check` exits non-zero while there is one), and runs one by name (`tools run <name> <verb>`). A tool with `promote = true` is also a subcommand, `homma <tool> <verb>`, and each built-in group, `rules` and `skills` among them, hands the verbs it does not know to the tool of its name. A tool with the `git` backend is fetched once for each revision into the shared cache |
-| `homma what` | Which tool does a thing: it takes what you want to do, in your own words and without quotes, and answers with the tools, scripts, homma verbs, mockspace commands, skills and rules that do it, each with the exact command, a one line summary and the words that matched, with the things related to the best of them and a footer counting what could not be searched for want of a descriptor. Matches on name, tag, verb names, summary, verb summaries, place and the rest of a header, by stem, synonym, prefix and misspelling; `--output json` gives the same as data. A tool's `README.md` is read as well: a line in a fenced block that begins with the tool's name is a form that can be asked for, with its own command, and the prose around it is searched like a script's header |
+| `homma what` | Which tool does a thing: it takes what is wanted done, in the asker's own words and without quotes, and answers with the tools, scripts, homma verbs, mockspace commands, skills and rules that do it, each with the exact command, a one line summary and the words that matched, with the things related to the best of them and a footer counting what could not be searched for want of a descriptor. Matches on name, tag, verb names, summary, verb summaries, place and the rest of a header, by stem, synonym, prefix and misspelling; `--output json` gives the same as data. A tool's `README.md` is read as well: a line in a fenced block that begins with the tool's name is a form that can be asked for, with its own command, and the prose around it is searched like a script's header |
 | `homma release <op>` | The gate that runs on the pushing machine and posts its status, and the release that merges the trunk onto `main`, tags it, writes the changelog, publishes to the registries and rewrites the badges |
 | `homma milestone <op>` | Where the current milestone began and what the range since holds. `freeze`, `pin` and `mark` write a milestone's base, freeze, head and tip into `.homma/milestones.toml` without committing it, `show` prints each with its epoch and review range, and `base` prints the last tip; `partition` splits a range by crate and document with changed lines each, `stand-ins` lists the FIXMEs and relaxed assertions it added, and `branches` lists every branch the trunk lacks with its conflicts and its call |
 | `homma hook <op>` | The git hooks: one entrypoint per event in a repo's own hooks directory, or an entry registered with git-shook where that owns the hooks path, running what `[hooks]` names for it in `homma.toml` and in the overlay files its `layers` key lists (`homma.local.toml` by default), the release gate on `pre-push` among them. `install` writes or registers them and says how git reaches each; `doctor` names the overlay files read, absent and never read; `run` is what an entrypoint calls |
-| `homma workspace [op]` | The launcher's own, so it works where there is no workspace yet. Bare inside one it prints every repo with its branch, whether it's dirty and what's on no remote; bare outside one it clones your content repository into the cwd, which has to be empty. `spawn <slug> [owner/name ...]` makes one under your workspaces directory, `reap [<slug>]` removes one and refuses while anything in it is dirty or unpushed, or holds a worktree, or is the directory you're standing in, `list` says what's there |
-| `homma config <op>` | Your own settings, in a file under your config directory: `path`, `schema`, `get`, `set` and `edit`. Where workspaces go, which repository a fresh one is a clone of, what it clones beside it, and where one may never be made, which is your home directory unless you say otherwise |
+| `homma workspace [op]` | The launcher's own, so it works where there is no workspace yet. Bare inside one it prints every repo with its branch, whether it's dirty and what's on no remote; bare outside one it clones the content repository into the cwd, which has to be empty. `spawn <slug> [owner/name ...]` makes one under the workspaces directory, `reap [<slug>]` removes one and refuses while anything in it is dirty or unpushed, or holds a worktree, or is the directory the shell is standing in, `list` says what's there |
+| `homma config <op>` | The person's own settings, in a file under their config directory: `path`, `schema`, `get`, `set` and `edit`. Where workspaces go, which repository a fresh one is a clone of, what it clones beside it, and where one may never be made, which is the home directory unless the settings say otherwise |
 
 `--output json` sits on the root and applies to all of them, one document per
-command, which is there mostly so you can pipe it into `jq` and stop parsing our
+command, which is there mostly for piping into `jq`, so nothing has to parse our
 terminal formatting. `--config` and `--dir` are global the same way, and say
 which manifest to read and which directory to treat as the root.
 
@@ -143,6 +144,7 @@ The settings file is the person's and the manifest is the workspace's, and the
 two don't overlap. `homma config schema` lists what the file may hold; a fresh
 install refuses to spawn anything until `spawn.content_repo` names a
 repository, because there's no sensible default for whose repository that is.
+
 ### The manifest
 
 The repos are not in there, and there is nothing to add when one arrives. A
@@ -157,15 +159,15 @@ The root is `workspace.path`, so a manifest that sits somewhere else still
 looks in the right place. A worktree is not a second member either: it carries a
 `.git` file rather than a directory, and only the directory counts.
 
-A clone whose remote is a local path, or is on a host you have no `[forges]`
-profile for, is still a member. It has no forge and no owner, homma says so,
+A clone whose remote is a local path, or is on a host with no `[forges]`
+profile, is still a member. It has no forge and no owner, homma says so,
 and the commands that need one take it as a flag rather than guessing.
 
 There is also `deny`, which is the places homma may not write. Two are denied
-without being named, because they are the same wherever it runs: your own
+without being named, because they are the same wherever it runs: the person's own
 `~/.claude`, where an assistant keeps its settings and its credentials, and
 every other participant's workspace as the registry gives them. Anything else
-is your own arrangement rather than homma's guess, so it goes in the manifest:
+is the workspace's own arrangement rather than homma's guess, so it goes in the manifest:
 
 ```toml
 deny = [
@@ -174,27 +176,27 @@ deny = [
 ]
 ```
 
-A bare path is enough. The table form adds the reason you'll see in the
-refusal, which is worth the extra words on anything you might forget you wrote
-down. It goes above the first `[table]`, since it belongs to the manifest and
+A bare path is enough. The table form adds the reason shown in the
+refusal, which is worth the extra words on anything that might get forgotten once
+written down. It goes above the first `[table]`, since it belongs to the manifest and
 not to any section of it. The `~/` works here and only here: `workspace.path`
-takes it literally, and you get a directory named `~`.
+takes it literally, which gives a directory named `~`.
 
 One thing the list does not cover, and it is deliberate. `homma agent regen`
 writes into the workspace root even when an entry names it, because the
-alternative is a command that quietly does nothing after you asked for it. Deny
-the root and you have denied homma the place it works in, so the aggregation
+alternative is a command that quietly does nothing after being asked for it. Denying
+the root would deny homma the place it works in, so the aggregation
 permits it back. Everywhere else the entry holds.
 
 Tokens are read out of the environment by the name the forge names, so nothing
-secret is ever written into the manifest. `homma verify` tells you which of them
-did not resolve before any command goes and finds out the hard way.
+secret is ever written into the manifest. `homma verify` names the ones that
+did not resolve, before any command goes and finds out the hard way.
 
 Where a credential lives in something other than an environment variable, a
 forge may instead name `token_cmd`, an argument list homma runs and reads the
-token off stdout. That is a program the manifest chooses, so a manifest you got
-from somewhere else runs whatever it names when a forge is asked for anything.
-Read that key before you trust a manifest you did not write.
+token off stdout. That is a program the manifest chooses, so a manifest that came
+from somewhere else runs whatever it names when a forge is asked for anything,
+and the key is worth reading before a manifest nobody here wrote is trusted.
 
 A workspace grows tools that homma has no business owning. What fills a session's
 context window, what the rule corpus costs to load, what is still open on the
@@ -214,16 +216,16 @@ format = "grep -v '^gated'"
 
 Each one runs in the workspace root, in the order it is declared, and its stdout
 becomes a block under the repos. `title` is optional and falls back to the
-program's own file name, which is usually what you would have typed anyway.
+program's own file name, which is usually what would have been typed anyway.
 `format` is optional too, a shell line the output goes through on its way out, so
-`head -3` and friends work the way you would expect.
+`head -3` and friends work the way they do in any shell.
 
 The command itself is an argument list rather than a shell line, same as
 `token_cmd`, and a bare string counts as a one word one. A relative path with a
 separator in it resolves against the workspace root, and a bare name is left for
 `PATH`.
 
-Tools break, and `homma status` is the cheap look you take at a workspace before
+Tools break, and `homma status` is the cheap look at a workspace before
 anything else, so a tool that is missing or exits non-zero does not take the rest
 of it down. The block says what happened and carries the first line the tool put
 on stderr, and everything else still prints. Same warning as `token_cmd` here
