@@ -173,6 +173,28 @@ impl Config {
     /// right whatever directory homma was invoked from and wherever the
     /// workspace was spawned.
     pub fn from_path(path: &Path) -> Result<Self, ConfigError> {
+        // a local file that cannot be read widens the scope to everything; `status` reports
+        // the file itself, so the error is not kept here
+        Self::load_in_scope(path, |beside| crate::scope::Scope::load(beside).0)
+    }
+
+    /// [`Config::from_path`] with every clone under the workspace root a member, whatever
+    /// `repos` the local file names.
+    ///
+    /// For the verbs that act on one repository by name, the release ones: which repositories
+    /// a clone is for says nothing about which of them can be released from it. The scope the
+    /// config reports is everything, so the members and the scope agree and no name the load
+    /// holds is refused as outside a scope it did not apply.
+    pub fn from_path_whole(path: &Path) -> Result<Self, ConfigError> {
+        Self::load_in_scope(path, |_| crate::scope::Scope::everything())
+    }
+
+    /// The load both entries share, with the scope taken as a function of the manifest's
+    /// directory so that neither entry picks it with a flag.
+    fn load_in_scope(
+        path: &Path,
+        scope_of: impl FnOnce(&Path) -> crate::scope::Scope,
+    ) -> Result<Self, ConfigError> {
         let s = std::fs::read_to_string(path).map_err(|e| {
             ConfigError::Io {
                 path:   path.to_path_buf(),
@@ -226,9 +248,7 @@ impl Config {
         // that disagree about which `tools/` was meant. The two are the same
         // wherever `workspace.path` is left at `.`, which is the ordinary case.
         crate::inject::settle(&mut cfg.status, &root);
-        // a local file that cannot be read widens the scope to everything; `status` reports
-        // the file itself, so the error is not kept here
-        let (scope, _unread) = crate::scope::Scope::load(beside);
+        let scope = scope_of(beside);
         cfg.detect_members(&root, &crate::repo::GixGit, &scope);
         cfg.scope = scope;
         Ok(cfg)
