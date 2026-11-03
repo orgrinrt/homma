@@ -10,8 +10,15 @@
 //! constructor or a free request function or a glob or an alias of the crate, so a spelling nobody
 //! thought of is caught too. It does not see an agent made through another crate that wraps `ureq`.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use super::no_roots;
+
+/// The heading of the text for a store with no root, which the request test looks for on standard error.
+const HEADING: &str =
+    "homma: no trusted root certificate could be read, so every HTTPS request will be refused";
 
 /// What outside code may take from `ureq`.
 const ALLOWED: &[&str] = &[
@@ -115,6 +122,33 @@ fn outside_the_list(src: &Path) -> Vec<(String, Vec<String>)> {
             (!reasons.is_empty()).then_some((name, reasons))
         })
         .collect()
+}
+
+/// What the text for an empty store carries: the heading alone, then a line for each variable that is set
+/// and for each thing the loader said, and a variable that is not set gets no line. The request test sees
+/// the path through the loader's own error as much as through the variable, so it cannot tell a text that
+/// leaves a variable out from one that keeps it; this one can.
+#[test]
+fn the_text_for_a_store_with_no_root_names_each_variable_set_and_what_the_loader_said() {
+    assert_eq!(no_roots(&[], None, None), HEADING);
+
+    let file_only = no_roots(&[], Some(OsStr::new("/a/b.pem")), None);
+    assert_eq!(file_only, format!("{HEADING}\n  SSL_CERT_FILE is /a/b.pem"));
+
+    let dir_only = no_roots(&[], None, Some(OsStr::new("/c")));
+    assert_eq!(dir_only, format!("{HEADING}\n  SSL_CERT_DIR is /c"));
+
+    let all = no_roots(
+        &["no such file".to_owned(), "not a certificate".to_owned()],
+        Some(OsStr::new("/a/b.pem")),
+        Some(OsStr::new("/c")),
+    );
+    assert_eq!(
+        all,
+        format!(
+            "{HEADING}\n  SSL_CERT_FILE is /a/b.pem\n  SSL_CERT_DIR is /c\n  no such file\n  not a certificate"
+        )
+    );
 }
 
 #[test]

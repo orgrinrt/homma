@@ -6,10 +6,11 @@
 # that does not match exactly once are reported apart, since they kill nothing. Run from the repository
 # root, with the tree not edited meanwhile; every file is put back and touched, so cargo rebuilds it.
 #
-# Not in the table, because no test can tell them apart: the loader's own errors left out of the text
-# written when no root could be read (the test asks for the heading and the path the variable names, and the
-# path comes from the variable and not from the loader), and the config being built once per process and
-# not once per agent (the answer is the same either way).
+# Not in the table, because no test can tell it apart: the config being built once per process and not once
+# per agent (the answer is the same either way). The first run of this table left the variable named in the
+# text written when no root could be read standing, since the loader's own error for a missing file carries
+# the path as well; the text is now asked for directly, in `tls_tests.rs`, and the three mutants of it below
+# are killed by that.
 set -u
 CR=mock/crates
 CORE="-p homma-core --lib"
@@ -48,6 +49,8 @@ the root store reads nothing ;; homma-core/src/tls.rs ;; let \(added, _\) = stor
 a store with no root says nothing ;; homma-core/src/tls.rs ;; if added == 0 \{@@if false { ;; CORE ;; tls registry whole_load
 a store with roots says it has none ;; homma-core/src/tls.rs ;; if added == 0 \{@@if true { ;; CORE ;; tls registry whole_load
 the file the variable names is left out of the text ;; homma-core/src/tls.rs ;; \[\("SSL_CERT_FILE", file\), \("SSL_CERT_DIR", dir\)\]@@[("SSL_CERT_DIR", dir)] ;; CORE ;; tls registry whole_load
+the directory the variable names is left out of the text ;; homma-core/src/tls.rs ;; \[\("SSL_CERT_FILE", file\), \("SSL_CERT_DIR", dir\)\]@@[("SSL_CERT_FILE", file)] ;; CORE ;; tls registry whole_load
+the loader's errors are left out of the text ;; homma-core/src/tls.rs ;; for error in errors \{@@for error in errors.iter().take(0) { ;; CORE ;; tls registry whole_load
 the github client builds its agent from nothing ;; homma-core/src/forge/github.rs ;; crate::tls::agent_builder\(\)@@ureq::AgentBuilder::new() ;; CORE ;; tls registry whole_load
 the github client builds its agent with builder ;; homma-core/src/forge/github.rs ;; crate::tls::agent_builder\(\)@@ureq::builder() ;; CORE ;; tls registry whole_load
 the forgejo client builds its agent from nothing ;; homma-core/src/forge/forgejo.rs ;; crate::tls::agent_builder\(\)@@ureq::AgentBuilder::new() ;; CORE ;; tls registry whole_load
