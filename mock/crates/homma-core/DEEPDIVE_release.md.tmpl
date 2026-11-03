@@ -409,6 +409,14 @@ The branch is fetched by every clone, a few kilobytes and never checked out,
 and that is accepted over a ref outside `refs/heads/` that raw file hosting
 cannot resolve.
 
+## What a release reaches
+
+Two things decide whether the release verbs work at all in a cloud container, and both are settled by what they read.
+
+The registry indexes and the forges are asked over TLS against the system's roots, and where `SSL_CERT_FILE` or `SSL_CERT_DIR` is set, against the roots it names. They are not asked against a store of roots compiled in. A cloud container sends every request through a proxy that signs with its own authority and names it only through that variable, so a compiled-in store refused every request as an unknown issuer and no release got as far as looking at its repository. The three places that build an agent share this by sharing the dependency feature, and none of them loads roots itself.
+
+Every release verb finds its repository among every clone under the workspace root, whether the repository is named or is the one the working directory is in, and whatever `repos` the local file names. Which repositories a clone is for says nothing about which can be released from it, and a coordinator in a clone for one body of work releases the others. The one verb that names no repository and means all of them, `release run` with none, stays within the scope, since a container attaches clones it only reads and a sweep over every clone would try to release those.
+
 ## Credentials
 
 The forge token comes through the forge's `token_cmd` or `token_env`, as every
