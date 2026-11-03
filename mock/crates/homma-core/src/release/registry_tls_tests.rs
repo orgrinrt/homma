@@ -3,14 +3,19 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! A registry request trusts the roots `SSL_CERT_FILE` names, and only those.
+//! A registry request trusts the roots `SSL_CERT_FILE` names, and says so when it names none that can be read.
 //!
 //! A cloud container sends every request through a proxy whose authority is a bundle at that path, and a
 //! request that trusts only a compiled-in store is refused as an unknown issuer. The test serves a local TLS
-//! endpoint with a certificate made for it, and asks it twice from a child process: once with the file
-//! naming that certificate, and once without. The roots are read when a connection is first made and the
-//! environment is the process's, so each ask is a process of its own rather than a variable set in a test
-//! thread.
+//! endpoint with a certificate made for it, and asks it three times from a child process: with the file
+//! naming that certificate, without the variable, and with the variable naming a file that is not there. The
+//! roots are read when a connection is first made and the environment is the process's, so each ask is a
+//! process of its own rather than a variable set in a test thread.
+//!
+//! The refusal without the file is asserted as `invalid peer certificate`, which is how the library reports a
+//! self-signed leaf no root vouches for, and not as the unknown-issuer variant the topic of the round that
+//! added this asked for. The first ask and the second use the same certificate and the same address, so a name
+//! mismatch or an expired certificate cannot make one pass and the other fail.
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -20,12 +25,17 @@ use std::time::{Duration, Instant};
 const URL_VAR: &str = "HOMMA_TLS_TEST_URL";
 /// What the child prints before its answer.
 const ANSWER: &str = "HOMMA_TLS_ANSWER:";
+/// What the child writes on standard error when no root could be read.
+const NO_ROOTS: &str = "no trusted root certificate could be read";
 
 /// The test's own path as the test harness names it, for the child to run only this test.
 fn this_test() -> String {
     let module = module_path!().split_once("::").map_or("", |(_, rest)| rest);
-    format!("{module}::a_request_trusts_the_roots_ssl_cert_file_names_and_only_those")
+    format!("{module}::{TEST}")
 }
+
+/// This test's own name, which the child is told to run.
+const TEST: &str = "ssl_cert_file_sets_the_roots_and_a_missing_file_is_said_on_stderr";
 
 struct Server(Child);
 
@@ -58,8 +68,9 @@ fn free_port() -> u16 {
         .port()
 }
 
-/// What the child prints for one ask of `url`, with `SSL_CERT_FILE` set to `roots` or removed.
-fn asked(url: &str, roots: Option<&Path>) -> String {
+/// What the child answers for one ask of `url` and what it wrote on standard error, with `SSL_CERT_FILE` set to
+/// `roots` or removed.
+fn asked(url: &str, roots: Option<&Path>) -> (String, String) {
     let mut child = Command::new(std::env::current_exe().unwrap());
     child
         .args(["--exact", &this_test(), "--nocapture", "--test-threads=1"])
@@ -73,20 +84,20 @@ fn asked(url: &str, roots: Option<&Path>) -> String {
     };
     let out = child.output().unwrap();
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     // libtest has already written `test <name> ... ` on the line the child answers on
-    text.lines()
+    let answer = text
+        .lines()
         .find_map(|l| l.split_once(ANSWER).map(|(_, answer)| answer))
         .unwrap_or_else(|| {
-            panic!(
-                "the child printed no answer, so it did not run this test: {text}\n{}",
-                String::from_utf8_lossy(&out.stderr)
-            )
+            panic!("the child printed no answer, so it did not run this test: {text}\n{stderr}")
         })
-        .to_string()
+        .to_string();
+    (answer, stderr)
 }
 
 #[test]
-fn a_request_trusts_the_roots_ssl_cert_file_names_and_only_those() {
+fn ssl_cert_file_sets_the_roots_and_a_missing_file_is_said_on_stderr() {
     if let Ok(url) = std::env::var(URL_VAR) {
         let answer = match super::agent().get(&url).call() {
             Ok(resp) => format!("ok {}", resp.status()),
@@ -140,17 +151,33 @@ fn a_request_trusts_the_roots_ssl_cert_file_names_and_only_those() {
     }
 
     let url = format!("https://127.0.0.1:{port}/index.txt");
+    let (answer, stderr) = asked(&url, Some(&dir.path().join("cert.pem")));
     assert_eq!(
-        asked(&url, Some(&dir.path().join("cert.pem"))),
-        "ok 200",
+        answer, "ok 200",
         "a request did not trust the certificate `SSL_CERT_FILE` names"
     );
+    // Said only when a store ends up empty: a store that read its file has nothing to tell.
+    assert!(
+        !stderr.contains(NO_ROOTS),
+        "a store that read its roots still said it had none: {stderr}"
+    );
     // The control, and the case this exists for: the same endpoint with no file naming its certificate is
-    // an unknown issuer. Without it the request above is equally consistent with a client that trusts
-    // anything.
-    let refused = asked(&url, None);
+    // refused. Without it the request above is equally consistent with a client that trusts anything.
+    let (refused, _) = asked(&url, None);
     assert!(
         refused.starts_with("err") && refused.contains("invalid peer certificate"),
         "a certificate no root vouches for was not refused as an invalid peer certificate: {refused}"
+    );
+    // A file that is not there leaves no root at all, and every request is refused as the one above is, which
+    // says nothing of why. The cause is on standard error, with the path the variable named.
+    let missing = dir.path().join("not-there.pem");
+    let (refused, stderr) = asked(&url, Some(&missing));
+    assert!(
+        refused.starts_with("err"),
+        "a request was trusted with no root to trust: {refused}"
+    );
+    assert!(
+        stderr.contains(NO_ROOTS) && stderr.contains(&*missing.to_string_lossy()),
+        "a store with no roots did not say so and name the file `SSL_CERT_FILE` named: {stderr}"
     );
 }

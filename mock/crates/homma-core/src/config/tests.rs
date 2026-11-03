@@ -457,15 +457,7 @@ mod whole_load_tests {
     /// Two clones under a workspace whose local file names only `inside`.
     fn two_clones_and_a_scope_of_one() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
-        std::fs::write(
-            dir.path().join(crate::local::LOCAL_FILE),
-            "[instance]\nwork = \"w\"\nrepos = [\"inside\"]\n",
-        )
-        .unwrap();
-        for name in ["inside", "outside"] {
-            std::fs::create_dir_all(dir.path().join(name).join(".git")).unwrap();
-        }
+        crate::testing::two_clones_and_a_scope_of_one(dir.path());
         dir
     }
 

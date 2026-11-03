@@ -8,6 +8,7 @@
 //! which is how a cloud container's proxy authority reaches the registry indexes and the forges.
 //! They are read once for the process, and every agent starts from [`agent_builder`].
 
+use std::ffi::OsStr;
 use std::sync::{Arc, OnceLock};
 
 use ureq::rustls::{self, ClientConfig, RootCertStore};
@@ -31,12 +32,43 @@ fn client_config() -> Arc<ClientConfig> {
     Arc::new(config)
 }
 
-/// Whatever the system holds that parses. A root that does not is left out, and a store that
-/// ends up empty makes every request fail as an unknown issuer, which names the cause.
+/// Whatever the system holds that parses. A root that does not is left out. A store that ends up
+/// empty makes every request fail as an invalid peer certificate, which says nothing of the file
+/// that was missing, so the cause is written once to standard error then.
 fn roots() -> RootCertStore {
+    let loaded = rustls_native_certs::load_native_certs();
     let mut store = RootCertStore::empty();
-    store.add_parsable_certificates(rustls_native_certs::load_native_certs().certs);
+    let (added, _) = store.add_parsable_certificates(loaded.certs);
+    if added == 0 {
+        let errors: Vec<String> = loaded.errors.iter().map(ToString::to_string).collect();
+        eprintln!(
+            "{}",
+            no_roots(
+                &errors,
+                std::env::var_os("SSL_CERT_FILE").as_deref(),
+                std::env::var_os("SSL_CERT_DIR").as_deref(),
+            )
+        );
+    }
     store
+}
+
+/// The text for a store with no root in it: what the loader reported, and the two variables that
+/// steer it where they are set, since a path that is not there is the usual cause and the loader's
+/// own message does not always carry it.
+fn no_roots(errors: &[String], file: Option<&OsStr>, dir: Option<&OsStr>) -> String {
+    let mut text = String::from(
+        "homma: no trusted root certificate could be read, so every HTTPS request will be refused",
+    );
+    for (name, value) in [("SSL_CERT_FILE", file), ("SSL_CERT_DIR", dir)] {
+        if let Some(value) = value {
+            text.push_str(&format!("\n  {name} is {}", value.to_string_lossy()));
+        }
+    }
+    for error in errors {
+        text.push_str(&format!("\n  {error}"));
+    }
+    text
 }
 
 #[cfg(test)]
