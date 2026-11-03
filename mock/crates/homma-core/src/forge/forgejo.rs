@@ -64,7 +64,7 @@ impl ForgejoClient {
         Self {
             api_url,
             token,
-            agent: ureq::AgentBuilder::new()
+            agent: crate::tls::agent_builder()
                 .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
                 .build(),
         }

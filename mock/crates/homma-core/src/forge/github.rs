@@ -86,7 +86,7 @@ impl GitHubClient {
         Self {
             api_url,
             token,
-            agent: ureq::AgentBuilder::new()
+            agent: crate::tls::agent_builder()
                 .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
                 // GitHub answers `301` for a repo that has been renamed, to
                 // `/repositories/{id}` on the same host. ureq's default is to
