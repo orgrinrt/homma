@@ -58,6 +58,10 @@ the registry requests build their agent with builder ;; homma-core/src/release/r
 the check allows builder ;; homma-core/src/tls_tests.rs ;; "json",\n\];@@"json",\n    "builder",\n]; ;; CORE ;; tls registry whole_load
 the check lets an Agent path through ;; homma-core/src/tls_tests.rs ;; if code\.contains\("Agent::"\) \{@@if false { ;; CORE ;; tls registry whole_load
 the check exempts tls.rs by name ;; homma-core/src/tls_tests.rs ;; \.filter\(\|f\| f != &src\.join\("tls\.rs"\)\)@@.filter(|f| f.file_name() != Some(std::ffi::OsStr::new("tls.rs"))) ;; CORE ;; tls registry whole_load
+the check lets a renamed Agent through ;; homma-core/src/tls_tests.rs ;; else if renames_agent\(path\) \{@@else if false { ;; CORE ;; tls registry whole_load
+the check lets a braced renamed Agent through ;; homma-core/src/tls_tests.rs ;; else if renames_agent\(item\) \{@@else if false { ;; CORE ;; tls registry whole_load
+the check lets a type alias of Agent through ;; homma-core/src/tls_tests.rs ;; l\.contains\("= ureq::Agent"\)@@l.contains("= ureq::NotAgent") ;; CORE ;; tls registry whole_load
+the gate with no repository stays in the scope ;; homma-engine/src/cmd/release/mod.rs ;; \} => load_config\(cli\),@@} | ReleaseOp::Gate { repo: None, .. } => load_config(cli), ;; ENGINE ;; config_tests
 the check reads comments ;; homma-core/src/tls_tests.rs ;; \.filter\(\|l\| !l\.trim_start\(\)\.starts_with\("//"\)\)@@.filter(|_| true) ;; CORE ;; tls registry whole_load
 the fixture's local file names both clones, core ;; homma-core/src/testing.rs ;; repos = \[\\"inside\\"\]@@repos = [\\"inside\\", \\"outside\\"] ;; CORE ;; tls registry whole_load
 the fixture's local file names both clones, engine ;; homma-core/src/testing.rs ;; repos = \[\\"inside\\"\]@@repos = [\\"inside\\", \\"outside\\"] ;; ENGINE ;; config_tests

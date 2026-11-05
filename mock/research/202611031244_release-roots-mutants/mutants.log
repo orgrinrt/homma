@@ -12,10 +12,14 @@ killed    the registry requests build their agent with builder
 killed    the check allows builder
 killed    the check lets an Agent path through
 killed    the check exempts tls.rs by name
+killed    the check lets a renamed Agent through
+killed    the check lets a braced renamed Agent through
+killed    the check lets a type alias of Agent through
+killed    the gate with no repository stays in the scope
 killed    the check reads comments
 killed    the fixture's local file names both clones, core
 killed    the fixture's local file names both clones, engine
 killed    no verb loads the whole workspace
 killed    the sweep loads the whole workspace
 killed    the lookup ignores the directory it is given
-killed=20 survived=0 other=0
+killed=24 survived=0 other=0

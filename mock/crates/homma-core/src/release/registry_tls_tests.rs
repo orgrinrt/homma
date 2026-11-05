@@ -13,9 +13,8 @@
 //! process of its own rather than a variable set in a test thread.
 //!
 //! The refusal without the file is asserted as `invalid peer certificate`, which is how the library reports a
-//! self-signed leaf no root vouches for, and not as the unknown-issuer variant the topic of the round that
-//! added this asked for. The first ask and the second use the same certificate and the same address, so a name
-//! mismatch or an expired certificate cannot make one pass and the other fail.
+//! self-signed leaf no root vouches for. The first ask and the second use the same certificate and the same
+//! address, so a name mismatch or an expired certificate cannot make one pass and the other fail.
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};

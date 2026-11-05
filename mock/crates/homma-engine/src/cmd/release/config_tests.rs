@@ -62,10 +62,15 @@ fn a_verb_that_names_none_but_a_directory_finds_every_clone() {
     assert_eq!(found_by(dir.path(), &["plan", "--level", "patch"]), [
         "inside", "outside"
     ]);
+    // `gate --hook` is what every pre-push runs, from whatever clone it is in
+    assert_eq!(found_by(dir.path(), &["gate"]), ["inside", "outside"]);
+    assert_eq!(found_by(dir.path(), &["gate", "--hook"]), [
+        "inside", "outside"
+    ]);
 }
 
-/// The lookup a verb makes after the load, which is where the refusal the ticket reported came from: a
-/// clone outside the scope is found by name, and from a directory inside it with no name given.
+/// The lookup a verb makes after the load, which is where a clone outside the scope was refused: it is
+/// found by name, and from a directory inside it with no name given.
 #[test]
 fn a_clone_outside_the_scope_resolves_by_name_and_from_inside_it() {
     let dir = two_clones_and_a_scope_of_one();

@@ -7,8 +7,11 @@
 //!
 //! The check reads the crate's source and works from a list of what code outside `src/tls.rs` may name
 //! from `ureq`: types and errors, none of which makes an agent. Anything else it names is reported, a
-//! constructor or a free request function or a glob or an alias of the crate, so a spelling nobody
-//! thought of is caught too. It does not see an agent made through another crate that wraps `ureq`.
+//! constructor or a free request function or a glob or an alias of the crate. `Agent` is on the list as
+//! a type, and `Agent::` followed by a call is reported; so is `Agent` renamed on import, alone or in a
+//! braced list, and a `type` alias of it, since a call through the new name is a path the text check
+//! for `Agent::` cannot see. It does not see an agent made through another crate that wraps `ureq`, or
+//! through a name for `Agent` that comes from somewhere other than those two spellings.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -59,6 +62,14 @@ fn head_ident(text: &str) -> &str {
     &text[.. end]
 }
 
+/// Whether an import item or path starts with `Agent` and renames it: `Agent as Plain`.
+fn renames_agent(item: &str) -> bool {
+    head_ident(item) == "Agent"
+        && item[head_ident(item).len() ..]
+            .trim_start()
+            .starts_with("as ")
+}
+
 /// What `code` does with `ureq` that is not on the list, one reason each. Comment lines are skipped.
 fn off_the_list(code: &str) -> Vec<String> {
     let code: String = code
@@ -86,6 +97,8 @@ fn off_the_list(code: &str) -> Vec<String> {
             for item in list.split(',').map(str::trim).filter(|i| !i.is_empty()) {
                 if !ALLOWED.contains(&head_ident(item)) {
                     reasons.push(format!("takes `{item}`"));
+                } else if renames_agent(item) {
+                    reasons.push("renames `Agent`".to_owned());
                 }
             }
         } else if !ALLOWED.contains(&head_ident(path)) {
@@ -94,7 +107,16 @@ fn off_the_list(code: &str) -> Vec<String> {
                 "takes `{}`",
                 if named.is_empty() { "*" } else { named }
             ));
+        } else if renames_agent(path) {
+            reasons.push("renames `Agent`".to_owned());
         }
+    }
+    // `type Plain = ureq::Agent;` is a name for the type that `Agent::` never sees
+    if code
+        .lines()
+        .any(|l| l.trim_start().starts_with("type ") && l.contains("= ureq::Agent"))
+    {
+        reasons.push("names `Agent` with a type alias".to_owned());
     }
     // `Agent` is allowed as a type, and `Agent::new` makes one from the bundled roots
     if code.contains("Agent::") {
@@ -180,6 +202,18 @@ fn the_check_names_each_way_to_make_an_agent_and_leaves_the_rest() {
         (
             "forge/braced.rs",
             "use ureq::{\n    Error,\n    AgentBuilder,\n};",
+        ),
+        (
+            "forge/agent_renamed.rs",
+            "use ureq::Agent as Plain;\nlet a = Plain::new();",
+        ),
+        (
+            "forge/agent_renamed_braced.rs",
+            "use ureq::{Error, Agent as Plain};",
+        ),
+        (
+            "forge/agent_type_alias.rs",
+            "type Plain = ureq::Agent;\nlet a = Plain::new();",
         ),
         ("forge/glob.rs", "use ureq::*;"),
         ("forge/alias.rs", "use ureq as net;"),
