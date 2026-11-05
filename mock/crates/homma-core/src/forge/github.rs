@@ -55,7 +55,7 @@ const API_VERSION: &str = "2022-11-28";
 pub struct GitHubClient {
     api_url: String,
     token:   Option<String>,
-    agent:   ureq::Agent,
+    agent:   crate::tls::Agent,
 }
 
 impl GitHubClient {

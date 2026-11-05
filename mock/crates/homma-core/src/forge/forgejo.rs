@@ -33,7 +33,7 @@ use crate::config::ForgeConfig;
 pub struct ForgejoClient {
     api_url: String,
     token:   Option<String>,
-    agent:   ureq::Agent,
+    agent:   crate::tls::Agent,
 }
 
 impl ForgejoClient {

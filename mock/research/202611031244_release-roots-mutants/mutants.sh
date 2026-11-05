@@ -56,11 +56,9 @@ the github client builds its agent with builder ;; homma-core/src/forge/github.r
 the forgejo client builds its agent from nothing ;; homma-core/src/forge/forgejo.rs ;; crate::tls::agent_builder\(\)@@ureq::AgentBuilder::new() ;; CORE ;; tls registry whole_load
 the registry requests build their agent with builder ;; homma-core/src/release/registry.rs ;; crate::tls::agent_builder\(\)@@ureq::builder() ;; CORE ;; tls registry whole_load
 the check allows builder ;; homma-core/src/tls_tests.rs ;; "json",\n\];@@"json",\n    "builder",\n]; ;; CORE ;; tls registry whole_load
-the check lets an Agent path through ;; homma-core/src/tls_tests.rs ;; if code\.contains\("Agent::"\) \{@@if false { ;; CORE ;; tls registry whole_load
 the check exempts tls.rs by name ;; homma-core/src/tls_tests.rs ;; \.filter\(\|f\| f != &src\.join\("tls\.rs"\)\)@@.filter(|f| f.file_name() != Some(std::ffi::OsStr::new("tls.rs"))) ;; CORE ;; tls registry whole_load
-the check lets a renamed Agent through ;; homma-core/src/tls_tests.rs ;; else if renames_agent\(path\) \{@@else if false { ;; CORE ;; tls registry whole_load
-the check lets a braced renamed Agent through ;; homma-core/src/tls_tests.rs ;; else if renames_agent\(item\) \{@@else if false { ;; CORE ;; tls registry whole_load
-the check lets a type alias of Agent through ;; homma-core/src/tls_tests.rs ;; l\.contains\("= ureq::Agent"\)@@l.contains("= ureq::NotAgent") ;; CORE ;; tls registry whole_load
+the check lets any `ureq::Agent` outside the module through ;; homma-core/src/tls_tests.rs ;; "Request",@@"Agent",\n    "Request", ;; CORE ;; tls registry whole_load
+the forgejo client names the agent type from `ureq` ;; homma-core/src/forge/forgejo.rs ;; agent:   crate::tls::Agent,@@agent:   ureq::Agent, ;; CORE ;; tls registry whole_load
 the gate with no repository stays in the scope ;; homma-engine/src/cmd/release/mod.rs ;; \} => load_config\(cli\),@@} | ReleaseOp::Gate { repo: None, .. } => load_config(cli), ;; ENGINE ;; config_tests
 the check reads comments ;; homma-core/src/tls_tests.rs ;; \.filter\(\|l\| !l\.trim_start\(\)\.starts_with\("//"\)\)@@.filter(|_| true) ;; CORE ;; tls registry whole_load
 the fixture's local file names both clones, core ;; homma-core/src/testing.rs ;; repos = \[\\"inside\\"\]@@repos = [\\"inside\\", \\"outside\\"] ;; CORE ;; tls registry whole_load

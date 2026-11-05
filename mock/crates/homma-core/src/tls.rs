@@ -11,6 +11,9 @@
 use std::ffi::OsStr;
 use std::sync::{Arc, OnceLock};
 
+/// The agent type, named here and nowhere else, so that `ureq::Agent` written outside this file
+/// is the one thing the check over the crate's source has to look for.
+pub(crate) use ureq::Agent;
 use ureq::rustls::{self, ClientConfig, RootCertStore};
 
 /// An agent builder that trusts the system's roots, for a caller to add its own headers and

@@ -85,7 +85,7 @@ pub fn url(registry: Registry, package: &str) -> String {
 ///
 /// It trusts the system's roots, and the ones `SSL_CERT_FILE` or `SSL_CERT_DIR` name where
 /// set, which is how a cloud container's proxy authority reaches it.
-fn agent() -> ureq::Agent {
+fn agent() -> crate::tls::Agent {
     crate::tls::agent_builder()
         .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(15))
