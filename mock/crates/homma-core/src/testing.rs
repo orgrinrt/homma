@@ -61,6 +61,24 @@ pub fn init_repo(dir: &Path) {
     gix::init(dir).expect("an empty directory is a legitimate repository");
 }
 
+/// Write two clones, `inside` and `outside`, under a workspace in `dir` whose local file names only
+/// `inside`, which is what a config load that narrows to the scope and one that does not tell apart.
+///
+/// The clones are bare `.git` directories: the loaders read their names and the scope, not their
+/// history.
+pub fn two_clones_and_a_scope_of_one(dir: &Path) {
+    std::fs::write(dir.join("homma.toml"), "[workspace]\nname = \"w\"\n")
+        .expect("the manifest writes");
+    std::fs::write(
+        dir.join(crate::local::LOCAL_FILE),
+        "[instance]\nwork = \"w\"\nrepos = [\"inside\"]\n",
+    )
+    .expect("the local file writes");
+    for name in ["inside", "outside"] {
+        std::fs::create_dir_all(dir.join(name).join(".git")).expect("a clone directory is made");
+    }
+}
+
 /// Point a repository's `core.hooksPath` at `value`.
 ///
 /// Appended as text because that is what git itself writes, which keeps this

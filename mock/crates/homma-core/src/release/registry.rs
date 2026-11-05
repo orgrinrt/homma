@@ -81,6 +81,17 @@ pub fn url(registry: Registry, package: &str) -> String {
     }
 }
 
+/// The agent every registry request is made with, and the one the TLS test asks through.
+///
+/// It trusts the system's roots, and the ones `SSL_CERT_FILE` or `SSL_CERT_DIR` name where
+/// set, which is how a cloud container's proxy authority reaches it.
+fn agent() -> crate::tls::Agent {
+    crate::tls::agent_builder()
+        .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+}
+
 /// Every version `registry` holds for `package`, in the order the registry
 /// lists them, which is publish order on all three.
 pub fn published_versions(registry: Registry, package: &str) -> Result<Vec<Version>, Unreachable> {
@@ -92,11 +103,7 @@ pub fn published_versions(registry: Registry, package: &str) -> Result<Vec<Versi
             why,
         }
     };
-    let agent = ureq::AgentBuilder::new()
-        .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
-        .timeout(std::time::Duration::from_secs(15))
-        .build();
-    let body = match agent.get(&target).call() {
+    let body = match agent().get(&target).call() {
         Ok(resp) => resp.into_string().map_err(|e| fail(e.to_string()))?,
         Err(ureq::Error::Status(404, _)) => return Ok(Vec::new()),
         Err(e) => return Err(fail(e.to_string())),
@@ -168,6 +175,10 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "registry_tls_tests.rs"]
+mod tls_tests;
 
 #[cfg(test)]
 mod tests {

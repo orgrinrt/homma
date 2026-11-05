@@ -35,7 +35,9 @@ module reads the scope, and the config is built with it; no command reads the
 key for itself. Two walks are not scoped: the launcher's workspace survey, which
 runs git in every clone, for the reap so that nothing is removed unseen and for
 the workspace status it displays, and the stray-build walk of the `.worktrees`
-directories, since a worktree is not a top-level clone.
+directories, since a worktree is not a top-level clone. The release verbs find their
+repository among every clone as well, because a release does not depend on which
+repositories a clone is for; only the sweep that names none stays in the scope.
 A clone outside the scope is not a member and still has its git hooks: the
 entrypoint finds its clone through git, and the commit and push gates never
 refuse over the scope, which also means the workspace gate makes no

@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use crate::cli::{Cli, ReleaseOp};
 use crate::cmd::util::{branches_for, resolve_repo};
-use crate::cmd::{Outcome, config_path, load_config};
+use crate::cmd::{Outcome, config_path, load_config, load_config_whole};
 use crate::output::{HumanRender, emit};
 
 mod gating;
@@ -116,10 +116,29 @@ fn token_source(cfg: &Config) -> impl Fn(Registry) -> std::result::Result<String
     }
 }
 
+/// The config a release verb works from.
+///
+/// Every clone under the workspace root is a member for a verb that acts on one repository, named or the
+/// working directory's, since which repositories a clone is for says nothing about which can be released from
+/// it. The sweep, `run` with no repository, keeps the scope: a container attaches clones it only reads, and a
+/// sweep over every clone would try to release those.
+fn config_for(cli: &Cli, op: &ReleaseOp) -> Result<Config> {
+    match op {
+        ReleaseOp::Run {
+            repo: None,
+            ..
+        } => load_config(cli),
+        _ => load_config_whole(cli),
+    }
+}
+
+#[cfg(test)]
+mod config_tests;
+
 /// The `homma release` entry: loads the workspace and dispatches one
 /// subcommand, so every path below it starts from the same manifest.
 pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
-    let cfg = load_config(cli)?;
+    let cfg = config_for(cli, op)?;
     match op {
         ReleaseOp::Check {
             repo,

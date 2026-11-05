@@ -528,6 +528,13 @@ pub(crate) fn load_config(cli: &Cli) -> Result<Config> {
     Config::from_path(&path).with_context(|| format!("loading config from {}", path.display()))
 }
 
+/// [`load_config`] with every clone of the workspace a member, whatever `repos` the local file names.
+pub(crate) fn load_config_whole(cli: &Cli) -> Result<Config> {
+    let path = config_path(cli);
+    Config::from_path_whole(&path)
+        .with_context(|| format!("loading config from {}", path.display()))
+}
+
 #[cfg(test)]
 mod config_path_tests {
     use clap::Parser;
