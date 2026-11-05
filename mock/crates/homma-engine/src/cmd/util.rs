@@ -240,6 +240,16 @@ pub(crate) fn resolve_repo<'a>(
     cfg: &'a Config,
     name: Option<&str>,
 ) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
+    resolve_repo_from(cfg, name, &std::env::current_dir()?)
+}
+
+/// [`resolve_repo`] with the directory given, which a test can set and the process's working
+/// directory it cannot, since a test thread changing that races every other.
+pub(crate) fn resolve_repo_from<'a>(
+    cfg: &'a Config,
+    name: Option<&str>,
+    here: &Path,
+) -> Result<(&'a str, &'a RepoConfig, PathBuf)> {
     let root_of =
         |r: &RepoConfig| crate::cmd::util::resolve_local_path(&cfg.workspace.path, &r.local_path);
     if let Some(n) = name {
@@ -249,8 +259,7 @@ pub(crate) fn resolve_repo<'a>(
             .map(|(k, r)| (k.as_str(), r, root_of(r)))
             .ok_or_else(|| no_such_member(cfg, n));
     }
-    let here = std::env::current_dir()?;
-    let here = here.canonicalize().unwrap_or(here);
+    let here = here.canonicalize().unwrap_or_else(|_| here.to_path_buf());
     let containing = |dir: &Path| {
         cfg.repos
             .iter()

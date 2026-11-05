@@ -55,7 +55,7 @@ const API_VERSION: &str = "2022-11-28";
 pub struct GitHubClient {
     api_url: String,
     token:   Option<String>,
-    agent:   ureq::Agent,
+    agent:   crate::tls::Agent,
 }
 
 impl GitHubClient {
@@ -86,7 +86,7 @@ impl GitHubClient {
         Self {
             api_url,
             token,
-            agent: ureq::AgentBuilder::new()
+            agent: crate::tls::agent_builder()
                 .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
                 // GitHub answers `301` for a repo that has been renamed, to
                 // `/repositories/{id}` on the same host. ureq's default is to

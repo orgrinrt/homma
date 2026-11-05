@@ -28,6 +28,7 @@ pub mod repo;
 pub mod resolve;
 pub mod scope;
 pub mod testing;
+mod tls;
 
 pub use config::{
     Config,

@@ -1,0 +1,23 @@
+killed    the agent keeps ureq's own roots
+killed    the root store reads nothing
+killed    a store with no root says nothing
+killed    a store with roots says it has none
+killed    the file the variable names is left out of the text
+killed    the directory the variable names is left out of the text
+killed    the loader's errors are left out of the text
+killed    the github client builds its agent from nothing
+killed    the github client builds its agent with builder
+killed    the forgejo client builds its agent from nothing
+killed    the registry requests build their agent with builder
+killed    the check allows builder
+killed    the check exempts tls.rs by name
+killed    the check lets any `ureq::Agent` outside the module through
+killed    the forgejo client names the agent type from `ureq`
+killed    the gate with no repository stays in the scope
+killed    the check reads comments
+killed    the fixture's local file names both clones, core
+killed    the fixture's local file names both clones, engine
+killed    no verb loads the whole workspace
+killed    the sweep loads the whole workspace
+killed    the lookup ignores the directory it is given
+killed=22 survived=0 other=0

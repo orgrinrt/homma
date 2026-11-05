@@ -447,3 +447,47 @@ name = "w"
         assert_eq!(once, dir.path().join("scratch"));
     }
 }
+
+/// The load that takes every clone of the workspace whatever the local file narrows to, which the release
+/// verbs use: which repositories a clone is for says nothing about which can be released from it.
+#[cfg(test)]
+mod whole_load_tests {
+    use crate::config::*;
+
+    /// Two clones under a workspace whose local file names only `inside`.
+    fn two_clones_and_a_scope_of_one() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        crate::testing::two_clones_and_a_scope_of_one(dir.path());
+        dir
+    }
+
+    fn names(cfg: &Config) -> Vec<&str> {
+        cfg.repos.keys().map(String::as_str).collect()
+    }
+
+    /// The control: the ordinary load still leaves the clone outside the scope out, so the whole load
+    /// below is a difference and not a loader that never narrowed.
+    #[test]
+    fn the_scoped_load_holds_only_the_clone_the_local_file_names() {
+        let dir = two_clones_and_a_scope_of_one();
+        let cfg = Config::from_path(&dir.path().join("homma.toml")).unwrap();
+        assert_eq!(names(&cfg), ["inside"]);
+    }
+
+    #[test]
+    fn the_whole_load_holds_every_clone_whatever_the_local_file_names() {
+        let dir = two_clones_and_a_scope_of_one();
+        let cfg = Config::from_path_whole(&dir.path().join("homma.toml")).unwrap();
+        assert_eq!(names(&cfg), ["inside", "outside"]);
+    }
+
+    /// The members and the scope the config reports agree, so a name the whole load holds is never
+    /// refused as outside a scope it did not apply.
+    #[test]
+    fn the_whole_load_reports_a_scope_that_admits_what_it_holds() {
+        let dir = two_clones_and_a_scope_of_one();
+        let cfg = Config::from_path_whole(&dir.path().join("homma.toml")).unwrap();
+        assert!(cfg.scope.admits("outside"));
+        assert!(cfg.scope.names().is_none());
+    }
+}

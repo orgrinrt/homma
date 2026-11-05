@@ -1469,6 +1469,7 @@ dependencies = [
  "homma-api",
  "mockspace-config",
  "mockspace-template",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "toml",
