@@ -235,6 +235,11 @@ ORIG_HOOK="$REPO_ROOT"'/{hook_rel}'
 # the honest answer rather than an approval nobody made.
 [ {present} "$ORIG_HOOK" ] || exit 0
 
+# The one layer a hook's notice passes through, where this workspace has it: a line already
+# said in this session within the TTL is left out. It never touches a block, a deny or an error.
+DEDUP=()
+[ -x "$WS/tools/hookdedup/hookdedup" ] && DEDUP=("$WS/tools/hookdedup/hookdedup" run)
+
 INPUT=$(cat)
 
 # Without `jq` this cannot read where the call lands, so it cannot narrow to
@@ -242,20 +247,20 @@ INPUT=$(cat)
 # aggregation at all, so the guard runs more often than it needs to and never
 # silently fails to run.
 if ! command -v jq >/dev/null 2>&1; then
-    exec {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
+    exec ${{DEDUP[@]+"${{DEDUP[@]}}"}} {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
 fi
 
 {lands_in}
 lands_in "$REPO_ROOT" || exit 0
 
-exec {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
+exec ${{DEDUP[@]+"${{DEDUP[@]}}"}} {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
 "##
     )
 }
 
 #[cfg(test)]
 #[path = "aggregate_wrapper_tests.rs"]
-mod tests;
+pub(in crate::cmd) mod tests;
 
 #[cfg(test)]
 #[path = "aggregate_wrapper_handoff_tests.rs"]

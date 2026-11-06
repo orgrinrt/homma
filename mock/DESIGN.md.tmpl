@@ -903,6 +903,13 @@ editor's or a filesystem's, and is neither carried nor reported. A registration
 in the workspace naming a file homma writes, where that file is no longer
 there, is removed on the next regen, since nothing it could run exists.
 
+Every wrapper, aggregated or declared, runs its hook through
+`tools/hookdedup/hookdedup run` when the workspace has that file executable, so
+a notice already said in the session within the time to live is not said again.
+The tool leaves the hook's status, its stderr and any block or deny alone, and a
+workspace without it runs the hook as before. There is no key for it: the
+file's presence is the switch.
+
 ## What a status answers
 
 `homma status` answers what state the workspace is in. That question is best

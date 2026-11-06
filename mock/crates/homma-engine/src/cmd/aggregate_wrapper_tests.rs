@@ -454,3 +454,44 @@ fn a_hook_run_through_a_program_is_run_through_it() {
         "a file that is not executable ran with no program"
     );
 }
+
+/// A stand-in for the dedup tool that records it was asked to run and then runs
+/// what follows `run`, so whether a wrapper goes through it is observable.
+pub(in crate::cmd) fn plant_dedup(ws: &Path, seen: &Path) {
+    let p = ws.join("tools/hookdedup/hookdedup");
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(
+        &p,
+        format!(
+            "#!/usr/bin/env bash\nprintf '%s' \"$1\" > '{}'\nshift\nexec \"$@\"\n",
+            seen.display()
+        ),
+    )
+    .unwrap();
+    make_executable(&p);
+}
+
+#[test]
+fn a_wrapper_runs_its_hook_through_the_dedup_tool_when_the_workspace_has_it() {
+    let ws = tempfile::tempdir().unwrap();
+    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let seen = ws.path().join("dedup-seen");
+
+    // The control: without the tool the hook runs and nothing went through it.
+    run_wrapper(&wrapper, &ws.path().join("arvo/src/lib.rs"));
+    assert!(marker.exists(), "the hook did not run without the tool");
+    assert!(
+        !seen.exists(),
+        "the control reached a tool that is not there"
+    );
+    fs::remove_file(&marker).unwrap();
+
+    plant_dedup(ws.path(), &seen);
+    run_wrapper(&wrapper, &ws.path().join("arvo/src/lib.rs"));
+    assert!(marker.exists(), "the hook did not run through the tool");
+    assert_eq!(
+        fs::read_to_string(&seen).unwrap(),
+        "run",
+        "the wrapper bypassed the dedup tool"
+    );
+}
