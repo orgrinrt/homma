@@ -418,3 +418,38 @@ fn a_registration_naming_a_declared_file_homma_did_not_write_is_kept() {
         ".claude/hooks/_declared--Stop--mine.sh"
     );
 }
+
+#[test]
+fn a_declared_wrapper_runs_its_hook_through_the_dedup_tool_when_the_workspace_has_it() {
+    for repos_for_row in [&[][..], &["arvo"][..]] {
+        let ws = tempfile::tempdir().unwrap();
+        let marker = ws.path().join("fired");
+        let seen = ws.path().join("dedup-seen");
+        plant_script(ws.path(), "scripts/guard", &marker);
+        install_declared(
+            &test_root(ws.path()),
+            &table(&[("PreToolUse", "", "scripts/guard", repos_for_row)]),
+            &repos(),
+            &Scope::everything(),
+        )
+        .unwrap();
+        let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
+        let call = writing(&ws.path().join("arvo/x.rs"));
+
+        // The control: without the tool the hook runs and nothing went through it.
+        run_with_payload(&w, &call, &["--x"]);
+        assert!(marker.exists(), "the hook did not run without the tool");
+        assert!(
+            !seen.exists(),
+            "the control reached a tool that is not there"
+        );
+
+        crate::cmd::aggregate::wrapper::tests::plant_dedup(ws.path(), &seen);
+        run_with_payload(&w, &call, &["--x"]);
+        assert_eq!(
+            fs::read_to_string(&seen).unwrap(),
+            "run",
+            "a declared wrapper (repos {repos_for_row:?}) bypassed the dedup tool"
+        );
+    }
+}
