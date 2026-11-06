@@ -183,10 +183,15 @@ HOOK="$WS"/'{run_q}'
 # Not in this tree: there is nothing here to run, and declining is the honest
 # answer rather than an approval nobody made.
 [ -x "$HOOK" ] || exit 0
+
+# The one layer a hook's notice passes through, where this workspace has it: a line already
+# said in this session within the TTL is left out. It never touches a block, a deny or an error.
+DEDUP=()
+[ -x "$WS/tools/hookdedup/hookdedup" ] && DEDUP=("$WS/tools/hookdedup/hookdedup" run)
 "##
     );
     if roots.is_empty() {
-        out.push_str("\nexec \"$HOOK\" \"$@\"\n");
+        out.push_str("\nexec ${DEDUP[@]+\"${DEDUP[@]}\"} \"$HOOK\" \"$@\"\n");
         return out;
     }
     let list: Vec<String> = roots
@@ -201,7 +206,7 @@ INPUT=$(cat)
 # Without `jq` this cannot read where the call lands, so it forwards rather
 # than guessing, which runs the hook more often than it needs and never skips it.
 if ! command -v jq >/dev/null 2>&1; then
-    exec "$HOOK" "$@" <<<"$INPUT"
+    exec ${DEDUP[@]+"${DEDUP[@]}"} "$HOOK" "$@" <<<"$INPUT"
 fi
 
 "##,
@@ -215,7 +220,7 @@ for rel in {list}; do
         *)  root="$WS/$rel" ;;
     esac
     if lands_in "$root"; then
-        exec "$HOOK" "$@" <<<"$INPUT"
+        exec ${{DEDUP[@]+"${{DEDUP[@]}}"}} "$HOOK" "$@" <<<"$INPUT"
     fi
 done
 exit 0
