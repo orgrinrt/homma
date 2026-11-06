@@ -465,7 +465,7 @@ fn detect_matchers_from_hook_body(path: &Path) -> Option<Vec<String>> {
 }
 
 #[path = "aggregate_wrapper.rs"]
-mod wrapper;
+pub(in crate::cmd) mod wrapper;
 pub(crate) use wrapper::{
     LANDS_IN_SH,
     hook_call,
