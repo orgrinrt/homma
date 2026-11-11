@@ -99,3 +99,32 @@ fn check_is_a_failure_while_a_descriptor_is_broken_and_clean_otherwise() {
         Outcome::ReportedFailure
     ));
 }
+
+#[test]
+fn the_help_section_has_a_line_per_tool_and_says_how_to_run_one_that_is_no_subcommand() {
+    use super::host::help_section;
+    let ws = workspace(&[
+        ("msg", None),
+        (
+            "quiet",
+            Some(tool_text("quiet").replace("promote=true", "promote=false")),
+        ),
+        ("broken", Some("[tool]\nname=\"x\"\n".to_string())),
+    ]);
+    let s = help_section(ws.path()).unwrap();
+    assert!(s.starts_with("Tools:\n"), "{s}");
+    assert!(
+        s.contains("\n  msg     msg summary\n") || s.ends_with("  msg     msg summary"),
+        "{s}"
+    );
+    assert!(
+        s.contains("quiet   quiet summary  (`homma tools run quiet ...`)"),
+        "{s}"
+    );
+    assert!(s.contains("broken  BROKEN:"), "{s}");
+}
+
+#[test]
+fn the_help_section_is_absent_where_there_are_no_tools() {
+    assert_eq!(super::host::help_section(workspace(&[]).path()), None);
+}
