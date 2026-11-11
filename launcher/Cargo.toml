@@ -11,9 +11,9 @@ description = "One command for a directory of repositories that belong together.
 # installs. Cargo ships whatever `readme` names whether or not `include`
 # mentions it, which is the only way to reach a file above the package.
 readme = "README.md"
-# `renki` is the floor and it declares 1.88. Stated here too, or an older
+# `renki` is the floor and it declares 1.89. Stated here too, or an older
 # toolchain fails somewhere inside a dependency instead of at this manifest.
-rust-version = "1.88"
+rust-version = "1.89"
 license = "MPL-2.0"
 repository = "https://github.com/orgrinrt/homma"
 homepage = "https://github.com/orgrinrt/homma"
@@ -48,8 +48,8 @@ include = ["src/**/*.rs", "LICENSE"]
 # the point: this is the launcher every operator installs, and it moves when
 # the number here moves. The contracts crate is what that renki was built
 # against, so the two cannot disagree.
-renki = "0.0.3"
-renki-config = "0.0.1"
+renki = "0.0.5-rc.1"
+renki-config = "0.0.2"
 notko = { version = "0.0.1", default-features = false }
 
 # The engine's config type, so a test can hold both ends of the one file this
