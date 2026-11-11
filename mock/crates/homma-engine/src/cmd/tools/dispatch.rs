@@ -57,7 +57,8 @@ pub fn plan(
 ) -> Result<Command> {
     let Some(entry) = entries.iter().find(|e| e.name() == name) else {
         bail!(
-            "there is no command or tool named `{name}`; `homma --help` lists the commands and `homma tools` the tools"
+            "there is no command or tool named `{name}`;{} `homma --help` lists the commands and `homma tools` the tools",
+            did_you_mean(entries, name)
         );
     };
     let tool = match entry {
@@ -143,4 +144,29 @@ pub fn exec(mut c: Command) -> Result<std::convert::Infallible> {
         "could not start {}: {e}",
         Path::new(c.get_program()).display()
     )
+}
+
+/// ` did you mean `homma x`?` where exactly one built-in command or tool is close to `name`, else nothing.
+/// A tool that is no subcommand is offered as the `homma tools run` that runs it.
+fn did_you_mean(entries: &[Entry], name: &str) -> String {
+    let builtins: Vec<String> = <crate::cli::Cli as clap::CommandFactory>::command()
+        .get_subcommands()
+        .map(|c| c.get_name().to_string())
+        .collect();
+    let names = builtins
+        .iter()
+        .map(String::as_str)
+        .chain(entries.iter().map(Entry::name));
+    let Some(near) = super::suggest::nearest(name, names) else {
+        return String::new();
+    };
+    let runs_by_tools = !builtins.iter().any(|b| b == near)
+        && entries
+            .iter()
+            .any(|e| e.name() == near && matches!(e, Entry::Tool(d) if !d.promote));
+    if runs_by_tools {
+        format!(" did you mean `homma tools run {near}`?")
+    } else {
+        format!(" did you mean `homma {near}`?")
+    }
 }

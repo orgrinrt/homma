@@ -197,3 +197,31 @@ pub fn check(root: &Path, format: OutputFormat) -> Result<Outcome> {
     }
     Ok(Outcome::Ok)
 }
+
+/// The `Tools:` section that ends `homma --help`: each tool's name and summary, how to run one that is
+/// no subcommand, and a descriptor that cannot be read by its name as broken. `None` where there are no
+/// tools, so a workspace without any prints the help it always did.
+pub fn help_section(root: &Path) -> Option<String> {
+    let r = report(root);
+    if r.tools.is_empty() && r.broken.is_empty() {
+        return None;
+    }
+    let w = r
+        .tools
+        .iter()
+        .map(|t| t.name.len())
+        .chain(r.broken.iter().map(|b| b.name.len()))
+        .max()
+        .unwrap_or(0);
+    let mut s = String::from("Tools:");
+    for t in &r.tools {
+        s.push_str(&format!("\n  {:<w$}  {}", t.name, t.summary));
+        if t.builtin == Some("shadowed") || (!t.promote && t.builtin.is_none()) {
+            s.push_str(&format!("  (`homma tools run {} ...`)", t.name));
+        }
+    }
+    for b in &r.broken {
+        s.push_str(&format!("\n  {:<w$}  BROKEN: {}", b.name, b.why));
+    }
+    Some(s)
+}

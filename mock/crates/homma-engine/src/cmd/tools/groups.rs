@@ -38,6 +38,45 @@ pub fn command() -> clap::Command {
     })
 }
 
+/// [`command`], and where `args` ask for help, ending its help with the workspace's tools.
+fn command_with_tools(args: &[OsString]) -> clap::Command {
+    let cmd = command();
+    if !asks_for_help(args) {
+        return cmd;
+    }
+    let manifest = crate::cmd::manifest_path(
+        flag_value(args, "--config", Some("-c")).as_deref(),
+        flag_value(args, "--dir", None).as_deref(),
+    );
+    match super::help_section(&super::root(&manifest)) {
+        Some(section) => cmd.after_help(section),
+        None => cmd,
+    }
+}
+
+/// Whether the arguments are, or may be, a request for help: `--help`, `-h` or the word `help`.
+fn asks_for_help(args: &[OsString]) -> bool {
+    args.iter()
+        .skip(1)
+        .any(|a| a == "--help" || a == "-h" || a == "help")
+}
+
+/// The value of a flag as typed before clap has read anything: `--flag value`, `--flag=value`, and the
+/// short form where there is one.
+fn flag_value(args: &[OsString], long: &str, short: Option<&str>) -> Option<PathBuf> {
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        let Some(text) = a.to_str() else { continue };
+        if text == long || Some(text) == short {
+            return it.next().map(PathBuf::from);
+        }
+        if let Some(v) = text.strip_prefix(&format!("{long}=")) {
+            return Some(PathBuf::from(v));
+        }
+    }
+    None
+}
+
 /// A group's word that is not one of its verbs, with the global options that came with it.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Handed {
@@ -72,7 +111,8 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let matches = command().try_get_matches_from(args)?;
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let matches = command_with_tools(&args).try_get_matches_from(&args)?;
     if let Some(h) = handed(&matches) {
         return Ok(Parsed::Handed(h));
     }

@@ -289,3 +289,34 @@ fn a_backend_renki_has_no_row_for_is_refused_with_the_ones_it_has() {
     let e = refusal(planned(&ws, "remote", &[], Asked::AsSubcommand));
     assert!(e.contains("`ftp`") && e.contains("local, git"), "{e}");
 }
+
+#[test]
+fn a_name_near_a_tool_or_a_built_in_is_refused_suggesting_it() {
+    let ws = workspace();
+    let tool = ws.path().join("tools/checkup");
+    script(&tool, "checkup", 0o755);
+    std::fs::write(
+        tool.join("tool.toml"),
+        "[tool]\nname=\"checkup\"\nsummary=\"s\"\nbackend=\"local\"\npromote=true\n[tool.source]\npath={path=\"tools/checkup\"}\n[[tool.commands]]\nname=\"checkup\"\nsummary=\"s\"\nrun=\"checkup\"\n",
+    )
+    .unwrap();
+    let e = refusal(planned(&ws, "check", &[], Asked::AsSubcommand));
+    assert!(e.contains("did you mean `homma checkup`?"), "{e}");
+    let e = refusal(planned(&ws, "statsu", &[], Asked::AsSubcommand));
+    assert!(e.contains("did you mean `homma status`?"), "{e}");
+}
+
+#[test]
+fn a_tool_that_is_not_promoted_is_suggested_as_the_command_that_runs_it() {
+    let ws = workspace();
+    let e = refusal(planned(&ws, "quie", &[], Asked::AsSubcommand));
+    assert!(e.contains("did you mean `homma tools run quiet`?"), "{e}");
+}
+
+#[test]
+fn a_name_near_nothing_or_near_several_is_refused_with_no_suggestion() {
+    let ws = workspace();
+    assert!(!refusal(planned(&ws, "nosuch", &[], Asked::AsSubcommand)).contains("did you mean"));
+    let e = refusal(planned(&ws, "re", &[], Asked::AsSubcommand));
+    assert!(!e.contains("did you mean"), "{e}");
+}

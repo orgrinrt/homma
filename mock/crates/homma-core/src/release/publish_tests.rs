@@ -142,6 +142,7 @@ fn a_dependency_outside_the_publishable_set_does_not_order_anything() {
 
 #[test]
 fn a_crate_publishes_with_the_token_in_its_own_environment_and_waits() {
+    let before = std::env::var_os("CARGO_REGISTRY_TOKEN");
     let d = workspace(&[("a", &[])]);
     let fake = Fake::new(None);
     publish_crate(
@@ -163,8 +164,9 @@ fn a_crate_publishes_with_the_token_in_its_own_environment_and_waits() {
         "CARGO_REGISTRY_TOKEN".to_string(),
         "tok-crates-io".to_string()
     )]);
-    assert!(
-        std::env::var("CARGO_REGISTRY_TOKEN").is_err(),
+    assert_eq!(
+        std::env::var_os("CARGO_REGISTRY_TOKEN"),
+        before,
         "nothing leaked into this process"
     );
 }

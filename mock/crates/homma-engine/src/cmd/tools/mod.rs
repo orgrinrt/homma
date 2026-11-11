@@ -31,11 +31,12 @@ pub mod groups;
 mod host;
 #[cfg(not(unix))]
 mod refused;
+pub mod suggest;
 
 #[cfg(unix)]
-pub use host::{check, list, run_merged, run_tool};
+pub use host::{check, help_section, list, run_merged, run_tool};
 #[cfg(not(unix))]
-pub use refused::{check, list, run_merged, run_tool};
+pub use refused::{check, help_section, list, run_merged, run_tool};
 
 /// How the tool was asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,5 +82,7 @@ mod descriptor_tests;
 mod dispatch_tests;
 #[cfg(test)]
 mod groups_tests;
+#[cfg(test)]
+mod suggest_tests;
 #[cfg(all(test, unix))]
 mod tests;
