@@ -17,10 +17,10 @@ const MIN_PREFIX: usize = 3;
 
 /// How far a word is from a name, lower being closer, or `None` when the name is not close.
 fn distance(word: &str, name: &str) -> Option<usize> {
-    let (w, n) = (word.to_lowercase(), name.to_lowercase());
-    if w == n {
+    if word == name {
         return None;
     }
+    let (w, n) = (word.to_lowercase(), name.to_lowercase());
     if w.chars().count().min(n.chars().count()) >= MIN_PREFIX
         && (n.starts_with(&w) || w.starts_with(&n))
     {

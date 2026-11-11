@@ -10,7 +10,7 @@ use std::path::Path;
 
 use clap::{CommandFactory, Parser};
 
-use super::groups::{Handed, Parsed, groups, parse_from};
+use super::groups::{Handed, Parsed, asks_for_help, flag_value, groups, parse_from};
 use super::{root, unix_only};
 use crate::cli::{Cli, Command};
 
@@ -185,4 +185,37 @@ fn the_help_of_one_command_does_not_carry_the_tools() {
     let ws = workspace_with_tools();
     let text = printed(&["homma", "--dir", ws.path().to_str().unwrap(), "status", "--help"]);
     assert!(!text.contains("Tools:"), "{text}");
+}
+
+fn argv(a: &[&str]) -> Vec<std::ffi::OsString> {
+    a.iter().map(std::ffi::OsString::from).collect()
+}
+
+#[test]
+fn no_arguments_at_all_ask_for_help_since_clap_prints_it_then() {
+    assert!(asks_for_help(&argv(&["homma"])));
+    assert!(asks_for_help(&argv(&["homma", "--help"])));
+    assert!(asks_for_help(&argv(&["homma", "-h"])));
+    assert!(asks_for_help(&argv(&["homma", "help"])));
+    assert!(!asks_for_help(&argv(&["homma", "status"])));
+    assert!(!asks_for_help(&argv(&["homma", "--dir", "w"])));
+}
+
+#[test]
+fn a_flag_is_read_in_every_spelling_clap_accepts_and_the_last_one_wins() {
+    let read = |a: &[&str]| flag_value(&argv(a), "--config", Some("-c"));
+    let path = |p: &str| Some(std::path::PathBuf::from(p));
+    assert_eq!(read(&["homma", "--config", "a"]), path("a"));
+    assert_eq!(read(&["homma", "--config=a"]), path("a"));
+    assert_eq!(read(&["homma", "-c", "a"]), path("a"));
+    assert_eq!(read(&["homma", "-c=a"]), path("a"));
+    assert_eq!(read(&["homma", "-ca"]), path("a"));
+    assert_eq!(read(&["homma", "-c", "a", "--config=b", "-cc"]), path("c"));
+    assert_eq!(read(&["homma", "--config", "a", "-c", "b"]), path("b"));
+    assert_eq!(read(&["homma", "--dir", "a"]), None);
+    assert_eq!(
+        flag_value(&argv(&["homma", "--dir=a", "--dir", "b"]), "--dir", None),
+        path("b")
+    );
+    assert_eq!(flag_value(&argv(&["homma", "-dx"]), "--dir", None), None);
 }

@@ -54,27 +54,33 @@ fn command_with_tools(args: &[OsString]) -> clap::Command {
     }
 }
 
-/// Whether the arguments are, or may be, a request for help: `--help`, `-h` or the word `help`.
-fn asks_for_help(args: &[OsString]) -> bool {
-    args.iter()
-        .skip(1)
-        .any(|a| a == "--help" || a == "-h" || a == "help")
+/// Whether the arguments are, or may be, a request for help: none at all (clap prints the help then),
+/// `--help`, `-h` or the word `help`.
+pub(super) fn asks_for_help(args: &[OsString]) -> bool {
+    args.len() < 2
+        || args
+            .iter()
+            .skip(1)
+            .any(|a| a == "--help" || a == "-h" || a == "help")
 }
 
-/// The value of a flag as typed before clap has read anything: `--flag value`, `--flag=value`, and the
-/// short form where there is one.
-fn flag_value(args: &[OsString], long: &str, short: Option<&str>) -> Option<PathBuf> {
+/// The value of a flag as typed before clap has read anything, in the spellings clap accepts
+/// (`--flag value`, `--flag=value`, and for a short `-f value`, `-f=value`, `-fvalue`), the last
+/// occurrence winning as it does there.
+pub(super) fn flag_value(args: &[OsString], long: &str, short: Option<&str>) -> Option<PathBuf> {
+    let mut found = None;
     let mut it = args.iter().skip(1);
     while let Some(a) = it.next() {
         let Some(text) = a.to_str() else { continue };
         if text == long || Some(text) == short {
-            return it.next().map(PathBuf::from);
-        }
-        if let Some(v) = text.strip_prefix(&format!("{long}=")) {
-            return Some(PathBuf::from(v));
+            found = it.next().map(PathBuf::from);
+        } else if let Some(v) = text.strip_prefix(&format!("{long}=")) {
+            found = Some(PathBuf::from(v));
+        } else if let Some(v) = short.and_then(|s| text.strip_prefix(s)) {
+            found = Some(PathBuf::from(v.strip_prefix('=').unwrap_or(v)));
         }
     }
-    None
+    found
 }
 
 /// A group's word that is not one of its verbs, with the global options that came with it.

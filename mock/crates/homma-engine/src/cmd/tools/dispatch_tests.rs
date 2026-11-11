@@ -313,10 +313,36 @@ fn a_tool_that_is_not_promoted_is_suggested_as_the_command_that_runs_it() {
     assert!(e.contains("did you mean `homma tools run quiet`?"), "{e}");
 }
 
+/// A promoted tool of that name, with the one command named like it.
+fn promoted(ws: &Path, name: &str) {
+    let tool = ws.join("tools").join(name);
+    script(&tool, name, 0o755);
+    std::fs::write(
+        tool.join("tool.toml"),
+        format!(
+            "[tool]\nname=\"{name}\"\nsummary=\"s\"\nbackend=\"local\"\npromote=true\n[tool.source]\npath={{path=\"tools/{name}\"}}\n[[tool.commands]]\nname=\"{name}\"\nsummary=\"s\"\nrun=\"{name}\"\n"
+        ),
+    )
+    .unwrap();
+}
+
 #[test]
-fn a_name_near_nothing_or_near_several_is_refused_with_no_suggestion() {
+fn a_name_near_nothing_is_refused_with_no_suggestion() {
     let ws = workspace();
     assert!(!refusal(planned(&ws, "nosuch", &[], Asked::AsSubcommand)).contains("did you mean"));
     let e = refusal(planned(&ws, "re", &[], Asked::AsSubcommand));
+    assert!(!e.contains("did you mean"), "{e}");
+}
+
+#[test]
+fn a_name_equally_close_to_two_tools_is_refused_with_no_suggestion_and_one_of_them_alone_is_suggested()
+ {
+    let ws = workspace();
+    promoted(ws.path(), "zephyr-a");
+    let e = refusal(planned(&ws, "zeph", &[], Asked::AsSubcommand));
+    assert!(e.contains("did you mean `homma zephyr-a`?"), "{e}");
+    promoted(ws.path(), "zephyr-b");
+    let e = refusal(planned(&ws, "zeph", &[], Asked::AsSubcommand));
+    assert!(e.contains("no command or tool named `zeph`"), "{e}");
     assert!(!e.contains("did you mean"), "{e}");
 }

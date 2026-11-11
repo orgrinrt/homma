@@ -53,3 +53,10 @@ fn a_prefix_beats_an_edit_and_the_word_itself_is_no_suggestion() {
 fn case_is_not_a_difference() {
     assert_eq!(nearest("Check", NAMES), Some("checkup"));
 }
+
+#[test]
+fn a_word_differing_from_a_name_only_in_case_is_that_name_and_an_identical_one_is_nothing() {
+    assert_eq!(nearest("Status", NAMES), Some("status"));
+    assert_eq!(nearest("RELEASE", NAMES), Some("release"));
+    assert_eq!(nearest("status", NAMES), None);
+}
