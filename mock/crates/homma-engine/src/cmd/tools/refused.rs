@@ -52,3 +52,8 @@ pub fn run_tool(_root: &Path, _name: &str, _words: &[OsString], _asked: Asked) -
 pub fn run_merged(_root: &Path, _group: &str, _words: &[OsString]) -> Result<Outcome> {
     Err(unix_only())
 }
+
+/// The tools section of `homma --help`: none, since there are no tools to list.
+pub fn help_section(_root: &Path) -> Option<String> {
+    None
+}

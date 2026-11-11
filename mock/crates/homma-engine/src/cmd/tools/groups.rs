@@ -38,6 +38,51 @@ pub fn command() -> clap::Command {
     })
 }
 
+/// [`command`], and where `args` ask for help, ending its help with the workspace's tools.
+fn command_with_tools(args: &[OsString]) -> clap::Command {
+    let cmd = command();
+    if !asks_for_help(args) {
+        return cmd;
+    }
+    let manifest = crate::cmd::manifest_path(
+        flag_value(args, "--config", Some("-c")).as_deref(),
+        flag_value(args, "--dir", None).as_deref(),
+    );
+    match super::help_section(&super::root(&manifest)) {
+        Some(section) => cmd.after_help(section),
+        None => cmd,
+    }
+}
+
+/// Whether the arguments are, or may be, a request for help: none at all (clap prints the help then),
+/// `--help`, `-h` or the word `help`.
+pub(super) fn asks_for_help(args: &[OsString]) -> bool {
+    args.len() < 2
+        || args
+            .iter()
+            .skip(1)
+            .any(|a| a == "--help" || a == "-h" || a == "help")
+}
+
+/// The value of a flag as typed before clap has read anything, in the spellings clap accepts
+/// (`--flag value`, `--flag=value`, and for a short `-f value`, `-f=value`, `-fvalue`), the last
+/// occurrence winning as it does there.
+pub(super) fn flag_value(args: &[OsString], long: &str, short: Option<&str>) -> Option<PathBuf> {
+    let mut found = None;
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        let Some(text) = a.to_str() else { continue };
+        if text == long || Some(text) == short {
+            found = it.next().map(PathBuf::from);
+        } else if let Some(v) = text.strip_prefix(&format!("{long}=")) {
+            found = Some(PathBuf::from(v));
+        } else if let Some(v) = short.and_then(|s| text.strip_prefix(s)) {
+            found = Some(PathBuf::from(v.strip_prefix('=').unwrap_or(v)));
+        }
+    }
+    found
+}
+
 /// A group's word that is not one of its verbs, with the global options that came with it.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Handed {
@@ -72,7 +117,8 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let matches = command().try_get_matches_from(args)?;
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let matches = command_with_tools(&args).try_get_matches_from(&args)?;
     if let Some(h) = handed(&matches) {
         return Ok(Parsed::Handed(h));
     }

@@ -10,7 +10,7 @@ use std::path::Path;
 
 use clap::{CommandFactory, Parser};
 
-use super::groups::{Handed, Parsed, groups, parse_from};
+use super::groups::{Handed, Parsed, asks_for_help, flag_value, groups, parse_from};
 use super::{root, unix_only};
 use crate::cli::{Cli, Command};
 
@@ -110,4 +110,112 @@ fn a_group_s_own_verb_and_a_leaf_command_stay_the_built_ins() {
 #[test]
 fn a_group_with_no_word_at_all_is_still_refused_by_clap() {
     assert!(parse_from(["homma", "rules"]).is_err());
+}
+
+/// What `parse_from` refuses with for these arguments, as the terminal would have printed it.
+#[cfg(unix)]
+fn printed(args: &[&str]) -> String {
+    let e = parse_from(args.iter().copied()).expect_err("help is no command");
+    assert_eq!(e.kind(), clap::error::ErrorKind::DisplayHelp, "{e}");
+    e.to_string()
+}
+
+#[cfg(unix)]
+fn workspace_with_tools() -> tempfile::TempDir {
+    let ws = tempfile::tempdir().unwrap();
+    let tool = |name: &str, body: &str| {
+        let d = ws.path().join("tools").join(name);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("tool.toml"), body).unwrap();
+    };
+    tool(
+        "checkup",
+        "[tool]\nname=\"checkup\"\nsummary=\"checks the workspace over\"\nbackend=\"local\"\npromote=true\n[tool.source]\npath={path=\"tools/checkup\"}\n[[tool.commands]]\nname=\"checkup\"\nsummary=\"s\"\nrun=\"checkup\"\n",
+    );
+    tool("wrecked", "[tool]\nname=\"x\"\n");
+    ws
+}
+
+#[cfg(unix)]
+#[test]
+fn help_lists_every_tool_with_its_summary_after_the_commands_and_names_a_broken_one() {
+    let ws = workspace_with_tools();
+    let dir = ws.path().to_str().unwrap();
+    for argv in [["homma", "--dir", dir, "--help"], ["homma", "--dir", dir, "help"], [
+        "homma", "-h", "--dir", dir,
+    ]] {
+        let text = printed(&argv);
+        let tools = text
+            .find("Tools:")
+            .unwrap_or_else(|| panic!("{argv:?}: {text}"));
+        assert!(tools > text.find("Commands:").unwrap(), "{text}");
+        assert!(
+            text[tools ..].contains("checkup  checks the workspace over"),
+            "{text}"
+        );
+        assert!(text[tools ..].contains("wrecked  BROKEN:"), "{text}");
+    }
+    let by_file = ws.path().join("homma.toml");
+    let text = printed(&["homma", &format!("--config={}", by_file.display()), "--help"]);
+    assert!(
+        text.contains("checkup  checks the workspace over"),
+        "{text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn help_of_a_workspace_with_no_tools_or_no_workspace_is_the_help_it_was() {
+    let empty = tempfile::tempdir().unwrap();
+    let text = printed(&["homma", "--dir", empty.path().to_str().unwrap(), "--help"]);
+    assert!(
+        text.contains("Commands:") && !text.contains("Tools:"),
+        "{text}"
+    );
+    let text = printed(&["homma", "--dir", "/no/such/workspace", "--help"]);
+    assert!(
+        text.contains("Commands:") && !text.contains("Tools:"),
+        "{text}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_help_of_one_command_does_not_carry_the_tools() {
+    let ws = workspace_with_tools();
+    let text = printed(&["homma", "--dir", ws.path().to_str().unwrap(), "status", "--help"]);
+    assert!(!text.contains("Tools:"), "{text}");
+}
+
+fn argv(a: &[&str]) -> Vec<std::ffi::OsString> {
+    a.iter().map(std::ffi::OsString::from).collect()
+}
+
+#[test]
+fn no_arguments_at_all_ask_for_help_since_clap_prints_it_then() {
+    assert!(asks_for_help(&argv(&["homma"])));
+    assert!(asks_for_help(&argv(&["homma", "--help"])));
+    assert!(asks_for_help(&argv(&["homma", "-h"])));
+    assert!(asks_for_help(&argv(&["homma", "help"])));
+    assert!(!asks_for_help(&argv(&["homma", "status"])));
+    assert!(!asks_for_help(&argv(&["homma", "--dir", "w"])));
+}
+
+#[test]
+fn a_flag_is_read_in_every_spelling_clap_accepts_and_the_last_one_wins() {
+    let read = |a: &[&str]| flag_value(&argv(a), "--config", Some("-c"));
+    let path = |p: &str| Some(std::path::PathBuf::from(p));
+    assert_eq!(read(&["homma", "--config", "a"]), path("a"));
+    assert_eq!(read(&["homma", "--config=a"]), path("a"));
+    assert_eq!(read(&["homma", "-c", "a"]), path("a"));
+    assert_eq!(read(&["homma", "-c=a"]), path("a"));
+    assert_eq!(read(&["homma", "-ca"]), path("a"));
+    assert_eq!(read(&["homma", "-c", "a", "--config=b", "-cc"]), path("c"));
+    assert_eq!(read(&["homma", "--config", "a", "-c", "b"]), path("b"));
+    assert_eq!(read(&["homma", "--dir", "a"]), None);
+    assert_eq!(
+        flag_value(&argv(&["homma", "--dir=a", "--dir", "b"]), "--dir", None),
+        path("b")
+    );
+    assert_eq!(flag_value(&argv(&["homma", "-dx"]), "--dir", None), None);
 }
