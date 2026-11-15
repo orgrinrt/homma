@@ -428,14 +428,28 @@ pub fn show(cwd: &Path, rev: &str, path: &str) -> Result<Option<String>, GitErro
     Ok(out.ok().then_some(out.stdout))
 }
 
-/// Fetch tags and branches from `remote`, pruning what is gone.
-/// The one tag `tag` from `remote` into the clone, as it is there. A local tag
-/// of that name on another commit is a refusal, never overwritten.
-pub fn fetch_tag(cwd: &Path, remote: &str, tag: &str) -> Result<(), GitError> {
-    let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
-    git(cwd, &["fetch", "--quiet", "--no-tags", remote, &refspec]).map(|_| ())
+/// The object the tag `tag` names on `remote`, the tag object for an annotated
+/// one, fetched into the clone's objects without writing any ref, so a tag the
+/// clone should not hold is looked at and not kept.
+pub fn fetch_tag_object(cwd: &Path, remote: &str, tag: &str) -> Result<String, GitError> {
+    let refspec = format!("refs/tags/{tag}");
+    git(cwd, &["fetch", "--quiet", "--no-tags", remote, &refspec])?;
+    trimmed(cwd, &["rev-parse", "--verify", "FETCH_HEAD"])
 }
 
+/// The tag `tag` in the clone, naming `object`, where the clone holds no tag of
+/// that name; one that is there already is a refusal, never overwritten.
+pub fn create_tag_ref(cwd: &Path, tag: &str, object: &str) -> Result<(), GitError> {
+    git(cwd, &[
+        "update-ref",
+        &format!("refs/tags/{tag}"),
+        object,
+        "",
+    ])
+    .map(|_| ())
+}
+
+/// Fetch tags and branches from `remote`, pruning what is gone.
 pub fn fetch(cwd: &Path, remote: &str) -> Result<(), GitError> {
     git(cwd, &["fetch", "--quiet", "--tags", "--prune", remote]).map(|_| ())
 }

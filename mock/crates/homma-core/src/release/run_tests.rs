@@ -696,6 +696,10 @@ fn a_tag_the_remote_holds_on_another_commit_refuses_the_release() {
             .any(|(c, _)| c.starts_with(&format!("{ROUTE} release"))),
         "no release was asked for on a tag that names another commit"
     );
+    assert!(
+        git::tag_target(f.root(), "v0.1.1").is_err(),
+        "the clone keeps no version tag on the wrong commit"
+    );
     assert_eq!(
         git::current_branch(f.root()).unwrap().as_deref(),
         Some("dev")
@@ -717,8 +721,29 @@ fn a_route_that_answers_done_and_made_no_tag_stops_the_release() {
     };
     let s = setup(&runner, &writes, &p, "dev");
     let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
-    assert!(matches!(err, ReleaseError::Git(_)), "{err}");
+    assert!(
+        matches!(&err, ReleaseError::Git(GitError::Failed { command, .. }) if command.contains("refs/tags/v0.1.1")),
+        "the fetch of the tag is what refuses: {err}"
+    );
+    let root = f.root().to_string_lossy().into_owned();
+    let calls = runner.calls.borrow();
+    assert!(
+        calls
+            .iter()
+            .any(|(c, _)| c.starts_with(&format!("{ROUTE} tag {root} v0.1.1 "))),
+        "the route was asked for the tag: {calls:?}"
+    );
+    assert!(
+        !calls
+            .iter()
+            .any(|(c, _)| c.starts_with(&format!("{ROUTE} release"))),
+        "no release was asked for on a tag nobody made: {calls:?}"
+    );
     assert!(git::tag_target(f.root(), "v0.1.1").is_err());
+    assert_eq!(
+        git::current_branch(f.root()).unwrap().as_deref(),
+        Some("dev")
+    );
 }
 
 #[test]

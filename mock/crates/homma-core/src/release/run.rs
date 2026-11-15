@@ -266,26 +266,36 @@ pub fn step_merge_and_tag(
     Ok(sha)
 }
 
-/// After step 6: the tag the remote now holds, fetched into the clone, and a
-/// refusal where it names another commit than `sha`. A tag made on the remote
-/// alone, as a route makes it, would leave the clone's newest version tag the
-/// one before, and the next plan would release this version again.
+/// After step 6: the tag the remote now holds, read from the remote and
+/// refused where it names another commit than `sha`, then written into the
+/// clone where the clone does not hold it yet. A tag made on the remote alone,
+/// as a route makes it, would leave the clone's newest version tag the one
+/// before, and the next plan would release this version again; and a tag on
+/// the wrong commit is compared before it is written, so a refusal leaves the
+/// clone no version tag on the wrong commit.
 pub fn step_hold_tag(
     setup: &Setup<'_>,
     root: &Path,
     tag: &str,
     sha: &str,
 ) -> Result<(), ReleaseError> {
-    git::fetch_tag(root, setup.remote, tag)?;
-    let at = git::tag_target(root, tag)?;
-    if at != sha {
-        return Err(ReleaseError::TagElsewhere {
+    let elsewhere = |at: String| {
+        ReleaseError::TagElsewhere {
             tag: tag.to_string(),
             at,
             sha: sha.to_string(),
-        });
+        }
+    };
+    let object = git::fetch_tag_object(root, setup.remote, tag)?;
+    let at = git::sha(root, &object)?;
+    if at != sha {
+        return Err(elsewhere(at));
     }
-    Ok(())
+    match git::tag_target(root, tag) {
+        Ok(local) if local == sha => Ok(()),
+        Ok(local) => Err(elsewhere(local)),
+        Err(_) => Ok(git::create_tag_ref(root, tag, &object)?),
+    }
 }
 
 /// Step 7: the forge release on the tag, with the block as its body.
