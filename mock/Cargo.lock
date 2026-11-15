@@ -53,7 +53,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -64,7 +64,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -445,7 +445,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -985,7 +985,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -1589,8 +1589,8 @@ name = "homma"
 version = "0.0.1"
 dependencies = [
  "notko",
- "renki",
- "renki-config",
+ "renki 0.0.5-rc.1",
+ "renki-config 0.0.2",
 ]
 
 [[package]]
@@ -1637,8 +1637,8 @@ dependencies = [
  "jiff",
  "notko",
  "predicates",
- "renki",
- "renki-dirs",
+ "renki 0.0.3",
+ "renki-dirs 0.0.1",
  "serde",
  "serde_json",
  "tempfile",
@@ -2175,7 +2175,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2478,8 +2478,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97c1c886fd0864feb73af96def0266747a342d357ae171f642b0612ea44fa118"
 dependencies = [
  "notko",
- "renki-config",
- "renki-dirs",
+ "renki-config 0.0.1",
+ "renki-dirs 0.0.1",
+ "serde",
+ "toml 0.8.23",
+ "toml_edit",
+]
+
+[[package]]
+name = "renki"
+version = "0.0.5-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2b3aed13a6b607651b1ddf57b1a77e0dfaaa612a5cafbcab5b55a5bf91b51ab"
+dependencies = [
+ "notko",
+ "renki-config 0.0.2",
+ "renki-dirs 0.0.2",
  "serde",
  "toml 0.8.23",
  "toml_edit",
@@ -2495,10 +2509,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "renki-config"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51f398fb4ec01ac3416363e09d238e9bd0fd563230330bd6ba1fa92840146be"
+dependencies = [
+ "notko",
+]
+
+[[package]]
 name = "renki-dirs"
 version = "0.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40dd95e3f124ab94944154cb5702c0bad759447fcfe84d114167c435b95b6584"
+dependencies = [
+ "notko",
+]
+
+[[package]]
+name = "renki-dirs"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250b59018b615caeafde41cade76b67c87be88ba525a73ef8a3e5a93ba0d29e2"
 dependencies = [
  "notko",
 ]
@@ -2582,7 +2614,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2641,7 +2673,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2859,7 +2891,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2924,10 +2956,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3496,7 +3528,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
