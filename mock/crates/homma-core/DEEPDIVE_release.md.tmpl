@@ -380,6 +380,10 @@ off the commits. What it does, in order, stopping at the first refusal:
    release that exists is made already; the command makes a pre-release that
    is never the latest for a version with a pre-release part, and the latest
    for a stable one.
+8. Publishes to every registry the manifest names, in dependency order across
+   the repos the plan named, waiting for each registry to serve a version before
+   the next package that depends on it publishes.
+9. Writes the badge json to the `badges` branch.
 
 The two writes of steps 6 and 7 are one contract, `ReleaseForge`, with its
 `tag` and its `release`. `ByClient` tags with git in the clone, pushes the tag
@@ -387,12 +391,12 @@ and makes the release through the forge client; `ByRoute` asks `forge_route`
 for both. The engine picks one per repo: `ByRoute` for a GitHub repo where the
 manifest names the route, since the route reaches GitHub alone, and `ByClient`
 for every other. A manifest that does not read as a workspace's is an error
-rather than no route, because falling back to the git push is the refusal the
-route is there to avoid, and it comes after `main` has moved.
-8. Publishes to every registry the manifest names, in dependency order across
-   the repos the plan named, waiting for each registry to serve a version before
-   the next package that depends on it publishes.
-9. Writes the badge json to the `badges` branch.
+rather than no route, and so is a route it names that is not there, both read
+before any repo runs, because falling back to the git push is the refusal the
+route is there to avoid and a route that cannot run fails at step 6, each after
+`main` has moved. The fetch after step 6 compares the remote's tag before it
+writes it into the clone, so a tag the remote holds on another commit is
+refused without leaving the clone a version tag on the wrong commit.
 
 A cargo workspace publishes its members in dependency order, one `cargo publish`
 per member. A deno package publishes with `deno publish`, and where it also ships
