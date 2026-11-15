@@ -17,3 +17,11 @@ The commit status mechanism generalises: every mockspace lint can post its own
 status on the sha it judged, and a ruleset can require any subset of them on
 either trunk. That is mockspace's to build and homma's to consume, and the
 context name a lint posts under wants deciding once, together.
+
+## A version tag with no forge release
+
+A release whose tag reached the remote and whose forge release never came is
+half done, and the check does not say so: the forge client reads repositories
+and commits but no releases. A read of the releases on a tag, and a check id
+naming each version tag the remote holds with none, finish it; the run's step 7
+already takes a release that exists as made, so the repair is a rerun of it.
