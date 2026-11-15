@@ -202,13 +202,18 @@ impl Identity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Paths {
-    pub hands:    RelPath,
-    pub experts:  RelPath,
-    pub channels: RelPath,
-    pub agents:   RelPath,
-    pub index:    RelPath,
+    pub hands:       RelPath,
+    pub experts:     RelPath,
+    pub channels:    RelPath,
+    pub agents:      RelPath,
+    pub index:       RelPath,
     /// Where `homma capture` writes what the person said to a session.
-    pub captures: RelPath,
+    pub captures:    RelPath,
+    /// The command every tag, release and remote branch deletion of the
+    /// workspace goes through, which `homma release run` asks for a release's
+    /// tag and its forge release. Unset, the release tags with git and
+    /// releases through the forge client.
+    pub forge_route: Option<RelPath>,
 }
 
 impl Default for Paths {
@@ -218,12 +223,13 @@ impl Default for Paths {
         // which is the only way it can fail.
         let rel = |s: &str| RelPath::new(s).expect("a default path is relative and contained");
         Self {
-            hands:    rel(".shared/hands"),
-            experts:  rel(".shared/experts"),
-            channels: rel(".shared/channels"),
-            agents:   rel(".claude/agents"),
-            index:    rel(".shared/.index"),
-            captures: rel(".data/op-responses"),
+            hands:       rel(".shared/hands"),
+            experts:     rel(".shared/experts"),
+            channels:    rel(".shared/channels"),
+            agents:      rel(".claude/agents"),
+            index:       rel(".shared/.index"),
+            captures:    rel(".data/op-responses"),
+            forge_route: None,
         }
     }
 }
@@ -565,6 +571,29 @@ handle = "proof"
         // And it is refused where it leaves, like every other one.
         let bad = "content_repo = \"local\"\n\n[paths]\ncaptures = \"../elsewhere\"\n";
         assert!(Workspace::parse(bad).is_err());
+    }
+
+    #[test]
+    fn the_forge_route_is_unset_by_default_and_a_contained_path_where_named() {
+        assert!(
+            Workspace::parse(MINIMAL)
+                .unwrap()
+                .paths
+                .forge_route
+                .is_none()
+        );
+        // the workspace's own manifest names its stale lists beside it, which homma does not read
+        let toml = "content_repo = \"local\"\n\n[paths]\nforge_route = \".shared/scripts/remote/forge-route\"\nstale_branches = \"x.txt\"\n";
+        let w = Workspace::parse(toml).expect("a contained route is fine");
+        assert_eq!(
+            w.paths.forge_route.as_ref().map(|p| p.as_path()),
+            Some(std::path::Path::new(".shared/scripts/remote/forge-route"))
+        );
+        let bad = "content_repo = \"local\"\n\n[paths]\nforge_route = \"/usr/bin/route\"\n";
+        assert!(
+            Workspace::parse(bad).is_err(),
+            "a route outside the workspace is refused"
+        );
     }
 
     #[test]

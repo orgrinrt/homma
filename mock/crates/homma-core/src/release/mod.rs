@@ -23,3 +23,4 @@ pub mod sh;
 pub mod status;
 pub mod tagline;
 pub mod version;
+pub mod writes;
