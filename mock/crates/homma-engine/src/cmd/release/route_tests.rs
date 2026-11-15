@@ -5,7 +5,8 @@
 
 //! Which way a repo's release writes go: the workspace's forge route for a
 //! repo on GitHub where the manifest names one, git and the forge client for
-//! every other, and an error where the manifest cannot be read at all.
+//! every other, and an error where the manifest cannot be read at all or names
+//! a route that is not there.
 
 use std::cell::RefCell;
 
@@ -34,6 +35,15 @@ fn a_manifest_naming_the_route_gives_it_from_the_manifests_directory() {
     let route = forge_route_of(&at).unwrap().unwrap();
     assert_eq!(route, std::path::absolute(&script).unwrap());
     assert!(route.is_absolute());
+}
+
+#[test]
+fn a_manifest_naming_a_route_that_is_not_there_is_an_error() {
+    // Mutation: a named route taken without looking, which fails at step 6 as
+    // a command that cannot be run, after `main` moved.
+    let (_dir, at) = manifest(NAMES_THE_ROUTE);
+    let err = forge_route_of(&at).unwrap_err().to_string();
+    assert!(err.contains("not there"), "{err}");
 }
 
 #[test]

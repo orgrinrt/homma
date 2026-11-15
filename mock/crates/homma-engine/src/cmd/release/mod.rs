@@ -273,7 +273,8 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result
 /// directory. A manifest that names none leaves the release tagging with git
 /// and releasing through the forge client; one that does not read as a
 /// workspace's is an error, since taking it as naming none would send the tag
-/// down the git push the route is there to avoid, after `main` has moved.
+/// down the git push the route is there to avoid, after `main` has moved, and
+/// so is a route it names that is not there, which would fail at step 6.
 fn forge_route_of(manifest: &Path) -> Result<Option<PathBuf>> {
     let ws = crate::cmd::org::load(manifest)?;
     let Some(rel) = ws.paths.forge_route else {
@@ -283,7 +284,15 @@ fn forge_route_of(manifest: &Path) -> Result<Option<PathBuf>> {
         .parent()
         .unwrap_or(Path::new("."))
         .join(rel.as_path());
-    Ok(Some(std::path::absolute(&at).unwrap_or(at)))
+    let at = std::path::absolute(&at).unwrap_or(at);
+    if !at.is_file() {
+        return Err(anyhow!(
+            "`forge_route` in {} names {}, which is not there",
+            manifest.display(),
+            at.display()
+        ));
+    }
+    Ok(Some(at))
 }
 
 fn run_cmd(
