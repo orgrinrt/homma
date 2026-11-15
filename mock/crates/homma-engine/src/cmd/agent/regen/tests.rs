@@ -98,3 +98,38 @@ fn a_repo_with_a_toml_and_a_declared_mock_dir_is_not_skipped() {
     let cfg = workspace_with_member(dir.path());
     assert!(!matches!(cargo_mock_stage(&cfg), StageStatus::Skipped(_)));
 }
+
+#[test]
+fn the_cargo_mock_command_carries_generate_only() {
+    let cmd = cargo_mock_command("cargo", std::path::Path::new("."));
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(args, ["mock", "--generate-only"]);
+}
+
+/// A stub launcher: renders (exit 0) only under `--generate-only`, and fails
+/// the way a red `cargo check` does otherwise.
+#[cfg(unix)]
+fn stub_launcher(dir: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let p = dir.join("stub-cargo");
+    std::fs::write(
+        &p,
+        "#!/bin/sh\ncase \"$*\" in *--generate-only*) touch rendered; exit 0;; esac\necho 'cargo check failed' >&2\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    p
+}
+
+#[cfg(unix)]
+#[test]
+fn a_member_whose_check_would_fail_is_still_rendered() {
+    let dir = tempfile::tempdir().unwrap();
+    let member = tempfile::tempdir().unwrap();
+    let stub = stub_launcher(dir.path());
+    invoke_cargo_mock_with(stub.to_str().unwrap(), member.path()).unwrap();
+    assert!(member.path().join("rendered").exists());
+}

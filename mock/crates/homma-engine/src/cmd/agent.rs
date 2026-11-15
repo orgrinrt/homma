@@ -656,9 +656,19 @@ pub mod regen {
     /// Run `cargo mock` from the repo root. Errors carry the exit status +
     /// scrubbed stderr summary.
     fn invoke_cargo_mock(dir: &Path) -> Result<()> {
-        let output = Command::new("cargo")
-            .arg("mock")
-            .current_dir(dir)
+        invoke_cargo_mock_with("cargo", dir)
+    }
+
+    /// The command line regen runs: `--generate-only` renders the agent
+    /// files and skips the whole-workspace `cargo check` and the lints.
+    fn cargo_mock_command(program: &str, dir: &Path) -> Command {
+        let mut cmd = Command::new(program);
+        cmd.arg("mock").arg("--generate-only").current_dir(dir);
+        cmd
+    }
+
+    fn invoke_cargo_mock_with(program: &str, dir: &Path) -> Result<()> {
+        let output = cargo_mock_command(program, dir)
             .output()
             .with_context(|| format!("invoking `cargo mock` in {}", dir.display()))?;
         if !output.status.success() {
