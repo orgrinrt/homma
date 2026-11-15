@@ -39,7 +39,7 @@ pub(super) fn gate_cmd(
     let (name, r, root) = resolve_repo(cfg, repo)?;
     let root = &root;
     let store = store(cli);
-    let (forge, owner) = forge_for(cfg, r)?;
+    let (forge, owner, _) = forge_for(cfg, r)?;
     if let Some(want) = post {
         // records carry the full sha, so what was typed is resolved first,
         // the same way `--sha` is

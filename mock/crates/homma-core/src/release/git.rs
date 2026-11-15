@@ -429,6 +429,13 @@ pub fn show(cwd: &Path, rev: &str, path: &str) -> Result<Option<String>, GitErro
 }
 
 /// Fetch tags and branches from `remote`, pruning what is gone.
+/// The one tag `tag` from `remote` into the clone, as it is there. A local tag
+/// of that name on another commit is a refusal, never overwritten.
+pub fn fetch_tag(cwd: &Path, remote: &str, tag: &str) -> Result<(), GitError> {
+    let refspec = format!("refs/tags/{tag}:refs/tags/{tag}");
+    git(cwd, &["fetch", "--quiet", "--no-tags", remote, &refspec]).map(|_| ())
+}
+
 pub fn fetch(cwd: &Path, remote: &str) -> Result<(), GitError> {
     git(cwd, &["fetch", "--quiet", "--tags", "--prune", remote]).map(|_| ())
 }

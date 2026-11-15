@@ -12,11 +12,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 use homma_api::{GateRun, Level};
 use homma_core::forge::token;
-use homma_core::release::gate::Real;
+use homma_core::release::gate::{Real, Runner};
 use homma_core::release::registry::Registry;
 use homma_core::release::run::Setup;
+use homma_core::release::writes::{ByClient, ByRoute, ReleaseForge};
 use homma_core::release::{badges, check, plan, publish, run, version};
-use homma_core::{Config, Forge, RepoConfig};
+use homma_core::{Config, Forge, ForgeKind, RepoConfig};
 use homma_store::Store;
 use serde::Serialize;
 
@@ -89,7 +90,7 @@ fn branches_line(cfg: &Config, root: &Path) -> String {
     }
 }
 
-fn forge_for(cfg: &Config, repo: &RepoConfig) -> Result<(Box<dyn Forge>, String)> {
+fn forge_for(cfg: &Config, repo: &RepoConfig) -> Result<(Box<dyn Forge>, String, ForgeKind)> {
     let name = repo
         .forge
         .as_deref()
@@ -98,8 +99,38 @@ fn forge_for(cfg: &Config, repo: &RepoConfig) -> Result<(Box<dyn Forge>, String)
         .owner
         .clone()
         .ok_or_else(|| anyhow!("the repository's origin names no owner"))?;
-    let forge = crate::cmd::forge::client_from_config(crate::cmd::forge::resolve_forge(cfg, name)?);
-    Ok((forge, owner))
+    let profile = crate::cmd::forge::resolve_forge(cfg, name)?;
+    let forge = crate::cmd::forge::client_from_config(profile);
+    Ok((forge, owner, profile.kind))
+}
+
+/// The route a repo's release writes go through, where they go through one:
+/// the workspace's `forge_route` for a repo on GitHub, the one forge it
+/// reaches, and none for a repo on any other forge, whose tag git makes and
+/// whose release its client does.
+fn route_for(kind: ForgeKind, route: Option<&Path>) -> Option<&Path> {
+    match kind {
+        ForgeKind::Github => route,
+        ForgeKind::Forgejo => None,
+    }
+}
+
+/// The forge writes of a repo's release, by the way [`route_for`] picks.
+fn release_forge<'a>(
+    kind: ForgeKind,
+    route: Option<&'a Path>,
+    runner: &'a dyn Runner,
+    client: ByClient<'a>,
+) -> Box<dyn ReleaseForge + 'a> {
+    match route_for(kind, route) {
+        Some(route) => {
+            Box::new(ByRoute {
+                route,
+                runner,
+            })
+        },
+        None => Box::new(client),
+    }
 }
 
 fn token_source(cfg: &Config) -> impl Fn(Registry) -> std::result::Result<String, String> + '_ {
@@ -134,6 +165,9 @@ fn config_for(cli: &Cli, op: &ReleaseOp) -> Result<Config> {
 
 #[cfg(test)]
 mod config_tests;
+
+#[cfg(test)]
+mod route_tests;
 
 /// The `homma release` entry: loads the workspace and dispatches one
 /// subcommand, so every path below it starts from the same manifest.
@@ -235,18 +269,21 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result
 }
 
 /// The command the workspace's tags and releases go through, `forge_route`
-/// under `[paths]` of its manifest, from the manifest's directory. A manifest
-/// that names none, or that does not read as a workspace's, leaves the release
-/// tagging with git and releasing through the forge client.
-fn forge_route_of(cli: &Cli) -> Option<PathBuf> {
-    let manifest = crate::cmd::config_path(cli);
-    let ws = crate::cmd::org::load(&manifest).ok()?;
-    let rel = ws.paths.forge_route?;
+/// under `[paths]` of the manifest at `manifest`, from the manifest's
+/// directory. A manifest that names none leaves the release tagging with git
+/// and releasing through the forge client; one that does not read as a
+/// workspace's is an error, since taking it as naming none would send the tag
+/// down the git push the route is there to avoid, after `main` has moved.
+fn forge_route_of(manifest: &Path) -> Result<Option<PathBuf>> {
+    let ws = crate::cmd::org::load(manifest)?;
+    let Some(rel) = ws.paths.forge_route else {
+        return Ok(None);
+    };
     let at = manifest
         .parent()
         .unwrap_or(Path::new("."))
         .join(rel.as_path());
-    Some(std::path::absolute(&at).unwrap_or(at))
+    Ok(Some(std::path::absolute(&at).unwrap_or(at)))
 }
 
 fn run_cmd(
@@ -258,6 +295,7 @@ fn run_cmd(
 ) -> Result<Outcome> {
     let store = store(cli);
     let token = token_source(cfg);
+    let forge_route = forge_route_of(&config_path(cli))?;
     let names: Vec<String> = match repo {
         Some(n) => vec![n.to_string()],
         None => release_order(cfg),
@@ -308,17 +346,20 @@ fn run_cmd(
         let (name, r, root) = resolve_repo(cfg, Some(name))?;
         let root = &root;
         let (trunk, release_line) = branches_checked(cfg, root)?;
-        let (forge, owner) = forge_for(cfg, r)?;
+        let (client, owner, kind) = forge_for(cfg, r)?;
         let published = published_for(cfg, root)?;
         let tip = homma_core::release::git::sha(root, trunk)?;
         let newest = record::newest_for(&store, name, &tip)?;
-        let forge_route = forge_route_of(cli);
         let date = clock::today();
+        let forge = release_forge(kind, forge_route.as_deref(), &Real, ByClient {
+            forge: client.as_ref(),
+            owner: &owner,
+            name,
+            remote: "origin",
+        });
         let setup = Setup {
             runner: &Real,
             forge: forge.as_ref(),
-            owner: &owner,
-            name,
             remote: "origin",
             trunk,
             release: release_line,
@@ -327,7 +368,6 @@ fn run_cmd(
             served: &publish::registry_serves,
             published: &published,
             markers: &cfg.markers,
-            forge_route: forge_route.as_deref(),
         };
         match run::release(&setup, root, level, newest.as_ref(), dry_run) {
             Ok(Ok(done)) => {

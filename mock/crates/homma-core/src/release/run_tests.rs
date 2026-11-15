@@ -10,8 +10,9 @@ use std::cell::RefCell;
 use homma_api::{Step, StepOutcome, Version};
 
 use super::*;
-use crate::forge::{CommitStatus, CreateRepoSpec, RepoMetadata};
+use crate::forge::{CommitStatus, CreateRepoSpec, Forge, RepoMetadata};
 use crate::release::sh;
+use crate::release::writes::{ByClient, ByRoute};
 
 struct Fake(RefCell<Vec<String>>);
 
@@ -96,6 +97,11 @@ impl Fixture {
         self.work.path()
     }
 
+    /// The bare repository the clone's `origin` is.
+    fn origin(&self) -> &Path {
+        self._bare.path()
+    }
+
     fn git(&self, args: &[&str]) -> String {
         let out = sh::run(self.root(), "git", args).unwrap();
         assert!(out.ok(), "git {}: {}", args.join(" "), out.log());
@@ -174,17 +180,25 @@ fn served(
     Ok(true)
 }
 
+/// The forge writes of a release made with git and the recording client.
+fn client(forge: &Recorder) -> ByClient<'_> {
+    ByClient {
+        forge,
+        owner: "o",
+        name: "x",
+        remote: "origin",
+    }
+}
+
 fn setup<'a>(
     runner: &'a dyn Runner,
-    forge: &'a Recorder,
+    forge: &'a dyn ReleaseForge,
     published: &'a Published,
     trunk: &'a str,
 ) -> Setup<'a> {
     Setup {
         runner,
         forge,
-        owner: "o",
-        name: "x",
         remote: "origin",
         trunk,
         release: "main",
@@ -193,7 +207,6 @@ fn setup<'a>(
         served: &served,
         published,
         markers: homma_api::Markers::defaults(),
-        forge_route: None,
     }
 }
 
@@ -205,7 +218,7 @@ fn a_blocking_finding_refuses_before_anything_runs() {
     let forge = Recorder::default();
     let p = published();
     let err = release(
-        &setup(&runner, &forge, &p, "dev"),
+        &setup(&runner, &client(&forge), &p, "dev"),
         f.root(),
         Level::Patch,
         None,
@@ -261,7 +274,7 @@ fn a_dry_run_returns_the_plan_and_moves_nothing() {
     let forge = Recorder::default();
     let p = published();
     let out = release(
-        &setup(&runner, &forge, &p, "dev"),
+        &setup(&runner, &client(&forge), &p, "dev"),
         f.root(),
         Level::Minor,
         Some(&green_run(&tip)),
@@ -285,7 +298,7 @@ fn the_whole_release_bumps_merges_tags_releases_publishes_and_writes_badges() {
     let forge = Recorder::default();
     let p = published();
     let done = release(
-        &setup(&runner, &forge, &p, "dev"),
+        &setup(&runner, &client(&forge), &p, "dev"),
         f.root(),
         Level::Patch,
         Some(&green_run(&tip)),
@@ -369,7 +382,8 @@ fn a_repo_released_from_its_trunk_tags_the_bump_commit_and_merges_nothing() {
     let runner = Fake(RefCell::new(Vec::new()));
     let forge = Recorder::default();
     let p = published();
-    let mut s = setup(&runner, &forge, &p, "main");
+    let w = client(&forge);
+    let mut s = setup(&runner, &w, &p, "main");
     s.release = "main";
     let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
         .unwrap()
@@ -395,7 +409,7 @@ fn the_bump_refuses_off_the_trunk() {
     )
     .unwrap();
     assert!(matches!(
-        step_bump(&setup(&runner, &forge, &p, "dev"), f.root(), &plan),
+        step_bump(&setup(&runner, &client(&forge), &p, "dev"), f.root(), &plan),
         Err(ReleaseError::NotOnTrunk(Some(b))) if b == "main"
     ));
 }
@@ -415,7 +429,8 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
         "d",
     )
     .unwrap();
-    let s = setup(&runner, &forge, &p, "dev");
+    let w = client(&forge);
+    let s = setup(&runner, &w, &p, "dev");
     step_bump(&s, f.root(), &plan).unwrap();
     // the remote refuses the push of main, which is what a ruleset does
     let main_before = f.git(&["rev-parse", "main"]);
@@ -460,15 +475,38 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     );
 }
 
-/// A runner that records each call with the `FR_NOTES` it was given, and fails
-/// the forge route's calls with `said` where that is set, as a route whose
-/// every way failed does.
-struct Routed {
-    calls: RefCell<Vec<(String, Option<String>)>>,
-    said:  Option<&'static str>,
+/// Where the routed tests' forge route is said to be.
+const ROUTE: &str = "/ws/route";
+
+/// A runner standing for the workspace's forge route. It records each call
+/// with the `FR_NOTES` it was given. Asked for a tag, it makes it in the
+/// fixture's origin and nowhere else, with a message of its own, as the
+/// console's Worker does, where `makes_tag` is set, and refuses a tag the
+/// origin already holds as the route does; with `makes_tag` unset it answers
+/// that the tag is made and makes none. Where `said` is set every call of the
+/// route fails with it, as a route whose every way failed does.
+struct Routed<'a> {
+    calls:     RefCell<Vec<(String, Option<String>)>>,
+    origin:    &'a Path,
+    makes_tag: bool,
+    said:      Option<&'static str>,
 }
 
-impl Runner for Routed {
+impl<'a> Routed<'a> {
+    fn new(f: &'a Fixture) -> Self {
+        Routed {
+            calls:     RefCell::new(Vec::new()),
+            origin:    f.origin(),
+            makes_tag: true,
+            said:      None,
+        }
+    }
+}
+
+/// The message the fake route writes on a tag, which git in the clone never does.
+const ROUTE_MADE: &str = "made by the route";
+
+impl Runner for Routed<'_> {
     fn run(
         &self,
         _cwd: &Path,
@@ -483,43 +521,75 @@ impl Runner for Routed {
         self.calls
             .borrow_mut()
             .push((format!("{program} {}", args.join(" ")), notes));
-        let failing = program == "/ws/route" && self.said.is_some();
-        Ok(sh::Output {
-            program: program.into(),
-            args:    args.iter().map(|a| a.to_string()).collect(),
-            status:  Some(if failing { 1 } else { 0 }),
-            stdout:  String::new(),
-            stderr:  if failing { self.said.unwrap().to_string() } else { String::new() },
-        })
+        let answer = |status: i32, stderr: &str| {
+            Ok(sh::Output {
+                program: program.into(),
+                args:    args.iter().map(|a| a.to_string()).collect(),
+                status:  Some(status),
+                stdout:  String::new(),
+                stderr:  stderr.to_string(),
+            })
+        };
+        if program != ROUTE {
+            return answer(0, "");
+        }
+        if let Some(said) = self.said {
+            return answer(1, said);
+        }
+        if let (true, ["tag", _root, tag, sha, _message]) = (self.makes_tag, args) {
+            let made = sh::run(self.origin, "git", &[
+                "-c",
+                "user.name=route",
+                "-c",
+                "user.email=route@route",
+                "tag",
+                "-a",
+                tag,
+                sha,
+                "-m",
+                ROUTE_MADE,
+            ])
+            .unwrap();
+            if !made.ok() {
+                return answer(1, &made.log());
+            }
+        }
+        answer(0, "")
     }
 }
 
+/// The subject of `tag`'s message in the clone.
+fn tag_message(f: &Fixture, tag: &str) -> String {
+    f.git(&["for-each-ref", "--format=%(contents:subject)", &format!("refs/tags/{tag}")])
+}
+
 #[test]
-fn a_configured_forge_route_makes_the_tag_and_the_release_and_git_pushes_no_tag() {
+fn a_configured_forge_route_makes_the_tag_and_the_release_and_the_clone_holds_the_tag() {
     // Mutation: the route read and then the git push of the tag run anyway, or
     // the forge client asked for the release beside it, which in a cloud
-    // session stops the release at the proxy's 403 after `main` moved.
+    // session stops the release at the proxy's 403 after `main` moved; or the
+    // tag the route made left on the remote alone, so the next plan starts
+    // from the tag before it.
     let f = Fixture::new();
     let tip = f.git(&["rev-parse", "dev"]);
-    let runner = Routed {
-        calls: RefCell::new(Vec::new()),
-        said:  None,
-    };
+    let runner = Routed::new(&f);
     let forge = Recorder::default();
     let p = published();
-    let mut s = setup(&runner, &forge, &p, "dev");
-    let route = Path::new("/ws/route");
-    s.forge_route = Some(route);
+    let writes = ByRoute {
+        route:  Path::new(ROUTE),
+        runner: &runner,
+    };
+    let s = setup(&runner, &writes, &p, "dev");
     let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
         .unwrap()
         .unwrap();
     let root = f.root().to_string_lossy().into_owned();
     let calls = runner.calls.borrow();
-    let tag = format!("/ws/route tag {root} v0.1.1 {} v0.1.1", done.tag_sha);
+    let tag = format!("{ROUTE} tag {root} v0.1.1 {} v0.1.1", done.tag_sha);
     assert!(calls.iter().any(|(c, _)| *c == tag), "{calls:?}");
     let rel = calls
         .iter()
-        .find(|(c, _)| *c == format!("/ws/route release {root} v0.1.1"))
+        .find(|(c, _)| *c == format!("{ROUTE} release {root} v0.1.1"))
         .unwrap_or_else(|| panic!("{calls:?}"));
     assert!(
         rel.1
@@ -531,15 +601,124 @@ fn a_configured_forge_route_makes_the_tag_and_the_release_and_git_pushes_no_tag(
         forge.releases.borrow().is_empty(),
         "the forge client made no release"
     );
-    let remote = git::remote_tags(f.root(), "origin").unwrap();
+    assert_eq!(
+        git::tag_target(f.root(), "v0.1.1").unwrap(),
+        done.tag_sha,
+        "the clone holds the tag the route made, on the release's commit"
+    );
+    assert_eq!(
+        tag_message(&f, "v0.1.1"),
+        ROUTE_MADE,
+        "the clone's tag is the route's, and git made none of its own"
+    );
+}
+
+#[test]
+fn a_second_release_through_the_route_from_the_same_clone_plans_the_next_version() {
+    // Mutation: the tag the route made not fetched into the clone, so the
+    // second plan starts from v0.1.0, takes the manifest's 0.1.1 as already
+    // bumped, and releases 0.1.1 again until the route refuses its tag.
+    let f = Fixture::new();
+    let runner = Routed::new(&f);
+    let p = published();
+    let writes = ByRoute {
+        route:  Path::new(ROUTE),
+        runner: &runner,
+    };
+    let s = setup(&runner, &writes, &p, "dev");
+    let tip = f.git(&["rev-parse", "dev"]);
+    release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    std::fs::write(f.root().join("more.rs"), "// more").unwrap();
+    f.git(&["add", "."]);
+    f.git(&["commit", "--quiet", "-m", "fix: the other thing"]);
+    f.git(&["push", "--quiet", "origin", "dev"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    // the first release published 0.1.1, which the check reads off the registry
+    let mut p = published();
+    p.versions
+        .get_mut(&(Registry::CratesIo, "x".into()))
+        .unwrap()
+        .push(Version::new(0, 1, 1));
+    let s = setup(&runner, &writes, &p, "dev");
+    let second = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(second.plan.next, Version::new(0, 1, 2));
+    assert_eq!(
+        second.plan.commits.len(),
+        1,
+        "the commits since v0.1.1 and nothing before it"
+    );
+    assert_eq!(git::tag_target(f.root(), "v0.1.2").unwrap(), second.tag_sha);
+}
+
+#[test]
+fn a_tag_the_remote_holds_on_another_commit_refuses_the_release() {
+    // Mutation: the fetched tag taken as made wherever it points, which
+    // reports a release whose tag names some other commit as done.
+    let f = Fixture::new();
+    let tip = f.git(&["rev-parse", "dev"]);
+    let elsewhere = f.git(&["rev-parse", "v0.1.0^{commit}"]);
+    let made = sh::run(f.origin(), "git", &[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "tag",
+        "-a",
+        "v0.1.1",
+        &elsewhere,
+        "-m",
+        "v0.1.1",
+    ])
+    .unwrap();
+    assert!(made.ok(), "{}", made.log());
+    let mut runner = Routed::new(&f);
+    runner.makes_tag = false;
+    let p = published();
+    let writes = ByRoute {
+        route:  Path::new(ROUTE),
+        runner: &runner,
+    };
+    let s = setup(&runner, &writes, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
     assert!(
-        !remote.iter().any(|(name, _)| name.contains("v0.1.1")),
-        "git pushed the tag itself: {remote:?}"
+        matches!(&err, ReleaseError::TagElsewhere { tag, at, .. } if tag == "v0.1.1" && *at == elsewhere),
+        "{err}"
     );
     assert!(
-        git::tag_target(f.root(), "v0.1.1").is_err(),
-        "git made the tag itself"
+        !runner
+            .calls
+            .borrow()
+            .iter()
+            .any(|(c, _)| c.starts_with(&format!("{ROUTE} release"))),
+        "no release was asked for on a tag that names another commit"
     );
+    assert_eq!(
+        git::current_branch(f.root()).unwrap().as_deref(),
+        Some("dev")
+    );
+}
+
+#[test]
+fn a_route_that_answers_done_and_made_no_tag_stops_the_release() {
+    // Mutation: the route's answer taken on its word, which reports a release
+    // with no tag anywhere as done.
+    let f = Fixture::new();
+    let tip = f.git(&["rev-parse", "dev"]);
+    let mut runner = Routed::new(&f);
+    runner.makes_tag = false;
+    let p = published();
+    let writes = ByRoute {
+        route:  Path::new(ROUTE),
+        runner: &runner,
+    };
+    let s = setup(&runner, &writes, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(matches!(err, ReleaseError::Git(_)), "{err}");
+    assert!(git::tag_target(f.root(), "v0.1.1").is_err());
 }
 
 #[test]
@@ -548,14 +727,14 @@ fn a_forge_route_that_fails_every_way_stops_the_release_with_its_words() {
     // tag as done.
     let f = Fixture::new();
     let tip = f.git(&["rev-parse", "dev"]);
-    let runner = Routed {
-        calls: RefCell::new(Vec::new()),
-        said:  Some("forge-route: tag o/x v0.1.1: git: HTTP 403; forge-write: 401 unauthorized"),
-    };
-    let forge = Recorder::default();
+    let mut runner = Routed::new(&f);
+    runner.said = Some("forge-route: tag o/x v0.1.1: git: HTTP 403; forge-write: 401 unauthorized");
     let p = published();
-    let mut s = setup(&runner, &forge, &p, "dev");
-    s.forge_route = Some(Path::new("/ws/route"));
+    let writes = ByRoute {
+        route:  Path::new(ROUTE),
+        runner: &runner,
+    };
+    let s = setup(&runner, &writes, &p, "dev");
     let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
     assert!(
         matches!(&err, ReleaseError::Route(said) if said.contains("forge-write: 401 unauthorized")),
@@ -563,9 +742,9 @@ fn a_forge_route_that_fails_every_way_stops_the_release_with_its_words() {
     );
     let calls = runner.calls.borrow();
     assert!(
-        !calls
-            .iter()
-            .any(|(c, _)| c.starts_with("/ws/route release") || c.starts_with("cargo publish")),
+        !calls.iter().any(|(c, _)| {
+            c.starts_with(&format!("{ROUTE} release")) || c.starts_with("cargo publish")
+        }),
         "nothing after the tag ran: {calls:?}"
     );
     assert_eq!(
