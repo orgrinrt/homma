@@ -16,15 +16,16 @@ use super::git::GitError;
 use super::plan::{self, Plan, PlanError};
 use super::publish::{self, PublishError, Served, TokenSource};
 use super::registry::Registry;
+use super::writes::ReleaseForge;
 use super::{badges, changelog, git, version};
-use crate::forge::{Forge, ForgeError};
+use crate::forge::ForgeError;
 
 /// Everything a release needs to know that is not in the tree.
 pub struct Setup<'a> {
     pub runner:    &'a dyn Runner,
-    pub forge:     &'a dyn Forge,
-    pub owner:     &'a str,
-    pub name:      &'a str,
+    /// The forge writes of steps 6 and 7, the tag and the release; the engine
+    /// picks which way they go for the repo.
+    pub forge:     &'a dyn ReleaseForge,
     pub remote:    &'a str,
     /// The working trunk, `dev`.
     pub trunk:     &'a str,
@@ -57,6 +58,16 @@ pub enum ReleaseError {
     Io(std::io::Error),
     Forge(ForgeError),
     Publish(PublishError),
+    /// The workspace's forge route made neither the tag nor the release by
+    /// any of its routes, or could not be run; its own words.
+    Route(String),
+    /// The tag the remote holds names another commit than the one the
+    /// release tagged.
+    TagElsewhere {
+        tag: String,
+        at:  String,
+        sha: String,
+    },
 }
 
 impl fmt::Display for ReleaseError {
@@ -101,6 +112,17 @@ impl fmt::Display for ReleaseError {
             ReleaseError::Io(e) => write!(f, "{e}"),
             ReleaseError::Forge(e) => write!(f, "{e}"),
             ReleaseError::Publish(e) => write!(f, "{e}"),
+            ReleaseError::Route(said) => write!(f, "{said}"),
+            ReleaseError::TagElsewhere {
+                tag,
+                at,
+                sha,
+            } => {
+                write!(
+                    f,
+                    "the remote's {tag} names {at}, and the release tagged {sha}"
+                )
+            },
         }
     }
 }
@@ -230,14 +252,10 @@ pub fn step_merge_and_tag(
             },
         }
     };
-    let tagged = git::tag_annotated(root, &plan.tag, &sha, &plan.tag).and_then(|_| {
-        git::push(
-            root,
-            setup.remote,
-            &format!("refs/tags/{}", plan.tag),
-            false,
-        )
-    });
+    let tagged = setup
+        .forge
+        .tag(root, &plan.tag, &sha, &plan.tag)
+        .and_then(|_| step_hold_tag(setup, root, &plan.tag, &sha));
     if setup.trunk != setup.release {
         let back = git::switch(root, setup.trunk);
         tagged?;
@@ -248,15 +266,43 @@ pub fn step_merge_and_tag(
     Ok(sha)
 }
 
+/// After step 6: the tag the remote now holds, read from the remote and
+/// refused where it names another commit than `sha`, then written into the
+/// clone where the clone does not hold it yet. A tag made on the remote alone,
+/// as a route makes it, would leave the clone's newest version tag the one
+/// before, and the next plan would release this version again; and a tag on
+/// the wrong commit is compared before it is written, so a refusal leaves the
+/// clone no version tag on the wrong commit.
+pub fn step_hold_tag(
+    setup: &Setup<'_>,
+    root: &Path,
+    tag: &str,
+    sha: &str,
+) -> Result<(), ReleaseError> {
+    let elsewhere = |at: String| {
+        ReleaseError::TagElsewhere {
+            tag: tag.to_string(),
+            at,
+            sha: sha.to_string(),
+        }
+    };
+    let object = git::fetch_tag_object(root, setup.remote, tag)?;
+    let at = git::sha(root, &object)?;
+    if at != sha {
+        return Err(elsewhere(at));
+    }
+    match git::tag_target(root, tag) {
+        Ok(local) if local == sha => Ok(()),
+        Ok(local) => Err(elsewhere(local)),
+        Err(_) => Ok(git::create_tag_ref(root, tag, &object)?),
+    }
+}
+
 /// Step 7: the forge release on the tag, with the block as its body.
-pub fn step_forge_release(setup: &Setup<'_>, plan: &Plan) -> Result<(), ReleaseError> {
-    setup.forge.create_release(
-        setup.owner,
-        setup.name,
-        &plan.tag,
-        plan.changelog.trim_end(),
-    )?;
-    Ok(())
+pub fn step_forge_release(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), ReleaseError> {
+    setup
+        .forge
+        .release(root, &plan.tag, plan.changelog.trim_end())
 }
 
 /// Step 8: publish everything the plan names, in its order.
@@ -334,7 +380,7 @@ pub fn release(
     let run = newest_run.expect("step two established it");
     let bump_sha = step_bump(setup, root, &plan)?;
     let tag_sha = step_merge_and_tag(setup, root, &plan)?;
-    step_forge_release(setup, &plan)?;
+    step_forge_release(setup, root, &plan)?;
     step_publish(setup, root, &plan)?;
     let badges_sha = step_badges(setup, root, run, &plan)?;
     Ok(Ok(Released {

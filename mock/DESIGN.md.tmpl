@@ -219,6 +219,12 @@ homma tools      the content repository's tools, and the promoted ones as comman
 homma what       which tool, script, verb, skill or rule does a thing, found by words
 ```
 
+`forge_route` under `[paths]` in the manifest names the command every tag,
+release and remote branch deletion of the workspace goes through, and it is
+unset by default. `homma release run` asks it for the tag and the forge release
+of a repo on GitHub, the one forge it reaches, and tags with git and releases
+through the forge client where it is unset or the repo is on another forge.
+
 `homma capture --title <title>` reads an agent session's transcript and writes
 what the person typed into it, and every question put to them with the options
 and the answer, as one capture file in the workspace's capture store. The store
