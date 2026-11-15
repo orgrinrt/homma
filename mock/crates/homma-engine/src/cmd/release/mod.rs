@@ -234,6 +234,21 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result
     })
 }
 
+/// The command the workspace's tags and releases go through, `forge_route`
+/// under `[paths]` of its manifest, from the manifest's directory. A manifest
+/// that names none, or that does not read as a workspace's, leaves the release
+/// tagging with git and releasing through the forge client.
+fn forge_route_of(cli: &Cli) -> Option<PathBuf> {
+    let manifest = crate::cmd::config_path(cli);
+    let ws = crate::cmd::org::load(&manifest).ok()?;
+    let rel = ws.paths.forge_route?;
+    let at = manifest
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(rel.as_path());
+    Some(std::path::absolute(&at).unwrap_or(at))
+}
+
 fn run_cmd(
     cli: &Cli,
     cfg: &Config,
@@ -297,6 +312,7 @@ fn run_cmd(
         let published = published_for(cfg, root)?;
         let tip = homma_core::release::git::sha(root, trunk)?;
         let newest = record::newest_for(&store, name, &tip)?;
+        let forge_route = forge_route_of(cli);
         let date = clock::today();
         let setup = Setup {
             runner: &Real,
@@ -311,6 +327,7 @@ fn run_cmd(
             served: &publish::registry_serves,
             published: &published,
             markers: &cfg.markers,
+            forge_route: forge_route.as_deref(),
         };
         match run::release(&setup, root, level, newest.as_ref(), dry_run) {
             Ok(Ok(done)) => {
