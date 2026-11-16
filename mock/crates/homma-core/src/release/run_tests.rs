@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 
-use homma_api::{Step, StepOutcome, Version};
+use homma_api::{Level, Step, StepOutcome, Version};
 
 use super::*;
 use crate::forge::{CommitStatus, CreateRepoSpec, Forge, RepoMetadata};
@@ -199,6 +199,7 @@ fn setup<'a>(
     Setup {
         runner,
         forge,
+        repo: "x",
         remote: "origin",
         trunk,
         release: "main",
@@ -402,6 +403,7 @@ fn the_bump_refuses_off_the_trunk() {
     let p = published();
     let plan = plan::plan(
         f.root(),
+        "x",
         homma_api::Markers::defaults(),
         "dev",
         Level::Patch,
@@ -423,6 +425,7 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     let p = published();
     let plan = plan::plan(
         f.root(),
+        "x",
         homma_api::Markers::defaults(),
         "dev",
         Level::Patch,
@@ -451,6 +454,7 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     );
     let again = plan::plan(
         f.root(),
+        "x",
         homma_api::Markers::defaults(),
         "dev",
         Level::Patch,
@@ -777,3 +781,6 @@ fn a_forge_route_that_fails_every_way_stops_the_release_with_its_words() {
         Some("dev")
     );
 }
+
+#[path = "workspace_tests.rs"]
+mod workspace;

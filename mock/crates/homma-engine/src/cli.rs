@@ -649,6 +649,29 @@ pub enum IdentityOp {
     },
 }
 
+/// What a release moves to: a level, or a version named outright, exactly one.
+#[derive(Debug, Clone, clap::Args)]
+#[group(required = true, multiple = false)]
+pub struct TargetArgs {
+    /// `patch`, `minor` or `major`; never inferred.
+    #[arg(long)]
+    level:   Option<homma_api::Level>,
+    /// The next version, named outright: how a pre-release is cut, since no
+    /// level makes one. One step above the last tag.
+    #[arg(long)]
+    version: Option<homma_api::Version>,
+}
+
+impl TargetArgs {
+    /// The one the command line named; clap refuses a line naming neither.
+    pub fn target(&self) -> Option<homma_api::Target> {
+        self.version
+            .clone()
+            .map(homma_api::Target::Version)
+            .or(self.level.map(homma_api::Target::Level))
+    }
+}
+
 /// `release` subcommands: the gate, the record it leaves, and the merge, tag,
 /// changelog, forge release and registry publish that carry `dev` onto
 /// `main`.
@@ -692,10 +715,9 @@ pub enum ReleaseOp {
     /// Print what a release at this level would do, and do nothing.
     Plan {
         /// The repository's directory name; the working directory's when omitted.
-        repo:  Option<String>,
-        /// `patch`, `minor` or `major`; never inferred.
-        #[arg(long)]
-        level: homma_api::Level,
+        repo:   Option<String>,
+        #[command(flatten)]
+        target: TargetArgs,
     },
     /// The release: check, the recorded green run, the plan, then the bump,
     /// the merge and tag, the forge release, the publishes and the badges.
@@ -703,9 +725,8 @@ pub enum ReleaseOp {
         /// One repository, or every repository with something unreleased
         /// when omitted.
         repo:    Option<String>,
-        /// `patch`, `minor` or `major`; never inferred.
-        #[arg(long)]
-        level:   homma_api::Level,
+        #[command(flatten)]
+        target:  TargetArgs,
         /// Stop after printing the plan.
         #[arg(long)]
         dry_run: bool,
@@ -1163,6 +1184,41 @@ mod tests {
         // refusal, with the wording, is the dispatch's and is held in `tests/tools_dispatch.rs`.
         let cli = Cli::try_parse_from(["homma", "nope"]).unwrap();
         assert!(matches!(cli.command, Command::External(ref w) if w == &["nope"]));
+    }
+
+    #[test]
+    fn a_release_takes_a_level_or_a_version_and_exactly_one() {
+        let target = |args: &[&str]| {
+            let mut all = vec!["homma", "release"];
+            all.extend_from_slice(args);
+            Cli::try_parse_from(all).map(|cli| {
+                match cli.command {
+                    Command::Release {
+                        op:
+                            ReleaseOp::Run {
+                                target,
+                                ..
+                            }
+                            | ReleaseOp::Plan {
+                                target,
+                                ..
+                            },
+                    } => target.target().expect("clap requires one"),
+                    other => panic!("{other:?}"),
+                }
+            })
+        };
+        assert_eq!(
+            target(&["run", "renki", "--version", "0.0.5-rc.2", "--dry-run"]).unwrap(),
+            homma_api::Target::Version("0.0.5-rc.2".parse().unwrap())
+        );
+        assert_eq!(
+            target(&["plan", "renki", "--level", "patch"]).unwrap(),
+            homma_api::Target::Level(homma_api::Level::Patch)
+        );
+        assert!(target(&["run", "renki", "--level", "patch", "--version", "0.1.0"]).is_err());
+        assert!(target(&["plan", "renki"]).is_err());
+        assert!(target(&["plan", "renki", "--version", "next"]).is_err());
     }
 }
 

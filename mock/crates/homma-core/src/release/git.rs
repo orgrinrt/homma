@@ -188,6 +188,12 @@ pub fn subjects_to(cwd: &Path, to: &str) -> Result<Vec<Subject>, GitError> {
 /// parent touches `path`, newest first. A merge counts where the merge
 /// brought the change in, which is how a bump made on the trunk shows on
 /// the release line.
+/// Whether anything under `path` differs between `from` and `to`.
+pub fn changed_between(cwd: &Path, from: &str, to: &str, path: &str) -> Result<bool, GitError> {
+    let out = trimmed(cwd, &["diff", "--name-only", from, to, "--", path])?;
+    Ok(!out.trim().is_empty())
+}
+
 pub fn first_parent_touching(cwd: &Path, rev: &str, path: &str) -> Result<Vec<String>, GitError> {
     let out = trimmed(cwd, &[
         "log",

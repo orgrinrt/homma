@@ -85,11 +85,6 @@ fn crate_names(root: &Path) -> Vec<String> {
     let Ok(doc) = toml::from_str::<toml::Value>(&text) else {
         return Vec::new();
     };
-    let publishable = |pkg: &toml::Value| {
-        pkg.get("publish")
-            .map(|p| p.as_bool() != Some(false))
-            .unwrap_or(true)
-    };
     let mut names = Vec::new();
     if let Some(pkg) = doc.get("package") {
         if publishable(pkg) {
@@ -98,13 +93,37 @@ fn crate_names(root: &Path) -> Vec<String> {
             }
         }
     }
-    let members = doc
+    for (n, _) in members(root) {
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    names
+}
+
+fn publishable(pkg: &toml::Value) -> bool {
+    pkg.get("publish")
+        .map(|p| p.as_bool() != Some(false))
+        .unwrap_or(true)
+}
+
+/// Every publishable member the root manifest's `[workspace] members` names,
+/// with its manifest relative to the root, `/` between parts, in member order.
+pub fn members(root: &Path) -> Vec<(String, String)> {
+    let Ok(text) = std::fs::read_to_string(root.join("Cargo.toml")) else {
+        return Vec::new();
+    };
+    let Ok(doc) = toml::from_str::<toml::Value>(&text) else {
+        return Vec::new();
+    };
+    let entries = doc
         .get("workspace")
         .and_then(|w| w.get("members"))
         .and_then(|m| m.as_array())
         .cloned()
         .unwrap_or_default();
-    for m in members.iter().filter_map(|m| m.as_str()) {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for m in entries.iter().filter_map(|m| m.as_str()) {
         for dir in expand_member(root, m) {
             let Ok(t) = std::fs::read_to_string(dir.join("Cargo.toml")) else {
                 continue;
@@ -114,14 +133,19 @@ fn crate_names(root: &Path) -> Vec<String> {
             if !publishable(pkg) {
                 continue;
             }
-            if let Some(n) = pkg.get("name").and_then(|n| n.as_str()) {
-                if !names.iter().any(|x| x == n) {
-                    names.push(n.to_string());
-                }
+            let Some(n) = pkg.get("name").and_then(|n| n.as_str()) else { continue };
+            if out.iter().any(|(x, _)| x == n) {
+                continue;
             }
+            let rel = dir.strip_prefix(root).unwrap_or(&dir).join("Cargo.toml");
+            let rel: Vec<String> = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            out.push((n.to_string(), rel.join("/")));
         }
     }
-    names
+    out
 }
 
 /// A member entry is a path or a path ending in `/*`.
