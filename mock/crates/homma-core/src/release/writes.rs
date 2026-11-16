@@ -53,6 +53,10 @@ pub trait ReleaseForge {
         how: Merge,
         sha: &str,
     ) -> Result<(), ReleaseError>;
+
+    /// The remote `branch` a landed pull request leaves, deleted where it is
+    /// at `head`.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError>;
 }
 
 /// Git tags in the clone and pushes the tag to `remote`; the forge client
@@ -89,6 +93,11 @@ impl ReleaseForge for ByClient<'_> {
         _sha: &str,
     ) -> Result<(), ReleaseError> {
         Err(ReleaseError::NoPullRequest(base.to_string()))
+    }
+
+    /// The client lands no pull request, so it leaves no branch to drop.
+    fn drop_branch(&self, _root: &Path, _branch: &str, _head: &str) -> Result<(), ReleaseError> {
+        Ok(())
     }
 }
 
@@ -143,5 +152,12 @@ impl ReleaseForge for ByRoute<'_> {
     ) -> Result<(), ReleaseError> {
         let at = root.to_string_lossy();
         self.ask(root, &["pr", &at, head, base, title, how.word(), sha], &[])
+    }
+
+    /// `delete-branch --queue`, so a branch the forge will not delete now is
+    /// queued for the workspace's sweep.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError> {
+        let at = root.to_string_lossy();
+        self.ask(root, &["delete-branch", "--queue", &at, branch, head], &[])
     }
 }

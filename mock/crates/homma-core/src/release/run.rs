@@ -13,7 +13,7 @@ use homma_api::{Finding, GateRun, Markers, Target, Verdict};
 use super::check::{self, Published};
 use super::gate::Runner;
 use super::git::GitError;
-use super::landing::{self, Pending};
+use super::landing::{self, Landed, Pending};
 use super::plan::{self, Plan, PlanError};
 use super::publish::{self, PublishError, Served, TokenSource};
 use super::registry::Registry;
@@ -80,6 +80,12 @@ pub enum ReleaseError {
     NotLanded {
         base: String,
         at:   String,
+        left: Left,
+    },
+    /// A bump set aside before step 1 that could not be put back on the trunk.
+    NotPutBack {
+        sha: String,
+        why: String,
     },
     /// A bump a stopped run left on the trunk is for another version than
     /// the plan.
@@ -87,6 +93,17 @@ pub enum ReleaseError {
         found:   String,
         planned: String,
     },
+}
+
+/// What a pull request whose result is not what the release asked for
+/// leaves in the clone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Left {
+    /// The trunk keeps its own bump, at this sha.
+    Bump(String),
+    /// The release line is not moved and the trunk's tip, at this sha, is
+    /// untagged.
+    Untagged(String),
 }
 
 impl fmt::Display for ReleaseError {
@@ -151,10 +168,30 @@ impl fmt::Display for ReleaseError {
             ReleaseError::NotLanded {
                 base,
                 at,
+                left: Left::Bump(bump),
             } => {
                 write!(
                     f,
-                    "the pull request into {base} left it at {at}, which is not what the release pushed"
+                    "the pull request into {base} left the forge's {base} at {at}, which is not the bump {bump} on its parent, so something else landed with it; the clone's {base} keeps the bump, and a rerun stops at the check's `tree.pushed` until the clone's {base} is put where the forge's is, once it is read whether the bump is in it"
+                )
+            },
+            ReleaseError::NotLanded {
+                base,
+                at,
+                left: Left::Untagged(tip),
+            } => {
+                write!(
+                    f,
+                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun tags the forge's merge of {tip} where the first parents of {base} hold one, and lands the release pull request again where they do not"
+                )
+            },
+            ReleaseError::NotPutBack {
+                sha,
+                why,
+            } => {
+                write!(
+                    f,
+                    "the bump {sha} a stopped run left was set aside and could not be put back on the trunk ({why}); `git reset --hard {sha}` on the trunk puts it back"
                 )
             },
             ReleaseError::PendingBump {
@@ -251,11 +288,13 @@ pub fn step_bump(
         Some(b) if b == setup.trunk => {},
         other => return Err(ReleaseError::NotOnTrunk(other)),
     }
-    let sha = match pending {
-        Some(p) => landing::take_back(root, p, &plan.next)?,
-        None => write_bump(setup, root, plan)?,
-    };
-    landing::push_bump(setup, root, &sha, &plan.next)
+    match pending {
+        Some(p) => landing::resume_bump(setup, root, p, &plan.next),
+        None => {
+            let sha = write_bump(setup, root, plan)?;
+            landing::push_bump(setup, root, &sha, &plan.next)
+        },
+    }
 }
 
 /// The bump commit itself: the manifest and the changelog, as one commit.
@@ -300,13 +339,18 @@ fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, Rel
 
 /// Steps 5 and 6: merge the trunk into the release line with a merge commit
 /// and tag that, or tag the bump where the two are one branch; push both.
+/// A `merged` release merge the forge already holds is taken and tagged.
 pub fn step_merge_and_tag(
     setup: &Setup<'_>,
     root: &Path,
     plan: &Plan,
+    merged: Option<&str>,
 ) -> Result<String, ReleaseError> {
     let sha = if setup.trunk == setup.release {
         git::head(root)?
+    } else if let Some(merge) = merged {
+        git::set_branch(root, setup.release, merge)?;
+        merge.to_string()
     } else {
         git::switch(root, setup.release)?;
         // a failure here hands the tree back to the trunk before it is
@@ -314,9 +358,9 @@ pub fn step_merge_and_tag(
         // landed and did not push cannot be aborted, only reset, and left
         // there it makes the next run refuse on the wrong cause
         let before = git::head(root)?;
-        let merged = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.next))
+        let local = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.next))
             .and_then(|sha| git::push(root, setup.remote, setup.release, false).map(|_| sha));
-        match merged {
+        match local {
             Ok(sha) => sha,
             Err(e) => {
                 let _ = git::abort_merge(root);
@@ -456,13 +500,17 @@ pub fn release(
     let plan = match planned {
         Ok(plan) if !dry_run => plan,
         other => {
-            landing::put_back(root, pending.as_ref());
+            landing::put_back(root, pending.as_ref())?;
             return other.map(Err);
         },
     };
     let run = newest_run.expect("step two established it");
     let bump_sha = step_bump(setup, root, &plan, pending.as_ref())?;
-    let tag_sha = step_merge_and_tag(setup, root, &plan)?;
+    let merged = match pending.as_ref().map(|p| &p.landed) {
+        Some(Landed::Release(merge)) => Some(merge.as_str()),
+        _ => None,
+    };
+    let tag_sha = step_merge_and_tag(setup, root, &plan, merged)?;
     step_forge_release(setup, root, &plan)?;
     step_publish(setup, root, &plan)?;
     let badges_sha = step_badges(setup, root, run, &plan)?;

@@ -14,7 +14,7 @@ const GH013: &str =
     "GH013: Repository rule violations found. Changes must be made through a pull request.";
 
 /// The origin refuses every push to the named branches, as a ruleset does.
-fn refuse_pushes_to(f: &Fixture, branches: &[&str]) {
+pub(super) fn refuse_pushes_to(f: &Fixture, branches: &[&str]) {
     let refs: Vec<String> = branches.iter().map(|b| format!("refs/heads/{b}")).collect();
     std::fs::create_dir_all(f.origin().join("hooks")).unwrap();
     let hook = f.origin().join("hooks/pre-receive");
@@ -30,7 +30,7 @@ fn refuse_pushes_to(f: &Fixture, branches: &[&str]) {
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-fn bare(origin: &Path, args: &[&str]) -> Result<String, String> {
+pub(super) fn bare(origin: &Path, args: &[&str]) -> Result<String, String> {
     let mut all = vec!["-c", "user.name=forge", "-c", "user.email=forge@forge"];
     all.extend_from_slice(args);
     let out = sh::run(origin, "git", &all).map_err(|e| e.to_string())?;
@@ -61,6 +61,10 @@ pub(super) fn land_in(origin: &Path, args: &[&str]) -> Result<(), String> {
                 &onto,
                 "-m",
                 title,
+                // a body of its own, so the squash is never the clone's commit
+                // under a fixed author and date
+                "-m",
+                "squashed by the forge",
             ])?
         },
         "merge" => {
@@ -87,14 +91,14 @@ pub(super) fn land_in(origin: &Path, args: &[&str]) -> Result<(), String> {
     .map(|_| ())
 }
 
-fn routed<'a>(runner: &'a Routed<'a>) -> ByRoute<'a> {
+pub(super) fn routed<'a>(runner: &'a Routed<'a>) -> ByRoute<'a> {
     ByRoute {
         route: Path::new(ROUTE),
         runner,
     }
 }
 
-fn pr_calls(runner: &Routed<'_>) -> Vec<String> {
+pub(super) fn pr_calls(runner: &Routed<'_>) -> Vec<String> {
     let pre = format!("{ROUTE} pr ");
     runner
         .calls
@@ -105,7 +109,7 @@ fn pr_calls(runner: &Routed<'_>) -> Vec<String> {
         .collect()
 }
 
-fn subjects_on(f: &Fixture, rev: &str) -> Vec<String> {
+pub(super) fn subjects_on(f: &Fixture, rev: &str) -> Vec<String> {
     f.git(&["log", "--format=%s", rev])
         .lines()
         .map(str::to_string)
@@ -301,4 +305,36 @@ fn a_refused_push_with_no_route_stays_refused_with_its_reason() {
         "{err}"
     );
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
+}
+
+/// Another merge landed on `base` in the origin, an empty commit on its tip,
+/// as one landing between the release's push and its pull request does.
+pub(super) fn interlope(origin: &Path, base: &str) -> Result<(), String> {
+    let onto = bare(origin, &["rev-parse", &format!("refs/heads/{base}")])?;
+    let made = bare(origin, &[
+        "commit-tree",
+        &format!("{onto}^{{tree}}"),
+        "-p",
+        &onto,
+        "-m",
+        "fix: something else",
+    ])?;
+    bare(origin, &[
+        "update-ref",
+        &format!("refs/heads/{base}"),
+        &made,
+        &onto,
+    ])
+    .map(|_| ())
+}
+
+/// `delete-branch --queue <root> <branch> <head>` done in the origin as the
+/// route does it: the branch deleted where it is at `head`, and a branch
+/// already gone taken as deleted.
+pub(super) fn delete_in(origin: &Path, branch: &str, head: &str) -> Result<(), String> {
+    let r = format!("refs/heads/{branch}");
+    if bare(origin, &["rev-parse", "--verify", "--quiet", &r]).is_err() {
+        return Ok(());
+    }
+    bare(origin, &["update-ref", "-d", &r, head]).map(|_| ())
 }
