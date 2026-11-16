@@ -62,6 +62,46 @@ impl fmt::Display for UnknownLevel {
 
 impl std::error::Error for UnknownLevel {}
 
+/// What a release moves to: the step a level makes of the last tag's version, or
+/// a version named outright, which is how a pre-release is cut, since no level
+/// makes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    Level(Level),
+    Version(Version),
+}
+
+impl Target {
+    /// The version this target makes of `last`.
+    pub fn next_from(&self, last: &Version) -> Version {
+        match self {
+            Target::Level(l) => last.bumped(*l),
+            Target::Version(v) => v.clone(),
+        }
+    }
+}
+
+impl From<Level> for Target {
+    fn from(l: Level) -> Self {
+        Target::Level(l)
+    }
+}
+
+impl From<Version> for Target {
+    fn from(v: Version) -> Self {
+        Target::Version(v)
+    }
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Target::Level(l) => write!(f, "{l} release"),
+            Target::Version(v) => write!(f, "release of {v}"),
+        }
+    }
+}
+
 pub use crate::version::{NotAVersion, Version};
 /// What a root marker file signals about the repository carrying it: which
 /// toolchain the gate calls for it, or that there is none to call.

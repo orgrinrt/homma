@@ -36,11 +36,31 @@ fn a_patch_and_a_minor_move_the_part_they_name_and_reset_below() {
 }
 
 #[test]
-fn a_prerelease_is_dropped_by_any_bump_and_sorts_before_its_release() {
+fn a_level_from_a_prerelease_makes_its_release_and_it_sorts_before_that() {
     let pre: Version = "1.2.0-alpha.1".parse().unwrap();
-    assert_eq!(pre.bumped(Level::Patch), Version::new(1, 2, 1));
-    assert_eq!(pre.bumped(Level::Minor), Version::new(1, 3, 0));
+    // the level releases what the pre-release previewed, as cargo-release does,
+    // and moves past it only where the pre-release sits below the level
+    assert_eq!(pre.bumped(Level::Patch), Version::new(1, 2, 0));
+    assert_eq!(pre.bumped(Level::Minor), Version::new(1, 2, 0));
     assert_eq!(pre.bumped(Level::Major), Version::new(2, 0, 0));
+    let v = |s: &str| s.parse::<Version>().unwrap();
+    assert_eq!(v("0.0.5-rc.1").bumped(Level::Patch), v("0.0.5"));
+    assert_eq!(v("0.1.0-rc.1").bumped(Level::Minor), v("0.1.0"));
+    assert_eq!(v("0.1.1-rc.1").bumped(Level::Minor), v("0.2.0"));
+    assert_eq!(v("2.0.0-rc.1").bumped(Level::Major), v("2.0.0"));
+    assert_eq!(
+        v("0.2.0-rc.1").bumped(Level::Major),
+        v("0.2.0"),
+        "a major on 0.x is a minor"
+    );
+    for (from, l) in [
+        ("0.0.5-rc.1", Level::Patch),
+        ("0.1.0-rc.1", Level::Minor),
+        ("2.0.0-rc.1", Level::Major),
+    ] {
+        let f = v(from);
+        assert!(f.is_one_step(&f.bumped(l)), "{from} {l}");
+    }
     assert!(pre < Version::new(1, 2, 0));
     // and prereleases among themselves compare the semver way, not as text:
     // numerically per identifier, numeric below alphanumeric, prefix below
@@ -174,4 +194,31 @@ fn only_error_and_fatal_block() {
     assert!(!CheckSeverity::Warn.blocks());
     assert!(CheckSeverity::Error.blocks());
     assert!(CheckSeverity::Fatal.blocks());
+}
+
+#[test]
+fn one_step_is_a_levels_step_a_prerelease_of_one_or_a_prerelease_moving_to_its_release() {
+    let v = |s: &str| s.parse::<Version>().unwrap();
+    let step = |a: &str, b: &str| v(a).is_one_step(&v(b));
+    assert!(step("0.0.4", "0.0.5-rc.1"), "renki's crates-io history");
+    assert!(step("0.0.5-rc.1", "0.0.5-rc.2"));
+    assert!(step("0.0.5-rc.2", "0.0.5"));
+    assert!(step("0.9.0", "1.0.0-rc.1"), "0.x onto a 1.0.0 candidate");
+    assert!(step("0.9.0", "1.0.0"));
+    assert!(step("1.4.2", "2.0.0-beta.1"));
+    assert!(
+        !step("0.1.0", "0.1.0-rc.1"),
+        "a pre-release of a version already out"
+    );
+    assert!(
+        !step("0.1.0", "0.1.2-rc.1"),
+        "a pre-release that skips a number"
+    );
+    assert!(!step("0.0.5-rc.2", "0.0.5-rc.1"), "backwards");
+    assert!(
+        !step("0.0.5-rc.1", "0.0.6"),
+        "a candidate whose version never shipped"
+    );
+    assert!(!step("0.1.0", "0.1.0"), "standing still");
+    assert!(!step("0.9.0", "2.0.0-rc.1"));
 }

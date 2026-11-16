@@ -58,6 +58,18 @@ pub fn block(version: &Version, date: &str, subjects: &[Subject]) -> String {
     out
 }
 
+/// Name each rider of a virtual workspace that moves, on a line of its own
+/// under `crates` at the end of the block, with the version it moves to.
+pub fn name_the_moves(block: &mut String, moved: &[(String, Version)]) {
+    if moved.is_empty() {
+        return;
+    }
+    block.push_str("\n### crates\n\n");
+    for (name, v) in moved {
+        block.push_str(&format!("- `{name}` {v}\n"));
+    }
+}
+
 fn line(s: &Subject) -> String {
     match s.pr {
         Some(pr) => format!("- {} `{}` #{pr}", s.subject, s.sha),
