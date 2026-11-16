@@ -485,13 +485,37 @@ pub fn step_badges(
     Ok(sha)
 }
 
-/// The whole release. `newest_run` is the newest recorded gate run for the
-/// repo, which the caller reads out of the store.
+/// Where step 2 gets the gate run for the trunk, asked by the sha it measures.
+pub trait GateRuns {
+    /// The newest recorded run for the repo on exactly `sha`, or none.
+    fn on(&self, sha: &str) -> Result<Option<GateRun>, ReleaseError>;
+}
+
+/// A run the caller already holds: step 2 compares its sha with the trunk's.
+impl GateRuns for Option<&GateRun> {
+    fn on(&self, _sha: &str) -> Result<Option<GateRun>, ReleaseError> {
+        Ok(self.cloned())
+    }
+}
+
+/// A lookup by sha, which the caller backs with the store, so the core stays
+/// free of it.
+pub struct ByLookup<F>(pub F);
+
+impl<F: Fn(&str) -> Result<Option<GateRun>, ReleaseError>> GateRuns for ByLookup<F> {
+    fn on(&self, sha: &str) -> Result<Option<GateRun>, ReleaseError> {
+        (self.0)(sha)
+    }
+}
+
+/// The whole release. `runs` gives the gate run for the sha step 2 measures,
+/// which is the trunk after a leftover bump is set aside, not the one the
+/// caller saw before.
 pub fn release(
     setup: &Setup<'_>,
     root: &Path,
     target: impl Into<Target>,
-    newest_run: Option<&GateRun>,
+    runs: impl GateRuns,
     dry_run: bool,
 ) -> Result<Result<Released, Plan>, ReleaseError> {
     let target = target.into();
@@ -499,8 +523,12 @@ pub fn release(
     // the commit the gate measured, and put back wherever the run stops short
     // of taking it
     let pending = landing::set_aside(setup, root)?;
+    let mut newest_run = None;
     let planned = step_check(setup, root, &target)
-        .and_then(|_| step_gate_run(root, setup.trunk, newest_run))
+        .and_then(|_| {
+            newest_run = runs.on(&git::sha(root, setup.trunk)?)?;
+            step_gate_run(root, setup.trunk, newest_run.as_ref())
+        })
         .and_then(|_| {
             Ok(plan::plan(
                 root,
@@ -517,7 +545,7 @@ pub fn release(
             return landing::put_back_after(root, pending.as_ref(), other.map(Err));
         },
     };
-    let run = newest_run.expect("step two established it");
+    let run = newest_run.as_ref().expect("step two established it");
     let bump_sha = step_bump(setup, root, &plan, pending.as_ref())?;
     let landed = pending.as_ref().map(|p| &p.landed);
     let tag_sha = step_merge_and_tag(setup, root, &plan, landed)?;
