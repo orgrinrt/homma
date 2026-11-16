@@ -287,7 +287,7 @@ fn a_rerun_planning_another_version_than_the_stopped_bump_refuses_and_puts_it_ba
         "the stopped bump is back on dev"
     );
     // and a step before the bump refusing puts it back as well
-    let err = release(&s, f.root(), Level::Patch, None, false).unwrap_err();
+    let err = release(&s, f.root(), Level::Patch, None::<&GateRun>, false).unwrap_err();
     assert!(matches!(err, ReleaseError::NoGreenRun { .. }), "{err}");
     assert_eq!(f.git(&["rev-parse", "dev"]), stopped);
 }
@@ -348,4 +348,42 @@ pub(super) fn delete_in(origin: &Path, branch: &str, head: &str) -> Result<(), S
         return Ok(());
     }
     bare(origin, &["update-ref", "-d", &r, head]).map(|_| ())
+}
+
+#[test]
+fn a_run_recorded_on_the_tip_is_found_beside_a_leftover_local_bump() {
+    // Mutation: the run asked for by the local trunk's sha before the bump
+    // is set aside, so a leftover bump over the tip the gate measured finds
+    // no run on its own sha and the release refuses at step 2.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["dev", "main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    *runner.pr_said.borrow_mut() = Some("forge-route: pr o/x release/x-0.1.1: gh: HTTP 502");
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    let stopped = f.git(&["rev-parse", "dev"]);
+    assert_ne!(stopped, tip, "the stop left a bump over the tip");
+    *runner.pr_said.borrow_mut() = None;
+    let asked = std::cell::RefCell::new(Vec::new());
+    let done = release(
+        &s,
+        f.root(),
+        Level::Patch,
+        ByLookup(|sha: &str| {
+            asked.borrow_mut().push(sha.to_string());
+            Ok((sha == tip).then(|| green_run(&tip)))
+        }),
+        false,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        *asked.borrow(),
+        vec![tip.clone()],
+        "asked for the tip, once"
+    );
+    assert_eq!(f.git(&["rev-parse", "dev"]), done.bump_sha);
 }

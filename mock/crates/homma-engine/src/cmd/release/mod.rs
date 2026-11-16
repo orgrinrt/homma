@@ -373,8 +373,6 @@ fn run_cmd(
         let (trunk, release_line) = branches_checked(cfg, root)?;
         let (client, owner, kind) = forge_for(cfg, r)?;
         let published = published_for(cfg, root)?;
-        let tip = homma_core::release::git::sha(root, trunk)?;
-        let newest = record::newest_for(&store, name, &tip)?;
         let date = clock::today();
         let forge = release_forge(kind, forge_route.as_deref(), &Real, ByClient {
             forge: client.as_ref(),
@@ -395,7 +393,16 @@ fn run_cmd(
             published: &published,
             markers: &cfg.markers,
         };
-        match run::release(&setup, root, target.clone(), newest.as_ref(), dry_run) {
+        match run::release(
+            &setup,
+            root,
+            target.clone(),
+            run::ByLookup(|sha: &str| {
+                record::newest_for(&store, name, sha)
+                    .map_err(|e| run::ReleaseError::from(std::io::Error::other(e)))
+            }),
+            dry_run,
+        ) {
             Ok(Ok(done)) => {
                 lines.push(format!(
                     "{name}: released {} as `{}` at {}",
