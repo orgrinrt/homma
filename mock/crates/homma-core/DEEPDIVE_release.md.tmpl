@@ -383,7 +383,9 @@ pre-release makes that pre-release's release: a patch from `0.0.5-rc.1` is
    local merge is undone and the release pull request does it instead, `dev`
    into `main`, merged by the forge with a merge commit under the same subject
    at the head the plan measured; the clone's `main` takes that commit, and it
-   is what step 6 tags, once it is checked to be a merge of `dev`'s tip.
+   is what step 6 tags, once it is checked to be a merge of `dev`'s tip onto
+   where `main` was, with the tree the two make together, so a merge the
+   forge resolved another way is never tagged.
 6. Creates the annotated tag on the merge commit and pushes it. Where the
    repo's forge is GitHub and the workspace manifest names `forge_route` under
    `[paths]`, the command every tag, release and remote branch deletion of the
@@ -433,22 +435,29 @@ or a commit with the bump's tree on the bump's parent, the pull request merged
 and the run never saw it: the trunk is set back to the bump's parent the same
 way, and step 4 takes the forge's commit without a push or a pull request. A
 squashed bump taken so has its `release/<repo>-<version>` deleted as step 4
-does. Where the remote's release line has, on its first parents, a merge whose
-second parent is that bump, the release pull request merged too, and step 5
-takes that merge and tags it. A bump some tag already contains is released and
+does, and so does a trunk that is already the forge's squash where the forge
+still holds the branch at a commit with the squash's tree on its parent.
+Where the remote's release line has, on its first parents, a merge whose
+second parent is that bump and whose tree is the bump merged onto the release
+line the clone holds, the one the run saw, the release pull request merged
+too, and step 5 takes that merge and tags it. A merge of the bump with any
+other tree is refused before any pull request, nothing tagged, and is left for
+a human to settle. A bump some tag already contains is released and
 is none of these. A plan for another version than the bump carries refuses,
 and so does any step before 4; either way the trunk is put back where it was.
 
 Once step 4's squash is checked to carry the bump's tree on the bump's parent,
 `release/<repo>-<version>` is deleted through the route,
 `forge_route delete-branch --queue <repo root> <branch> <sha>`, so a branch the
-forge refuses to delete now is queued for the workspace's sweep. Where the
+forge refuses to delete now is queued for the workspace's sweep, and a
+deletion that fails even so does not stop the run. Where the
 forge's trunk or release line after a pull request is not what the release
 asked for, another merge landing between the push and the squash, the run
 stops and says what the forge holds: on the trunk the clone keeps its bump, and
 a rerun stops at the check's `tree.pushed` until the trunk is put where the
-forge's is; on the release line nothing is tagged, and a rerun tags the forge's
-merge of the bump where the line's first parents hold one.
+forge's is; on the release line nothing is tagged, and a rerun refuses the
+same merge again, since its tree is not the one the gate measured. A bump that
+cannot be put back is reported together with the refusal that stopped the run.
 
 The engine picks one per repo: `ByRoute` for a GitHub repo where the
 manifest names the route, since the route reaches GitHub alone, and `ByClient`
