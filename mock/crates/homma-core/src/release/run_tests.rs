@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 
-use homma_api::{Step, StepOutcome, Version};
+use homma_api::{Level, Step, StepOutcome, Version};
 
 use super::*;
 use crate::forge::{CommitStatus, CreateRepoSpec, Forge, RepoMetadata};
@@ -777,3 +777,6 @@ fn a_forge_route_that_fails_every_way_stops_the_release_with_its_words() {
         Some("dev")
     );
 }
+
+#[path = "workspace_tests.rs"]
+mod workspace;

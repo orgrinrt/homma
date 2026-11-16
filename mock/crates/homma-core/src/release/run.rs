@@ -8,7 +8,7 @@
 use std::fmt;
 use std::path::Path;
 
-use homma_api::{Finding, GateRun, Level, Markers, Verdict};
+use homma_api::{Finding, GateRun, Markers, Target, Verdict};
 
 use super::check::{self, Published};
 use super::gate::Runner;
@@ -16,6 +16,7 @@ use super::git::GitError;
 use super::plan::{self, Plan, PlanError};
 use super::publish::{self, PublishError, Served, TokenSource};
 use super::registry::Registry;
+use super::workspace::{self, Layout};
 use super::writes::ReleaseForge;
 use super::{badges, changelog, git, version};
 use crate::forge::ForgeError;
@@ -152,14 +153,14 @@ pub struct Released {
 pub fn step_check(
     setup: &Setup<'_>,
     root: &Path,
-    level: Level,
+    target: &Target,
 ) -> Result<Vec<Finding>, ReleaseError> {
     let findings = check::check(&check::Inputs {
         root,
         remote: setup.remote,
         trunk: setup.trunk,
         release: setup.release,
-        level: Some(level),
+        target: Some(target.clone()),
         published: setup.published,
         markers: setup.markers,
     })?;
@@ -202,9 +203,21 @@ pub fn step_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, 
     }
     let mut paths = vec!["CHANGELOG.md"];
     if plan.current != plan.next {
-        version::write(root, plan.repo_kind, &plan.next)?;
+        match &plan.layout {
+            Layout::Single => version::write(root, plan.repo_kind, &plan.next)?,
+            Layout::Set {
+                primary,
+                ..
+            } => workspace::write_version(root, primary, &plan.next)?,
+        }
         if plan.repo_kind.has_crate() {
-            paths.push("Cargo.toml");
+            paths.push(match &plan.layout {
+                Layout::Single => "Cargo.toml",
+                Layout::Set {
+                    primary,
+                    ..
+                } => primary.manifest.as_str(),
+            });
             if root.join("Cargo.lock").is_file() {
                 // the lock names the workspace's own versions
                 let _ =
@@ -307,37 +320,23 @@ pub fn step_forge_release(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result
 
 /// Step 8: publish everything the plan names, in its order.
 pub fn step_publish(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), ReleaseError> {
-    for (reg, name) in &plan.publishes {
+    for (reg, name, version) in &plan.publishes {
         match reg {
             Registry::CratesIo => {
                 publish::publish_crate(
                     setup.runner,
                     root,
                     name,
-                    &plan.next,
+                    version,
                     setup.token,
                     setup.served,
                 )?
             },
             Registry::Jsr => {
-                publish::publish_jsr(
-                    setup.runner,
-                    root,
-                    name,
-                    &plan.next,
-                    setup.token,
-                    setup.served,
-                )?
+                publish::publish_jsr(setup.runner, root, name, version, setup.token, setup.served)?
             },
             Registry::Npm => {
-                publish::publish_npm(
-                    setup.runner,
-                    root,
-                    name,
-                    &plan.next,
-                    setup.token,
-                    setup.served,
-                )?
+                publish::publish_npm(setup.runner, root, name, version, setup.token, setup.served)?
             },
         }
     }
@@ -367,13 +366,14 @@ pub fn step_badges(
 pub fn release(
     setup: &Setup<'_>,
     root: &Path,
-    level: Level,
+    target: impl Into<Target>,
     newest_run: Option<&GateRun>,
     dry_run: bool,
 ) -> Result<Result<Released, Plan>, ReleaseError> {
-    step_check(setup, root, level)?;
+    let target = target.into();
+    step_check(setup, root, &target)?;
     step_gate_run(root, setup.trunk, newest_run)?;
-    let plan = plan::plan(root, setup.markers, setup.trunk, level, setup.date)?;
+    let plan = plan::plan(root, setup.markers, setup.trunk, target, setup.date)?;
     if dry_run {
         return Ok(Err(plan));
     }

@@ -5,6 +5,8 @@
 //! The check against real temporary repositories with a bare remote, and
 //! canned registry answers, so every finding is produced by a planted defect.
 
+use homma_api::Level;
+
 use super::*;
 use crate::release::sh;
 
@@ -87,7 +89,7 @@ fn run(f: &Fixture, published: &Published, level: Option<Level>) -> Vec<Finding>
         remote: "origin",
         trunk: "dev",
         release: "main",
-        level,
+        target: level.map(Into::into),
         published,
         markers: &homma_api::Markers::default(),
     })
@@ -430,4 +432,40 @@ fn adjacency_is_one_step_at_any_level_and_zero_to_one_counts() {
     assert!(!is_adjacent(&v("0.1.0"), &v("0.1.2")));
     assert!(!is_adjacent(&v("0.1.0"), &v("0.3.0")));
     assert!(!is_adjacent(&v("1.0.0"), &v("3.0.0")));
+}
+
+#[test]
+fn a_pre_release_of_the_next_version_is_one_step_and_so_is_its_release() {
+    let v = |s: &str| s.parse::<Version>().unwrap();
+    // renki's crates-io history, `0.0.4` then `0.0.5-rc.1`
+    assert!(is_adjacent(&v("0.0.4"), &v("0.0.5-rc.1")));
+    assert!(is_adjacent(&v("0.0.5-rc.1"), &v("0.0.5-rc.2")));
+    assert!(is_adjacent(&v("0.0.5-rc.2"), &v("0.0.5")));
+    assert!(is_adjacent(&v("0.1.0"), &v("0.2.0-alpha.1")));
+    assert!(is_adjacent(&v("0.9.9"), &v("1.0.0-rc.1")));
+    assert!(!is_adjacent(&v("0.0.4"), &v("0.0.6-rc.1")));
+    assert!(
+        !is_adjacent(&v("0.0.5-rc.1"), &v("0.0.6")),
+        "a candidate whose version never shipped is a skipped number"
+    );
+}
+
+#[test]
+fn a_bump_whose_version_was_tagged_on_a_later_commit_is_tagged() {
+    // renki's `23b9b71` bumped to `0.0.1` and the `0.0.1` tag went on a
+    // later commit of the same version
+    let f = Fixture::crate_at("0.0.0");
+    f.manifest("0.0.1");
+    f.git(&["commit", "--quiet", "-am", "fix: the surface"]);
+    f.commit("docs: the readme");
+    f.git(&["push", "--quiet", "origin", "main"]);
+    f.tag("0.0.1");
+    let findings = run(&f, &published(&["0.0.1"]), None);
+    assert!(findings.is_empty(), "{findings:?}");
+    // a bump nothing tagged is still the finding
+    f.manifest("0.0.2");
+    f.git(&["commit", "--quiet", "-am", "chore: bump"]);
+    f.git(&["push", "--quiet", "origin", "main"]);
+    let findings = run(&f, &published(&["0.0.1"]), None);
+    assert!(ids(&findings).contains(&"tag.bump.tagged"), "{findings:?}");
 }

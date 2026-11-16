@@ -55,6 +55,7 @@ pub use release::{
     Signal,
     Step,
     StepOutcome,
+    Target,
     UnknownLevel,
     Verdict,
     Version,

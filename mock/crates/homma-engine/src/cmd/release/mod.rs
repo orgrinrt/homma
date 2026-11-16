@@ -10,13 +10,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
-use homma_api::{GateRun, Level};
+use homma_api::{GateRun, Target};
 use homma_core::forge::token;
 use homma_core::release::gate::{Real, Runner};
 use homma_core::release::registry::Registry;
 use homma_core::release::run::Setup;
 use homma_core::release::writes::{ByClient, ByRoute, ReleaseForge};
-use homma_core::release::{badges, check, plan, publish, run, version};
+use homma_core::release::{badges, check, plan, publish, run};
 use homma_core::{Config, Forge, ForgeKind, RepoConfig};
 use homma_store::Store;
 use serde::Serialize;
@@ -200,13 +200,13 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
         },
         ReleaseOp::Plan {
             repo,
-            level,
-        } => plan_cmd(cli, &cfg, repo.as_deref(), *level),
+            target,
+        } => plan_cmd(cli, &cfg, repo.as_deref(), named(target)?),
         ReleaseOp::Run {
             repo,
-            level,
+            target,
             dry_run,
-        } => run_cmd(cli, &cfg, repo.as_deref(), *level, *dry_run),
+        } => run_cmd(cli, &cfg, repo.as_deref(), named(target)?, *dry_run),
         ReleaseOp::Badges {
             repo,
         } => badges_cmd(cli, &cfg, repo),
@@ -228,7 +228,7 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
         remote: "origin",
         trunk: branches_checked(cfg, root)?.0,
         release: branches_checked(cfg, root)?.1,
-        level: None,
+        target: None,
         published: &published,
         markers: &cfg.markers,
     })?;
@@ -253,13 +253,19 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     })
 }
 
-fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, level: Level) -> Result<Outcome> {
+/// The level or version the command line named.
+fn named(t: &crate::cli::TargetArgs) -> Result<Target> {
+    t.target()
+        .ok_or_else(|| anyhow!("name a `--level` or a `--version`"))
+}
+
+fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, target: Target) -> Result<Outcome> {
     let (_, _, root) = resolve_repo(cfg, repo)?;
     let p = plan::plan(
         &root,
         &cfg.markers,
         branches_checked(cfg, &root)?.0,
-        level,
+        target,
         &clock::today(),
     )?;
     finish(cli, Report {
@@ -299,7 +305,7 @@ fn run_cmd(
     cli: &Cli,
     cfg: &Config,
     repo: Option<&str>,
-    level: Level,
+    target: Target,
     dry_run: bool,
 ) -> Result<Outcome> {
     let store = store(cli);
@@ -318,7 +324,7 @@ fn run_cmd(
         for name in &names {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
             let (trunk, _) = branches_checked(cfg, &root)?;
-            match plan::plan(&root, &cfg.markers, trunk, level, &clock::today()) {
+            match plan::plan(&root, &cfg.markers, trunk, target.clone(), &clock::today()) {
                 Ok(p) if p.commits.is_empty() => {
                     lines.push(format!("{name}: nothing unreleased, passed over"));
                 },
@@ -378,7 +384,7 @@ fn run_cmd(
             published: &published,
             markers: &cfg.markers,
         };
-        match run::release(&setup, root, level, newest.as_ref(), dry_run) {
+        match run::release(&setup, root, target.clone(), newest.as_ref(), dry_run) {
             Ok(Ok(done)) => {
                 lines.push(format!(
                     "{name}: released {} as `{}` at {}",
@@ -415,7 +421,8 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
         anyhow!("no gate run recorded for `{name}`; push it through the hook or run `homma release gate`")
     })?;
     let kind = homma_core::release::kind::detect(root, &cfg.markers)?;
-    let v = version::read(root, kind)?;
+    let layout = homma_core::release::workspace::layout(root, kind)?;
+    let v = plan::working_version(root, kind, &layout)?;
     let files = badges::files(&run, &v);
     let sha = badges::write(root, &files)?;
     homma_core::release::git::push(

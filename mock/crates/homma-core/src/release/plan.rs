@@ -3,24 +3,43 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 //! The plan a release prints before it moves anything: the commits since the
-//! last tag, the version the level makes, the changelog block, and what
-//! publishes where, in dependency order.
+//! last tag, the version the level or the named version makes, the changelog
+//! block, and what publishes where, in dependency order. A virtual workspace
+//! plans its primary's version and names each rider as staying or moving.
 
 use std::fmt;
 use std::path::Path;
 
-use homma_api::{Level, Markers, RepoKind, Version};
+use homma_api::{Markers, RepoKind, Target, Version};
 
 use super::check::{self, Packages};
 use super::git::{self, GitError, Subject};
 use super::registry::Registry;
+use super::workspace::{self, Layout, NoPrimary};
 use super::{changelog, kind, publish, version};
+
+/// A member of a virtual workspace that is not its primary, with the version
+/// its manifest carried at the last tag and carries now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ride {
+    pub name: String,
+    pub from: Option<Version>,
+    pub to:   Version,
+}
+
+impl Ride {
+    /// Whether its manifest moved since the last tag, so it publishes.
+    pub fn moves(&self) -> bool {
+        self.from.as_ref() != Some(&self.to)
+    }
+}
 
 /// What one release will do, printed before anything moves and carried
 /// through the steps that then do it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub repo_kind: RepoKind,
+    pub layout:    Layout,
     /// The newest release tag, or none for a first release.
     pub last_tag:  Option<String>,
     pub current:   Version,
@@ -28,8 +47,10 @@ pub struct Plan {
     pub tag:       String,
     pub commits:   Vec<Subject>,
     pub changelog: String,
-    /// What publishes, in the order it publishes.
-    pub publishes: Vec<(Registry, String)>,
+    /// The riders of a virtual workspace; none for a single version.
+    pub riders:    Vec<Ride>,
+    /// What publishes, in the order it publishes, at the version it publishes.
+    pub publishes: Vec<(Registry, String, Version)>,
 }
 
 impl fmt::Display for Plan {
@@ -47,11 +68,32 @@ impl fmt::Display for Plan {
         for c in &self.commits {
             writeln!(f, "  {} {}", c.sha, c.subject)?;
         }
-        writeln!(
-            f,
-            "version {} becomes {}, tagged `{}`",
-            self.current, self.next, self.tag
-        )?;
+        match &self.layout {
+            Layout::Set {
+                primary,
+                ..
+            } => {
+                writeln!(
+                    f,
+                    "`{}` {} becomes {}, tagged `{}`",
+                    primary.name, self.current, self.next, self.tag
+                )?
+            },
+            Layout::Single => {
+                writeln!(
+                    f,
+                    "version {} becomes {}, tagged `{}`",
+                    self.current, self.next, self.tag
+                )?
+            },
+        }
+        for r in &self.riders {
+            match (&r.from, r.moves()) {
+                (Some(from), true) => writeln!(f, "`{}` moves from {from} to {}", r.name, r.to)?,
+                (None, _) => writeln!(f, "`{}` is new at {}", r.name, r.to)?,
+                (Some(_), false) => writeln!(f, "`{}` stays at {}", r.name, r.to)?,
+            }
+        }
         writeln!(f)?;
         f.write_str(&self.changelog)?;
         writeln!(f)?;
@@ -59,8 +101,8 @@ impl fmt::Display for Plan {
             writeln!(f, "nothing publishes")?;
         } else {
             writeln!(f, "publishes, in order:")?;
-            for (reg, name) in &self.publishes {
-                writeln!(f, "  {name} to {reg}")?;
+            for (reg, name, v) in &self.publishes {
+                writeln!(f, "  {name} {v} to {reg}")?;
             }
         }
         Ok(())
@@ -68,7 +110,8 @@ impl fmt::Display for Plan {
 }
 
 /// Why a plan could not be made: the tree, the manifest, the version, the
-/// crate graph, or a manifest that disagrees with the level.
+/// crate graph, a manifest that disagrees with the target, a named version no
+/// single step above the last tag, or a virtual workspace with no primary.
 #[derive(Debug)]
 pub enum PlanError {
     Git(GitError),
@@ -77,17 +120,23 @@ pub enum PlanError {
     /// The publishable crates depend on each other in a cycle.
     Cycle(String),
     /// The manifest sits at a version that is neither the last tag's nor what
-    /// the level makes of it. Boxed, since three versions inline would make
+    /// the target makes of it. Boxed, since three versions inline would make
     /// every result carrying this error larger than the gate's clippy allows.
     OffLevel(Box<OffLevel>),
+    /// The version named is not one step above the last tag's.
+    NotOneStep {
+        last: Box<Version>,
+        next: Box<Version>,
+    },
+    Layout(NoPrimary),
 }
 
-/// What a manifest off the level was measured against.
+/// What a manifest off the target was measured against.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffLevel {
     pub manifest: Version,
     pub last:     Version,
-    pub level:    Level,
+    pub target:   Target,
     pub next:     Version,
 }
 
@@ -98,26 +147,38 @@ impl fmt::Display for PlanError {
             PlanError::NoManifest(e) => write!(f, "{e}"),
             PlanError::Version(e) => write!(f, "{e}"),
             PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
+            PlanError::Layout(e) => write!(f, "{e}"),
+            PlanError::NotOneStep {
+                last,
+                next,
+            } => {
+                write!(
+                    f,
+                    "{next} is not one step above the last tag {last}: a level's step, a \
+                     pre-release of one, or from a pre-release a later one or its release"
+                )
+            },
             PlanError::OffLevel(o) => {
                 let OffLevel {
                     manifest,
                     last,
-                    level,
+                    target,
                     next,
                 } = &**o;
                 // below the tag no level makes the manifest's version, so the
-                // only offer is the tag's or the level's
+                // only offer is the tag's or the target's
                 if manifest < last {
                     write!(
                         f,
                         "the manifest is at {manifest}, behind the last tag {last}; set it to \
-                         {last} or to {next}, which a {level} release makes"
+                         {last} or to {next}, which a {target} makes"
                     )
                 } else {
                     write!(
                         f,
-                        "the manifest is at {manifest} and a {level} release makes {next}; set it \
-                         to {next} or pick the level that makes {manifest}"
+                        "the manifest is at {manifest} and a {target} makes {next}; set it to \
+                         {next} or pick the level that makes {manifest}, or name it with \
+                         `--version`"
                     )
                 }
             },
@@ -149,55 +210,147 @@ pub fn last_tag(root: &Path) -> Result<Option<(String, Version)>, GitError> {
     Ok(versioned.pop())
 }
 
-/// The plan for releasing `head` at `level`, dated `date`.
+/// The version the release is about: the root's, or a set's primary's.
+pub fn working_version(
+    root: &Path,
+    repo_kind: RepoKind,
+    layout: &Layout,
+) -> Result<Version, version::VersionError> {
+    match layout {
+        Layout::Single => version::read(root, repo_kind),
+        Layout::Set {
+            primary,
+            ..
+        } => {
+            workspace::version_in_tree(root, primary).ok_or_else(|| {
+                version::VersionError::Manifest(primary.manifest.clone(), "no version".into())
+            })
+        },
+    }
+}
+
+/// The plan for releasing `head` to `target`, dated `date`.
 pub fn plan(
     root: &Path,
     markers: &Markers,
     head: &str,
-    level: Level,
+    target: impl Into<Target>,
     date: &str,
 ) -> Result<Plan, PlanError> {
+    let target = target.into();
     let repo_kind = kind::detect(root, markers).map_err(PlanError::NoManifest)?;
-    let current = version::read(root, repo_kind)?;
+    let layout = workspace::layout(root, repo_kind).map_err(PlanError::Layout)?;
+    let current = working_version(root, repo_kind, &layout)?;
     let last = last_tag(root)?;
     let commits = match &last {
         Some((t, _)) => git::subjects(root, t, head)?,
         None => git::subjects_to(root, head)?,
     };
-    // the level makes the version out of the last tag's; a manifest already
-    // there is the release and nothing bumps, and a manifest anywhere else
-    // above the tag disagrees with the level and is refused rather than
-    // silently taken over it
-    let next = match &last {
-        Some((_, v)) => {
-            let next = v.bumped(level);
-            if current != *v && current != next {
-                return Err(PlanError::OffLevel(Box::new(OffLevel {
-                    manifest: current,
-                    last: v.clone(),
-                    level,
-                    next,
-                })));
-            }
-            next
-        },
-        None => current.bumped(level),
-    };
+    let next = next_version(&current, last.as_ref().map(|(_, v)| v), &target)?;
     let tags = git::tags(root)?;
     let tag = check::tag_name(&tags, &next);
-    let block = changelog::block(&next, date, &commits);
-    let packages = check::packages(root, repo_kind);
-    let publishes = publish_order(root, &packages).map_err(PlanError::Cycle)?;
+    let riders = rides(root, &layout, last.as_ref().map(|(t, _)| t.as_str()))?;
+    let mut block = changelog::block(&next, date, &commits);
+    let moved: Vec<(String, Version)> = riders
+        .iter()
+        .filter(|r| r.moves())
+        .map(|r| (r.name.clone(), r.to.clone()))
+        .collect();
+    changelog::name_the_moves(&mut block, &moved);
+    let mut packages = check::packages(root, repo_kind);
+    if let Layout::Set {
+        primary,
+        ..
+    } = &layout
+    {
+        packages
+            .crates
+            .retain(|c| *c == primary.name || moved.iter().any(|(m, _)| m == c));
+    }
+    let publishes = publish_order(root, &packages)
+        .map_err(PlanError::Cycle)?
+        .into_iter()
+        .map(|(reg, name)| {
+            let v = moved
+                .iter()
+                .find(|(m, _)| *m == name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| next.clone());
+            (reg, name, v)
+        })
+        .collect();
     Ok(Plan {
         repo_kind,
+        layout,
         last_tag: last.map(|(t, _)| t),
         current,
         next,
         tag,
         commits,
         changelog: block,
+        riders,
         publishes,
     })
+}
+
+/// The target makes the version out of the last tag's; a manifest already
+/// there is the release and nothing bumps, and a manifest anywhere else above
+/// the tag disagrees with the target and is refused rather than silently
+/// taken over it. A version named outright must be one step above the tag.
+fn next_version(
+    current: &Version,
+    last: Option<&Version>,
+    target: &Target,
+) -> Result<Version, PlanError> {
+    let Some(v) = last else {
+        return Ok(match target {
+            Target::Level(l) => current.bumped(*l),
+            Target::Version(n) => n.clone(),
+        });
+    };
+    let next = target.next_from(v);
+    if !v.is_one_step(&next) {
+        return Err(PlanError::NotOneStep {
+            last: Box::new(v.clone()),
+            next: Box::new(next),
+        });
+    }
+    if current != v && *current != next {
+        return Err(PlanError::OffLevel(Box::new(OffLevel {
+            manifest: current.clone(),
+            last: v.clone(),
+            target: target.clone(),
+            next,
+        })));
+    }
+    Ok(next)
+}
+
+/// Each rider's version at the last tag and in the tree.
+fn rides(root: &Path, layout: &Layout, last_tag: Option<&str>) -> Result<Vec<Ride>, GitError> {
+    let Layout::Set {
+        riders,
+        ..
+    } = layout
+    else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for m in riders {
+        let Some(to) = workspace::version_in_tree(root, m) else {
+            continue;
+        };
+        let from = match last_tag {
+            Some(t) => workspace::version_at(root, t, &m.manifest)?,
+            None => None,
+        };
+        out.push(Ride {
+            name: m.name.clone(),
+            from,
+            to,
+        });
+    }
+    Ok(out)
 }
 
 /// Crates in dependency order, then jsr, then npm, since the npm build is
@@ -217,174 +370,5 @@ pub fn publish_order(root: &Path, packages: &Packages) -> Result<Vec<(Registry, 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::release::sh;
-
-    fn repo(version: &str) -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
-        let g = |args: &[&str]| {
-            let out = sh::run(d.path(), "git", args).unwrap();
-            assert!(out.ok(), "{}", out.log());
-        };
-        g(&["init", "--quiet", "-b", "main"]);
-        g(&["config", "user.email", "t@t"]);
-        g(&["config", "user.name", "t"]);
-        g(&["config", "tag.gpgsign", "false"]);
-        g(&["config", "commit.gpgsign", "false"]);
-        std::fs::write(
-            d.path().join("Cargo.toml"),
-            format!("[package]\nname = \"x\"\nversion = \"{version}\"\n"),
-        )
-        .unwrap();
-        g(&["add", "."]);
-        g(&["commit", "--quiet", "-m", "feat: first"]);
-        d
-    }
-
-    fn commit(d: &Path, subject: &str) {
-        let n = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::fs::write(d.join(format!("f{n}")), "x").unwrap();
-        for args in [vec!["add", "."], vec!["commit", "--quiet", "-m", subject]] {
-            assert!(sh::run(d, "git", &args).unwrap().ok());
-        }
-    }
-
-    #[test]
-    fn a_first_release_carries_the_whole_history_and_bumps_from_the_manifest() {
-        let d = repo("0.1.0");
-        commit(d.path(), "fix: two");
-        let p = plan(
-            d.path(),
-            &Markers::default(),
-            "HEAD",
-            Level::Patch,
-            "2026-09-02",
-        )
-        .unwrap();
-        assert_eq!(p.last_tag, None);
-        assert_eq!(p.commits.len(), 2);
-        assert_eq!(p.commits[0].subject, "fix: two");
-        assert_eq!(p.next, Version::new(0, 1, 1));
-        assert_eq!(p.tag, "v0.1.1");
-        assert!(p.changelog.starts_with("## 0.1.1 (2026-09-02)\n"));
-        assert!(p.changelog.contains("### feat"));
-        assert!(p.changelog.contains("### fix"));
-        assert_eq!(p.publishes, vec![(Registry::CratesIo, "x".to_string())]);
-        let shown = p.to_string();
-        assert!(shown.contains("no release tag yet"));
-        assert!(shown.contains("x to crates-io"));
-    }
-
-    #[test]
-    fn commits_are_counted_from_the_newest_tag_and_the_tag_follows_the_convention() {
-        let d = repo("0.1.0");
-        assert!(
-            sh::run(d.path(), "git", &["tag", "-a", "0.1.0", "-m", "0.1.0"])
-                .unwrap()
-                .ok()
-        );
-        commit(d.path(), "feat: later");
-        let p = plan(d.path(), &Markers::default(), "HEAD", Level::Minor, "d").unwrap();
-        assert_eq!(p.last_tag.as_deref(), Some("0.1.0"));
-        assert_eq!(p.commits.len(), 1);
-        assert_eq!(p.next, Version::new(0, 2, 0));
-        assert_eq!(p.tag, "0.2.0", "bare tags stay bare");
-        assert!(p.to_string().contains("since `0.1.0`"));
-    }
-
-    #[test]
-    fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
-        let d = repo("0.1.0");
-        assert!(
-            sh::run(d.path(), "git", &["tag", "-a", "v0.1.0", "-m", "v0.1.0"])
-                .unwrap()
-                .ok()
-        );
-        std::fs::write(
-            d.path().join("Cargo.toml"),
-            "[package]\nname = \"x\"\nversion = \"0.1.1\"\n",
-        )
-        .unwrap();
-        assert!(
-            sh::run(d.path(), "git", &[
-                "commit",
-                "--quiet",
-                "-am",
-                "chore: bump"
-            ])
-            .unwrap()
-            .ok()
-        );
-        // 0.1.1 is what a patch makes of v0.1.0, and not what a major makes
-        let err = plan(d.path(), &Markers::default(), "HEAD", Level::Major, "d").unwrap_err();
-        assert!(
-            matches!(&err, PlanError::OffLevel(o)
-                if o.manifest == Version::new(0, 1, 1) && o.next == Version::new(0, 2, 0)),
-            "{err}"
-        );
-        assert!(err.to_string().contains("0.1.1"));
-        assert!(err.to_string().contains("0.2.0"));
-        assert!(
-            err.to_string().contains("pick the level"),
-            "above the tag a level may make the manifest's version: {err}"
-        );
-        // below the tag no level makes it, and the message does not offer one
-        std::fs::write(
-            d.path().join("Cargo.toml"),
-            "[package]\nname = \"x\"\nversion = \"0.0.9\"\n",
-        )
-        .unwrap();
-        commit(d.path(), "chore: back too far");
-        let err = plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d").unwrap_err();
-        assert!(matches!(&err, PlanError::OffLevel(_)), "{err}");
-        assert!(
-            err.to_string().contains("behind the last tag 0.1.0"),
-            "{err}"
-        );
-        assert!(!err.to_string().contains("pick the level"), "{err}");
-        // and back at what a patch makes of the tag
-        std::fs::write(
-            d.path().join("Cargo.toml"),
-            "[package]\nname = \"x\"\nversion = \"0.1.1\"\n",
-        )
-        .unwrap();
-        commit(d.path(), "chore: at the level");
-        let p = plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d").unwrap();
-        assert_eq!(
-            p.next,
-            Version::new(0, 1, 1),
-            "already at the level's version, so that is the release"
-        );
-        std::fs::write(
-            d.path().join("Cargo.toml"),
-            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        assert!(
-            sh::run(d.path(), "git", &[
-                "commit",
-                "--quiet",
-                "-am",
-                "chore: back"
-            ])
-            .unwrap()
-            .ok()
-        );
-        let p = plan(d.path(), &Markers::default(), "HEAD", Level::Major, "d").unwrap();
-        assert_eq!(p.next, Version::new(0, 2, 0), "a major on 0.x is a minor");
-    }
-
-    #[test]
-    fn a_tree_without_a_manifest_is_not_plannable() {
-        let d = tempfile::tempdir().unwrap();
-        assert!(sh::run(d.path(), "git", &["init", "--quiet"]).unwrap().ok());
-        assert!(matches!(
-            plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d"),
-            Err(PlanError::NoManifest(_))
-        ));
-    }
-}
+#[path = "plan_tests.rs"]
+mod tests;

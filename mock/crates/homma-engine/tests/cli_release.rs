@@ -29,7 +29,7 @@ fn release_is_listed_and_plan_prints_the_next_version_without_moving_anything() 
             "version 0.1.0 becomes 0.2.0, tagged `v0.2.0`",
         ))
         .stdout(predicate::str::contains("feat: first"))
-        .stdout(predicate::str::contains("x to crates-io"));
+        .stdout(predicate::str::contains("x 0.2.0 to crates-io"));
     bin()
         .args(["-c", cfg.to_str().unwrap(), "release", "plan", "x"])
         .assert()

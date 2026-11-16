@@ -48,6 +48,22 @@ impl Version {
     pub fn is_smallest_successor(&self, next: &Version, level: Level) -> bool {
         &self.bumped(level) == next
     }
+
+    /// Whether `next` is one step above this version, which is what a
+    /// registry may not skip: a level's step from a release, or the step off
+    /// `0.x` onto `1.0.0`; a pre-release of any of those; and from a
+    /// pre-release, a later pre-release of the same version or its release.
+    pub fn is_one_step(&self, next: &Version) -> bool {
+        let core = |v: &Version| Version::new(v.major, v.minor, v.patch);
+        if self.prerelease.is_some() {
+            return core(self) == core(next) && self < next;
+        }
+        let n = core(next);
+        [Level::Patch, Level::Minor, Level::Major]
+            .iter()
+            .any(|l| self.bumped(*l) == n)
+            || (self.major == 0 && n == Version::new(1, 0, 0))
+    }
 }
 
 impl PartialOrd for Version {

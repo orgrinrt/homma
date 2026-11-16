@@ -9,10 +9,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use homma_api::{CheckSeverity, Finding, Level, Markers, RepoKind, Version};
+use homma_api::{CheckSeverity, Finding, Markers, RepoKind, Target, Version};
 
 pub use super::packages::{Packages, Published, fetch_published, packages, tag_name, tag_version};
 use super::registry::Registry;
+use super::workspace::{self, Layout};
 use super::{git, kind, version};
 
 /// What the check needs to know about the repo, beyond the tree itself.
@@ -21,7 +22,7 @@ pub struct Inputs<'a> {
     pub remote:    &'a str,
     pub trunk:     &'a str,
     pub release:   &'a str,
-    pub level:     Option<Level>,
+    pub target:    Option<Target>,
     pub published: &'a Published,
     pub markers:   &'a Markers,
 }
@@ -188,32 +189,79 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         }
     }
 
-    // the manifest against the tags, and the working version
+    // the manifest against the tags, and the working version; a virtual
+    // workspace's primary reads as the repo's version, through the root
+    // manifest from before the repo was a workspace and its own since
     let repo_kind = kind::detect(root, inputs.markers).ok();
-    let working = repo_kind.and_then(|k| version::read(root, k).ok());
-    // every bump on the release line carries a tag: walk `main` by first
-    // parent over the commits that touch the manifest, and where the version
-    // differs from the first parent's, a versioned tag points at that commit
+    let layout = repo_kind.and_then(|k| workspace::layout(root, k).ok());
+    let primary = match &layout {
+        Some(Layout::Set {
+            primary,
+            ..
+        }) => Some(primary),
+        _ => None,
+    };
+    let riders: &[workspace::Member] = match &layout {
+        Some(Layout::Set {
+            riders,
+            ..
+        }) => riders,
+        _ => &[],
+    };
+    let working = match (repo_kind, &layout) {
+        (Some(k), Some(l)) => super::plan::working_version(root, k, l).ok(),
+        _ => None,
+    };
+    let version_at = |rev: &str, k: RepoKind| -> Result<Option<Version>, git::GitError> {
+        if let Some(v) = manifest_version_at(root, rev, k)? {
+            return Ok(Some(v));
+        }
+        match primary {
+            Some(p) => workspace::version_at(root, rev, &p.manifest),
+            None => Ok(None),
+        }
+    };
+    // every version a bump on the release line moves to is tagged: walk
+    // `main` by first parent over the commits that touch the manifest, and
+    // where the version differs from the first parent's, a tag naming that
+    // version sits on the bump or on a commit after it: a version bumped
+    // before the repo tagged anything was tagged on a later commit of it, and
+    // that the tag's commit carries the version is `man.version.matches`
+    let mut tag_targets: Vec<(Version, String)> = Vec::new();
+    for (t, v) in &versioned {
+        tag_targets.push((v.clone(), git::tag_target(root, t)?));
+    }
+    let tagged_since = |sha: &str, v: &Version| -> Result<bool, git::GitError> {
+        for (tv, target) in &tag_targets {
+            if tv == v && git::is_ancestor(root, sha, target)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
     if let (Some(k), Some(_)) = (repo_kind, &release_sha) {
         let file = if k.has_crate() { "Cargo.toml" } else { "deno.json" };
-        for sha in git::first_parent_touching(root, inputs.release, file)? {
-            let here = manifest_version_at(root, &sha, k)?;
-            let parent = manifest_version_at(root, &format!("{sha}^"), k)?;
-            if let (Some(here), Some(parent)) = (here, parent) {
-                if here != parent && !by_target.contains_key(&sha) {
-                    push(
-                        "tag.bump.tagged",
-                        CheckSeverity::Error,
-                        format!("{} bumps to {here} and no tag points at it", &sha[.. 7]),
-                    );
+        let mut files = vec![file.to_string()];
+        files.extend(primary.map(|p| p.manifest.clone()));
+        for file in &files {
+            for sha in git::first_parent_touching(root, inputs.release, file)? {
+                let here = version_at(&sha, k)?;
+                let parent = version_at(&format!("{sha}^"), k)?;
+                if let (Some(here), Some(parent)) = (here, parent) {
+                    if here != parent && !tagged_since(&sha, &here)? {
+                        push(
+                            "tag.bump.tagged",
+                            CheckSeverity::Error,
+                            format!("{} bumps to {here} and no tag names it", &sha[.. 7]),
+                        );
+                    }
                 }
             }
         }
     }
     if let Some(k) = repo_kind {
         for (t, v) in &versioned {
-            let manifest_version = manifest_version_at(root, t, k)?;
-            if let Some(mv) = manifest_version {
+            if let Some(mv) = version_at(t, k)? {
                 if mv != *v {
                     push(
                         "man.version.matches",
@@ -224,10 +272,27 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
             }
         }
     }
-    let highest_published = inputs.published.versions.values().flatten().max().cloned();
+    for f in super::riders::findings(
+        root,
+        riders,
+        &versioned,
+        release_sha.as_ref().map(|_| inputs.release),
+        inputs.published,
+    )? {
+        push(&f.id, f.severity, f.message);
+    }
+    let highest_published = match primary {
+        Some(p) => {
+            inputs
+                .published
+                .get(Registry::CratesIo, &p.name)
+                .and_then(|v| v.iter().max().cloned())
+        },
+        None => inputs.published.versions.values().flatten().max().cloned(),
+    };
     // the working version sits at the published one, since the run bumps it
     // after this check, or already one step above it; below is always wrong,
-    // and above by more than the level's step is wrong when a level is given
+    // and above by more than the target's step is wrong when a target is given
     if let Some(w) = &working {
         if let Some(hp) = &highest_published {
             if w < hp {
@@ -236,12 +301,13 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                     CheckSeverity::Error,
                     format!("working version {w} is below the published {hp}"),
                 );
-            } else if let Some(level) = inputs.level {
-                if w != hp && !hp.is_smallest_successor(w, level) {
+            } else if let Some(target) = &inputs.target {
+                let next = target.next_from(hp);
+                if w != hp && *w != next {
                     push(
                         "man.current.smallest",
                         CheckSeverity::Error,
-                        format!("{w} is not the {level} step above {hp}"),
+                        format!("{w} is not what a {target} makes of {hp}, {next}"),
                     );
                 }
             }
@@ -269,6 +335,9 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                     format!("{name} on {reg}: {} skips to {}", pair[0], pair[1]),
                 );
             }
+        }
+        if riders.iter().any(|r| r.name == *name) {
+            continue;
         }
         for v in versions {
             if !versioned.iter().any(|(_, tv)| tv == v) {
@@ -332,13 +401,9 @@ fn names_hotpatch(subject: &str) -> bool {
     })
 }
 
-/// Whether `b` is one legal step above `a` at some level, or the step off
-/// `0.x` onto `1.0.0`.
+/// Whether `b` is one step above `a`, as `Version::is_one_step` reads it.
 fn is_adjacent(a: &Version, b: &Version) -> bool {
-    [Level::Patch, Level::Minor, Level::Major]
-        .iter()
-        .any(|l| &a.bumped(*l) == b)
-        || (a.major == 0 && *b == Version::new(1, 0, 0))
+    a.is_one_step(b)
 }
 
 fn manifest_version_at(
