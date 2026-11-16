@@ -2162,9 +2162,9 @@ checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
 
 [[package]]
 name = "renki"
-version = "0.0.5-rc.1"
+version = "0.0.5-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2b3aed13a6b607651b1ddf57b1a77e0dfaaa612a5cafbcab5b55a5bf91b51ab"
+checksum = "d6aebbff3e683ed31e4c578a080c519fd7f307c11f12f3d61df20cff845990a6"
 dependencies = [
  "notko",
  "renki-config",
