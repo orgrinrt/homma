@@ -48,7 +48,7 @@ include = ["src/**/*.rs", "LICENSE"]
 # the point: this is the launcher every operator installs, and it moves when
 # the number here moves. The contracts crate is what that renki was built
 # against, so the two cannot disagree.
-renki = "0.0.5-rc.1"
+renki = "0.0.5-rc.2"
 renki-config = "0.0.2"
 notko = { version = "0.0.1", default-features = false }
 
