@@ -39,3 +39,9 @@ layers = [
 # on the same cdylib a lint pack would; muisti is private, hence ssh.
 [lint-crates]
 ask = { git = "ssh://git@github.com/orgrinrt/muisti.git", branch = "dev" }
+
+# The commit types this repository uses, beyond mockspace's defaults (feat, fix, refactor, docs,
+# test, chore, bench, release). The builtin `commit-subject` gate refuses a type that is not listed, so a new
+# type is added here and nowhere else.
+[lints.commit-subject]
+extra_types = "topic,src,doc,style"
