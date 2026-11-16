@@ -127,6 +127,8 @@ The record is what the release reads. `homma release run` looks for the newest
 the newest is red, and never runs the gate itself. So the gate runs once, at the
 push, and everything after it trusts the record. A run against a different sha,
 however recent, is not evidence about this one.
+The sha is asked of the record when step 2 measures it, after the release has set aside a bump a stopped run
+left on the local `dev`, and not beforehand from the local tip, which that bump had moved.
 
 ## The commit status
 
@@ -361,7 +363,7 @@ pre-release makes that pre-release's release: a patch from `0.0.5-rc.1` is
 `0.0.5`, a minor from `0.1.0-rc.1` is `0.1.0`, as cargo-release reads it. What it does, in order, stopping at the first refusal:
 
 1. Runs the check and refuses on any blocking finding.
-2. Finds the newest green `gate-run` for the tip of `dev` and refuses without it.
+2. Finds the newest green `gate-run` for the tip of `dev` and refuses without it. The tip is the one this step sees, after a bump a stopped run left on the local `dev` is set aside, so a run recorded on the tip the gate measured is found beside a leftover local bump.
 3. Prints the plan: the two branches it carries, `dev` onto `main`, or `main`
    alone where the repo has no working branch here or on the remote; the
    commits since the last release tag with their prefixes,
