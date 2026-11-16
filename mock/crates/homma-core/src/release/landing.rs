@@ -76,7 +76,7 @@ pub fn push_bump(
         });
     }
     git::reset_hard(root, &landed)?;
-    setup.forge.drop_branch(root, &head, sha)?;
+    drop_squashed(setup, root, &head, sha);
     Ok(landed)
 }
 
@@ -84,7 +84,8 @@ pub fn push_bump(
 /// the caller has undone: the release pull request, the trunk into the
 /// release line, merged by the forge with a merge commit at the trunk's tip.
 /// The clone's release line takes that commit once it is checked to be a
-/// merge of the tip onto where the line was, and it is returned for the tag.
+/// merge of the tip onto where the line was with the tree the two make
+/// together, the tree the gate measured, and it is returned for the tag.
 pub fn land_release(
     setup: &Setup<'_>,
     root: &Path,
@@ -104,6 +105,7 @@ pub fn land_release(
     if git::parent_count(root, &landed)? != 2
         || git::sha(root, &format!("{landed}^2"))? != tip
         || git::sha(root, &format!("{landed}^1"))? != before
+        || !measured(root, &landed, &before, &tip)?
     {
         return Err(ReleaseError::NotLanded {
             base: setup.release.to_string(),
@@ -115,6 +117,21 @@ pub fn land_release(
     Ok(landed)
 }
 
+/// Whether `merge` holds the tree of `bump` merged onto `onto`, the tree the
+/// gate measured, so a merge the forge resolved another way, or made onto
+/// something else that landed first, is never tagged.
+fn measured(root: &Path, merge: &str, onto: &str, bump: &str) -> Result<bool, ReleaseError> {
+    let want = git::merge_tree(root, onto, bump)?;
+    Ok(git::tree(root, merge)? == want)
+}
+
+/// The squashed bump's branch dropped through the forge. A failure does not
+/// stop the run: the route queued the deletion where it could, and a rerun
+/// on the forge's squash asks again.
+fn drop_squashed(setup: &Setup<'_>, root: &Path, branch: &str, head: &str) {
+    let _ = setup.forge.drop_branch(root, branch, head);
+}
+
 /// Where a bump a stopped run left stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Landed {
@@ -122,9 +139,12 @@ pub enum Landed {
     Local,
     /// The remote's trunk holds it, and step 4 takes it as it is.
     Trunk,
-    /// The remote's release line holds this merge of it too, and step 5
-    /// takes the merge and tags it.
+    /// The remote's release line holds this merge of it too, with the tree
+    /// the gate measured, and step 5 takes the merge and tags it.
     Release(String),
+    /// The remote's release line holds this merge of it with another tree
+    /// than the gate measured, and step 5 refuses it, nothing tagged.
+    Unmeasured(String),
 }
 
 /// A bump commit a run that stopped after making it left, on the trunk or on
@@ -136,8 +156,8 @@ pub struct Pending {
     /// The version its subject names.
     pub version:  Version,
     pub landed:   Landed,
-    /// The clone's own bump where the forge squashed it into `sha`: the head
-    /// `release/<repo>-<version>` was pushed at, still to be dropped.
+    /// The head `release/<repo>-<version>` was pushed at, where the forge
+    /// squashed it into `sha` and may still hold the branch.
     pub squashed: Option<String>,
 }
 
@@ -153,14 +173,24 @@ fn bump_version(root: &Path, rev: &str) -> Result<Option<Version>, ReleaseError>
         .and_then(|v| v.parse::<Version>().ok()))
 }
 
+/// Whether `squash` carries `bump`'s tree on `bump`'s parent, as the forge's
+/// squash of it does.
+fn squash_of(root: &Path, squash: &str, bump: &str) -> Result<bool, ReleaseError> {
+    Ok(
+        git::sha(root, &format!("{squash}^"))? == git::sha(root, &format!("{bump}^"))?
+            && git::tree(root, squash)? == git::tree(root, bump)?,
+    )
+}
+
 /// Before step 1: the trunk and the release line fetched, and where the
 /// checked-out, clean trunk ends in a bump nothing tagged yet, it is set
 /// aside, the trunk moved back to its parent, so the check, the gate run and
 /// the plan see the commit the gate measured. The bump is the clone's own,
 /// one past the remote's tip; or the remote's tip itself, a pull request that
-/// merged unseen, the clone's tip or a commit with the clone's tree on the
-/// clone's parent; and where the release line's first parents hold a merge of
-/// it, that merge too. Anything else is no pending bump and moves nothing.
+/// merged unseen, the clone's tip or a squash of it, with the branch the
+/// squash came from where the forge still holds one; and where the release
+/// line's first parents hold a merge of it, that merge too. Anything else is
+/// no pending bump and moves nothing.
 pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, ReleaseError> {
     if git::current_branch(root)?.as_deref() != Some(setup.trunk) || !git::is_clean(root)? {
         return Ok(None);
@@ -183,10 +213,19 @@ pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, Rele
         }));
     }
     let (sha, squashed) = if tip == remote {
-        (tip, None)
+        // the clone already took the forge's squash: the branch it came from,
+        // where the forge still holds it, is still to be dropped
+        let branch = bump_branch(setup.repo, &version);
+        let head = git::fetch_branch(root, setup.remote, &branch)
+            .ok()
+            .filter(|h| *h != tip);
+        let squashed = match head {
+            Some(h) if squash_of(root, &tip, &h)? => Some(h),
+            _ => None,
+        };
+        (tip, squashed)
     } else if bump_version(root, &remote)?.as_ref() == Some(&version)
-        && git::sha(root, &format!("{remote}^"))? == parent
-        && git::tree(root, &remote)? == git::tree(root, &tip)?
+        && squash_of(root, &remote, &tip)?
     {
         (remote, Some(tip))
     } else {
@@ -195,10 +234,7 @@ pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, Rele
     if git::tagged(root, &sha)? {
         return Ok(None);
     }
-    let landed = match release_merge(setup, root, &sha)? {
-        Some(merge) => Landed::Release(merge),
-        None => Landed::Trunk,
-    };
+    let landed = release_merge(setup, root, &sha)?;
     git::reset_hard(root, &parent)?;
     Ok(Some(Pending {
         sha,
@@ -209,19 +245,24 @@ pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, Rele
 }
 
 /// The merge of `bump` on the remote's release line, fetched, where its first
-/// parents hold one.
-fn release_merge(
-    setup: &Setup<'_>,
-    root: &Path,
-    bump: &str,
-) -> Result<Option<String>, ReleaseError> {
+/// parents hold one: taken where its tree is the bump merged onto the release
+/// line the clone holds, the one the run saw, and refused where it is another.
+fn release_merge(setup: &Setup<'_>, root: &Path, bump: &str) -> Result<Landed, ReleaseError> {
     if setup.trunk == setup.release {
-        return Ok(None);
+        return Ok(Landed::Trunk);
     }
     let Ok(line) = git::fetch_branch(root, setup.remote, setup.release) else {
-        return Ok(None);
+        return Ok(Landed::Trunk);
     };
-    Ok(git::merge_of(root, &line, bump)?)
+    let Some(merge) = git::merge_of(root, &line, bump)? else {
+        return Ok(Landed::Trunk);
+    };
+    let seen = git::sha(root, setup.release)?;
+    Ok(if measured(root, &merge, &seen, bump)? {
+        Landed::Release(merge)
+    } else {
+        Landed::Unmeasured(merge)
+    })
 }
 
 /// The set-aside bump back on the trunk, after a step before 4 refused.
@@ -231,10 +272,36 @@ pub fn put_back(root: &Path, pending: Option<&Pending>) -> Result<(), ReleaseErr
     };
     git::reset_hard(root, &p.sha).map_err(|e| {
         ReleaseError::NotPutBack {
-            sha: p.sha.clone(),
-            why: e.to_string(),
+            sha:     p.sha.clone(),
+            why:     e.to_string(),
+            stopped: None,
         }
     })
+}
+
+/// `outcome` once the set-aside bump is back on the trunk; where it cannot be
+/// put back, that is the error, carrying the refusal `outcome` held, so
+/// neither goes unsaid.
+pub fn put_back_after<T>(
+    root: &Path,
+    pending: Option<&Pending>,
+    outcome: Result<T, ReleaseError>,
+) -> Result<T, ReleaseError> {
+    match put_back(root, pending) {
+        Ok(()) => outcome,
+        Err(ReleaseError::NotPutBack {
+            sha,
+            why,
+            ..
+        }) => {
+            Err(ReleaseError::NotPutBack {
+                sha,
+                why,
+                stopped: outcome.err().map(Box::new),
+            })
+        },
+        Err(other) => Err(other),
+    }
 }
 
 /// Step 4 with a pending bump: refused, the bump put back, where it is
@@ -248,19 +315,20 @@ pub fn resume_bump(
     next: &Version,
 ) -> Result<String, ReleaseError> {
     if pending.version != *next {
-        put_back(root, Some(pending))?;
-        return Err(ReleaseError::PendingBump {
-            found:   bump_subject(&pending.version),
-            planned: next.to_string(),
-        });
+        return put_back_after(
+            root,
+            Some(pending),
+            Err(ReleaseError::PendingBump {
+                found:   bump_subject(&pending.version),
+                planned: next.to_string(),
+            }),
+        );
     }
     git::fast_forward(root, &pending.sha)?;
     match (&pending.landed, &pending.squashed) {
         (Landed::Local, _) => push_bump(setup, root, &pending.sha, next),
         (_, Some(head)) => {
-            setup
-                .forge
-                .drop_branch(root, &bump_branch(setup.repo, next), head)?;
+            drop_squashed(setup, root, &bump_branch(setup.repo, next), head);
             Ok(pending.sha.clone())
         },
         (_, None) => Ok(pending.sha.clone()),

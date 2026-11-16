@@ -84,8 +84,10 @@ pub enum ReleaseError {
     },
     /// A bump set aside before step 1 that could not be put back on the trunk.
     NotPutBack {
-        sha: String,
-        why: String,
+        sha:     String,
+        why:     String,
+        /// The refusal that had stopped the run, where one had.
+        stopped: Option<Box<ReleaseError>>,
     },
     /// A bump a stopped run left on the trunk is for another version than
     /// the plan.
@@ -182,17 +184,22 @@ impl fmt::Display for ReleaseError {
             } => {
                 write!(
                     f,
-                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun tags the forge's merge of {tip} where the first parents of {base} hold one, and lands the release pull request again where they do not"
+                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun takes a merge of {tip} on {base} only where its tree is {tip} merged onto the {base} the run saw, and refuses this one again, for a human to settle"
                 )
             },
             ReleaseError::NotPutBack {
                 sha,
                 why,
+                stopped,
             } => {
                 write!(
                     f,
                     "the bump {sha} a stopped run left was set aside and could not be put back on the trunk ({why}); `git reset --hard {sha}` on the trunk puts it back"
-                )
+                )?;
+                match stopped {
+                    Some(refusal) => write!(f, "\nthe run had stopped on: {refusal}"),
+                    None => Ok(()),
+                }
             },
             ReleaseError::PendingBump {
                 found,
@@ -339,18 +346,25 @@ fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, Rel
 
 /// Steps 5 and 6: merge the trunk into the release line with a merge commit
 /// and tag that, or tag the bump where the two are one branch; push both.
-/// A `merged` release merge the forge already holds is taken and tagged.
+/// A release merge the forge already holds, `landed`, is taken and tagged
+/// where its tree is the one the gate measured, and refused where it is not.
 pub fn step_merge_and_tag(
     setup: &Setup<'_>,
     root: &Path,
     plan: &Plan,
-    merged: Option<&str>,
+    landed: Option<&Landed>,
 ) -> Result<String, ReleaseError> {
     let sha = if setup.trunk == setup.release {
         git::head(root)?
-    } else if let Some(merge) = merged {
+    } else if let Some(Landed::Release(merge)) = landed {
         git::set_branch(root, setup.release, merge)?;
-        merge.to_string()
+        merge.clone()
+    } else if let Some(Landed::Unmeasured(merge)) = landed {
+        return Err(ReleaseError::NotLanded {
+            base: setup.release.to_string(),
+            at:   merge.clone(),
+            left: Left::Untagged(git::head(root)?),
+        });
     } else {
         git::switch(root, setup.release)?;
         // a failure here hands the tree back to the trunk before it is
@@ -500,17 +514,13 @@ pub fn release(
     let plan = match planned {
         Ok(plan) if !dry_run => plan,
         other => {
-            landing::put_back(root, pending.as_ref())?;
-            return other.map(Err);
+            return landing::put_back_after(root, pending.as_ref(), other.map(Err));
         },
     };
     let run = newest_run.expect("step two established it");
     let bump_sha = step_bump(setup, root, &plan, pending.as_ref())?;
-    let merged = match pending.as_ref().map(|p| &p.landed) {
-        Some(Landed::Release(merge)) => Some(merge.as_str()),
-        _ => None,
-    };
-    let tag_sha = step_merge_and_tag(setup, root, &plan, merged)?;
+    let landed = pending.as_ref().map(|p| &p.landed);
+    let tag_sha = step_merge_and_tag(setup, root, &plan, landed)?;
     step_forge_release(setup, root, &plan)?;
     step_publish(setup, root, &plan)?;
     let badges_sha = step_badges(setup, root, run, &plan)?;

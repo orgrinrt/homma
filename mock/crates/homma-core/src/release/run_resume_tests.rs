@@ -157,9 +157,10 @@ fn a_squash_landing_on_another_merge_says_what_the_forge_holds_and_the_rerun_sto
 }
 
 #[test]
-fn a_release_merge_landing_on_another_says_what_the_forge_holds_and_the_rerun_tags_it() {
-    // Mutation: `NotLanded` with a tag made anyway, or a rerun that plans and
-    // bumps again over a release merge the forge holds.
+fn a_release_merge_landing_on_another_says_what_the_forge_holds_and_the_rerun_refuses_it() {
+    // Mutation: `NotLanded` with a tag made anyway, or a rerun that takes the
+    // forge's merge by its second parent alone and tags a tree the gate never
+    // measured, or that plans and bumps again over it.
     let f = Fixture::new();
     refuse_pushes_to(&f, &["main"]);
     let tip = f.git(&["rev-parse", "dev"]);
@@ -178,15 +179,121 @@ fn a_release_merge_landing_on_another_says_what_the_forge_holds_and_the_rerun_ta
     assert!(said.contains(&forge_main), "{said}");
     assert!(said.contains("nothing is tagged"), "{said}");
     assert!(git::tag_target(f.root(), "v0.1.1").is_err());
-    let bump = f.git(&["rev-parse", "dev"]);
     *runner.interloper.borrow_mut() = false;
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(
+        matches!(&err, ReleaseError::NotLanded { at, .. } if *at == forge_main),
+        "{err}"
+    );
+    assert_eq!(pr_calls(&runner).len(), 1, "no second pull request");
+    assert!(
+        git::tag_target(f.root(), "v0.1.1").is_err(),
+        "nothing tagged"
+    );
+    assert_eq!(bumps_on(&f, "origin/dev"), 1);
+    assert_eq!(
+        bare(f.origin(), &["rev-parse", "refs/heads/main"]).unwrap(),
+        forge_main
+    );
+}
+
+#[test]
+fn a_release_merge_the_forge_resolved_to_another_tree_is_never_tagged() {
+    // Mutation: step 5 taking a merge by its parents alone, or a rerun taking
+    // the same merge because its second parent is the bump.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let main_before = f.git(&["rev-parse", "main"]);
+    let runner = Routed::new(&f);
+    *runner.bad_merge.borrow_mut() = true;
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    let forge_main = bare(f.origin(), &["rev-parse", "refs/heads/main"]).unwrap();
+    assert_eq!(
+        f.git(&["rev-parse", &format!("{forge_main}^1")]),
+        main_before
+    );
+    assert!(
+        matches!(&err, ReleaseError::NotLanded { at, .. } if *at == forge_main),
+        "{err}"
+    );
+    assert!(git::tag_target(f.root(), "v0.1.1").is_err());
+    *runner.bad_merge.borrow_mut() = false;
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(matches!(&err, ReleaseError::NotLanded { .. }), "{err}");
+    assert!(git::tag_target(f.root(), "v0.1.1").is_err());
+    assert_eq!(pr_calls(&runner).len(), 1);
+}
+
+#[test]
+fn a_failed_drop_of_the_squashed_branch_does_not_stop_the_release() {
+    // Mutation: the deletion's failure returned as the run's, before the tag.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["dev"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    *runner.drop_said.borrow_mut() =
+        Some("forge-route: delete-branch: gh: HTTP 502; queue: no spool");
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
     let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
         .unwrap()
         .unwrap();
-    assert_eq!(pr_calls(&runner).len(), 1);
-    assert_eq!(done.tag_sha, forge_main);
-    assert_eq!(done.bump_sha, bump);
+    assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), done.tag_sha);
+    assert!(
+        origin_has(&f, "release/x-0.1.1"),
+        "the failed deletion left it"
+    );
+}
+
+#[test]
+fn a_rerun_on_the_forge_s_squash_drops_the_branch_a_failed_deletion_left() {
+    // Mutation: a rerun whose trunk is already the forge's squash taken with
+    // no squashed head, so the branch is never deleted.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["dev", "main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    *runner.drop_said.borrow_mut() =
+        Some("forge-route: delete-branch: gh: HTTP 502; queue: no spool");
+    *runner.pr_said_into.borrow_mut() = Some(("main", "forge-route: pr: gh: HTTP 502"));
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(matches!(&err, ReleaseError::Route(_)), "{err}");
+    let pushed = f.git(&["rev-parse", "origin/release/x-0.1.1"]);
+    assert!(origin_has(&f, "release/x-0.1.1"));
+    assert_eq!(
+        f.git(&["rev-parse", "dev"]),
+        bare(f.origin(), &["rev-parse", "refs/heads/dev"]).unwrap(),
+        "the clone's dev is the forge's squash"
+    );
+    *runner.drop_said.borrow_mut() = None;
+    *runner.pr_said_into.borrow_mut() = None;
+    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    let root = f.root().to_string_lossy().into_owned();
+    let asked = format!("{ROUTE} delete-branch --queue {root} release/x-0.1.1 {pushed}");
+    assert_eq!(
+        runner
+            .calls
+            .borrow()
+            .iter()
+            .filter(|(c, _)| *c == asked)
+            .count(),
+        2,
+        "the rerun asks again: {:?}",
+        runner.calls.borrow()
+    );
+    assert!(!origin_has(&f, "release/x-0.1.1"));
     assert_eq!(bumps_on(&f, "origin/dev"), 1);
+    assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), done.tag_sha);
 }
 
 /// `dev` one commit past the remote's, that commit `subject` and empty.
@@ -275,6 +382,34 @@ fn putting_a_bump_back_that_cannot_be_reset_to_says_so() {
     );
 }
 
+#[test]
+fn a_bump_that_cannot_be_put_back_is_reported_with_the_refusal_that_stopped_the_run() {
+    // Mutation: the put-back's failure returned in place of the refusal.
+    let f = Fixture::new();
+    let pending = landing::Pending {
+        sha:      "0123456789012345678901234567890123456789".into(),
+        version:  Version::new(0, 1, 1),
+        landed:   landing::Landed::Local,
+        squashed: None,
+    };
+    let stopped: Result<(), ReleaseError> = Err(ReleaseError::NoPullRequest("dev".into()));
+    let err = landing::put_back_after(f.root(), Some(&pending), stopped).unwrap_err();
+    let said = err.to_string();
+    assert!(
+        said.contains("0123456789012345678901234567890123456789"),
+        "{said}"
+    );
+    assert!(said.contains("the forge takes no push to dev"), "{said}");
+    // and where the run had not stopped, the put-back's failure stands alone
+    let err = landing::put_back_after(f.root(), Some(&pending), Ok(())).unwrap_err();
+    assert!(
+        matches!(err, ReleaseError::NotPutBack {
+            stopped: None,
+            ..
+        }),
+        "{err}"
+    );
+}
 #[test]
 fn the_route_s_deletion_takes_a_branch_already_gone_as_deleted() {
     // the fake's own contract, which the deletion tests above lean on

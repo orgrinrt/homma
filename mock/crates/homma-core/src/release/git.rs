@@ -493,6 +493,11 @@ pub fn tagged(cwd: &Path, rev: &str) -> Result<bool, GitError> {
     Ok(!trimmed(cwd, &["tag", "--contains", rev])?.is_empty())
 }
 
+/// The tree `ours` and `theirs` make merged, without touching the work tree.
+pub fn merge_tree(cwd: &Path, ours: &str, theirs: &str) -> Result<String, GitError> {
+    trimmed(cwd, &["merge-tree", "--write-tree", ours, theirs])
+}
+
 /// The commit on `line`'s first parents whose second parent is `second`.
 pub fn merge_of(cwd: &Path, line: &str, second: &str) -> Result<Option<String>, GitError> {
     let parents = trimmed(cwd, &["rev-list", "--first-parent", "--parents", line])?;

@@ -40,8 +40,8 @@ pub(super) fn bare(origin: &Path, args: &[&str]) -> Result<String, String> {
 /// `pr <root> <head> <base> <title> <squash|merge> <sha>` done in the origin
 /// as the forge does it, past the ruleset: refused where the head is not at
 /// `sha`, a squash a commit of the head's tree on the base, a merge a merge
-/// commit of the two.
-pub(super) fn land_in(origin: &Path, args: &[&str]) -> Result<(), String> {
+/// commit of the two, keeping the base's tree where `bad_merge` is set.
+pub(super) fn land_in(origin: &Path, args: &[&str], bad_merge: bool) -> Result<(), String> {
     let ["pr", _root, head, base, title, how, sha] = args else {
         return Err(format!(
             "forge-route: a pull request takes six arguments: {args:?}"
@@ -68,7 +68,11 @@ pub(super) fn land_in(origin: &Path, args: &[&str]) -> Result<(), String> {
             ])?
         },
         "merge" => {
-            let tree = bare(origin, &["merge-tree", "--write-tree", &onto, sha])?;
+            let tree = if bad_merge {
+                bare(origin, &["rev-parse", &format!("{onto}^{{tree}}")])?
+            } else {
+                bare(origin, &["merge-tree", "--write-tree", &onto, sha])?
+            };
             bare(origin, &[
                 "commit-tree",
                 &tree,
@@ -307,25 +311,32 @@ fn a_refused_push_with_no_route_stays_refused_with_its_reason() {
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
 }
 
-/// Another merge landed on `base` in the origin, an empty commit on its tip,
-/// as one landing between the release's push and its pull request does.
+/// Another merge landed on `base` in the origin, a commit adding a file of its
+/// own on its tip, as one landing between the release's push and its pull
+/// request does. Made in a clone of the origin and pushed past the ruleset.
 pub(super) fn interlope(origin: &Path, base: &str) -> Result<(), String> {
+    let at = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let o = origin.to_string_lossy();
+    let git = |args: &[&str]| -> Result<String, String> {
+        let mut all = vec!["-c", "user.name=other", "-c", "user.email=other@other"];
+        all.extend_from_slice(args);
+        let out = sh::run(at.path(), "git", &all).map_err(|e| e.to_string())?;
+        if out.ok() { Ok(out.stdout.trim().to_string()) } else { Err(out.log()) }
+    };
+    git(&["clone", "--quiet", "--branch", base, &o, "."])?;
+    std::fs::write(at.path().join("other.txt"), "landed between").map_err(|e| e.to_string())?;
+    git(&["add", "other.txt"])?;
+    git(&["commit", "--quiet", "-m", "fix: something else"])?;
+    git(&["push", "--quiet", "origin", "HEAD:refs/heads/between"])?;
     let onto = bare(origin, &["rev-parse", &format!("refs/heads/{base}")])?;
-    let made = bare(origin, &[
-        "commit-tree",
-        &format!("{onto}^{{tree}}"),
-        "-p",
-        &onto,
-        "-m",
-        "fix: something else",
-    ])?;
+    let made = bare(origin, &["rev-parse", "refs/heads/between"])?;
     bare(origin, &[
         "update-ref",
         &format!("refs/heads/{base}"),
         &made,
         &onto,
-    ])
-    .map(|_| ())
+    ])?;
+    bare(origin, &["update-ref", "-d", "refs/heads/between"]).map(|_| ())
 }
 
 /// `delete-branch --queue <root> <branch> <head>` done in the origin as the
