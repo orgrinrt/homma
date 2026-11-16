@@ -411,7 +411,7 @@ fn the_bump_refuses_off_the_trunk() {
     )
     .unwrap();
     assert!(matches!(
-        step_bump(&setup(&runner, &client(&forge), &p, "dev"), f.root(), &plan),
+        step_bump(&setup(&runner, &client(&forge), &p, "dev"), f.root(), &plan, None),
         Err(ReleaseError::NotOnTrunk(Some(b))) if b == "main"
     ));
 }
@@ -434,11 +434,11 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     .unwrap();
     let w = client(&forge);
     let s = setup(&runner, &w, &p, "dev");
-    step_bump(&s, f.root(), &plan).unwrap();
+    step_bump(&s, f.root(), &plan, None).unwrap();
     // the remote refuses the push of main, which is what a ruleset does
     let main_before = f.git(&["rev-parse", "main"]);
     f.git(&["config", "remote.origin.pushurl", "/nonexistent/nowhere.git"]);
-    let err = step_merge_and_tag(&s, f.root(), &plan).unwrap_err();
+    let err = step_merge_and_tag(&s, f.root(), &plan, None).unwrap_err();
     assert!(matches!(err, ReleaseError::Git(_)), "{err}");
     assert_eq!(
         git::current_branch(f.root()).unwrap().as_deref(),
@@ -490,19 +490,40 @@ const ROUTE: &str = "/ws/route";
 /// that the tag is made and makes none. Where `said` is set every call of the
 /// route fails with it, as a route whose every way failed does.
 struct Routed<'a> {
-    calls:     RefCell<Vec<(String, Option<String>)>>,
-    origin:    &'a Path,
-    makes_tag: bool,
-    said:      Option<&'static str>,
+    calls:        RefCell<Vec<(String, Option<String>)>>,
+    origin:       &'a Path,
+    makes_tag:    bool,
+    said:         Option<&'static str>,
+    /// Where set, a pull request asked of the route fails with it.
+    pr_said:      RefCell<Option<&'static str>>,
+    /// Where set, a pull request asked of the route lands and then fails with
+    /// it, as a route that merged and lost the answer does.
+    pr_after:     RefCell<Option<&'static str>>,
+    /// Where set, another commit lands on a pull request's base before the
+    /// pull request does.
+    interloper:   RefCell<bool>,
+    /// Where set, a pull request into the first base fails with the second.
+    pr_said_into: RefCell<Option<(&'static str, &'static str)>>,
+    /// Where set, a merge commit the route makes keeps the base's tree, as a
+    /// forge resolving the merge another way does.
+    bad_merge:    RefCell<bool>,
+    /// Where set, a branch deletion asked of the route fails with it.
+    drop_said:    RefCell<Option<&'static str>>,
 }
 
 impl<'a> Routed<'a> {
     fn new(f: &'a Fixture) -> Self {
         Routed {
-            calls:     RefCell::new(Vec::new()),
-            origin:    f.origin(),
-            makes_tag: true,
-            said:      None,
+            calls:        RefCell::new(Vec::new()),
+            origin:       f.origin(),
+            makes_tag:    true,
+            said:         None,
+            pr_said:      RefCell::new(None),
+            pr_after:     RefCell::new(None),
+            interloper:   RefCell::new(false),
+            pr_said_into: RefCell::new(None),
+            bad_merge:    RefCell::new(false),
+            drop_said:    RefCell::new(None),
         }
     }
 }
@@ -539,6 +560,38 @@ impl Runner for Routed<'_> {
         }
         if let Some(said) = self.said {
             return answer(1, said);
+        }
+        if args.first() == Some(&"pr") {
+            if let Some(said) = *self.pr_said.borrow() {
+                return answer(1, said);
+            }
+            if let Some((into, said)) = *self.pr_said_into.borrow() {
+                if args.get(3) == Some(&into) {
+                    return answer(1, said);
+                }
+            }
+            if *self.interloper.borrow() {
+                if let Err(said) = pr::interlope(self.origin, args[3]) {
+                    return answer(1, &said);
+                }
+            }
+            return match (
+                pr::land_in(self.origin, args, *self.bad_merge.borrow()),
+                *self.pr_after.borrow(),
+            ) {
+                (Ok(()), None) => answer(0, ""),
+                (Ok(()), Some(said)) => answer(1, said),
+                (Err(said), _) => answer(1, &said),
+            };
+        }
+        if let ["delete-branch", "--queue", _root, branch, head] = args {
+            if let Some(said) = *self.drop_said.borrow() {
+                return answer(1, said);
+            }
+            return match pr::delete_in(self.origin, branch, head) {
+                Ok(()) => answer(0, ""),
+                Err(said) => answer(1, &said),
+            };
         }
         if let (true, ["tag", _root, tag, sha, _message]) = (self.makes_tag, args) {
             let made = sh::run(self.origin, "git", &[
@@ -784,3 +837,9 @@ fn a_forge_route_that_fails_every_way_stops_the_release_with_its_words() {
 
 #[path = "workspace_tests.rs"]
 mod workspace;
+
+#[path = "run_pr_tests.rs"]
+mod pr;
+
+#[path = "run_resume_tests.rs"]
+mod resume;
