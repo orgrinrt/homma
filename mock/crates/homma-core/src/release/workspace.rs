@@ -77,17 +77,15 @@ pub fn is_virtual(text: &str) -> bool {
             .is_none()
 }
 
-/// The layout at `root`. The primary of a set is the member named as the
-/// root's directory, else the one publishable member.
-pub fn layout(root: &Path, kind: RepoKind) -> Result<Layout, NoPrimary> {
+/// The layout at `root`, the repository the workspace manifest names `repo`.
+/// The primary of a set is the member named `repo`, else the one publishable
+/// member; the clone's directory name says nothing.
+pub fn layout(root: &Path, kind: RepoKind, repo: &str) -> Result<Layout, NoPrimary> {
     let text = std::fs::read_to_string(root.join("Cargo.toml")).unwrap_or_default();
     if !kind.has_crate() || !is_virtual(&text) {
         return Ok(Layout::Single);
     }
-    let repo = root
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let repo = repo.to_string();
     let mut members: Vec<Member> = packages::members(root)
         .into_iter()
         .map(|(name, manifest)| {

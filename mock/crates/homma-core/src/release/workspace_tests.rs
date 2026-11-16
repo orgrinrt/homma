@@ -101,6 +101,7 @@ impl Ws {
     fn check(&self, published: &Published, target: Option<Target>) -> Vec<Finding> {
         check::check(&check::Inputs {
             root: self.root(),
+            repo: "w",
             remote: "origin",
             trunk: "dev",
             release: "main",
@@ -114,6 +115,7 @@ impl Ws {
     fn plan(&self, target: impl Into<Target>) -> Result<plan::Plan, plan::PlanError> {
         plan::plan(
             self.root(),
+            "w",
             homma_api::Markers::defaults(),
             "dev",
             target,
@@ -297,30 +299,20 @@ fn the_whole_release_of_a_set_writes_the_primarys_manifest_and_publishes_it_alon
     let forge = Recorder::default();
     let p = released();
     let w = client(&forge);
-    let dry = release(
-        &setup(&runner, &w, &p, "dev"),
-        ws.root(),
-        v("0.1.1-rc.1"),
-        Some(&green_run(&tip)),
-        true,
-    )
-    .unwrap()
-    .unwrap_err();
+    let mut s = setup(&runner, &w, &p, "dev");
+    s.repo = "w";
+    let dry = release(&s, ws.root(), v("0.1.1-rc.1"), Some(&green_run(&tip)), true)
+        .unwrap()
+        .unwrap_err();
     assert_eq!(dry.next, v("0.1.1-rc.1"));
     assert_eq!(
         ws.git(&["rev-parse", "dev"]),
         tip,
         "a dry run moves nothing"
     );
-    let done = release(
-        &setup(&runner, &w, &p, "dev"),
-        ws.root(),
-        Level::Patch,
-        Some(&green_run(&tip)),
-        false,
-    )
-    .unwrap()
-    .unwrap();
+    let done = release(&s, ws.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
     let changed = ws.git(&["show", "--name-only", "--format=", &done.bump_sha]);
     assert!(changed.contains("crates/w/Cargo.toml"), "{changed}");
     assert!(!changed.contains("crates/w-x"), "{changed}");
@@ -340,4 +332,141 @@ fn the_whole_release_of_a_set_writes_the_primarys_manifest_and_publishes_it_alon
         .filter(|l| l.starts_with("cargo publish"))
         .collect();
     assert_eq!(publishes, ["cargo publish -p w --locked"], "{ran:?}");
+}
+
+#[test]
+fn the_primary_is_the_member_named_as_the_repository_is_named_not_the_directory() {
+    let ws = Ws::new();
+    // the clone sits in `w`, and the workspace manifest calls the repository `w-y`
+    let layout =
+        crate::release::workspace::layout(ws.root(), homma_api::RepoKind::Crate, "w-y").unwrap();
+    assert!(
+        matches!(&layout, crate::release::workspace::Layout::Set { primary, riders }
+            if primary.name == "w-y" && riders.len() == 2),
+        "{layout:?}"
+    );
+    // one publishable member named otherwise is the primary all the same
+    let lone = tempfile::tempdir().unwrap();
+    std::fs::write(
+        lone.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(lone.path().join("crates/inner")).unwrap();
+    std::fs::write(
+        lone.path().join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    let layout =
+        crate::release::workspace::layout(lone.path(), homma_api::RepoKind::Crate, "outer")
+            .unwrap();
+    assert!(
+        matches!(&layout, crate::release::workspace::Layout::Set { primary, riders } if primary.name == "inner" && riders.is_empty()),
+        "{layout:?}"
+    );
+}
+
+#[test]
+fn a_set_with_no_primary_is_a_finding_of_the_check() {
+    let ws = Ws::new();
+    let findings = check::check(&check::Inputs {
+        root:      ws.root(),
+        repo:      "nobody",
+        remote:    "origin",
+        trunk:     "dev",
+        release:   "main",
+        target:    None,
+        published: &released(),
+        markers:   homma_api::Markers::defaults(),
+    })
+    .unwrap();
+    let primary: Vec<_> = findings.iter().filter(|f| f.id == "man.primary").collect();
+    assert_eq!(primary.len(), 1, "{findings:?}");
+    assert!(primary[0].severity.blocks());
+    assert!(primary[0].message.contains("w-x"), "{findings:?}");
+}
+
+#[test]
+fn a_patch_from_a_tagged_candidate_releases_the_candidates_version() {
+    let ws = Ws::new();
+    ws.git(&["switch", "--quiet", "main"]);
+    ws.member("w", "0.1.1-rc.1");
+    ws.commit_all("chore: release 0.1.1-rc.1");
+    ws.git(&["push", "--quiet", "origin", "main"]);
+    ws.tag("0.1.1-rc.1");
+    ws.git(&["switch", "--quiet", "dev"]);
+    ws.git(&["merge", "--quiet", "--no-edit", "main"]);
+    let p = ws.plan(Level::Patch).unwrap();
+    assert_eq!(
+        p.next,
+        v("0.1.1"),
+        "a patch from a candidate is its release"
+    );
+    // a minor past the candidate leaves its version unreleased, which is a gap
+    assert!(matches!(
+        ws.plan(Level::Minor),
+        Err(plan::PlanError::NotOneStep { .. })
+    ));
+}
+
+#[test]
+fn a_rider_moves_one_step_and_one_changed_without_a_bump_is_warned_of() {
+    let ws = Ws::new();
+    std::fs::write(ws.root().join("crates/w-x/lib.rs"), "// changed").unwrap();
+    ws.commit_all("fix: x");
+    let p = ws.plan(Level::Patch).unwrap();
+    let shown = p.to_string();
+    assert!(
+        shown.contains("`w-x` changed since `0.1.0` and stays at 0.2.0"),
+        "{shown}"
+    );
+    assert!(!shown.contains("`w-y` changed"), "{shown}");
+    ws.member("w-x", "0.2.2");
+    ws.commit_all("chore: skip one");
+    let err = ws.plan(Level::Patch).unwrap_err();
+    assert!(
+        matches!(&err, plan::PlanError::NotOneStep { what, .. } if what.contains("w-x")),
+        "{err}"
+    );
+    ws.member("w-x", "0.3.0-rc.1");
+    ws.commit_all("chore: a candidate");
+    assert!(ws.plan(Level::Patch).is_ok());
+}
+
+#[test]
+fn a_first_release_named_outright_is_the_manifests_version_or_one_step_above() {
+    let d = tempfile::tempdir().unwrap();
+    let g = |args: &[&str]| assert!(sh::run(d.path(), "git", args).unwrap().ok());
+    g(&["init", "--quiet", "-b", "main"]);
+    g(&["config", "user.email", "t@t"]);
+    g(&["config", "user.name", "t"]);
+    g(&["config", "commit.gpgsign", "false"]);
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    g(&["add", "."]);
+    g(&["commit", "--quiet", "-m", "feat: first"]);
+    let at = |s: &str| {
+        plan::plan(
+            d.path(),
+            "x",
+            homma_api::Markers::defaults(),
+            "HEAD",
+            v(s),
+            "d",
+        )
+    };
+    assert_eq!(at("0.1.0").unwrap().next, v("0.1.0"));
+    assert_eq!(at("0.1.1-rc.1").unwrap().next, v("0.1.1-rc.1"));
+    assert!(matches!(
+        at("0.3.0"),
+        Err(plan::PlanError::NotOneStep { .. })
+    ));
+    assert!(matches!(
+        at("0.0.9"),
+        Err(plan::PlanError::NotOneStep { .. })
+    ));
 }

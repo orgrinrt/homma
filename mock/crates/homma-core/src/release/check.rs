@@ -19,6 +19,9 @@ use super::{git, kind, version};
 /// What the check needs to know about the repo, beyond the tree itself.
 pub struct Inputs<'a> {
     pub root:      &'a Path,
+    /// The repository as the workspace manifest names it, which names a
+    /// virtual workspace's primary.
+    pub repo:      &'a str,
     pub remote:    &'a str,
     pub trunk:     &'a str,
     pub release:   &'a str,
@@ -193,7 +196,14 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     // workspace's primary reads as the repo's version, through the root
     // manifest from before the repo was a workspace and its own since
     let repo_kind = kind::detect(root, inputs.markers).ok();
-    let layout = repo_kind.and_then(|k| workspace::layout(root, k).ok());
+    let layout = match repo_kind.map(|k| workspace::layout(root, k, inputs.repo)) {
+        Some(Ok(l)) => Some(l),
+        Some(Err(e)) => {
+            push("man.primary", CheckSeverity::Error, e.to_string());
+            None
+        },
+        None => None,
+    };
     let primary = match &layout {
         Some(Layout::Set {
             primary,
@@ -233,7 +243,10 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     }
     let tagged_since = |sha: &str, v: &Version| -> Result<bool, git::GitError> {
         for (tv, target) in &tag_targets {
-            if tv == v && git::is_ancestor(root, sha, target)? {
+            if tv == v
+                && git::is_ancestor(root, sha, target)?
+                && git::is_ancestor(root, target, inputs.release)?
+            {
                 return Ok(true);
             }
         }
@@ -243,8 +256,14 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         let file = if k.has_crate() { "Cargo.toml" } else { "deno.json" };
         let mut files = vec![file.to_string()];
         files.extend(primary.map(|p| p.manifest.clone()));
+        // a commit both walks find is one finding
+        let mut seen: Vec<String> = Vec::new();
         for file in &files {
             for sha in git::first_parent_touching(root, inputs.release, file)? {
+                if seen.contains(&sha) {
+                    continue;
+                }
+                seen.push(sha.clone());
                 let here = version_at(&sha, k)?;
                 let parent = version_at(&format!("{sha}^"), k)?;
                 if let (Some(here), Some(parent)) = (here, parent) {

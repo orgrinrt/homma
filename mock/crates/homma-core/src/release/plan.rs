@@ -22,9 +22,11 @@ use super::{changelog, kind, publish, version};
 /// its manifest carried at the last tag and carries now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ride {
-    pub name: String,
-    pub from: Option<Version>,
-    pub to:   Version,
+    pub name:    String,
+    pub from:    Option<Version>,
+    pub to:      Version,
+    /// Whether anything under its directory changed since the last tag.
+    pub changed: bool,
 }
 
 impl Ride {
@@ -91,6 +93,16 @@ impl fmt::Display for Plan {
             match (&r.from, r.moves()) {
                 (Some(from), true) => writeln!(f, "`{}` moves from {from} to {}", r.name, r.to)?,
                 (None, _) => writeln!(f, "`{}` is new at {}", r.name, r.to)?,
+                (Some(_), false) if r.changed => {
+                    writeln!(
+                        f,
+                        "warning: `{}` changed since `{}` and stays at {}; its change publishes \
+                         only once its version moves",
+                        r.name,
+                        self.last_tag.as_deref().unwrap_or_default(),
+                        r.to
+                    )?
+                },
                 (Some(_), false) => writeln!(f, "`{}` stays at {}", r.name, r.to)?,
             }
         }
@@ -123,8 +135,10 @@ pub enum PlanError {
     /// the target makes of it. Boxed, since three versions inline would make
     /// every result carrying this error larger than the gate's clippy allows.
     OffLevel(Box<OffLevel>),
-    /// The version named is not one step above the last tag's.
+    /// A version that is not one step above the one before it: the release's
+    /// next against the last tag or the manifest, or a rider's move.
     NotOneStep {
+        what: String,
         last: Box<Version>,
         next: Box<Version>,
     },
@@ -149,12 +163,13 @@ impl fmt::Display for PlanError {
             PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
             PlanError::Layout(e) => write!(f, "{e}"),
             PlanError::NotOneStep {
+                what,
                 last,
                 next,
             } => {
                 write!(
                     f,
-                    "{next} is not one step above the last tag {last}: a level's step, a \
+                    "{next} is not one step above {what} at {last}: a level's step, a \
                      pre-release of one, or from a pre-release a later one or its release"
                 )
             },
@@ -232,6 +247,7 @@ pub fn working_version(
 /// The plan for releasing `head` to `target`, dated `date`.
 pub fn plan(
     root: &Path,
+    repo: &str,
     markers: &Markers,
     head: &str,
     target: impl Into<Target>,
@@ -239,7 +255,7 @@ pub fn plan(
 ) -> Result<Plan, PlanError> {
     let target = target.into();
     let repo_kind = kind::detect(root, markers).map_err(PlanError::NoManifest)?;
-    let layout = workspace::layout(root, repo_kind).map_err(PlanError::Layout)?;
+    let layout = workspace::layout(root, repo_kind, repo).map_err(PlanError::Layout)?;
     let current = working_version(root, repo_kind, &layout)?;
     let last = last_tag(root)?;
     let commits = match &last {
@@ -249,7 +265,19 @@ pub fn plan(
     let next = next_version(&current, last.as_ref().map(|(_, v)| v), &target)?;
     let tags = git::tags(root)?;
     let tag = check::tag_name(&tags, &next);
-    let riders = rides(root, &layout, last.as_ref().map(|(t, _)| t.as_str()))?;
+    let riders = rides(root, &layout, last.as_ref().map(|(t, _)| t.as_str()), head)?;
+    // a rider moves one step, as the primary does
+    for r in riders.iter().filter(|r| r.moves()) {
+        if let Some(from) = &r.from {
+            if !from.is_one_step(&r.to) {
+                return Err(PlanError::NotOneStep {
+                    what: format!("`{}`", r.name),
+                    last: Box::new(from.clone()),
+                    next: Box::new(r.to.clone()),
+                });
+            }
+        }
+    }
     let mut block = changelog::block(&next, date, &commits);
     let moved: Vec<(String, Version)> = riders
         .iter()
@@ -302,15 +330,25 @@ fn next_version(
     last: Option<&Version>,
     target: &Target,
 ) -> Result<Version, PlanError> {
+    // a first release named outright is the manifest's version or one step
+    // above it
     let Some(v) = last else {
-        return Ok(match target {
-            Target::Level(l) => current.bumped(*l),
-            Target::Version(n) => n.clone(),
-        });
+        return match target {
+            Target::Level(l) => Ok(current.bumped(*l)),
+            Target::Version(n) if n == current || current.is_one_step(n) => Ok(n.clone()),
+            Target::Version(n) => {
+                Err(PlanError::NotOneStep {
+                    what: "the manifest".into(),
+                    last: Box::new(current.clone()),
+                    next: Box::new(n.clone()),
+                })
+            },
+        };
     };
     let next = target.next_from(v);
     if !v.is_one_step(&next) {
         return Err(PlanError::NotOneStep {
+            what: "the last tag".into(),
             last: Box::new(v.clone()),
             next: Box::new(next),
         });
@@ -326,8 +364,14 @@ fn next_version(
     Ok(next)
 }
 
-/// Each rider's version at the last tag and in the tree.
-fn rides(root: &Path, layout: &Layout, last_tag: Option<&str>) -> Result<Vec<Ride>, GitError> {
+/// Each rider's version at the last tag and at `head`, and whether its
+/// directory changed between the two.
+fn rides(
+    root: &Path,
+    layout: &Layout,
+    last_tag: Option<&str>,
+    head: &str,
+) -> Result<Vec<Ride>, GitError> {
     let Layout::Set {
         riders,
         ..
@@ -340,14 +384,21 @@ fn rides(root: &Path, layout: &Layout, last_tag: Option<&str>) -> Result<Vec<Rid
         let Some(to) = workspace::version_in_tree(root, m) else {
             continue;
         };
-        let from = match last_tag {
-            Some(t) => workspace::version_at(root, t, &m.manifest)?,
-            None => None,
+        let (from, changed) = match last_tag {
+            Some(t) => {
+                let dir = m.manifest.rsplit_once('/').map_or(".", |(d, _)| d);
+                (
+                    workspace::version_at(root, t, &m.manifest)?,
+                    git::changed_between(root, t, head, dir)?,
+                )
+            },
+            None => (None, false),
         };
         out.push(Ride {
             name: m.name.clone(),
             from,
             to,
+            changed,
         });
     }
     Ok(out)

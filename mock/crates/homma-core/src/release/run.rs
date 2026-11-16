@@ -24,6 +24,8 @@ use crate::forge::ForgeError;
 /// Everything a release needs to know that is not in the tree.
 pub struct Setup<'a> {
     pub runner:    &'a dyn Runner,
+    /// The repository as the workspace manifest names it.
+    pub repo:      &'a str,
     /// The forge writes of steps 6 and 7, the tag and the release; the engine
     /// picks which way they go for the repo.
     pub forge:     &'a dyn ReleaseForge,
@@ -157,6 +159,7 @@ pub fn step_check(
 ) -> Result<Vec<Finding>, ReleaseError> {
     let findings = check::check(&check::Inputs {
         root,
+        repo: setup.repo,
         remote: setup.remote,
         trunk: setup.trunk,
         release: setup.release,
@@ -373,7 +376,14 @@ pub fn release(
     let target = target.into();
     step_check(setup, root, &target)?;
     step_gate_run(root, setup.trunk, newest_run)?;
-    let plan = plan::plan(root, setup.markers, setup.trunk, target, setup.date)?;
+    let plan = plan::plan(
+        root,
+        setup.repo,
+        setup.markers,
+        setup.trunk,
+        target,
+        setup.date,
+    )?;
     if dry_run {
         return Ok(Err(plan));
     }

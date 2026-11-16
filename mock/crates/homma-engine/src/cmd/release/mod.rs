@@ -28,6 +28,7 @@ use crate::output::{HumanRender, emit};
 
 mod gating;
 mod order;
+mod sweep;
 use gating::gate_cmd;
 use order::{release_order, sibling_dependency};
 
@@ -220,11 +221,12 @@ fn published_for(cfg: &Config, root: &Path) -> Result<check::Published> {
 }
 
 fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
-    let (_, _, root) = resolve_repo(cfg, repo)?;
+    let (name, _, root) = resolve_repo(cfg, repo)?;
     let root = &root;
     let published = published_for(cfg, root)?;
     let findings = check::check(&check::Inputs {
         root,
+        repo: name,
         remote: "origin",
         trunk: branches_checked(cfg, root)?.0,
         release: branches_checked(cfg, root)?.1,
@@ -260,9 +262,10 @@ fn named(t: &crate::cli::TargetArgs) -> Result<Target> {
 }
 
 fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, target: Target) -> Result<Outcome> {
-    let (_, _, root) = resolve_repo(cfg, repo)?;
+    let (name, _, root) = resolve_repo(cfg, repo)?;
     let p = plan::plan(
         &root,
+        name,
         &cfg.markers,
         branches_checked(cfg, &root)?.0,
         target,
@@ -308,6 +311,13 @@ fn run_cmd(
     target: Target,
     dry_run: bool,
 ) -> Result<Outcome> {
+    // a version named outright is one repo's next version, never every repo's
+    if repo.is_none() && matches!(target, Target::Version(_)) {
+        return Err(anyhow!(
+            "`--version` names one repository's next version; name the repository, or \
+             sweep with `--level`"
+        ));
+    }
     let store = store(cli);
     let token = token_source(cfg);
     let forge_route = forge_route_of(&config_path(cli))?;
@@ -324,17 +334,17 @@ fn run_cmd(
         for name in &names {
             let (_, _, root) = resolve_repo(cfg, Some(name))?;
             let (trunk, _) = branches_checked(cfg, &root)?;
-            match plan::plan(&root, &cfg.markers, trunk, target.clone(), &clock::today()) {
-                Ok(p) if p.commits.is_empty() => {
-                    lines.push(format!("{name}: nothing unreleased, passed over"));
-                },
-                Ok(_) => active.push(name.clone()),
-                // a manifest off the level refuses a single run, so it
-                // refuses the sweep too rather than being passed over
-                Err(e @ plan::PlanError::OffLevel(_)) => {
-                    return Err(anyhow!("{name}: {e}"));
-                },
-                Err(e) => lines.push(format!("{name}: passed over, {e}")),
+            let p = plan::plan(
+                &root,
+                name,
+                &cfg.markers,
+                trunk,
+                target.clone(),
+                &clock::today(),
+            );
+            match sweep::verdict(name, p)? {
+                sweep::Verdict::Take => active.push(name.clone()),
+                sweep::Verdict::PassOver(line) => lines.push(line),
             }
         }
         // the sweep goes in name order, and a dependent released ahead of
@@ -375,6 +385,7 @@ fn run_cmd(
         let setup = Setup {
             runner: &Real,
             forge: forge.as_ref(),
+            repo: name,
             remote: "origin",
             trunk,
             release: release_line,
@@ -421,7 +432,7 @@ fn badges_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
         anyhow!("no gate run recorded for `{name}`; push it through the hook or run `homma release gate`")
     })?;
     let kind = homma_core::release::kind::detect(root, &cfg.markers)?;
-    let layout = homma_core::release::workspace::layout(root, kind)?;
+    let layout = homma_core::release::workspace::layout(root, kind, name)?;
     let v = plan::working_version(root, kind, &layout)?;
     let files = badges::files(&run, &v);
     let sha = badges::write(root, &files)?;

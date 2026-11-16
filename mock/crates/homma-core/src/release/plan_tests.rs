@@ -47,6 +47,7 @@ fn a_first_release_carries_the_whole_history_and_bumps_from_the_manifest() {
     commit(d.path(), "fix: two");
     let p = plan(
         d.path(),
+        "x",
         &Markers::default(),
         "HEAD",
         Level::Patch,
@@ -80,7 +81,15 @@ fn commits_are_counted_from_the_newest_tag_and_the_tag_follows_the_convention() 
             .ok()
     );
     commit(d.path(), "feat: later");
-    let p = plan(d.path(), &Markers::default(), "HEAD", Level::Minor, "d").unwrap();
+    let p = plan(
+        d.path(),
+        "x",
+        &Markers::default(),
+        "HEAD",
+        Level::Minor,
+        "d",
+    )
+    .unwrap();
     assert_eq!(p.last_tag.as_deref(), Some("0.1.0"));
     assert_eq!(p.commits.len(), 1);
     assert_eq!(p.next, Version::new(0, 2, 0));
@@ -112,7 +121,15 @@ fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
         .ok()
     );
     // 0.1.1 is what a patch makes of v0.1.0, and not what a major makes
-    let err = plan(d.path(), &Markers::default(), "HEAD", Level::Major, "d").unwrap_err();
+    let err = plan(
+        d.path(),
+        "x",
+        &Markers::default(),
+        "HEAD",
+        Level::Major,
+        "d",
+    )
+    .unwrap_err();
     assert!(
         matches!(&err, PlanError::OffLevel(o)
             if o.manifest == Version::new(0, 1, 1) && o.next == Version::new(0, 2, 0)),
@@ -131,7 +148,15 @@ fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
     )
     .unwrap();
     commit(d.path(), "chore: back too far");
-    let err = plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d").unwrap_err();
+    let err = plan(
+        d.path(),
+        "x",
+        &Markers::default(),
+        "HEAD",
+        Level::Patch,
+        "d",
+    )
+    .unwrap_err();
     assert!(matches!(&err, PlanError::OffLevel(_)), "{err}");
     assert!(
         err.to_string().contains("behind the last tag 0.1.0"),
@@ -145,7 +170,15 @@ fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
     )
     .unwrap();
     commit(d.path(), "chore: at the level");
-    let p = plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d").unwrap();
+    let p = plan(
+        d.path(),
+        "x",
+        &Markers::default(),
+        "HEAD",
+        Level::Patch,
+        "d",
+    )
+    .unwrap();
     assert_eq!(
         p.next,
         Version::new(0, 1, 1),
@@ -166,7 +199,15 @@ fn a_manifest_off_the_level_refuses_and_one_at_the_level_is_the_release() {
         .unwrap()
         .ok()
     );
-    let p = plan(d.path(), &Markers::default(), "HEAD", Level::Major, "d").unwrap();
+    let p = plan(
+        d.path(),
+        "x",
+        &Markers::default(),
+        "HEAD",
+        Level::Major,
+        "d",
+    )
+    .unwrap();
     assert_eq!(p.next, Version::new(0, 2, 0), "a major on 0.x is a minor");
 }
 
@@ -175,7 +216,14 @@ fn a_tree_without_a_manifest_is_not_plannable() {
     let d = tempfile::tempdir().unwrap();
     assert!(sh::run(d.path(), "git", &["init", "--quiet"]).unwrap().ok());
     assert!(matches!(
-        plan(d.path(), &Markers::default(), "HEAD", Level::Patch, "d"),
+        plan(
+            d.path(),
+            "x",
+            &Markers::default(),
+            "HEAD",
+            Level::Patch,
+            "d"
+        ),
         Err(PlanError::NoManifest(_))
     ));
 }

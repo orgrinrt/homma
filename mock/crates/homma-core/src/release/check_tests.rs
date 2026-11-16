@@ -86,6 +86,7 @@ fn ids(findings: &[Finding]) -> Vec<&str> {
 fn run(f: &Fixture, published: &Published, level: Option<Level>) -> Vec<Finding> {
     check(&Inputs {
         root: f.root(),
+        repo: "x",
         remote: "origin",
         trunk: "dev",
         release: "main",
@@ -467,5 +468,25 @@ fn a_bump_whose_version_was_tagged_on_a_later_commit_is_tagged() {
     f.git(&["commit", "--quiet", "-am", "chore: bump"]);
     f.git(&["push", "--quiet", "origin", "main"]);
     let findings = run(&f, &published(&["0.0.1"]), None);
+    assert!(ids(&findings).contains(&"tag.bump.tagged"), "{findings:?}");
+}
+
+#[test]
+fn a_tag_on_a_dev_commit_after_the_bump_does_not_clear_it() {
+    let f = Fixture::crate_at("0.1.0");
+    f.tag("v0.1.0");
+    // the bump made on dev and merged into main: the merge is the bump
+    f.git(&["switch", "--quiet", "dev"]);
+    f.manifest("0.2.0");
+    f.git(&["commit", "--quiet", "-am", "chore: release 0.2.0"]);
+    f.git(&["switch", "--quiet", "main"]);
+    f.git(&["merge", "--quiet", "--no-ff", "-m", "release: 0.2.0", "dev"]);
+    // dev takes main and moves on, and the tag goes on dev after the merge
+    f.git(&["switch", "--quiet", "dev"]);
+    f.git(&["merge", "--quiet", "--ff-only", "main"]);
+    f.commit("docs: after");
+    f.git(&["push", "--quiet", "origin", "main", "dev"]);
+    f.tag("v0.2.0");
+    let findings = run(&f, &published(&["0.1.0", "0.2.0"]), None);
     assert!(ids(&findings).contains(&"tag.bump.tagged"), "{findings:?}");
 }

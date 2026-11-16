@@ -32,10 +32,22 @@ impl Version {
     }
 
     /// The version a level makes of this one. Before 1.0 a major is a minor,
-    /// since that is what every resolver reads a `0.x` bump as, and a
-    /// prerelease is dropped whatever the level.
+    /// since that is what every resolver reads a `0.x` bump as. From a
+    /// prerelease the level makes that prerelease's release where the
+    /// release is at the level or below it, as cargo-release does: a patch
+    /// from `0.0.5-rc.1` is `0.0.5`, a minor from `0.1.0-rc.1` is `0.1.0`.
     pub fn bumped(&self, level: Level) -> Version {
         let level = if self.major == 0 && level == Level::Major { Level::Minor } else { level };
+        if self.prerelease.is_some() {
+            let below = match level {
+                Level::Patch => true,
+                Level::Minor => self.patch == 0,
+                Level::Major => self.minor == 0 && self.patch == 0,
+            };
+            if below {
+                return Version::new(self.major, self.minor, self.patch);
+            }
+        }
         match level {
             Level::Patch => Version::new(self.major, self.minor, self.patch + 1),
             Level::Minor => Version::new(self.major, self.minor + 1, 0),

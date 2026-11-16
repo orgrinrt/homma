@@ -480,3 +480,16 @@ fn a_fresh_clone_with_only_a_remote_dev_still_merges_dev_onto_main() {
         .success()
         .stdout(predicate::str::contains("`main` alone"));
 }
+
+#[test]
+fn a_version_named_outright_needs_a_repo_named_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "run", "--version", "0.2.0", "--dry-run"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("names one repository"));
+}
