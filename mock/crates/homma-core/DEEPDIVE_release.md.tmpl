@@ -372,10 +372,18 @@ pre-release makes that pre-release's release: a patch from `0.0.5-rc.1` is
    refuses with both numbers rather than picking one. With `--dry-run` it stops
    here.
 4. Bumps the manifest on `dev`, prepends the block to `CHANGELOG.md`, commits
-   both as one commit, and pushes `dev`.
+   both as one commit, and pushes `dev`. Where the forge refuses the push
+   outright, a ruleset that takes changes to `dev` only through a pull request,
+   the commit is pushed as `release/<repo>-<version>` and landed through a pull
+   request squashed into `dev` under its own subject, and the clone's `dev`
+   then takes the commit the forge made.
 5. Merges `dev` into `main` with a merge commit, never a squash, never a
    fast-forward, so the tag has a commit of its own and `main` keeps every
-   constituent commit.
+   constituent commit. Where the forge refuses the push of `main` outright, the
+   local merge is undone and the release pull request does it instead, `dev`
+   into `main`, merged by the forge with a merge commit under the same subject
+   at the head the plan measured; the clone's `main` takes that commit, and it
+   is what step 6 tags, once it is checked to be a merge of `dev`'s tip.
 6. Creates the annotated tag on the merge commit and pushes it. Where the
    repo's forge is GitHub and the workspace manifest names `forge_route` under
    `[paths]`, the command every tag, release and remote branch deletion of the
@@ -399,10 +407,27 @@ pre-release makes that pre-release's release: a patch from `0.0.5-rc.1` is
    the next package that depends on it publishes.
 9. Writes the badge json to the `badges` branch.
 
-The two writes of steps 6 and 7 are one contract, `ReleaseForge`, with its
-`tag` and its `release`. `ByClient` tags with git in the clone, pushes the tag
-and makes the release through the forge client; `ByRoute` asks `forge_route`
-for both. The engine picks one per repo: `ByRoute` for a GitHub repo where the
+The forge writes of steps 4 to 7 are one contract, `ReleaseForge`, with its
+`tag`, its `release` and its `land`, the last a pull request from one branch
+into another merged at a given head the way `Merge` names, a squash or a merge
+commit. `ByClient` tags with git in the clone, pushes the tag and makes the
+release through the forge client, and has no pull request: a refused push
+stays refused, with the reason. `ByRoute` asks `forge_route` for all three,
+`land` as `forge_route pr <repo root> <head> <base> <title> <squash|merge>
+<sha>`, which takes the pull request open from the head into the base or
+opens one with no body, and merges it at that sha with the title as its
+subject and no message. That verb is the same mechanism the workspace's
+landing scripts fall back on where a trunk refuses a push, and homma keeps no
+copy of it. A refusal is read off git's `[remote rejected]`, as those scripts
+read it; any other failed push is the error it was.
+
+A run that stopped after step 4 made its commit is resumed by running it again.
+Where the trunk is one commit past the remote's, and that commit is
+`chore: release <version>` with the remote's tip as its parent, the run sets
+the commit aside before step 1, so the check, the gate run and the plan see
+the commit the gate measured, and step 4 takes the commit back instead of
+writing a second. A plan for another version than the commit carries refuses,
+and so does any step before 4; either way the commit is put back. The engine picks one per repo: `ByRoute` for a GitHub repo where the
 manifest names the route, since the route reaches GitHub alone, and `ByClient`
 for every other. A manifest that does not read as a workspace's is an error
 rather than no route, and so is a route it names that is not there, both read
