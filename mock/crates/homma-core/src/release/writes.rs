@@ -2,9 +2,10 @@
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
-//! The two writes a release makes on its forge, the annotated tag on the
-//! release commit and the release on that tag, as one contract with an
-//! implementation for each way they reach the forge.
+//! The writes a release makes on its forge, the annotated tag on the release
+//! commit, the release on that tag, and the pull request that lands a push the
+//! forge refused, as one contract with an implementation for each way they
+//! reach the forge.
 
 use std::path::Path;
 
@@ -13,7 +14,25 @@ use super::git;
 use super::run::ReleaseError;
 use crate::forge::Forge;
 
-/// The forge writes of steps 6 and 7. The run holds one of these and never
+/// How the forge merges a pull request it lands: the bump is squashed into
+/// the trunk under its own subject, and the release line takes a merge commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Merge {
+    Squash,
+    Merge,
+}
+
+impl Merge {
+    /// The word the route takes for it.
+    pub const fn word(self) -> &'static str {
+        match self {
+            Merge::Squash => "squash",
+            Merge::Merge => "merge",
+        }
+    }
+}
+
+/// The forge writes of steps 4 to 7. The run holds one of these and never
 /// asks which way the writes go.
 pub trait ReleaseForge {
     /// The annotated tag `tag` on `sha`, with `message`, made on the remote.
@@ -21,6 +40,23 @@ pub trait ReleaseForge {
 
     /// The forge release on `tag`, with `body` as its notes.
     fn release(&self, root: &Path, tag: &str, body: &str) -> Result<(), ReleaseError>;
+
+    /// `sha`, pushed as `head`, landed into `base` through a pull request
+    /// the forge merges by `how` at that head, `title` its subject and no
+    /// body. The open one from `head` into `base` is taken where there is one.
+    fn land(
+        &self,
+        root: &Path,
+        head: &str,
+        base: &str,
+        title: &str,
+        how: Merge,
+        sha: &str,
+    ) -> Result<(), ReleaseError>;
+
+    /// The remote `branch` a landed pull request leaves, deleted where it is
+    /// at `head`.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError>;
 }
 
 /// Git tags in the clone and pushes the tag to `remote`; the forge client
@@ -42,6 +78,25 @@ impl ReleaseForge for ByClient<'_> {
     fn release(&self, _root: &Path, tag: &str, body: &str) -> Result<(), ReleaseError> {
         self.forge
             .create_release(self.owner, self.name, tag, body)?;
+        Ok(())
+    }
+
+    /// The client opens no pull request: that is the route's, so a push the
+    /// forge refused stays refused, named.
+    fn land(
+        &self,
+        _root: &Path,
+        _head: &str,
+        base: &str,
+        _title: &str,
+        _how: Merge,
+        _sha: &str,
+    ) -> Result<(), ReleaseError> {
+        Err(ReleaseError::NoPullRequest(base.to_string()))
+    }
+
+    /// The client lands no pull request, so it leaves no branch to drop.
+    fn drop_branch(&self, _root: &Path, _branch: &str, _head: &str) -> Result<(), ReleaseError> {
         Ok(())
     }
 }
@@ -84,5 +139,25 @@ impl ReleaseForge for ByRoute<'_> {
     fn release(&self, root: &Path, tag: &str, body: &str) -> Result<(), ReleaseError> {
         let at = root.to_string_lossy();
         self.ask(root, &["release", &at, tag], &[("FR_NOTES", body)])
+    }
+
+    fn land(
+        &self,
+        root: &Path,
+        head: &str,
+        base: &str,
+        title: &str,
+        how: Merge,
+        sha: &str,
+    ) -> Result<(), ReleaseError> {
+        let at = root.to_string_lossy();
+        self.ask(root, &["pr", &at, head, base, title, how.word(), sha], &[])
+    }
+
+    /// `delete-branch --queue`, so a branch the forge will not delete now is
+    /// queued for the workspace's sweep.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError> {
+        let at = root.to_string_lossy();
+        self.ask(root, &["delete-branch", "--queue", &at, branch, head], &[])
     }
 }

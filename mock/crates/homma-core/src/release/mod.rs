@@ -13,6 +13,7 @@ pub mod check;
 pub mod gate;
 pub mod git;
 pub mod kind;
+pub mod landing;
 pub mod numbers;
 pub mod packages;
 pub mod plan;

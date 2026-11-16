@@ -455,9 +455,58 @@ pub fn create_tag_ref(cwd: &Path, tag: &str, object: &str) -> Result<(), GitErro
     .map(|_| ())
 }
 
+/// The remote's `branch` fetched into its tracking ref, and its sha. No tag
+/// comes with it: a tag reaches the clone only as step 6 checks it.
+pub fn fetch_branch(cwd: &Path, remote: &str, branch: &str) -> Result<String, GitError> {
+    let spec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
+    git(cwd, &["fetch", "--quiet", "--no-tags", remote, &spec])?;
+    sha(cwd, &format!("{remote}/{branch}"))
+}
+
+/// The tree a commit records.
+pub fn tree(cwd: &Path, rev: &str) -> Result<String, GitError> {
+    trimmed(cwd, &["rev-parse", "--verify", &format!("{rev}^{{tree}}")])
+}
+
+/// A commit's subject line.
+pub fn subject(cwd: &Path, rev: &str) -> Result<String, GitError> {
+    trimmed(cwd, &["log", "-1", "--format=%s", rev])
+}
+
+/// Move `branch`, which is not checked out, to `rev`.
+pub fn set_branch(cwd: &Path, branch: &str, rev: &str) -> Result<(), GitError> {
+    git(cwd, &["branch", "--force", branch, rev]).map(|_| ())
+}
+
+/// Fast-forward the checked-out branch to `rev`, and nothing else.
+pub fn fast_forward(cwd: &Path, rev: &str) -> Result<(), GitError> {
+    git(cwd, &["merge", "--quiet", "--ff-only", rev]).map(|_| ())
+}
+
 /// Fetch tags and branches from `remote`, pruning what is gone.
 pub fn fetch(cwd: &Path, remote: &str) -> Result<(), GitError> {
     git(cwd, &["fetch", "--quiet", "--tags", "--prune", remote]).map(|_| ())
+}
+
+/// Whether some tag in the clone holds `rev`.
+pub fn tagged(cwd: &Path, rev: &str) -> Result<bool, GitError> {
+    Ok(!trimmed(cwd, &["tag", "--contains", rev])?.is_empty())
+}
+
+/// The tree `ours` and `theirs` make merged, without touching the work tree.
+pub fn merge_tree(cwd: &Path, ours: &str, theirs: &str) -> Result<String, GitError> {
+    trimmed(cwd, &["merge-tree", "--write-tree", ours, theirs])
+}
+
+/// The commit on `line`'s first parents whose second parent is `second`.
+pub fn merge_of(cwd: &Path, line: &str, second: &str) -> Result<Option<String>, GitError> {
+    let parents = trimmed(cwd, &["rev-list", "--first-parent", "--parents", line])?;
+    Ok(parents.lines().find_map(|l| {
+        let mut ids = l.split_whitespace();
+        let commit = ids.next()?;
+        ids.next()?;
+        (ids.next()? == second).then(|| commit.to_string())
+    }))
 }
 
 #[cfg(test)]
