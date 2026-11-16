@@ -411,7 +411,7 @@ fn the_bump_refuses_off_the_trunk() {
     )
     .unwrap();
     assert!(matches!(
-        step_bump(&setup(&runner, &client(&forge), &p, "dev"), f.root(), &plan),
+        step_bump(&setup(&runner, &client(&forge), &p, "dev"), f.root(), &plan, None),
         Err(ReleaseError::NotOnTrunk(Some(b))) if b == "main"
     ));
 }
@@ -434,7 +434,7 @@ fn a_push_that_fails_mid_release_hands_the_tree_back_to_the_trunk_clean() {
     .unwrap();
     let w = client(&forge);
     let s = setup(&runner, &w, &p, "dev");
-    step_bump(&s, f.root(), &plan).unwrap();
+    step_bump(&s, f.root(), &plan, None).unwrap();
     // the remote refuses the push of main, which is what a ruleset does
     let main_before = f.git(&["rev-parse", "main"]);
     f.git(&["config", "remote.origin.pushurl", "/nonexistent/nowhere.git"]);
@@ -494,6 +494,8 @@ struct Routed<'a> {
     origin:    &'a Path,
     makes_tag: bool,
     said:      Option<&'static str>,
+    /// Where set, a pull request asked of the route fails with it.
+    pr_said:   RefCell<Option<&'static str>>,
 }
 
 impl<'a> Routed<'a> {
@@ -503,6 +505,7 @@ impl<'a> Routed<'a> {
             origin:    f.origin(),
             makes_tag: true,
             said:      None,
+            pr_said:   RefCell::new(None),
         }
     }
 }
@@ -539,6 +542,15 @@ impl Runner for Routed<'_> {
         }
         if let Some(said) = self.said {
             return answer(1, said);
+        }
+        if args.first() == Some(&"pr") {
+            if let Some(said) = *self.pr_said.borrow() {
+                return answer(1, said);
+            }
+            return match pr::land_in(self.origin, args) {
+                Ok(()) => answer(0, ""),
+                Err(said) => answer(1, &said),
+            };
         }
         if let (true, ["tag", _root, tag, sha, _message]) = (self.makes_tag, args) {
             let made = sh::run(self.origin, "git", &[
@@ -784,3 +796,6 @@ fn a_forge_route_that_fails_every_way_stops_the_release_with_its_words() {
 
 #[path = "workspace_tests.rs"]
 mod workspace;
+
+#[path = "run_pr_tests.rs"]
+mod pr;

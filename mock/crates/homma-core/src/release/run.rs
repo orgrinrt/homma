@@ -13,6 +13,7 @@ use homma_api::{Finding, GateRun, Markers, Target, Verdict};
 use super::check::{self, Published};
 use super::gate::Runner;
 use super::git::GitError;
+use super::landing::{self, Pending};
 use super::plan::{self, Plan, PlanError};
 use super::publish::{self, PublishError, Served, TokenSource};
 use super::registry::Registry;
@@ -71,6 +72,21 @@ pub enum ReleaseError {
         at:  String,
         sha: String,
     },
+    /// The forge refused a push to the branch, and the forge writes in use
+    /// open no pull request.
+    NoPullRequest(String),
+    /// After a pull request into `base` was landed, the remote's `base` at
+    /// `at` is not what the release pushed there.
+    NotLanded {
+        base: String,
+        at:   String,
+    },
+    /// A bump a stopped run left on the trunk is for another version than
+    /// the plan.
+    PendingBump {
+        found:   String,
+        planned: String,
+    },
 }
 
 impl fmt::Display for ReleaseError {
@@ -124,6 +140,30 @@ impl fmt::Display for ReleaseError {
                 write!(
                     f,
                     "the remote's {tag} names {at}, and the release tagged {sha}"
+                )
+            },
+            ReleaseError::NoPullRequest(base) => {
+                write!(
+                    f,
+                    "the forge takes no push to {base}, only a pull request, and those go through the workspace's `forge_route`, which it does not name"
+                )
+            },
+            ReleaseError::NotLanded {
+                base,
+                at,
+            } => {
+                write!(
+                    f,
+                    "the pull request into {base} left it at {at}, which is not what the release pushed"
+                )
+            },
+            ReleaseError::PendingBump {
+                found,
+                planned,
+            } => {
+                write!(
+                    f,
+                    "the trunk carries `{found}` from a run that stopped, and this run plans {planned}; it is left on the trunk"
                 )
             },
         }
@@ -198,12 +238,28 @@ pub fn step_gate_run(
 }
 
 /// Step 4: bump the manifest and prepend the changelog on the trunk, as one
-/// commit, and push it.
-pub fn step_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, ReleaseError> {
+/// commit, and push it, through a pull request where the forge refuses the
+/// push. A `pending` bump a stopped run left is taken back instead of a
+/// second being written. Returns the bump as the trunk holds it.
+pub fn step_bump(
+    setup: &Setup<'_>,
+    root: &Path,
+    plan: &Plan,
+    pending: Option<&Pending>,
+) -> Result<String, ReleaseError> {
     match git::current_branch(root)? {
         Some(b) if b == setup.trunk => {},
         other => return Err(ReleaseError::NotOnTrunk(other)),
     }
+    let sha = match pending {
+        Some(p) => landing::take_back(root, p, &plan.next)?,
+        None => write_bump(setup, root, plan)?,
+    };
+    landing::push_bump(setup, root, &sha, &plan.next)
+}
+
+/// The bump commit itself: the manifest and the changelog, as one commit.
+fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, ReleaseError> {
     let mut paths = vec!["CHANGELOG.md"];
     if plan.current != plan.next {
         match &plan.layout {
@@ -235,9 +291,11 @@ pub fn step_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, 
         }
     }
     changelog::prepend(root, &plan.changelog)?;
-    let sha = git::commit_paths(root, &paths, &format!("chore: release {}", plan.next))?;
-    git::push(root, setup.remote, setup.trunk, false)?;
-    Ok(sha)
+    Ok(git::commit_paths(
+        root,
+        &paths,
+        &landing::bump_subject(&plan.next),
+    )?)
 }
 
 /// Steps 5 and 6: merge the trunk into the release line with a merge commit
@@ -264,7 +322,12 @@ pub fn step_merge_and_tag(
                 let _ = git::abort_merge(root);
                 let _ = git::reset_hard(root, &before);
                 let _ = git::switch(root, setup.trunk);
-                return Err(e.into());
+                if !landing::refused(&e) {
+                    return Err(e.into());
+                }
+                // the release line takes changes only through a pull request:
+                // the release pull request makes the same merge on the forge
+                landing::land_release(setup, root, &plan.next)?
             },
         }
     };
@@ -374,21 +437,31 @@ pub fn release(
     dry_run: bool,
 ) -> Result<Result<Released, Plan>, ReleaseError> {
     let target = target.into();
-    step_check(setup, root, &target)?;
-    step_gate_run(root, setup.trunk, newest_run)?;
-    let plan = plan::plan(
-        root,
-        setup.repo,
-        setup.markers,
-        setup.trunk,
-        target,
-        setup.date,
-    )?;
-    if dry_run {
-        return Ok(Err(plan));
-    }
+    // a bump a stopped run left is set aside, so the first three steps see
+    // the commit the gate measured, and put back wherever the run stops short
+    // of taking it
+    let pending = landing::set_aside(setup, root)?;
+    let planned = step_check(setup, root, &target)
+        .and_then(|_| step_gate_run(root, setup.trunk, newest_run))
+        .and_then(|_| {
+            Ok(plan::plan(
+                root,
+                setup.repo,
+                setup.markers,
+                setup.trunk,
+                target,
+                setup.date,
+            )?)
+        });
+    let plan = match planned {
+        Ok(plan) if !dry_run => plan,
+        other => {
+            landing::put_back(root, pending.as_ref());
+            return other.map(Err);
+        },
+    };
     let run = newest_run.expect("step two established it");
-    let bump_sha = step_bump(setup, root, &plan)?;
+    let bump_sha = step_bump(setup, root, &plan, pending.as_ref())?;
     let tag_sha = step_merge_and_tag(setup, root, &plan)?;
     step_forge_release(setup, root, &plan)?;
     step_publish(setup, root, &plan)?;

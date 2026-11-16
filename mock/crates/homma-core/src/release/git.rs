@@ -455,6 +455,33 @@ pub fn create_tag_ref(cwd: &Path, tag: &str, object: &str) -> Result<(), GitErro
     .map(|_| ())
 }
 
+/// The remote's `branch` fetched into its tracking ref, and its sha.
+pub fn fetch_branch(cwd: &Path, remote: &str, branch: &str) -> Result<String, GitError> {
+    let spec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
+    git(cwd, &["fetch", "--quiet", remote, &spec])?;
+    sha(cwd, &format!("{remote}/{branch}"))
+}
+
+/// The tree a commit records.
+pub fn tree(cwd: &Path, rev: &str) -> Result<String, GitError> {
+    trimmed(cwd, &["rev-parse", "--verify", &format!("{rev}^{{tree}}")])
+}
+
+/// A commit's subject line.
+pub fn subject(cwd: &Path, rev: &str) -> Result<String, GitError> {
+    trimmed(cwd, &["log", "-1", "--format=%s", rev])
+}
+
+/// Move `branch`, which is not checked out, to `rev`.
+pub fn set_branch(cwd: &Path, branch: &str, rev: &str) -> Result<(), GitError> {
+    git(cwd, &["branch", "--force", branch, rev]).map(|_| ())
+}
+
+/// Fast-forward the checked-out branch to `rev`, and nothing else.
+pub fn fast_forward(cwd: &Path, rev: &str) -> Result<(), GitError> {
+    git(cwd, &["merge", "--quiet", "--ff-only", rev]).map(|_| ())
+}
+
 /// Fetch tags and branches from `remote`, pruning what is gone.
 pub fn fetch(cwd: &Path, remote: &str) -> Result<(), GitError> {
     git(cwd, &["fetch", "--quiet", "--tags", "--prune", remote]).map(|_| ())
