@@ -336,6 +336,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     skip_cargo_mock,
                     skip_configs,
                     skip_aggregate,
+                    skip_surfaces,
                 } => {
                     let cfg = load_config(&cli)?;
                     agent::regen::run_with(
@@ -346,6 +347,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                             skip_cargo_mock:   *skip_cargo_mock,
                             skip_configs:      *skip_configs,
                             skip_aggregate:    *skip_aggregate,
+                            skip_surfaces:     *skip_surfaces,
                         },
                         cli.output,
                     )
