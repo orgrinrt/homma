@@ -513,9 +513,10 @@ fn a_repo_whose_config_differs_is_warned_about_and_the_run_still_succeeds() {
 
 #[test]
 fn skipping_every_stage_is_refused_but_skipping_two_is_not() {
-    // The guard counts stages, and there are three. It counted two until the
+    // The guard counts stages, and there are four. It counted two until the
     // configs stage arrived, at which point it refused a run that does real
-    // work: the test above skips both of the others and depends on this.
+    // work: the test above skips both of the others and depends on this. The
+    // surfaces stage is the fourth, so skipping the first three still runs it.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join(".claude")).unwrap();
@@ -533,10 +534,17 @@ fn skipping_every_stage_is_refused_but_skipping_two_is_not() {
             .expect("the binary runs")
     };
 
-    let all_three = run(&["--skip-cargo-mock", "--skip-configs", "--skip-aggregate"]);
+    let all_four =
+        run(&["--skip-cargo-mock", "--skip-configs", "--skip-aggregate", "--skip-surfaces"]);
     assert!(
-        String::from_utf8_lossy(&all_three.stderr).contains("would do nothing"),
+        String::from_utf8_lossy(&all_four.stderr).contains("would do nothing"),
         "skipping every stage should be refused"
+    );
+
+    let three = run(&["--skip-cargo-mock", "--skip-configs", "--skip-aggregate"]);
+    assert!(
+        !String::from_utf8_lossy(&three.stderr).contains("would do nothing"),
+        "the surfaces stage is left, so this is not every stage"
     );
 
     let two = run(&["--skip-cargo-mock", "--skip-aggregate", "--continue-on-error"]);

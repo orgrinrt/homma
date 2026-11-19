@@ -133,3 +133,133 @@ fn a_member_whose_check_would_fail_is_still_rendered() {
     invoke_cargo_mock_with(stub.to_str().unwrap(), member.path()).unwrap();
     assert!(member.path().join("rendered").exists());
 }
+
+/// Only the surfaces stage runs: the other three are skipped, so what the
+/// report says about the surfaces is the stage under test and nothing else.
+fn surfaces_only(skip_surfaces: bool) -> Opts {
+    Opts {
+        skip_cargo_mock: true,
+        skip_configs: true,
+        skip_aggregate: true,
+        skip_surfaces,
+        ..Opts::default()
+    }
+}
+
+/// A workspace whose `[paths]` names `bin/render` when `body` is given, with
+/// that file a script of `body`.
+#[cfg(unix)]
+fn workspace_with_renderer(ws: &std::path::Path, body: Option<&str>) -> homma_core::Config {
+    use std::os::unix::fs::PermissionsExt;
+    let mut text = format!(
+        "content_repo = \"c\"\n[workspace]\nname = \"w\"\npath = {:?}\n",
+        ws.display().to_string()
+    );
+    if let Some(body) = body {
+        text.push_str("[paths]\nagent_surfaces = \"bin/render\"\n");
+        let p = ws.join("bin/render");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    homma_core::Config::parse(&text).unwrap()
+}
+
+/// Records its arguments and where it ran, as the renderer would render.
+const RECORDING: &str = "printf '%s\\n%s\\n' \"$*\" \"$(pwd -P)\" > ran";
+
+#[cfg(unix)]
+#[test]
+fn the_configured_renderer_is_run_as_regen_from_the_workspace_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = workspace_with_renderer(dir.path(), Some(RECORDING));
+    let report = regen(&cfg, None, surfaces_only(false)).unwrap();
+    assert!(
+        matches!(report.surfaces, StageStatus::Success),
+        "got {:?}",
+        report.surfaces
+    );
+    assert!(report.ok);
+    let ran = std::fs::read_to_string(dir.path().join("ran")).expect("the renderer was not run");
+    let root = dir.path().canonicalize().unwrap();
+    assert_eq!(ran, format!("regen\n{}\n", root.display()));
+}
+
+#[cfg(unix)]
+#[test]
+fn skip_surfaces_leaves_the_configured_renderer_unrun() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = workspace_with_renderer(dir.path(), Some(RECORDING));
+    // The configs stage is left running, so the all-skip guard does not
+    // refuse the run and the flag alone is what skips the surfaces.
+    let opts = Opts {
+        skip_cargo_mock: true,
+        skip_aggregate: true,
+        skip_surfaces: true,
+        ..Opts::default()
+    };
+    let report = regen(&cfg, None, opts).unwrap();
+    assert!(
+        matches!(report.surfaces, StageStatus::Skipped(ref why) if why == "--skip-surfaces"),
+        "got {:?}",
+        report.surfaces
+    );
+    assert!(
+        !dir.path().join("ran").exists(),
+        "the renderer ran under --skip-surfaces"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unset_key_skips_the_stage_and_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = workspace_with_renderer(dir.path(), None);
+    let report = regen(&cfg, None, surfaces_only(false)).unwrap();
+    assert!(
+        matches!(report.surfaces, StageStatus::Skipped(ref why) if why.contains("agent_surfaces")),
+        "got {:?}",
+        report.surfaces
+    );
+    assert!(report.ok, "an unset key is not a failure");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_render_fails_the_run_with_its_last_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = workspace_with_renderer(
+        dir.path(),
+        Some("echo 'homma rules render failed' >&2; exit 3"),
+    );
+    let report = regen(&cfg, None, surfaces_only(false)).unwrap();
+    assert!(
+        matches!(report.surfaces, StageStatus::Failed(ref m) if m.contains("homma rules render failed")),
+        "got {:?}",
+        report.surfaces
+    );
+    assert!(!report.ok, "a failed render did not fail the run");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_key_naming_nothing_on_disk_is_a_failure_not_a_skip() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = workspace_with_renderer(dir.path(), Some(RECORDING));
+    std::fs::remove_file(dir.path().join("bin/render")).unwrap();
+    let report = regen(&cfg, None, surfaces_only(false)).unwrap();
+    assert!(
+        matches!(report.surfaces, StageStatus::Failed(ref m) if m.contains("which is not there")),
+        "got {:?}",
+        report.surfaces
+    );
+    assert!(!report.ok);
+}
+
+#[test]
+fn skipping_all_four_stages_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = workspace_with_member(dir.path());
+    let err = regen(&cfg, None, surfaces_only(true)).unwrap_err();
+    assert!(err.to_string().contains("would do nothing"), "got {err}");
+}

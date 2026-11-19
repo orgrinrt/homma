@@ -202,18 +202,23 @@ impl Identity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Paths {
-    pub hands:       RelPath,
-    pub experts:     RelPath,
-    pub channels:    RelPath,
-    pub agents:      RelPath,
-    pub index:       RelPath,
+    pub hands:          RelPath,
+    pub experts:        RelPath,
+    pub channels:       RelPath,
+    pub agents:         RelPath,
+    pub index:          RelPath,
     /// Where `homma capture` writes what the person said to a session.
-    pub captures:    RelPath,
+    pub captures:       RelPath,
     /// The command every tag, release and remote branch deletion of the
     /// workspace goes through, which `homma release run` asks for a release's
     /// tag and its forge release. Unset, the release tags with git and
     /// releases through the forge client.
-    pub forge_route: Option<RelPath>,
+    pub forge_route:    Option<RelPath>,
+    /// The command that renders the workspace's own rules, skills and
+    /// personas, which `homma agent regen` runs as `<command> regen` from the
+    /// workspace root after its aggregate. Unset, the regen renders none of
+    /// them and says so.
+    pub agent_surfaces: Option<RelPath>,
 }
 
 impl Default for Paths {
@@ -223,13 +228,14 @@ impl Default for Paths {
         // which is the only way it can fail.
         let rel = |s: &str| RelPath::new(s).expect("a default path is relative and contained");
         Self {
-            hands:       rel(".shared/hands"),
-            experts:     rel(".shared/experts"),
-            channels:    rel(".shared/channels"),
-            agents:      rel(".claude/agents"),
-            index:       rel(".shared/.index"),
-            captures:    rel(".data/op-responses"),
-            forge_route: None,
+            hands:          rel(".shared/hands"),
+            experts:        rel(".shared/experts"),
+            channels:       rel(".shared/channels"),
+            agents:         rel(".claude/agents"),
+            index:          rel(".shared/.index"),
+            captures:       rel(".data/op-responses"),
+            forge_route:    None,
+            agent_surfaces: None,
         }
     }
 }

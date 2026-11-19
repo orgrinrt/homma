@@ -427,7 +427,7 @@ pub enum AgentOp {
     /// Regenerate per-repo agent surfaces and aggregate them at the
     /// workspace level.
     ///
-    /// Three stages:
+    /// Four stages:
     /// 1. Run `cargo mock` in each member repo with a `mockspace.toml`,
     ///    regenerating `.claude/rules/*.md` and `.claude/hooks/*.sh` from the
     ///    builtin rules and whatever `agent/` templates the repo adds under
@@ -438,8 +438,12 @@ pub enum AgentOp {
     ///    `.claude/`, with each repo's rules and hooks scoped to only
     ///    activate when work touches that repo's tree.
     ///
+    /// 4. Render the workspace's own rules, skills and personas through the
+    ///    command `agent_surfaces` under `[paths]` names, run as
+    ///    `<command> regen`; skipped, and said so, where it is unset.
+    ///
     /// Repos without a `mockspace.toml` skip the first stage, not fail it.
-    /// Each `--skip-*` flag leaves the other two stages running.
+    /// Each `--skip-*` flag leaves the other stages running.
     /// `--skip-aggregate` also skips what follows the loop beside it:
     /// writing the commit gate, the declared hooks and the merge of the
     /// local settings.
@@ -463,6 +467,11 @@ pub enum AgentOp {
         /// `cargo mock` and the shared tool configs still run.
         #[arg(long)]
         skip_aggregate:    bool,
+        /// Skip rendering the workspace's own rules, skills and personas
+        /// through the command `agent_surfaces` under `[paths]` names. That
+        /// command passes it when it runs the regen for the hook wrappers.
+        #[arg(long)]
+        skip_surfaces:     bool,
     },
 }
 

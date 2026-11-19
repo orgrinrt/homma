@@ -261,6 +261,9 @@ pub mod regen {
         /// file homma did not write. **Each fails the run.**
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub hooks_not_carried: Vec<String>,
+        /// The workspace's own rules, skills and personas, rendered by the
+        /// command `agent_surfaces` under `[paths]` names.
+        pub surfaces:          StageStatus,
     }
 
     /// Per-repo regen outcome covering both pipeline stages.
@@ -296,6 +299,7 @@ pub mod regen {
         pub skip_cargo_mock:   bool,
         pub skip_configs:      bool,
         pub skip_aggregate:    bool,
+        pub skip_surfaces:     bool,
     }
 
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
@@ -330,10 +334,10 @@ pub mod regen {
         // were two, and adding a third made it refuse a run that does real
         // work: comparing the shared configs is useful on its own, and is the
         // fast way to sweep a workspace without rebuilding anything.
-        if opts.skip_cargo_mock && opts.skip_configs && opts.skip_aggregate {
+        if opts.skip_cargo_mock && opts.skip_configs && opts.skip_aggregate && opts.skip_surfaces {
             return Err(anyhow!(
-                "`--skip-cargo-mock`, `--skip-configs` and `--skip-aggregate` together \
-                 would do nothing"
+                "`--skip-cargo-mock`, `--skip-configs`, `--skip-aggregate` and \
+                 `--skip-surfaces` together would do nothing"
             ));
         }
         // The aggregate writes back only the rows it is handed, so a layer that
@@ -638,6 +642,15 @@ pub mod regen {
             needs_a_human.push(format!("(configs): {e}"));
         }
 
+        // Last, after the aggregate: the workspace's own rules, skills and
+        // personas, through the command the workspace stages them with. A
+        // render the members' failures did not touch still runs, since the
+        // surfaces are the workspace's and not any member's.
+        let surfaces = surfaces_stage(cfg, opts)?;
+        if surfaces.is_failure() {
+            had_failure = true;
+        }
+
         // **A divergence does not fail the run and a missing config does not
         // either.** Both are reported, and the exit status stays about whether
         // a stage failed to do its work. A tool that refuses to finish over a
@@ -650,6 +663,39 @@ pub mod regen {
             diverged,
             needs_a_human,
             hooks_not_carried,
+            surfaces,
+        })
+    }
+
+    /// The surfaces stage: skipped under `--skip-surfaces` or where
+    /// `agent_surfaces` is unset, otherwise `<command> regen` from the
+    /// workspace root. A key naming nothing on disk is a failure rather than a
+    /// skip, since the workspace said where its renderer is and it is not there.
+    fn surfaces_stage(cfg: &Config, opts: Opts) -> Result<StageStatus> {
+        if opts.skip_surfaces {
+            return Ok(StageStatus::Skipped("--skip-surfaces".into()));
+        }
+        let Some(rel) = crate::cmd::identity::paths_of(cfg)?.agent_surfaces else {
+            return Ok(StageStatus::Skipped(
+                "no `agent_surfaces` under `[paths]`".into(),
+            ));
+        };
+        // Absolute, since a relative program path beside `current_dir` is
+        // resolved differently by different platforms.
+        let workspace =
+            std::path::absolute(&cfg.workspace.path).unwrap_or_else(|_| cfg.workspace.path.clone());
+        let at = workspace.join(rel.as_path());
+        if !at.is_file() {
+            return Ok(StageStatus::Failed(format!(
+                "`agent_surfaces` names {}, which is not there",
+                at.display()
+            )));
+        }
+        let mut cmd = Command::new(&at);
+        cmd.arg("regen").current_dir(&workspace);
+        Ok(match run_quiet(cmd, "`agent_surfaces regen`") {
+            Ok(()) => StageStatus::Success,
+            Err(e) => StageStatus::Failed(truncate(format!("{e:#}"), 256)),
         })
     }
 
@@ -668,13 +714,23 @@ pub mod regen {
     }
 
     fn invoke_cargo_mock_with(program: &str, dir: &Path) -> Result<()> {
-        let output = cargo_mock_command(program, dir)
+        run_quiet(cargo_mock_command(program, dir), "`cargo mock`")
+    }
+
+    /// Run a stage's command with its output captured: nothing on success, and
+    /// the exit status with the last line of stderr on failure.
+    fn run_quiet(mut cmd: Command, what: &str) -> Result<()> {
+        let dir = cmd
+            .get_current_dir()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| ".".into());
+        let output = cmd
             .output()
-            .with_context(|| format!("invoking `cargo mock` in {}", dir.display()))?;
+            .with_context(|| format!("invoking {what} in {dir}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow!(
-                "`cargo mock` exited {}: {}",
+                "{what} exited {}: {}",
                 output.status,
                 last_meaningful_line(&stderr).unwrap_or("(no stderr)"),
             ));
@@ -722,6 +778,13 @@ pub mod regen {
                 for c in &r.configs {
                     writeln!(out, "    configs: {c}")?;
                 }
+            }
+            match &self.surfaces {
+                StageStatus::Success => writeln!(out, "  (workspace surfaces): ok")?,
+                StageStatus::Skipped(why) => writeln!(out, "  (workspace surfaces): skip ({why})")?,
+                StageStatus::Failed(m) => {
+                    writeln!(out, "  (workspace surfaces): fail\n    surfaces: {m}")?
+                },
             }
             // Repeated below the table, because a per-repo line scrolls past
             // and the whole point of the stage is the handful of lines an
