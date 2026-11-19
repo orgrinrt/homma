@@ -52,7 +52,7 @@ impl HumanRender for RenderReport {
 }
 
 /// The `[paths]` the configuration names, or the defaults when it names none.
-fn paths_of(cfg: &Config) -> Result<Paths> {
+pub(crate) fn paths_of(cfg: &Config) -> Result<Paths> {
     match &cfg.paths {
         Some(v) => v.clone().try_into().context("reading `[paths]`"),
         None => Ok(Paths::default()),

@@ -3,21 +3,21 @@
   "flavour": "",
   "member": "homma-org",
   "green": {
-    "full": "6dfcb705fee3f402a0b6d628e93596247749c02186551f79e05cf7a07461f5c3",
+    "full": "cf84213111ba45c0e6727cd4ab6e362e16f357b72673e300cef006f3730b6324",
     "own": {
-      "homma-api": "b22df2f5a0e293be107c9d02520fb0ea14a1cc393a2fdd67ea1394ba01e3ed9d",
-      "homma-core": "6e4591ead9335dba1fde7ca04fbbb8b06273ce484880aaee75a321f3457d332a",
+      "homma-api": "9056c5eabe7fc6b37bc2a79f8430514504264412f54c792c154325d986f6fd7e",
+      "homma-core": "c16a4a0ccfc62b256e0e16437141aa2ccd3709c5c613ddef2e545c0a1ba303b0",
       "homma-org": "bb993011d62bbba2769a3d41da009b1c02d03f9da9710252f5d31af6163068f8"
     }
   },
   "tests": {},
   "bins": {
-    "homma-org": "5e8ad9779e4a2d0b7fdd1c231b9a77b1d112ffc63cb16c313f7ee85373a2e15a",
-    "homma-org::agents_corpus": "dcb30da561e1dd73fb9f9a0fc0d8bfa70534d37dc1c7c4d3212d10cb3ddf8e75",
-    "homma-org::character_places": "7a321bd5af50c5e8fa5d074348d269b396cd54f5dc6a68b8598584bc93a2e9cf",
-    "homma-org::characters": "aa454462c8b31311f1a856aa6bac8704c9f4be67d1888082fbd21710e4db2db4",
-    "homma-org::provisioned_commit": "499105e319cc87ff28a63c17f812bdda8b2f3d6c0087470c94afe8c4cc3b6480",
-    "homma-org::rules_corpus": "7c0c211f86c1c6c0ef7e187bbf56c4304d9b24333576c129a05a1a655d2c06c6",
-    "homma-org::skills_corpus": "c45a527b4ad5921d7090a5e2edbf1dfde0a13f07253edb7561250caacb6354ea"
+    "homma-org": "41630fb9bc230aadf65b71afcc1e59b26cdb655fa111977fcad167a1d710c14e",
+    "homma-org::agents_corpus": "d98df8984794079b6fa14710c203125f06f3a1f6063ba5d468be8109ffc52ffe",
+    "homma-org::character_places": "2cbeee04dfa9eeb421b87cd4b67c260f568ab0c0d2ac268ac95d0a92076c99f2",
+    "homma-org::characters": "ed94f898e0aac981deed183a0c83a0d4e1bad93487fd8e2cafecda723a906089",
+    "homma-org::provisioned_commit": "78cf67cfe678b9c1d4c371ad587e959b4e20f7d0c7b4e1e5f35886401efefba2",
+    "homma-org::rules_corpus": "45c05f391601e81b4ddaed0dd98ea867a766f1f91e1b11c747b501f90b5ae7f7",
+    "homma-org::skills_corpus": "689e7aa692abaf901d1e8008ee0cac25ca96c4a95e48fceced904ea06b52edf7"
   }
 }
