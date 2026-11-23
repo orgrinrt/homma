@@ -575,6 +575,12 @@ impl Runner for Routed<'_> {
                 (Err(said), _) => answer(1, &said),
             };
         }
+        if let ["delete-branch", _root, branch, head] = args {
+            return match pr::drop_in(self.origin, branch, head) {
+                Ok(()) => answer(0, ""),
+                Err(said) => answer(1, &said),
+            };
+        }
         if let (true, ["tag", _root, tag, sha, _message]) = (self.makes_tag, args) {
             let made = sh::run(self.origin, "git", &[
                 "-c",
@@ -822,6 +828,9 @@ mod workspace;
 
 #[path = "run_pr_tests.rs"]
 mod pr;
+
+#[path = "run_dev_pr_tests.rs"]
+mod dev_pr;
 
 #[path = "run_resume_tests.rs"]
 mod resume;

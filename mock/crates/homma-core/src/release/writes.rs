@@ -23,10 +23,11 @@ pub trait ReleaseForge {
     /// The forge release on `tag`, with `body` as its notes.
     fn release(&self, root: &Path, tag: &str, body: &str) -> Result<(), ReleaseError>;
 
-    /// The release pull request: `head` landed into `base` by a merge commit
-    /// at `sha`, `title` its subject and no body. The open one from `head`
-    /// into `base` is taken where there is one. A landing into the working
-    /// trunk is never this: it is a push, and only the release is a pull request.
+    /// A pull request: `head` landed into `base` by a merge commit at `sha`,
+    /// `title` its subject and no body, never a squash. The open one from
+    /// `head` into `base` is taken where there is one. It is the release's,
+    /// the trunk into the release line, and the bump's into the trunk where the
+    /// trunk refuses the push; it returns once the forge has merged it.
     fn land(
         &self,
         root: &Path,
@@ -35,6 +36,10 @@ pub trait ReleaseForge {
         title: &str,
         sha: &str,
     ) -> Result<(), ReleaseError>;
+
+    /// The branch `branch` deleted on the remote, which holds it at `head`:
+    /// what a landed pull request leaves behind.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError>;
 }
 
 /// Git tags in the clone and pushes the tag to `remote`; the forge client
@@ -70,6 +75,13 @@ impl ReleaseForge for ByClient<'_> {
         _sha: &str,
     ) -> Result<(), ReleaseError> {
         Err(ReleaseError::NoPullRequest(base.to_string()))
+    }
+
+    /// The deletion pushed, for the branch a refused landing left; one the
+    /// remote will not delete is the error it was.
+    fn drop_branch(&self, root: &Path, branch: &str, _head: &str) -> Result<(), ReleaseError> {
+        git::push(root, self.remote, &format!(":refs/heads/{branch}"), false)?;
+        Ok(())
     }
 }
 
@@ -123,5 +135,12 @@ impl ReleaseForge for ByRoute<'_> {
     ) -> Result<(), ReleaseError> {
         let at = root.to_string_lossy();
         self.ask(root, &["pr", &at, head, base, title, "merge", sha], &[])
+    }
+
+    /// The route queues a deletion the forge refuses for the workspace's sweep,
+    /// and says so on a line of its own, which is no failure.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError> {
+        let at = root.to_string_lossy();
+        self.ask(root, &["delete-branch", &at, branch, head], &[])
     }
 }
