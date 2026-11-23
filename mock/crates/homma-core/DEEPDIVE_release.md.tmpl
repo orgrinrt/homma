@@ -436,8 +436,8 @@ and merges it at that sha with the title as its subject and no message. That
 verb is the same mechanism the workspace's landing scripts use, and homma
 keeps no copy of it. A refusal of the release line's push is read off git's
 `[remote rejected]`, as those scripts read it; any other failed push is the
-error it was. `drop_branch` is `forge_route delete-branch --queue <repo root>
-<branch> <sha>`, so a branch the forge refuses to delete now is queued for the
+error it was. `drop_branch` is `forge_route delete-branch <repo root> <branch>
+<sha>`, which queues a branch the forge refuses to delete now for the
 workspace's sweep, and a deletion that fails even so does not stop the run.
 
 A run that stopped after step 4 made its commit is resumed by running it again.
