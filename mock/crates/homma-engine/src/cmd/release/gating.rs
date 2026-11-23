@@ -111,9 +111,25 @@ pub(super) fn gate_cmd(
     let mut ok = true;
     let mut runs = Vec::new();
     for tip in &tips {
-        let run = gate::run_gate_at(&Real, root, &cfg.markers, tip, name, &clock::now())?;
-        record::append(&store, &run).context("recording the run")?;
-        lines.push(run.summary());
+        // a push retried over a moved `dev` hands the hook tips it has
+        // measured already; the recorded green run is the answer for the
+        // commit, and a gate run by hand is asked for, so it measures
+        let reused = if hook { record::green_for(&store, name, tip)? } else { None };
+        let run = match reused {
+            Some(run) => {
+                lines.push(format!(
+                    "{} already measured green; not measured again",
+                    &run.sha[.. 7]
+                ));
+                run
+            },
+            None => {
+                let run = gate::run_gate_at(&Real, root, &cfg.markers, tip, name, &clock::now())?;
+                record::append(&store, &run).context("recording the run")?;
+                lines.push(run.summary());
+                run
+            },
+        };
         ok &= run.verdict == Verdict::Green;
         if hook {
             runs.push(run);

@@ -23,6 +23,18 @@ pub fn newest_for(
     newest_where(store, |r| r.repo == repo && r.sha == sha)
 }
 
+/// The newest run recorded for `repo` at `sha` where it is green, or none: the
+/// gate's answer for that commit, which the pre-push hook takes instead of
+/// measuring the commit again. A red newest run is no answer, whatever green
+/// one lies under it.
+pub fn green_for(
+    store: &Store,
+    repo: &str,
+    sha: &str,
+) -> Result<Option<GateRun>, homma_store::Error> {
+    Ok(newest_for(store, repo, sha)?.filter(|r| r.verdict == homma_api::Verdict::Green))
+}
+
 /// The newest run recorded for `repo` on any sha, or none. This is what the
 /// badges read: the last thing the gate measured, whichever commit it was.
 pub fn newest(store: &Store, repo: &str) -> Result<Option<GateRun>, homma_store::Error> {
@@ -98,6 +110,38 @@ mod tests {
         assert_eq!(any.ran_at, "2026-09-02T22:00:00Z");
         assert_eq!(newest(&store, "y").unwrap().unwrap().sha, "aaa");
         assert!(newest(&store, "z").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_green_run_is_reusable_only_where_the_newest_on_that_sha_is_green() {
+        // Mutation: an older green run found beneath a newer red one on the
+        // same commit, or a green run on another commit or repo, so the hook
+        // skips a measurement nobody made.
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path());
+        append(
+            &store,
+            &run("x", "aaa", "2026-09-02T20:00:00Z", Verdict::Green),
+        )
+        .unwrap();
+        append(
+            &store,
+            &run("x", "aaa", "2026-09-02T21:00:00Z", Verdict::Red),
+        )
+        .unwrap();
+        append(
+            &store,
+            &run("x", "bbb", "2026-09-02T22:00:00Z", Verdict::Green),
+        )
+        .unwrap();
+        assert!(
+            green_for(&store, "x", "aaa").unwrap().is_none(),
+            "the newest run on aaa is red"
+        );
+        let got = green_for(&store, "x", "bbb").unwrap().unwrap();
+        assert_eq!(got.sha, "bbb");
+        assert!(green_for(&store, "y", "bbb").unwrap().is_none());
+        assert!(green_for(&store, "x", "ccc").unwrap().is_none());
     }
 
     #[test]
