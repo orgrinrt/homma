@@ -246,19 +246,37 @@ handle = "proof"
 
     #[test]
     fn a_committer_address_is_an_agent_address_too_listed_once_when_it_repeats() {
-        let text = ORG.replace(
-            "git_email = \"paja@example.invalid\"",
-            "git_email = \"paja@example.invalid\"\ncommitter_email = \"paja+c@example.invalid\"",
+        let both = |committer: &str| {
+            let text = ORG.replace(
+                "git_email = \"paja@example.invalid\"",
+                &format!("git_email = \"paja@example.invalid\"\ncommitter_email = \"{committer}\""),
+            );
+            Workspace::parse(&text).unwrap()
+        };
+        let addresses = |w: &Workspace| -> Vec<String> {
+            OrgRegistry::new(w)
+                .agent_addresses()
+                .into_iter()
+                .filter(|(_, i)| i.handle == "paja")
+                .map(|(a, _)| a)
+                .collect()
+        };
+        // A distinct committer address is listed and matched.
+        let w = both("paja-commits@example.invalid");
+        assert_eq!(addresses(&w), vec![
+            "paja@example.invalid",
+            "paja-commits@example.invalid"
+        ]);
+        assert_eq!(
+            OrgRegistry::new(&w)
+                .agent_at("Paja-Commits@example.invalid")
+                .map(|i| i.handle.as_str()),
+            Some("paja")
         );
-        let w = Workspace::parse(&text).unwrap();
-        let r = OrgRegistry::new(&w);
-        let paja: Vec<_> = r
-            .agent_addresses()
-            .into_iter()
-            .filter(|(_, i)| i.handle == "paja")
-            .map(|(a, _)| a)
-            .collect();
-        assert_eq!(paja, vec!["paja@example.invalid"]);
+        // One that normalises to the author's is the same address, listed once.
+        assert_eq!(addresses(&both("paja+c@example.invalid")), vec![
+            "paja@example.invalid"
+        ]);
     }
 
     #[test]

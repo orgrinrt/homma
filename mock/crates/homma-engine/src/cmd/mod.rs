@@ -345,19 +345,12 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     // as its catalogue. A catalogue that does not load is said and
                     // the regen goes on: the rules a session loads matter more than
                     // the index, and the catalogue's own commands report it in full.
-                    match org::load(&config_path(&cli)) {
-                        Ok(ws)
-                            if ws
-                                .org
-                                .values()
-                                .any(|i| homma_org::catalogue::is_agent(i.role)) =>
-                        {
-                            if let Err(e) = identity::write_index(&cfg.workspace.path, &ws) {
-                                eprintln!("homma: the identity index was not written: {e:#}");
-                            }
-                        },
-                        Ok(_) => {},
-                        Err(e) => eprintln!("homma: the identity index was not written: {e:#}"),
+                    // An empty index where no agent is catalogued, so removing the last
+                    // one leaves no stale index behind.
+                    if let Err(e) = org::load(&config_path(&cli))
+                        .and_then(|ws| identity::write_index(&cfg.workspace.path, &ws))
+                    {
+                        eprintln!("homma: the identity index was not written: {e:#}");
                     }
                     agent::regen::run_with(
                         &cfg,
@@ -572,6 +565,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                         LeaseOp::Show {
                             handle,
                         } => {
+                            let handle = &lease::entry(&ws, handle)?.handle;
                             let (held, _) = lease::read(root, &ws, handle)?;
                             println!("{}", lease::describe(handle, held.as_ref()));
                             return Ok(Outcome::Ok);
@@ -581,6 +575,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                         lease::Done::Held(l) => Some(l),
                         lease::Done::Free => None,
                     };
+                    let handle = &lease::entry(&ws, handle)?.handle;
                     println!("{}", lease::describe(handle, held));
                     Ok(Outcome::Ok)
                 },

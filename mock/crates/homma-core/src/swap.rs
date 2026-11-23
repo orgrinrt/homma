@@ -55,11 +55,13 @@ pub fn swap_file(
             stderr:  out.stderr,
         });
     }
-    git::trimmed(cwd, &[
+    // The tracking ref is a convenience for a read straight after; the write has
+    // landed whatever becomes of it, and the next fetch sets it anyway.
+    let _ = git::trimmed(cwd, &[
         "update-ref",
         &format!("refs/remotes/{remote}/{branch}"),
         &commit,
-    ])?;
+    ]);
     Ok(Swapped::Landed(commit))
 }
 

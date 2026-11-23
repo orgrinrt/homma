@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use homma_api::{Role, Workspace};
+use homma_api::{Identity, Role, Workspace};
 
 /// An address as the catalogue compares it: trimmed, lowercased, and with a
 /// plus tag stripped from its local part, so a sub-agent's tagged address is
@@ -202,22 +202,35 @@ pub fn check_catalogue(ws: &Workspace) -> Vec<CatalogueFault> {
                 office: office.clone(),
             });
         }
-        let Some(holder) = &row.holder else { continue };
-        if !ws.org.contains_key(holder) {
+        let Some(named) = &row.holder else { continue };
+        let Some(holder) = resolve(ws, named) else {
             faults.push(CatalogueFault::HolderMissing {
                 office: office.clone(),
-                holder: holder.clone(),
+                holder: named.clone(),
             });
-        }
-        if let Some(first) = holders.insert(holder, office) {
+            continue;
+        };
+        // Keyed by the handle the name resolves to, so a holder written once by
+        // handle and once by alias is still one person holding two offices.
+        if let Some(first) = holders.insert(&holder.handle, office) {
             faults.push(CatalogueFault::HoldsTwo {
-                holder: holder.clone(),
+                holder: holder.handle.clone(),
                 first:  first.to_string(),
                 second: office.clone(),
             });
         }
     }
     faults
+}
+
+/// The entry a handle or an alias names, so an alias reaches the same
+/// participant wherever a name is taken.
+pub fn resolve<'a>(ws: &'a Workspace, name: &str) -> Option<&'a Identity> {
+    ws.org.get(name).or_else(|| {
+        ws.org
+            .values()
+            .find(|id| id.aliases.iter().any(|a| a == name))
+    })
 }
 
 /// Whether an entry in this role is an agent, whose address is matched.

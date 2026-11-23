@@ -12,10 +12,10 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use homma_api::Workspace;
-use homma_core::release::git;
+use homma_api::{Identity, Workspace};
+use homma_core::release::{git, sh};
 use homma_core::swap::{Swapped, swap_file};
-use homma_org::catalogue::is_agent;
+use homma_org::catalogue::{is_agent, resolve};
 use homma_org::lease::{Ask, Lease, Outcome, decide};
 use jiff::Timestamp;
 
@@ -27,17 +27,52 @@ pub fn record_path(ws: &Workspace, handle: &str) -> String {
     format!("{}/{handle}.toml", ws.paths.leases)
 }
 
+/// The shortest and the longest a lease may last, in minutes: one minute, and
+/// a week, the span a journeyman is reserved for.
+pub const MINUTES: std::ops::RangeInclusive<u32> = 1 ..= 7 * 24 * 60;
+
+/// The agent a handle or an alias names, refusing a name the catalogue does
+/// not hold and the king, who is a person and holds no lease.
+pub fn entry<'a>(ws: &'a Workspace, name: &str) -> Result<&'a Identity> {
+    let Some(id) = resolve(ws, name) else {
+        bail!("`{name}` is no handle or alias of the catalogue");
+    };
+    if !is_agent(id.role) {
+        bail!("`{name}` is the king, who is a person and holds no lease");
+    }
+    Ok(id)
+}
+
 /// The record on the remote trunk now, none when the identity is free, and
 /// the tip it was read at.
+///
+/// A record that is there and cannot be read, or that names another handle
+/// than its file, is refused: taking it for a free identity would let a take
+/// overwrite a holder nobody could read.
 pub fn read(root: &Path, ws: &Workspace, handle: &str) -> Result<(Option<Lease>, String)> {
     let tip = git::fetch_branch(root, &ws.lease.remote, &ws.lease.branch)
         .with_context(|| format!("fetching `{}` from `{}`", ws.lease.branch, ws.lease.remote))?;
     let path = record_path(ws, handle);
-    let text = git::show(root, &tip, &path)?;
-    let lease = text
-        .map(|t| Lease::parse(&t).with_context(|| format!("reading the lease `{path}` at {tip}")))
-        .transpose()?;
-    Ok((lease, tip))
+    let listed = sh::run(root, "git", &["ls-tree", "--name-only", &tip, "--", &path])?;
+    anyhow::ensure!(
+        listed.ok(),
+        "listing `{path}` at {tip}: {}",
+        listed.stderr.trim()
+    );
+    if listed.stdout.trim().is_empty() {
+        return Ok((None, tip));
+    }
+    let Some(text) = git::show(root, &tip, &path)? else {
+        bail!("the lease `{path}` is at {tip} and cannot be read");
+    };
+    let lease =
+        Lease::parse(&text).with_context(|| format!("reading the lease `{path}` at {tip}"))?;
+    anyhow::ensure!(
+        lease.handle == handle,
+        "the lease `{path}` at {tip} names `{}`, not `{handle}`",
+        lease.handle
+    );
+    Ok((Some(lease), tip))
 }
 
 /// What a run left on the trunk.
@@ -49,22 +84,24 @@ pub enum Done {
     Free,
 }
 
-/// Ask `ask` of `handle` at `now`, and write the answer onto the trunk.
+/// Ask `ask` of the identity `name` names at `now`, and write the answer onto
+/// the trunk.
 pub fn run(
     root: &Path,
     ws: &Workspace,
-    handle: &str,
+    name: &str,
     ask: Ask<'_>,
     minutes: Option<u32>,
     now: Timestamp,
 ) -> Result<Done> {
-    let Some(id) = ws.org.get(handle) else {
-        bail!("`{handle}` is no handle of the catalogue; a lease is taken by handle");
-    };
-    if !is_agent(id.role) {
-        bail!("`{handle}` is the king, who is a person and holds no lease");
-    }
+    let handle = entry(ws, name)?.handle.as_str();
     let minutes = minutes.unwrap_or(ws.lease.minutes);
+    anyhow::ensure!(
+        MINUTES.contains(&minutes),
+        "a lease of {minutes} minutes; one lasts from {} minute to a week ({} minutes)",
+        MINUTES.start(),
+        MINUTES.end()
+    );
     let path = record_path(ws, handle);
     for _ in 0 .. TRIES {
         let (current, tip) = read(root, ws, handle)?;

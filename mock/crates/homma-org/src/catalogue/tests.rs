@@ -63,8 +63,9 @@ fn a_whole_catalogue_holds() {
 fn an_address_is_compared_lowercased_and_without_its_plus_tag() {
     assert_eq!(normalise(" Aarne+Review@IKIUNI.dev "), "aarne@ikiuni.dev");
     assert_eq!(normalise("aarne@ikiuni.dev"), "aarne@ikiuni.dev");
-    // Only the local part carries a tag; a plus in the domain is not one.
+    // The tag runs from the first plus of the local part; the domain is left as it is.
     assert_eq!(normalise("a+b+c@x.invalid"), "a@x.invalid");
+    assert_eq!(normalise("a@b+c.invalid"), "a@b+c.invalid");
     assert_eq!(normalise("no-at-sign"), "no-at-sign");
 }
 
@@ -179,4 +180,32 @@ fn the_king_is_no_agent_and_every_other_role_is() {
     for r in [Role::Hand, Role::Expert, Role::General, Role::Journeyman] {
         assert!(is_agent(r));
     }
+}
+
+#[test]
+fn a_name_resolves_through_its_aliases_to_the_one_entry() {
+    let w = ws(CATALOGUE);
+    assert_eq!(resolve(&w, "paja").map(|i| i.handle.as_str()), Some("paja"));
+    assert_eq!(
+        resolve(&w, "pajatso").map(|i| i.handle.as_str()),
+        Some("paja")
+    );
+    assert_eq!(resolve(&w, "nobody"), None);
+}
+
+#[test]
+fn an_office_held_by_alias_is_held_and_counts_against_the_person() {
+    let text = CATALOGUE.replace("holder = \"onni\"", "holder = \"vouti\"");
+    assert_eq!(check_catalogue(&ws(&text)), vec![]);
+    let text = text.replace(
+        "[offices.render-coord]",
+        "[offices.render-coord]\nholder = \"onni\"",
+    );
+    assert_eq!(check_catalogue(&ws(&text)), vec![
+        CatalogueFault::HoldsTwo {
+            holder: "onni".into(),
+            first:  "coord".into(),
+            second: "render-coord".into(),
+        }
+    ]);
 }

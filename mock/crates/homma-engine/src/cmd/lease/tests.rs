@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use homma_core::release::sh;
+use homma_core::swap::{Swapped, swap_file};
 
 use super::*;
 
@@ -17,6 +18,7 @@ handle = "op"
 [org.ikku]
 role = "journeyman"
 handle = "ikku"
+aliases = ["iida"]
 git_email = "ikku@example.invalid"
 "#;
 
@@ -194,4 +196,83 @@ fn a_line_says_who_holds_it_and_whom_it_replaced() {
         describe("ikku", Some(&l)),
         "ikku held by s2 for j since 2026-11-23T12:00:00Z until 2026-11-23T13:00:00Z, replacing s1"
     );
+}
+
+#[test]
+fn an_alias_takes_the_identity_its_entry_names() {
+    let t = two();
+    let now = at("2026-11-23T12:00:00Z");
+    let Done::Held(l) = run(&t.a, &t.ws, "iida", take("s1", None), None, now).unwrap() else {
+        panic!("an alias reaches its entry");
+    };
+    assert_eq!(l.handle, "ikku");
+    let (seen, _) = read(&t.b, &t.ws, "ikku").unwrap();
+    assert_eq!(seen.unwrap().session, "s1");
+}
+
+#[test]
+fn a_name_the_catalogue_lacks_is_refused_even_by_show() {
+    let t = two();
+    assert!(entry(&t.ws, "ikku").is_ok());
+    let err = format!("{:#}", entry(&t.ws, "ikkuu").unwrap_err());
+    assert!(err.contains("no handle or alias"), "{err}");
+    assert!(entry(&t.ws, "op").is_err());
+}
+
+#[test]
+fn a_lease_lasts_from_a_minute_to_a_week() {
+    let t = two();
+    let now = at("2026-11-23T12:00:00Z");
+    for bad in [0, 7 * 24 * 60 + 1, u32::MAX] {
+        assert!(
+            run(&t.a, &t.ws, "ikku", take("s1", None), Some(bad), now).is_err(),
+            "{bad}"
+        );
+    }
+    let mut ws = t.ws.clone();
+    ws.lease.minutes = 0;
+    assert!(
+        run(&t.a, &ws, "ikku", take("s1", None), None, now).is_err(),
+        "a configured length too"
+    );
+    assert!(
+        run(
+            &t.a,
+            &t.ws,
+            "ikku",
+            take("s1", None),
+            Some(7 * 24 * 60),
+            now
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_record_that_cannot_be_read_or_names_another_handle_is_refused_not_free() {
+    let t = two();
+    let now = at("2026-11-23T12:00:00Z");
+    let path = record_path(&t.ws, "ikku");
+    let tip = git::fetch_branch(&t.a, "origin", "main").unwrap();
+    let Swapped::Landed(tip) = swap_file(
+        &t.a,
+        "origin",
+        "main",
+        &tip,
+        &path,
+        Some("not = [toml"),
+        "x",
+    )
+    .unwrap() else {
+        panic!("lands");
+    };
+    assert!(read(&t.b, &t.ws, "ikku").is_err());
+    assert!(
+        run(&t.b, &t.ws, "ikku", take("s2", None), None, now).is_err(),
+        "never overwritten"
+    );
+    let other = "handle = \"kide\"\nsession = \"s1\"\njob = \"j\"\ntaken = \"2026-11-23T11:00:00Z\"\nexpires = \"2026-11-23T13:00:00Z\"\n";
+    swap_file(&t.a, "origin", "main", &tip, &path, Some(other), "y").unwrap();
+    let err = format!("{:#}", read(&t.b, &t.ws, "ikku").unwrap_err());
+    assert!(err.contains("names `kide`"), "{err}");
 }
