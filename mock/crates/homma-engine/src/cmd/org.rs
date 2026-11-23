@@ -14,6 +14,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use homma_api::{Identity, Role, Staffing, Workspace};
 use homma_org::OrgRegistry;
+use homma_org::catalogue::{check_catalogue, handle_fault};
 
 /// The standing instruction every generated definition carries.
 ///
@@ -59,6 +60,20 @@ pub fn load(path: &Path) -> Result<Workspace> {
             id.handle
         );
     }
+    // What spans entries: a name, an alias or an address used twice, an office
+    // whose holder is missing or holds another. Every fault at once, so one
+    // edit of the file fixes them all.
+    let faults = check_catalogue(&ws);
+    anyhow::ensure!(
+        faults.is_empty(),
+        "in {}: the catalogue does not hold:\n{}",
+        path.display(),
+        faults
+            .iter()
+            .map(|f| format!("  {f}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
     Ok(ws)
 }
 
@@ -133,31 +148,30 @@ pub fn add(ws: &mut Workspace, id: Identity) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ")
     );
+    // And what spans entries, so an address another entry answers to is refused
+    // before it is written rather than on the next read of the file.
+    let faults = check_catalogue(&probe);
+    anyhow::ensure!(
+        faults.is_empty(),
+        "{}",
+        faults
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
 
     ws.org.insert(id.handle.clone(), id);
     Ok(())
 }
 
-/// A handle becomes a directory name and a file name, so it is checked as one.
+/// A handle becomes a directory name and a file name, so it is checked as one,
+/// by the catalogue's own rule.
 fn check_handle(handle: &str) -> Result<()> {
-    anyhow::ensure!(!handle.is_empty(), "a handle cannot be empty");
-    anyhow::ensure!(
-        handle != "." && handle != "..",
-        "`{handle}` names a directory that already means something else"
-    );
-    anyhow::ensure!(
-        !handle.contains('/') && !handle.contains('\\'),
-        "`{handle}` carries a path separator, so it would address a file \
-         outside the directory it belongs in"
-    );
-    anyhow::ensure!(
-        handle
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-        "`{handle}` carries a character outside [a-z0-9-_], and a handle is a \
-         directory name, a file name and a reference target at once"
-    );
-    Ok(())
+    match handle_fault(handle) {
+        Some(why) => anyhow::bail!("`{handle}`: {why}"),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -251,6 +265,55 @@ domain = "rendering"
         id.nickname = Some("Sneaky\nmemory: project".into());
         let err = add(&mut w, id).unwrap_err();
         assert!(err.to_string().contains("control characters"));
+    }
+
+    #[test]
+    fn adding_an_entry_whose_address_another_answers_to_is_refused() {
+        let mut w = ws();
+        let mut id = Identity::new(Role::Journeyman, "kide");
+        id.git_email = Some("PAJA+kide@example.invalid".into());
+        let err = add(&mut w, id).unwrap_err().to_string();
+        assert!(err.contains("paja@example.invalid"), "{err}");
+        assert!(!w.org.contains_key("kide"));
+    }
+
+    #[test]
+    fn a_handle_of_the_roster_with_a_dot_or_an_umlaut_is_added() {
+        let mut w = ws();
+        for handle in ["os.si", "säkä", "pöllö"] {
+            add(&mut w, Identity::new(Role::Hand, handle)).unwrap();
+        }
+    }
+
+    #[test]
+    fn loading_a_catalogue_that_breaks_a_constraint_is_refused_with_every_fault() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("homma.toml");
+        let text = format!(
+            "{ORG}\n[org.kide]\nrole = \"journeyman\"\nhandle = \"kide\"\ngit_email = \
+             \"Paja+x@example.invalid\"\n\n[offices.coord]\nholder = \"valtsu\"\n"
+        );
+        std::fs::write(&path, text).unwrap();
+        let err = format!("{:#}", load(&path).unwrap_err());
+        assert!(err.contains("does not hold"), "{err}");
+        assert!(
+            err.contains("paja@example.invalid"),
+            "the shared address is named: {err}"
+        );
+        assert!(err.contains("valtsu"), "the missing holder is named: {err}");
+    }
+
+    #[test]
+    fn loading_a_whole_catalogue_reads_its_offices() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("homma.toml");
+        std::fs::write(
+            &path,
+            format!("{ORG}\n[offices.tooling-track]\nholder = \"paja\"\n"),
+        )
+        .unwrap();
+        let w = load(&path).unwrap();
+        assert_eq!(w.offices["tooling-track"].holder.as_deref(), Some("paja"));
     }
 
     #[test]

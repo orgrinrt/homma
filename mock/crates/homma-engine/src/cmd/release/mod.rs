@@ -27,11 +27,13 @@ use crate::cmd::{Outcome, config_path, load_config, load_config_whole};
 use crate::output::{HumanRender, emit};
 
 mod auth;
+mod commands;
 mod estate;
 mod gating;
 mod order;
 mod sweep;
 mod versions;
+use commands::{forge_route_of, history_refusal, history_scan_of};
 use gating::gate_cmd;
 use order::{release_order, sibling_dependency};
 
@@ -173,6 +175,9 @@ mod config_tests;
 #[cfg(test)]
 mod route_tests;
 
+#[cfg(test)]
+mod commands_tests;
+
 /// The `homma release` entry: loads the workspace and dispatches one
 /// subcommand, so every path below it starts from the same manifest.
 pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
@@ -303,33 +308,6 @@ fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, target: Target) -> Resu
     })
 }
 
-/// The command the workspace's tags and releases go through, `forge_route`
-/// under `[paths]` of the manifest at `manifest`, from the manifest's
-/// directory. A manifest that names none leaves the release tagging with git
-/// and releasing through the forge client; one that does not read as a
-/// workspace's is an error, since taking it as naming none would send the tag
-/// down the git push the route is there to avoid, after `main` has moved, and
-/// so is a route it names that is not there, which would fail at step 6.
-fn forge_route_of(manifest: &Path) -> Result<Option<PathBuf>> {
-    let ws = crate::cmd::org::load(manifest)?;
-    let Some(rel) = ws.paths.forge_route else {
-        return Ok(None);
-    };
-    let at = manifest
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(rel.as_path());
-    let at = std::path::absolute(&at).unwrap_or(at);
-    if !at.is_file() {
-        return Err(anyhow!(
-            "`forge_route` in {} names {}, which is not there",
-            manifest.display(),
-            at.display()
-        ));
-    }
-    Ok(Some(at))
-}
-
 fn run_cmd(
     cli: &Cli,
     cfg: &Config,
@@ -347,6 +325,7 @@ fn run_cmd(
     let store = store(cli);
     let token = token_source(cfg);
     let forge_route = forge_route_of(&config_path(cli))?;
+    let history_scan = history_scan_of(&config_path(cli))?;
     let names: Vec<String> = match repo {
         Some(n) => vec![n.to_string()],
         None => release_order(cfg),
@@ -396,6 +375,17 @@ fn run_cmd(
     for name in &names {
         let (name, r, root) = resolve_repo(cfg, Some(name))?;
         let root = &root;
+        // the history is read before anything moves or any registry is asked,
+        // and a dry run reads it too: a plan of a release that cannot be made
+        // says nothing
+        if let Some(why) = history_scan
+            .as_deref()
+            .and_then(|scan| history_refusal(scan, root))
+        {
+            ok = false;
+            lines.push(format!("{name}: {why}"));
+            break;
+        }
         let (trunk, release_line) = branches_checked(cfg, root)?;
         let (client, owner, kind) = forge_for(cfg, r)?;
         let published = published_for(cfg, root)?;

@@ -656,6 +656,68 @@ pub enum IdentityOp {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+
+    /// Which agent of the catalogue an address belongs to: its handle and role,
+    /// or exit 1 for an address that is no agent's. A plus tag on the local part
+    /// is stripped first, since a sub-agent commits as its launcher with one.
+    Match {
+        /// The address, as a commit's author or committer carries it.
+        address: String,
+    },
+
+    /// Write every agent address of the catalogue, with its handle and role, to
+    /// `[paths] identities`, for a hook that cannot afford to run homma.
+    /// `agent regen` writes it too.
+    Index,
+
+    /// The lease: one session holds an identity at a time.
+    Lease {
+        #[command(subcommand)]
+        op: LeaseOp,
+    },
+}
+
+/// `identity lease` subcommands. Each reads the record from the trunk `[lease]`
+/// names and writes it back as a swap, read and decided again when another
+/// session's write landed first.
+#[derive(Debug, Subcommand)]
+pub enum LeaseOp {
+    /// Hold an identity. A live lease of another session is taken over only
+    /// with `--replaces` naming that session; a lapsed one is taken over and the
+    /// record says whose it was.
+    Take {
+        handle:   String,
+        /// The session that will hold it.
+        #[arg(long)]
+        session:  String,
+        /// What it is held for: a role, a job, a track.
+        #[arg(long)]
+        job:      String,
+        /// The session a takeover replaces, which must be the holder.
+        #[arg(long)]
+        replaces: Option<String>,
+        /// How long it lasts; `[lease] minutes` when not given.
+        #[arg(long)]
+        minutes:  Option<u32>,
+    },
+    /// Hold it longer, as the session that holds it.
+    Renew {
+        handle:  String,
+        #[arg(long)]
+        session: String,
+        #[arg(long)]
+        minutes: Option<u32>,
+    },
+    /// Let it go, as the session that holds it.
+    Release {
+        handle:  String,
+        #[arg(long)]
+        session: String,
+    },
+    /// Who holds it, or that nobody does.
+    Show {
+        handle: String,
+    },
 }
 
 /// What a release moves to: a level, or a version named outright, exactly one.
@@ -1341,6 +1403,7 @@ pub enum RoleArg {
     Hand,
     Expert,
     General,
+    Journeyman,
 }
 
 impl From<RoleArg> for homma_api::Role {
@@ -1350,6 +1413,7 @@ impl From<RoleArg> for homma_api::Role {
             RoleArg::Hand => homma_api::Role::Hand,
             RoleArg::Expert => homma_api::Role::Expert,
             RoleArg::General => homma_api::Role::General,
+            RoleArg::Journeyman => homma_api::Role::Journeyman,
         }
     }
 }
@@ -1367,10 +1431,11 @@ pub enum OrgOp {
     /// identity, is what says somebody has been.
     Add {
         /// What everything else addresses it by. Becomes a directory name and a
-        /// file name, so it is restricted to `[a-z0-9-_]`.
+        /// file name, so it carries only letters, digits, `-`, `_` and `.`, and
+        /// never starts with a dot.
         handle: String,
 
-        /// king, hand, expert or general.
+        /// king, hand, expert, general or journeyman.
         #[arg(long)]
         role: RoleArg,
 

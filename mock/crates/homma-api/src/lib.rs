@@ -10,6 +10,7 @@
 //! depending on each other.
 
 pub mod agent_hooks;
+pub mod catalogue;
 pub mod config;
 pub mod contained;
 pub mod denied;
@@ -36,6 +37,7 @@ pub use agent_hooks::{
     DEFAULT_TIMEOUT,
     InvalidAgentHooks,
 };
+pub use catalogue::{LeaseConfig, Office};
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};

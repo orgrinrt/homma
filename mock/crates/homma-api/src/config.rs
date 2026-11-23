@@ -32,6 +32,10 @@ pub enum Role {
     Expert,
     /// Utility labour. No persona, no memory, no workspace.
     General,
+    /// The lighter identity a hand's team reserves for a while: a name, an
+    /// address and a few lines of temperament. No workspace, and no memory of
+    /// its own.
+    Journeyman,
 }
 
 impl Role {
@@ -91,6 +95,10 @@ pub struct Identity {
     pub role:            Role,
     /// What everything else addresses it by.
     pub handle:          String,
+    /// Further handles that reach the same participant: a nickname beside a
+    /// name, a former title. One namespace with every handle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases:         Vec<String>,
     /// Whether this entry is meant to have a workspace.
     ///
     /// Declared rather than inferred from an absent workspace. Inference is
@@ -149,6 +157,7 @@ impl Identity {
         Self {
             role,
             handle: handle.into(),
+            aliases: Vec::new(),
             staffed: false,
             nickname: None,
             full_name: None,
@@ -214,11 +223,21 @@ pub struct Paths {
     /// tag and its forge release. Unset, the release tags with git and
     /// releases through the forge client.
     pub forge_route:    Option<RelPath>,
+    /// The command that reads a repository's whole history for attribution
+    /// the workspace forbids, which `homma release run` runs over each repo
+    /// with its root as the one argument, refusing the release on any exit
+    /// but 0. Unset, a release scans nothing.
+    pub history_scan:   Option<RelPath>,
     /// The command that renders the workspace's own rules, skills and
     /// personas, which `homma agent regen` runs as `<command> regen` from the
     /// workspace root after its aggregate. Unset, the regen renders none of
     /// them and says so.
     pub agent_surfaces: Option<RelPath>,
+    /// The rendered index of every agent address, one line each: the address,
+    /// the handle and the role, tab-separated.
+    pub identities:     RelPath,
+    /// The directory of lease records, one `<handle>.toml` per held identity.
+    pub leases:         RelPath,
 }
 
 impl Default for Paths {
@@ -235,7 +254,10 @@ impl Default for Paths {
             index:          rel(".shared/.index"),
             captures:       rel(".data/op-responses"),
             forge_route:    None,
+            history_scan:   None,
             agent_surfaces: None,
+            identities:     rel(".shared/.index/identities.tsv"),
+            leases:         rel(".shared/state/leases"),
         }
     }
 }
@@ -270,6 +292,13 @@ pub struct Workspace {
     /// Handle to entry.
     #[serde(default)]
     pub org:          BTreeMap<String, Identity>,
+    /// Office to its row: the standing jobs pinged by name, each with at most
+    /// one holder from `org`.
+    #[serde(default)]
+    pub offices:      BTreeMap<String, crate::Office>,
+    /// Where the lease records live and how long one lasts.
+    #[serde(default)]
+    pub lease:        crate::LeaseConfig,
     /// Places this operator's homma may not write, beyond the ones it derives.
     ///
     /// Two locations are denied wherever homma runs, because they are the same
@@ -603,6 +632,32 @@ handle = "proof"
     }
 
     #[test]
+    fn the_history_scan_is_unset_by_default_and_a_contained_path_where_named() {
+        // Mutation: a default scanner compiled in, which is a copy of the
+        // workspace's policy homma does not own.
+        assert!(
+            Workspace::parse(MINIMAL)
+                .unwrap()
+                .paths
+                .history_scan
+                .is_none()
+        );
+        let toml = "content_repo = \"local\"\n\n[paths]\nhistory_scan = \".shared/skills/pr-review/scripts/scan-attribution.sh\"\n";
+        let w = Workspace::parse(toml).expect("a contained scanner is fine");
+        assert_eq!(
+            w.paths.history_scan.as_ref().map(|p| p.as_path()),
+            Some(std::path::Path::new(
+                ".shared/skills/pr-review/scripts/scan-attribution.sh"
+            ))
+        );
+        let bad = "content_repo = \"local\"\n\n[paths]\nhistory_scan = \"/usr/bin/scan\"\n";
+        assert!(
+            Workspace::parse(bad).is_err(),
+            "a scanner outside the workspace is refused"
+        );
+    }
+
+    #[test]
     fn an_override_replaces_only_what_it_names() {
         let w = Workspace::parse(WITH_ORG).unwrap();
         assert_eq!(
@@ -752,6 +807,7 @@ handle = "silent"
     /// string and cannot carry a control character.
     const CORRUPTIBLE: &[&str] = &[
         "handle",
+        "aliases",
         "nickname",
         "full_name",
         "domain",
@@ -805,6 +861,7 @@ handle = "silent"
             // Free-form. Each must appear in `CORRUPTIBLE`, and each must be
             // populated with a hostile value in the test below.
             handle,
+            aliases,
             nickname,
             full_name,
             domain,
@@ -822,6 +879,7 @@ handle = "silent"
         let not_free_form = [format!("{role:?}"), format!("{staffed:?}")];
         let free_form = [
             ("handle", format!("{handle:?}")),
+            ("aliases", format!("{aliases:?}")),
             ("nickname", format!("{nickname:?}")),
             ("full_name", format!("{full_name:?}")),
             ("domain", format!("{domain:?}")),
@@ -865,6 +923,7 @@ handle = "silent"
             role:            Role::Hand,
             staffed:         false,
             handle:          "pa\nja".into(),
+            aliases:         vec!["a\x07b".into()],
             nickname:        Some("a\nb".into()),
             full_name:       Some("a\rb".into()),
             domain:          Some("a\tb".into()),

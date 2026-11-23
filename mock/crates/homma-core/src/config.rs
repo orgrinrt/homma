@@ -58,6 +58,14 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub org: Option<toml::Value>,
 
+    /// The registry's offices. Same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offices: Option<toml::Value>,
+
+    /// The lease's table. Same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease: Option<toml::Value>,
+
     /// Places homma may not write, beyond the ones it derives.
     ///
     /// Read here as well as by `homma_api::Workspace`, which parses the same

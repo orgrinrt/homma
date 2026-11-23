@@ -16,6 +16,9 @@ homma-api = { path = "../homma-api" }
 # extensions arrive once for both.
 mockspace-template = { git = "https://github.com/hiisi-digital/mockspace.git", branch = "dev" }
 serde = { version = "1", features = ["derive"] }
+# The lease's times, read and written as RFC 3339 in its record.
+jiff = { version = "0.2", features = ["serde"] }
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
