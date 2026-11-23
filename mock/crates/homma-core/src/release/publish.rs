@@ -263,7 +263,7 @@ pub fn publish_npm(
             format!("the temp path {} is not utf-8", npmrc.display()),
         )));
     };
-    write_private(&npmrc, &format!("//registry.npmjs.org/:_authToken={t}\n"))?;
+    write_private(&npmrc, &npmrc_line(&t))?;
     let out = runner.run(&dir, "npm", &["publish", "--access", "public"], &[(
         "NPM_CONFIG_USERCONFIG",
         npmrc_str,
@@ -293,6 +293,14 @@ fn private_path(stem: &str) -> PathBuf {
         .unwrap_or_default();
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("{stem}-{}-{nanos}-{seq}", std::process::id()))
+}
+
+/// The registry npm publishes to, as an npmrc keys a token to it.
+pub const NPM_REGISTRY: &str = "//registry.npmjs.org/";
+
+/// The one npmrc line npm reads a publish token out of.
+pub fn npmrc_line(token: &str) -> String {
+    format!("{NPM_REGISTRY}:_authToken={token}\n")
 }
 
 /// Write a file only its owner can read, created with that mode rather than

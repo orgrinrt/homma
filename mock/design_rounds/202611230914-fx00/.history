@@ -1,0 +1,50 @@
+59b71d9 chore: lock src changelist 202611230914-fx00
+5950ab5 docs: name the suppression in the auth flow round without its attribute
+beb728e fix: group the auth flow capabilities in one ports struct
+0bdcc76 docs: write the source changelist of the auth flow ports
+684eb98 chore: lock doc changelist 202611230914-fx00
+045ce71 docs: write the doc changelist of the auth flow ports
+17b3fa0 chore: close design round 202611230833-tgxe
+f736927 chore: lock src changelist 202611230833-tgxe
+065fc5e fix: stop a walk the store refuses and test every warn row
+3e25b41 chore: reopen the src changelist for its implementation
+2137ad8 chore: lock src changelist 202611230833-tgxe
+f59f553 docs: write the source changelist of the release review fixes
+22e2364 chore: lock doc changelist 202611230833-tgxe
+7827111 docs: state the refusing store, bare first tag and estate json rule
+4849b32 docs: write the doc changelist of the release review fixes
+05df211 chore: close design round 202611230755-j2eh
+a9b4b46 chore: lock src changelist 202611230755-j2eh
+874a9d3 feat: port the release auth, versions, estate and checks into homma
+c627647 docs: write the source changelist of the release port
+f20a2a8 chore: lock doc changelist 202611230755-j2eh
+1ca38b6 docs: design the release auth, versions and estate verbs
+b26f888 docs: open the round porting the release python
+586670a fix: land a release bump through the forge when dev is protected
+db815d7 fix: land a release bump through the forge when dev is protected
+64b2336 chore: close design round 202611230400
+58c57ab chore: lock src changelist 202611230455
+b5eb626 fix: take a landed bump only where it was made on the merge's parent
+03b6c9b chore: lock doc changelist 202611230400
+c88dfd3 docs: a bump landed onto a dev that moved is not taken on a rerun
+35ee7f6 fix: release with the changelog block dev already holds
+b939511 fix: lease the drop of a landed bump's branch on the bump it landed
+830ef40 feat: land the release bump by pull request where dev is protected
+a58183c chore: lock doc changelist 202611230400
+50f3aa1 docs: name the route's branch delete as it is called today
+ba01a08 chore: lock doc changelist 202611230400
+942424d docs: a release lands dev through a pull request where dev is protected
+c7ead96 feat: land the release bump on dev by a push, never a squash
+0a28971 feat: land the release bump on dev by a push, never a squash
+2aa8b9a chore: close design round 202611230020
+0ce2b2a chore: lock src changelist 202611230021
+e475707 fix: give the test's squash a body so it is never the bump itself
+0d31df9 feat: land the release bump on dev by a push, never a squash
+a70fc58 chore: lock doc changelist 202611230020
+4683cb6 docs: a landing into dev is a local push, never a squashed pull request
+1cbc897 docs: file the topic for dev taking local landings
+a152b8f chore: prepare homma for its v2 migration
+a6052d2 chore: prepare homma for its v2 migration
+6bb9e88 fix: take `url` 2.5.9 so the advisory check passes
+229feb1 docs: draft homma's include patterns for the data-ref migration
+0eb8c53 chore: move the mockspace lock entries to the head of dev

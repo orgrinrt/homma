@@ -88,6 +88,9 @@ impl Ws {
         ws.member("w", "0.1.0");
         ws.member("w-x", "0.2.0");
         ws.member("w-y", "0.3.0");
+        // what a reader lands on, so the warn rows over it stay quiet
+        std::fs::write(ws.root().join("README.md"), "x\n").unwrap();
+        std::fs::write(ws.root().join("LICENSE"), "x\n").unwrap();
         ws.commit_all("feat: first");
         ws.git(&["push", "--quiet", "origin", "main"]);
         ws.tag("0.1.0");

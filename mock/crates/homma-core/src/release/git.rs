@@ -71,7 +71,7 @@ fn git(cwd: &Path, args: &[&str]) -> Result<sh::Output, GitError> {
     }
 }
 
-fn trimmed(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
+pub(crate) fn trimmed(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
     Ok(git(cwd, args)?.stdout.trim().to_string())
 }
 

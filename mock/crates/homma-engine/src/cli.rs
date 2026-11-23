@@ -745,6 +745,105 @@ pub enum ReleaseOp {
     Badges {
         repo: String,
     },
+    /// The publish credentials, each proven live: with no verb, check all
+    /// and walk through what needs it, leaving the fine ones alone.
+    Auth {
+        #[command(subcommand)]
+        op:         Option<AuthOp>,
+        /// Print a mint page's url rather than opening it.
+        #[arg(long, global = true)]
+        no_browser: bool,
+    },
+    /// A repo's version timeline, one line per change, read off the commits
+    /// of its trunks; with a verb, what it owes and the repairs.
+    #[command(args_conflicts_with_subcommands = true)]
+    Versions {
+        #[command(subcommand)]
+        op:       Option<VersionsOp>,
+        /// The repository's directory name; the working directory's when
+        /// omitted.
+        repo:     Option<String>,
+        /// Every repository under the workspace root.
+        #[arg(long)]
+        all:      bool,
+        /// The manifest the version lives in, where the repo's own cannot say.
+        #[arg(long, global = true)]
+        manifest: Option<String>,
+    },
+    /// Every package the workspace's repositories publish, against its tags
+    /// and its registry.
+    #[command(args_conflicts_with_subcommands = true)]
+    Estate {
+        #[command(subcommand)]
+        op:   Option<EstateOp>,
+        /// Write the measurement as json to this path instead of printing it.
+        #[arg(long)]
+        json: Option<std::path::PathBuf>,
+    },
+}
+
+/// `release auth` verbs.
+#[derive(Debug, Subcommand)]
+pub enum AuthOp {
+    /// Check only: no prompt, no browser; non-zero where anything is off.
+    Status,
+    /// Walk one through again, even where it passes.
+    Fix {
+        name: String,
+    },
+    /// Drop a stored token.
+    Forget {
+        name: String,
+    },
+    /// Correct a recorded expiry, `YYYY-MM-DD` or `none`, keeping the token.
+    Expiry {
+        name: String,
+        date: String,
+    },
+    /// Print one token, for a publish to read.
+    Token {
+        name: String,
+    },
+    /// Write the npmrc npm reads the token from, and print its path.
+    Npmrc,
+    /// The export lines a publish script wants.
+    Env,
+    /// What the store holds and what the registry answered.
+    Diagnose {
+        name: String,
+    },
+}
+
+/// `release versions` verbs.
+#[derive(Debug, Subcommand)]
+pub enum VersionsOp {
+    /// What is untagged, which steps are not one clean increment, and what
+    /// the registry holds per crate.
+    Plan {
+        repo: Option<String>,
+    },
+    /// Tag each released version no tag stands for, at the commit that set
+    /// it, locally; the push goes through the forge route.
+    Tag {
+        repo: Option<String>,
+    },
+    /// Tags no trunk reaches, and the trunk commit each belongs on.
+    Retag {
+        repo:  Option<String>,
+        /// Move them, journalling the undo line first.
+        #[arg(long)]
+        apply: bool,
+    },
+}
+
+/// `release estate` views.
+#[derive(Debug, Subcommand)]
+pub enum EstateOp {
+    /// Only the packages whose published line skips a number; non-zero when
+    /// any does.
+    Jumps,
+    /// Only what is tagged and not published.
+    Missing,
 }
 
 /// `milestone` subcommands: one record, the steps that write it and four

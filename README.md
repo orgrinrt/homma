@@ -61,7 +61,7 @@ Where a credential lives somewhere other than an environment variable, a forge c
 | `homma skills <op>` | lists the skills and generates the tree |
 | `homma tools` | lists and runs the content repository's own tools |
 | `homma what` | which tool does a thing, asked in your own words |
-| `homma release <op>` | the release gate, and the release that merges the trunk onto main |
+| `homma release <op>` | the release gate and the release that merges the trunk onto main, plus the publish credentials, the version timeline and the estate of every package |
 | `homma milestone <op>` | where the current milestone began and what the range since holds |
 | `homma hook <op>` | the git hooks, running what `homma.toml` names for each event |
 | `homma workspace [op]` | the launcher's own: bare it lists the repos, `spawn <slug> [owner/name ...]` makes a workspace, `reap [<slug>]` removes one and `list` says what's there |

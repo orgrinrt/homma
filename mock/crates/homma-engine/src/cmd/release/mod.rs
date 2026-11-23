@@ -26,9 +26,12 @@ use crate::cmd::util::{branches_for, resolve_repo};
 use crate::cmd::{Outcome, config_path, load_config, load_config_whole};
 use crate::output::{HumanRender, emit};
 
+mod auth;
+mod estate;
 mod gating;
 mod order;
 mod sweep;
+mod versions;
 use gating::gate_cmd;
 use order::{release_order, sibling_dependency};
 
@@ -211,6 +214,29 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
         ReleaseOp::Badges {
             repo,
         } => badges_cmd(cli, &cfg, repo),
+        ReleaseOp::Auth {
+            op,
+            no_browser,
+        } => auth::run(cli, &cfg, op.as_ref(), *no_browser),
+        ReleaseOp::Versions {
+            op,
+            repo,
+            all,
+            manifest,
+        } => {
+            versions::run(
+                cli,
+                &cfg,
+                op.as_ref(),
+                repo.as_deref(),
+                *all,
+                manifest.as_deref(),
+            )
+        },
+        ReleaseOp::Estate {
+            op,
+            json,
+        } => estate::run(cli, &cfg, op.as_ref(), json.as_deref()),
     }
 }
 

@@ -551,6 +551,10 @@ pub struct RegistryConfig {
     /// replaced by the registry key and `{host}` by its host.
     #[serde(default)]
     pub token_cmd: Option<Vec<String>>,
+    /// The scope whose packages are this workspace's, for a registry that
+    /// scopes names (jsr's `@scope/name`); unset, every name counts.
+    #[serde(default)]
+    pub scope:     Option<String>,
 }
 
 impl RegistryConfig {
@@ -585,6 +589,11 @@ pub struct AuthConfig {
     /// `PATH` the way it would be if typed.
     #[serde(default)]
     pub token_cmd: Option<Vec<String>>,
+    /// Where `homma release auth npmrc` writes the npmrc a publish hands
+    /// npm, relative to the workspace root where relative; unset, `homma/npmrc`
+    /// under the user's cache directory, never inside a repository.
+    #[serde(default)]
+    pub npmrc:     Option<PathBuf>,
 }
 
 /// Hosting service type. Drives client selection in [crate::forge].
