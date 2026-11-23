@@ -78,7 +78,8 @@ fn line(s: &Subject) -> String {
 }
 
 /// Prepend `block` to `CHANGELOG.md` at `root`, creating the file when it is
-/// not there. A block already opening the file is not added twice.
+/// not there. A block already opening the file is not added twice, nor is one
+/// for a version the file already holds a heading for, whatever its text.
 pub fn prepend(root: &Path, block: &str) -> std::io::Result<()> {
     let path = root.join("CHANGELOG.md");
     let existing = match std::fs::read_to_string(&path) {
@@ -90,7 +91,8 @@ pub fn prepend(root: &Path, block: &str) -> std::io::Result<()> {
         .strip_prefix("# Changelog\n")
         .map(|s| s.trim_start_matches('\n'))
         .unwrap_or(&existing);
-    if body.starts_with(block.trim_end()) {
+    if body.starts_with(block.trim_end()) || heading_of(block).is_some_and(|h| opens(&existing, h))
+    {
         return Ok(());
     }
     let mut text = String::from("# Changelog\n\n");
@@ -101,6 +103,61 @@ pub fn prepend(root: &Path, block: &str) -> std::io::Result<()> {
         text.push_str(body.trim_start_matches('\n'));
     }
     std::fs::write(&path, text)
+}
+
+/// Whether `text` has a line that is `heading`, `## <version>`, alone or
+/// followed by its date, `## <version> (<date>)`, whatever the date and the
+/// commits under it.
+fn opens(text: &str, heading: &str) -> bool {
+    text.lines().any(|l| is_heading(l, heading))
+}
+
+/// Whether `line` is `heading`, alone or followed by its date.
+fn is_heading(line: &str, heading: &str) -> bool {
+    line == heading
+        || line
+            .strip_prefix(heading)
+            .is_some_and(|r| r.starts_with(" ("))
+}
+
+/// The heading `## <version>` a block opens with, without its date.
+fn heading_of(block: &str) -> Option<&str> {
+    let first = block.lines().next()?;
+    let heading = first.split_once(" (").map_or(first, |(h, _)| h);
+    heading.starts_with("## ").then_some(heading)
+}
+
+/// Whether `CHANGELOG.md` at `root` already holds the block for `version`. It
+/// is the heading that says so and never the block's text, since the commits
+/// since the last tag include the bump itself once a run is resumed.
+pub fn holds(root: &Path, version: &Version) -> std::io::Result<bool> {
+    match std::fs::read_to_string(root.join("CHANGELOG.md")) {
+        Ok(text) => Ok(opens(&text, &format!("## {version}"))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// The block `CHANGELOG.md` at `root` holds under the heading of `version`, to
+/// the next block or the end, as the forge release's body; none where the file
+/// holds no such block.
+pub fn block_of(root: &Path, version: &Version) -> std::io::Result<Option<String>> {
+    let text = match std::fs::read_to_string(root.join("CHANGELOG.md")) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let heading = format!("## {version}");
+    let mut lines = text.lines();
+    let Some(first) = lines.find(|l| is_heading(l, &heading)) else {
+        return Ok(None);
+    };
+    let mut block = String::from(first);
+    for l in lines.take_while(|l| !l.starts_with("## ")) {
+        block.push('\n');
+        block.push_str(l);
+    }
+    Ok(Some(block.trim_end().to_string()))
 }
 
 /// The newest block in `CHANGELOG.md`, for the release body when the file
@@ -178,6 +235,45 @@ mod tests {
         let again = std::fs::read_to_string(d.path().join("CHANGELOG.md")).unwrap();
         assert_eq!(again, text, "a block already at the top is not added twice");
         assert_eq!(newest_block(&again), Some(two.trim_end()));
+    }
+
+    #[test]
+    fn a_version_the_file_holds_is_held_by_its_heading_and_a_prefix_of_it_is_not() {
+        let d = tempfile::tempdir().unwrap();
+        let v = Version::new(0, 1, 1);
+        assert!(!holds(d.path(), &v).unwrap(), "no file, no block");
+        let text =
+            "# Changelog\n\n## 0.1.10 (d)\n\n### feat\n\n- feat: a `a`\n\n## 0.1.1-rc.1 (e)\n";
+        std::fs::write(d.path().join("CHANGELOG.md"), text).unwrap();
+        assert!(
+            !holds(d.path(), &v).unwrap(),
+            "0.1.10 and 0.1.1-rc.1 are no 0.1.1"
+        );
+        std::fs::write(
+            d.path().join("CHANGELOG.md"),
+            format!("{text}\n## 0.1.1 (f)\n"),
+        )
+        .unwrap();
+        assert!(holds(d.path(), &v).unwrap());
+    }
+
+    #[test]
+    fn a_block_for_a_version_the_file_holds_is_never_prepended_whatever_its_text_and_date() {
+        // Mutation: the block's own text compared, which the commits since the
+        // last tag change by one once the bump is among them.
+        let d = tempfile::tempdir().unwrap();
+        let v = Version::new(0, 1, 1);
+        let first = block(&v, "d1", &[s("a", "feat: a", None)]);
+        prepend(d.path(), &first).unwrap();
+        let held = std::fs::read_to_string(d.path().join("CHANGELOG.md")).unwrap();
+        let again = block(&v, "d2", &[
+            s("b", "chore: release 0.1.1", None),
+            s("a", "feat: a", None),
+        ]);
+        prepend(d.path(), &again).unwrap();
+        let after = std::fs::read_to_string(d.path().join("CHANGELOG.md")).unwrap();
+        assert_eq!(after, held);
+        assert_eq!(after.matches("## 0.1.1 (").count(), 1);
     }
 
     #[test]
