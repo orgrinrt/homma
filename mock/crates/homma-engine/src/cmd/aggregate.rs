@@ -6,27 +6,18 @@
 //! Workspace-level aggregation of per-repo mockspace agent hooks.
 //!
 //! For each member repo with rendered hooks under `.claude/hooks/`, this
-//! module:
-//!
-//! 1. Writes a wrapper for each at
-//!    `<workspace>/.claude/hooks/<repo>--<name>.sh`, carrying
-//!    [`MANAGED_MARK`]. Each wrapper reads the host's JSON from stdin, finds
-//!    where the call lands, exits zero when that is not under the repo, and
-//!    otherwise hands control to the real per-repo hook with the same stdin
-//!    re-fed. Per-repo updates flow through automatically: the workspace
-//!    wrapper is a thin scope check, and the substantive logic still lives in
-//!    the repo. The wrapper itself is in `aggregate_wrapper.rs`.
-//!
-//! 2. Merges per-repo `settings.json` hook registrations into the clone's
-//!    `.claude/settings.local.json`, under every event and matcher the repo gave
-//!    each hook, with each command rewritten to the workspace wrapper.
-//!    Registrations homma wrote before are swept first, so regens are
-//!    idempotent. What is homma's is decided by the mark in the file a
-//!    registration names, never by its name alone, so a hand-written hook
-//!    and its registration are kept whatever they are called.
+//! module makes an [`Entry`] for the dispatcher under every event and matcher
+//! the repo's `settings.json` gives each hook, with the timeout and `async` it
+//! gives it, narrowed to the repo. The dispatcher runs the real per-repo hook,
+//! so per-repo updates flow through without a regen. `dispatch.rs` writes the
+//! table and the dispatcher, and [`merge_settings`] registers it in the
+//! clone's `.claude/settings.local.json`, sweeping what homma registered
+//! before. What is homma's is decided by the mark in the file a registration
+//! names, never by its name alone, so a hand-written hook and its registration
+//! are kept whatever they are called.
 //!
 //! A hook nothing registers, or one the host could not run, is reported by
-//! path rather than written as a wrapper nobody calls.
+//! path rather than made an entry nothing matches.
 //!
 //! Rules are deliberately NOT aggregated. Per-repo rules auto-load when
 //! Claude Code is opened with cwd inside the repo; rule aggregation at
@@ -48,21 +39,33 @@ use anyhow::{Context, Result, anyhow};
 use homma_api::{ContainedPath, Root};
 use serde::Serialize;
 
+use crate::cmd::dispatch::Entry;
+
 /// One registration destined for the clone's `settings.local.json`: the event it
-/// sits under, the tools it fires for, and the command the host runs.
+/// sits under, the tools it fires for, the command the host runs, the seconds
+/// the host gives it and whether the call waits on it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct HookEntry {
-    pub event:   String,
-    /// Empty writes no `matcher` at all, which the host reads as every tool,
-    /// and which is how a registration that named none is carried.
-    pub matcher: String,
-    pub command: String,
+    pub event:      String,
+    /// Empty writes no `matcher` at all, which the host reads as every tool.
+    pub matcher:    String,
+    pub command:    String,
+    /// None writes no `timeout`, which leaves the host's default.
+    pub timeout:    Option<u32>,
+    /// Written as `async`, which the host runs in the background.
+    pub background: bool,
 }
 
 impl HookEntry {
     /// The entry as the host reads it.
     fn to_json(&self) -> serde_json::Value {
-        let hook = serde_json::json!({ "type": "command", "command": self.command });
+        let mut hook = serde_json::json!({ "type": "command", "command": self.command });
+        if let Some(t) = self.timeout {
+            hook["timeout"] = serde_json::json!(t);
+        }
+        if self.background {
+            hook["async"] = serde_json::json!(true);
+        }
         if self.matcher.is_empty() {
             serde_json::json!({ "hooks": [hook] })
         } else {
@@ -103,15 +106,15 @@ pub(crate) fn is_executable(path: &Path) -> bool {
 /// What one repository's pass carried and what it could not.
 #[derive(Debug, Default)]
 pub(crate) struct Aggregated {
-    /// Wrappers written.
+    /// Hooks carried.
     pub hooks:    usize,
     /// Hooks not carried, each naming its path and why. Any of these fails the
     /// regen, since each is a hook no session opened at the root will run.
     pub problems: Vec<String>,
 }
 
-/// Aggregate one repo's hooks into the workspace `.claude/`, returning how
-/// many wrappers were written and which hooks were not carried.
+/// Make the dispatcher's entries for one repo's hooks, returning how many hooks
+/// were carried and which were not.
 ///
 /// Rules are no longer aggregated; per-repo rules auto-load from the
 /// repo's `.claude/rules/` when Claude Code is opened with cwd inside
@@ -119,14 +122,14 @@ pub(crate) struct Aggregated {
 /// `<workspace>/.claude/rules/<repo>--*.md` get cleaned on every regen
 /// so upgrades from older homma versions converge automatically.
 ///
-/// `settings_entries` accumulates per-hook registrations that
-/// [`merge_settings`] writes into the clone's `settings.local.json` after
-/// the per-repo loop completes.
+/// `entries` accumulates the entries; a hook whose registration names no
+/// timeout gets `timeout`.
 pub(crate) fn aggregate_repo(
     root: &Root,
     repo_name: &str,
     repo_abs_path: &Path,
-    settings_entries: &mut Vec<HookEntry>,
+    timeout: u32,
+    entries: &mut Vec<Entry>,
 ) -> Result<Aggregated> {
     let claude_dir = repo_abs_path.join(".claude");
     if !claude_dir.is_dir() {
@@ -147,15 +150,11 @@ pub(crate) fn aggregate_repo(
     // above it. `org up` has gone through this mechanism for several rounds;
     // this pass had a hand-rolled prefix check instead.
     let ws_rules = contain(root, ".claude/rules")?;
-    let ws_hooks = contain(root, ".claude/hooks")?;
     root.create_dir_all(&ws_rules).ok();
-    root.create_dir_all(&ws_hooks).ok();
 
-    // Cleans both prior-homma aggregated rules (kept after retirement
-    // of rule aggregation) and prior-regen hook wrappers (the
-    // idempotency guarantee for hooks).
-    clean_stale(root, &ws_rules, repo_name, ".md", Sweep::Everything)?;
-    clean_stale(root, &ws_hooks, repo_name, ".sh", Sweep::Marked)?;
+    // The rules homma aggregated before it stopped; the wrappers it wrote
+    // before the dispatcher are removed when the dispatcher is written.
+    clean_stale(root, &ws_rules, repo_name, ".md")?;
 
     // The workspace-relative path is the portable half and the only half the
     // wrappers may carry. A repo declared outside the workspace has none, and
@@ -170,12 +169,11 @@ pub(crate) fn aggregate_repo(
 
     let mut out = Aggregated::default();
     out.hooks = aggregate_hooks(
-        root,
         &claude_dir,
-        &ws_hooks,
         repo_name,
         &repo_rel,
-        settings_entries,
+        timeout,
+        entries,
         &mut out.problems,
     )?;
 
@@ -188,26 +186,10 @@ fn contain(root: &Root, tail: &str) -> Result<ContainedPath> {
         .map_err(|e| anyhow!("{e}"))
 }
 
-/// Which files [`clean_stale`] may remove.
-#[derive(Debug, Clone, Copy)]
-enum Sweep {
-    /// Every file carrying the prefix. Only the retired rule copies, which
-    /// predate the mark and which nothing but homma ever named that way.
-    Everything,
-    /// Only the ones carrying [`MANAGED_MARK`]. Anything else under the same
-    /// name is somebody's and stays.
-    Marked,
-}
-
-/// Remove previously-aggregated files for `repo_name` so removed
-/// per-repo entries do not linger at the workspace level.
-fn clean_stale(
-    root: &Root,
-    dir: &ContainedPath,
-    repo_name: &str,
-    ext: &str,
-    sweep: Sweep,
-) -> Result<()> {
+/// Remove the rule copies homma aggregated for `repo_name` before it stopped
+/// aggregating rules. Every file carrying the prefix goes: they predate the
+/// mark, and nothing but homma ever named a rule that way.
+fn clean_stale(root: &Root, dir: &ContainedPath, repo_name: &str, ext: &str) -> Result<()> {
     if !dir.as_path().is_dir() {
         return Ok(());
     }
@@ -223,28 +205,22 @@ fn clean_stale(
             // and this loop reads a directory that a symlink may have made
             // somebody else's.
             let target = root.contain_under(dir, &name).map_err(|e| anyhow!("{e}"))?;
-            if matches!(sweep, Sweep::Marked) && !carries_the_mark(target.as_path()) {
-                continue;
-            }
             root.remove_file(&target).ok();
         }
     }
     Ok(())
 }
 
-/// Walk the repository's `.claude/hooks/`, write a wrapper for every hook
-/// something calls, and collect a registration for every event and matcher it
-/// is called under. A file the host could not run, one nothing registers, one
-/// two registrations run two different ways, and one whose wrapper would land
-/// on a file homma did not write are each reported in `problems` and carried
-/// nowhere.
+/// Walk the repository's `.claude/hooks/` and make an entry for every event and
+/// matcher a hook something calls is called under. A file the host could not
+/// run, one nothing registers, and one two registrations run two different ways
+/// are each reported in `problems` and carried nowhere.
 fn aggregate_hooks(
-    root: &Root,
     repo_claude_dir: &Path,
-    dst_dir: &ContainedPath,
     repo_name: &str,
     repo_rel_path: &str,
-    settings_entries: &mut Vec<HookEntry>,
+    timeout: u32,
+    entries: &mut Vec<Entry>,
     problems: &mut Vec<String>,
 ) -> Result<usize> {
     let src_dir = repo_claude_dir.join("hooks");
@@ -303,6 +279,8 @@ fn aggregate_hooks(
                                     matcher,
                                     args: String::new(),
                                     runner: String::new(),
+                                    timeout: None,
+                                    background: false,
                                 }
                             })
                             .collect()
@@ -327,49 +305,20 @@ fn aggregate_hooks(
             },
         };
 
-        // The wrapper is bash whatever the hook is written in, since all it
-        // does is decide whether to hand off.
-        let target_name = if name.ends_with(".sh") {
-            format!("{repo_name}--{name}")
-        } else {
-            format!("{repo_name}--{name}.sh")
-        };
-        let target_path = root
-            .contain_under(dst_dir, &target_name)
-            .map_err(|e| anyhow!("{e}"))?;
-        if target_path.as_path().exists() && !carries_the_mark(target_path.as_path()) {
-            problems.push(format!(
-                "`.claude/hooks/{target_name}` was not written by homma, so `{shown}` is not \
-                 carried over it; move that file aside or rename it"
-            ));
-            continue;
-        }
-
-        let stem_path = format!(".claude/hooks/{name}");
-        let wrapper = wrapper_script(repo_name, repo_rel_path, &stem_path, &runner);
-        root.write(&target_path, wrapper)
-            .with_context(|| format!("write {}", target_path.as_path().display()))?;
-        #[cfg(unix)]
-        root.set_executable(&target_path)?;
-
-        // `${CLAUDE_PROJECT_DIR}` rather than the path this run happened to
-        // write to. The host substitutes it for the project root "regardless of
-        // the working directory when the hook runs", so a registration stays
-        // right when the clone is moved or copied. The absolute form it
-        // replaces named the workspace that
-        // generated the file, so every other clone either could not find the
-        // command at all or, on the same machine, ran somebody else's copy.
-        let command = format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{target_name}");
+        // Workspace-relative, the portable half, so the table names no machine
+        // and stays right when the clone is moved or copied.
+        let run = format!("{repo_rel_path}/.claude/hooks/{name}");
         for r in registrations {
-            let command = if r.args.is_empty() {
-                command.clone()
-            } else {
-                format!("{command} {}", r.args)
-            };
-            settings_entries.push(HookEntry {
-                event: r.event,
-                matcher: r.matcher,
-                command,
+            entries.push(Entry {
+                event:      r.event,
+                matcher:    r.matcher,
+                run:        run.clone(),
+                runner:     runner.clone(),
+                args:       r.args,
+                roots:      vec![repo_rel_path.to_string()],
+                timeout:    r.timeout.unwrap_or(timeout),
+                background: r.background,
+                from:       repo_name.to_string(),
             });
         }
 
@@ -381,15 +330,19 @@ fn aggregate_hooks(
 /// One place a repository's `settings.json` calls a hook from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Registration {
-    event:   String,
+    event:      String,
     /// Empty where the registration named none.
-    matcher: String,
+    matcher:    String,
     /// Whatever followed the hook's path on its command line, carried onto the
     /// wrapper's command so the hook still receives it.
-    args:    String,
+    args:       String,
     /// Whatever preceded it, the program the host runs the hook with, which
-    /// the wrapper runs it with in turn. Empty where the host runs the file.
-    runner:  String,
+    /// the dispatcher runs it with in turn. Empty where the host runs the file.
+    runner:     String,
+    /// The seconds the registration gives it, where it gives any.
+    timeout:    Option<u32>,
+    /// Whether the registration runs it `async`.
+    background: bool,
 }
 
 /// Map each hook file a repository's `settings.json` calls, by its name under
@@ -429,10 +382,16 @@ fn read_settings_hooks(path: &Path) -> BTreeMap<String, Vec<Registration>> {
                     continue;
                 };
                 let r = Registration {
-                    event:   event.clone(),
-                    matcher: matcher.clone(),
-                    args:    call.args,
-                    runner:  call.runner,
+                    event:      event.clone(),
+                    matcher:    matcher.clone(),
+                    args:       call.args,
+                    runner:     call.runner,
+                    timeout:    h
+                        .get("timeout")
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|t| u32::try_from(t).ok())
+                        .filter(|t| *t > 0),
+                    background: h.get("async").and_then(serde_json::Value::as_bool) == Some(true),
                 };
                 let regs = out.entry(call.name).or_default();
                 if !regs.contains(&r) {
@@ -472,7 +431,6 @@ pub(crate) use wrapper::{
     hook_file_named,
     one_runner,
     sh_single_quote_escape,
-    wrapper_script,
 };
 
 #[path = "aggregate_settings.rs"]

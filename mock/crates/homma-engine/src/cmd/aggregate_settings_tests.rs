@@ -51,7 +51,7 @@ fn the_shared_file_is_not_written_when_nothing_in_it_is_hommas() {
     seed_shared(workspace, body);
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
 
     assert_eq!(fs::read_to_string(workspace.join(SHARED)).unwrap(), body);
     assert_eq!(commands(&read(workspace)), vec![
@@ -67,7 +67,7 @@ fn a_shared_file_with_no_hooks_is_not_given_any() {
     seed_shared(workspace, body);
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
 
     assert_eq!(fs::read_to_string(workspace.join(SHARED)).unwrap(), body);
 }
@@ -78,7 +78,7 @@ fn an_absent_shared_file_stays_absent() {
     let workspace = dir.path();
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
 
     assert!(!workspace.join(SHARED).exists());
     assert_eq!(commands(&read(workspace)), vec![
@@ -104,7 +104,7 @@ fn hommas_registrations_in_the_shared_file_are_swept_and_everything_else_kept() 
     );
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -131,7 +131,7 @@ fn the_local_files_other_keys_are_kept() {
     );
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
 
     let v = read(workspace);
     assert_eq!(v["permissions"]["allow"][0], "Artifact");
@@ -149,9 +149,9 @@ fn a_second_regen_writes_the_same_local_file() {
         entry("Write", ".claude/hooks/arvo--b.sh"),
     ];
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
     let first = fs::read_to_string(workspace.join(LOCAL)).unwrap();
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
     let second = fs::read_to_string(workspace.join(LOCAL)).unwrap();
 
     assert_eq!(first, second);
@@ -165,7 +165,7 @@ fn a_shared_file_that_does_not_parse_is_an_error_and_the_local_one_is_not_writte
     seed_shared(workspace, "{ not json");
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    let r = merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None);
+    let r = merge_settings(&test_root(workspace), &["arvo"], &entries);
 
     assert!(r.is_err());
     assert!(!workspace.join(LOCAL).exists());
@@ -180,9 +180,11 @@ mod shared;
 
 fn entry(matcher: &str, command: &str) -> HookEntry {
     HookEntry {
-        event:   "PreToolUse".into(),
-        matcher: matcher.into(),
-        command: command.into(),
+        event:      "PreToolUse".into(),
+        matcher:    matcher.into(),
+        command:    command.into(),
+        timeout:    None,
+        background: false,
     }
 }
 
@@ -196,7 +198,7 @@ fn merge_settings_preserves_hand_authored_entries() {
     );
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--no-alloc.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(arr.len(), 2);
@@ -223,7 +225,7 @@ fn merge_settings_replaces_previously_aggregated() {
     );
 
     let entries = vec![entry("Write", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(arr.len(), 2);
@@ -260,7 +262,7 @@ fn merge_settings_preserves_mixed_hook_entries() {
     );
 
     let entries = vec![entry("Write", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     // Original Edit entry preserved, with `arvo--old.sh` stripped
@@ -283,11 +285,10 @@ fn merge_settings_preserves_mixed_hook_entries() {
 }
 
 #[test]
-fn merge_settings_keeps_entries_for_a_known_repo_this_run_did_not_visit() {
-    // A workspace clones the repos its work touches, so most of the
-    // manifest aggregates nothing on any given run. Sweeping on the full
-    // manifest deleted those registrations, and the wrapper files survived
-    // because the cleanup runs inside the per-repo pass that was skipped.
+fn every_wrapper_registration_goes_whichever_repo_it_names_and_the_dispatchers_replaces_it() {
+    // Before the dispatcher every hook had a wrapper registered on its own. A
+    // member's hooks now live in the dispatcher's table whether this run
+    // visited it or not, so no wrapper registration is kept for its sake.
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
     seed(
@@ -295,56 +296,31 @@ fn merge_settings_keeps_entries_for_a_known_repo_this_run_did_not_visit() {
         r#"{"hooks":{"PreToolUse":[
             {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kolli--guard.sh"}]},
             {"matcher":"Edit","hooks":[{"type":"command","command":"/elsewhere/.claude/hooks/kolli--stale.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--old.sh"}]}
+            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_declared--PreToolUse--x.sh"}]},
+            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_workspace--mockspace-gate.sh"}]},
+            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/mine.sh"}]}
         ]}}"#,
     );
 
     let entries = vec![entry(
-        "Edit",
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--new.sh",
+        "Bash|Edit",
+        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse",
     )];
-    merge_settings(
-        &test_root(workspace),
-        &["arvo", "kolli"],
-        &["arvo"],
-        &entries,
-        None,
-    )
-    .unwrap();
+    merge_settings(&test_root(workspace), &["arvo", "kolli"], &entries).unwrap();
 
-    let v = read(workspace);
-    let cmds: Vec<String> = v["hooks"]["PreToolUse"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|e| e["hooks"].as_array().unwrap())
-        .map(|h| h["command"].as_str().unwrap().to_string())
-        .collect();
-
-    assert!(
-        cmds.iter().any(|c| c.ends_with("kolli--guard.sh")),
-        "an unvisited repo's registration was swept: {cmds:?}"
-    );
-    // The control on the same run: the repo that WAS visited is rewritten,
-    // so preservation is not the whole predicate.
-    assert!(
-        !cmds.iter().any(|c| c.ends_with("arvo--old.sh")),
-        "a visited repo's stale registration survived: {cmds:?}"
-    );
-    assert!(cmds.iter().any(|c| c.ends_with("arvo--new.sh")));
-    // And the unvisited repo's *absolute* entry goes, because no clone can
-    // resolve it. Preservation is about the placeholder form only.
-    assert!(
-        !cmds.iter().any(|c| c.ends_with("kolli--stale.sh")),
-        "a retired absolute entry survived on an unvisited repo: {cmds:?}"
-    );
+    let cmds = commands(&read(workspace));
+    assert_eq!(cmds, vec![
+        ".claude/hooks/mine.sh".to_string(),
+        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse".to_string(),
+    ]);
 }
 
 #[test]
 fn merge_settings_sweeps_the_legacy_shape_for_any_known_repo_visited_or_not() {
     // The retired bash aggregator's `imports/<repo>/` form. Nothing writes
     // it any more, so there is no workspace where keeping it makes it work,
-    // and it is swept on the full manifest rather than on the visited set.
+    // and it is swept on the full manifest.
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
     seed(
@@ -355,14 +331,7 @@ fn merge_settings_sweeps_the_legacy_shape_for_any_known_repo_visited_or_not() {
         ]}}"#,
     );
 
-    merge_settings(
-        &test_root(workspace),
-        &["arvo", "kolli"],
-        &["arvo"],
-        &[],
-        None,
-    )
-    .unwrap();
+    merge_settings(&test_root(workspace), &["arvo", "kolli"], &[]).unwrap();
 
     let body = fs::read_to_string(workspace.join(LOCAL)).unwrap();
     assert!(
@@ -393,7 +362,7 @@ fn merge_settings_drops_entry_when_all_hooks_aggregated() {
         ]}}"#,
     );
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &[]).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     // Edit entry collapsed (all hooks were aggregated); Bash entry
@@ -423,7 +392,7 @@ fn a_registration_whose_managed_file_is_gone_is_swept_and_one_whose_file_is_some
     )
     .unwrap();
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &[]).unwrap();
     let body = fs::read_to_string(workspace.join(LOCAL)).unwrap();
     assert!(!body.contains("arvo--gone.sh"), "{body}");
     assert!(body.contains("arvo--theirs.sh"), "{body}");

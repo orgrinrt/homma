@@ -10,8 +10,8 @@
 //! from within a member repo's subtree and verifies that repo has a
 //! healthy mockspace bootstrap before allowing the operation through.
 //!
-//! The gate is workspace-authored (not aggregated): one script registered
-//! against the Bash matcher, embedded with the list of member-repo
+//! The gate is workspace-authored (not aggregated): one script the dispatcher
+//! runs on the Bash matcher, embedded with the list of member-repo
 //! absolute paths at generation time. When fired, it:
 //!
 //! 1. Reads the Claude Code tool-input JSON from stdin.
@@ -35,18 +35,17 @@
 
 use anyhow::{Context, Result};
 
-use crate::cmd::aggregate::HookEntry;
+use crate::cmd::dispatch::{Entry, FROM_GATE};
 
 /// File name for the generated workspace gate script.
-const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
+pub(crate) const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 
-/// Generate the workspace mockspace gate script and return the
-/// `settings.local.json` entry registering it.
+/// Generate the workspace mockspace gate script and return the dispatcher's
+/// entry for it, which may run for `timeout` seconds.
 ///
 /// The script is written to `<workspace>/.claude/hooks/`. The returned
-/// entry is appended to `hooks.PreToolUse[]` with matcher `Bash` so it
-/// fires on every Bash tool call; the script itself decides which
-/// commands warrant inspection.
+/// entry runs at `PreToolUse` with matcher `Bash` so it fires on every Bash
+/// tool call; the script itself decides which commands warrant inspection.
 ///
 /// `repos` is the list of `(repo_name, workspace_relative_path)` pairs that
 /// the gate should consider as "member repos" worth validating. Relative,
@@ -57,7 +56,8 @@ const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 pub(crate) fn install_workspace_gate(
     root: &homma_api::Root,
     repos: &[(String, String)],
-) -> Result<HookEntry> {
+    timeout: u32,
+) -> Result<Entry> {
     // Proven, like every other write this pass performs. This one installs an
     // executable the agent harness then runs on every tool call, which is the
     // write with the largest consequence in the program.
@@ -95,24 +95,19 @@ pub(crate) fn install_workspace_gate(
         .with_context(|| format!("writing {}", target.as_path().display()))?;
     #[cfg(unix)]
     root.set_executable(&target)?;
-    // `${CLAUDE_PROJECT_DIR}`, for the same reason the per-repo wrappers use
-    // it: the host substitutes the project root regardless of the working
-    // directory the hook runs in, so the registration stays right when the
-    // clone is moved or copied.
-    Ok(HookEntry {
-        event:   "PreToolUse".to_string(),
+    // Relative to the workspace, as every entry is, and narrowed to no
+    // repository: the script decides for itself which calls are its business.
+    Ok(Entry {
+        event: "PreToolUse".to_string(),
         matcher: "Bash".to_string(),
-        command: format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{GATE_SCRIPT_NAME}"),
+        run: format!(".claude/hooks/{GATE_SCRIPT_NAME}"),
+        runner: String::new(),
+        args: String::new(),
+        roots: Vec::new(),
+        timeout,
+        background: false,
+        from: FROM_GATE.to_string(),
     })
-}
-
-/// True if a single hook command string points at the workspace-gate
-/// script. Used by `merge_settings` when filtering hooks individually
-/// within a multi-hook entry. Identification is by command-path
-/// basename so absolute and relative path forms both match cleanly
-/// across regens.
-pub(crate) fn is_workspace_gate_command(cmd: &str) -> bool {
-    cmd.rsplit('/').next().unwrap_or(cmd) == GATE_SCRIPT_NAME
 }
 
 /// Render the gate script body with the workspace's member-repo list

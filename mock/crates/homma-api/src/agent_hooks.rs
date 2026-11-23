@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 //! The agent hooks table: what a workspace declares for the agent host, one
-//! array per host event, under `[agent.hooks]` in `homma.toml`. No I/O;
-//! `homma-engine` writes a wrapper per row and registers it.
+//! array per host event, under `[agent.hooks]` in `homma.toml`, with the
+//! `[agent]` keys beside it. No I/O; `homma-engine` makes an entry of each row
+//! for the dispatcher it writes.
 //!
 //! The git hooks table in [`crate::hooks`] is the other kind of hook and
 //! shares nothing with this one but the manifest.
@@ -55,16 +56,24 @@ pub const AGENT_EVENTS: &[&str] = &[
 /// tool, and ignores on an event that has no tools to match.
 pub const EVERY_TOOL: &str = "*";
 
-/// One row: which tools it fires for, the script it runs, and the
-/// repositories it is narrowed to. Built through [`AgentHook::new`] and
-/// nowhere else, so a row running nothing, or running something outside the
-/// workspace, does not exist.
+/// The seconds an agent hook may run where neither its row nor `[agent]`
+/// names any.
+pub const DEFAULT_TIMEOUT: u32 = 60;
+
+/// One row: which tools it fires for, the script it runs, the repositories it
+/// is narrowed to, the seconds it may run and whether the call waits on it.
+/// Built through [`AgentHook::new`] and nowhere else, so a row running nothing,
+/// or running something outside the workspace, does not exist.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AgentHook {
-    matcher: String,
-    run:     String,
+    matcher:    String,
+    run:        String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    repos:   Vec<String>,
+    repos:      Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout:    Option<u32>,
+    #[serde(rename = "async", skip_serializing_if = "std::ops::Not::not")]
+    background: bool,
 }
 
 impl AgentHook {
@@ -102,7 +111,36 @@ impl AgentHook {
             matcher,
             run,
             repos,
+            timeout: None,
+            background: false,
         })
+    }
+
+    /// The row with the seconds it may run, or why it cannot have them: a hook
+    /// given no time at all could only ever be killed.
+    pub fn with_timeout(mut self, seconds: Option<u32>) -> Result<Self, InvalidAgentHooks> {
+        if seconds == Some(0) {
+            return Err(InvalidAgentHooks::Timeout(self.run));
+        }
+        self.timeout = seconds;
+        Ok(self)
+    }
+
+    /// The row run with the hooks nothing waits on, or with those the call
+    /// waits on.
+    pub fn in_background(mut self, background: bool) -> Self {
+        self.background = background;
+        self
+    }
+
+    /// The seconds the row names, where it names any.
+    pub fn timeout(&self) -> Option<u32> {
+        self.timeout
+    }
+
+    /// Whether the row runs with the hooks nothing waits on (`async`).
+    pub fn background(&self) -> bool {
+        self.background
     }
 
     /// Which tools the row fires for.
@@ -126,16 +164,23 @@ impl AgentHook {
 #[serde(deny_unknown_fields)]
 struct Row {
     #[serde(default)]
-    matcher: String,
-    run:     String,
+    matcher:    String,
+    run:        String,
     #[serde(default)]
-    repos:   Vec<String>,
+    repos:      Vec<String>,
+    #[serde(default)]
+    timeout:    Option<u32>,
+    #[serde(rename = "async", default)]
+    background: bool,
 }
 
 impl<'de> serde::Deserialize<'de> for AgentHook {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let row = Row::deserialize(d)?;
-        Self::new(row.matcher, row.run, row.repos).map_err(serde::de::Error::custom)
+        Self::new(row.matcher, row.run, row.repos)
+            .and_then(|h| h.with_timeout(row.timeout))
+            .map(|h| h.in_background(row.background))
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -187,12 +232,75 @@ impl<'de> serde::Deserialize<'de> for AgentHooks {
     }
 }
 
-/// `[agent]` in `homma.toml`, which holds the hooks table and nothing else.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+/// `[agent]` in `homma.toml`: the hooks table, the seconds a hook may run where
+/// it names none, and the program the dispatcher runs itself through.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct AgentTable {
-    #[serde(default)]
     pub hooks: AgentHooks,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout:   Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    filter:    Vec<String>,
+}
+
+impl AgentTable {
+    /// The table, or why it is refused: a timeout of nothing, or a filter whose
+    /// program is not a path under the workspace.
+    pub fn new(
+        hooks: AgentHooks,
+        timeout: Option<u32>,
+        filter: Vec<String>,
+    ) -> Result<Self, InvalidAgentHooks> {
+        if timeout == Some(0) {
+            return Err(InvalidAgentHooks::Timeout("[agent]".into()));
+        }
+        if let Some(program) = filter.first() {
+            let p = Path::new(program);
+            if program.trim().is_empty()
+                || program.chars().any(char::is_whitespace)
+                || p.is_absolute()
+                || p.components().any(|c| matches!(c, Component::ParentDir))
+            {
+                return Err(InvalidAgentHooks::Filter(program.clone()));
+            }
+        }
+        Ok(Self {
+            hooks,
+            timeout,
+            filter,
+        })
+    }
+
+    /// The seconds a hook may run where it names none: `[agent] timeout`, or
+    /// [`DEFAULT_TIMEOUT`].
+    pub fn timeout(&self) -> u32 {
+        self.timeout.unwrap_or(DEFAULT_TIMEOUT)
+    }
+
+    /// The program the dispatcher runs itself through, its path under the
+    /// workspace first; empty for none.
+    pub fn filter(&self) -> &[String] {
+        &self.filter
+    }
+}
+
+/// `[agent]` as written, before it is checked.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Table {
+    #[serde(default)]
+    hooks:   AgentHooks,
+    #[serde(default)]
+    timeout: Option<u32>,
+    #[serde(default)]
+    filter:  Vec<String>,
+}
+
+impl<'de> serde::Deserialize<'de> for AgentTable {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = Table::deserialize(d)?;
+        Self::new(t.hooks, t.timeout, t.filter).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Why an `[agent.hooks]` table, or one row of it, is refused.
@@ -208,6 +316,10 @@ pub enum InvalidAgentHooks {
     Escapes(String),
     /// A `repos` name that is blank or is a path rather than a name.
     Repo(String),
+    /// A `timeout` of zero seconds, on the row running this or on `[agent]`.
+    Timeout(String),
+    /// A `filter` whose program is not a path under the workspace.
+    Filter(String),
 }
 
 impl fmt::Display for InvalidAgentHooks {
@@ -239,6 +351,20 @@ impl fmt::Display for InvalidAgentHooks {
                 write!(
                     f,
                     "an agent hook row is narrowed to `{r}`, which is not a repository name"
+                )
+            },
+            InvalidAgentHooks::Timeout(r) => {
+                write!(
+                    f,
+                    "`{r}` gives an agent hook a timeout of 0 seconds, so it could only be \
+                     killed; leave `timeout` out for the default"
+                )
+            },
+            InvalidAgentHooks::Filter(p) => {
+                write!(
+                    f,
+                    "`[agent] filter` runs `{p}`, which is not a path under the workspace; its \
+                     first word is a relative path that stays inside it"
                 )
             },
         }
@@ -357,6 +483,53 @@ mod tests {
         // and so is one on the table above it
         let err = parse("rules = []\n").unwrap_err();
         assert!(err.contains("rules"), "{err}");
+    }
+
+    #[test]
+    fn a_row_carries_its_timeout_and_whether_it_is_async() {
+        let t =
+            parse("[[hooks.PostToolUse]]\nrun = \"scripts/start\"\ntimeout = 5\nasync = true\n")
+                .unwrap();
+        let (_, row) = t.hooks.iter().next().unwrap();
+        assert_eq!(row.timeout(), Some(5));
+        assert!(row.background());
+        // the control: a row naming neither has none and is waited on
+        let t = parse("[[hooks.PostToolUse]]\nrun = \"scripts/start\"\n").unwrap();
+        let (_, row) = t.hooks.iter().next().unwrap();
+        assert_eq!(row.timeout(), None);
+        assert!(!row.background());
+    }
+
+    #[test]
+    fn a_timeout_of_nothing_is_refused_on_a_row_and_on_the_table() {
+        let err = parse("[[hooks.Stop]]\nrun = \"scripts/x\"\ntimeout = 0\n").unwrap_err();
+        assert!(err.contains("timeout of 0"), "{err}");
+        let err = parse("timeout = 0\n").unwrap_err();
+        assert!(err.contains("timeout of 0"), "{err}");
+        assert!(parse("timeout = 1\n").is_ok());
+    }
+
+    #[test]
+    fn the_table_gives_its_timeout_or_the_default() {
+        assert_eq!(parse("").unwrap().timeout(), DEFAULT_TIMEOUT);
+        assert_eq!(parse("timeout = 90\n").unwrap().timeout(), 90);
+    }
+
+    #[test]
+    fn a_filter_runs_a_program_under_the_workspace_or_is_refused() {
+        let t = parse("filter = [\"tools/dedup/dedup\", \"run\"]\n").unwrap();
+        assert_eq!(t.filter(), &[
+            "tools/dedup/dedup".to_string(),
+            "run".to_string()
+        ]);
+        assert!(parse("").unwrap().filter().is_empty());
+        for bad in ["/usr/bin/dedup", "../dedup", "two words", ""] {
+            let err = parse(&format!("filter = [\"{bad}\"]\n")).unwrap_err();
+            assert!(
+                err.contains("not a path under the workspace"),
+                "`{bad}`: {err}"
+            );
+        }
     }
 
     #[test]

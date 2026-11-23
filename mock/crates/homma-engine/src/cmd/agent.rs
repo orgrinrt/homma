@@ -410,10 +410,10 @@ pub mod regen {
             }
         };
 
-        let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
+        let mut entries: Vec<crate::cmd::dispatch::Entry> = Vec::new();
         // The repos whose hooks this run actually aggregated. A repo the
-        // manifest declares but this workspace has not cloned is absent, and
-        // its existing registrations are left alone rather than swept.
+        // manifest declares but this run did not visit is absent, and its
+        // entries are kept from the table rather than dropped.
         let mut visited: Vec<String> = Vec::new();
         let mut results = Vec::new();
         let mut had_failure = false;
@@ -510,7 +510,13 @@ pub mod regen {
                     false,
                 )
             } else {
-                match aggregate::aggregate_repo(&root, name, &local, &mut settings_entries) {
+                match aggregate::aggregate_repo(
+                    &root,
+                    name,
+                    &local,
+                    cfg.agent.timeout(),
+                    &mut entries,
+                ) {
                     Ok(a) => {
                         visited.push(name.clone());
                         // Failed, and still not a reason to stop: the hooks
@@ -551,12 +557,20 @@ pub mod regen {
             }
         }
 
-        // After the loop: write the workspace-level mockspace gate hook and
-        // merge all entries (per-repo aggregated + workspace gate) into
-        // settings.local.json.
+        // After the loop: write the workspace-level mockspace gate hook, make
+        // the manifest's rows entries, write the dispatcher and its table, and
+        // register the dispatcher in settings.local.json.
         if !opts.skip_aggregate {
             let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
-            let visited_repos: Vec<&str> = visited.iter().map(String::as_str).collect();
+            // The members this run did not visit keep the entries the last run
+            // wrote for them; a member the manifest no longer names keeps none.
+            entries.extend(
+                crate::cmd::dispatch::previous(&root)
+                    .into_iter()
+                    .filter(|e| {
+                        known_repos.contains(&e.from.as_str()) && !visited.contains(&e.from)
+                    }),
+            );
             // The manifest's own `local_path`, workspace-relative, rather than
             // the absolute form this run resolved. An absolute path in the
             // gate script names where the clone sat when it generated, and
@@ -566,7 +580,11 @@ pub mod regen {
                 .iter()
                 .map(|(name, rc)| (name.clone(), rc.local_path.to_string_lossy().to_string()))
                 .collect();
-            let gate_entry = match crate::cmd::gates::install_workspace_gate(&root, &repo_paths) {
+            let gate_entry = match crate::cmd::gates::install_workspace_gate(
+                &root,
+                &repo_paths,
+                cfg.agent.timeout(),
+            ) {
                 Ok(e) => Some(e),
                 Err(e) => {
                     had_failure = true;
@@ -581,51 +599,23 @@ pub mod regen {
                 },
             };
 
-            // The manifest's own rows, under the same mark as everything above,
-            // so they are kept and removed by the same rule. Installed on every
-            // run, a one-repository run included, since the merge below sweeps
-            // their registrations and writes back only what it is handed.
-            //
-            // **A failure here leaves both settings files as they were**: the merge
-            // would sweep the rows' registrations and have none to write back.
-            let declared_ok = match crate::cmd::declared::install_declared(
-                &root,
-                &cfg.agent.hooks,
-                &repo_paths,
-                &cfg.scope,
-            ) {
-                Ok(d) => {
-                    if !d.problems.is_empty() {
-                        had_failure = true;
-                    }
-                    hooks_not_carried.extend(d.problems);
-                    settings_entries.extend(d.entries);
-                    true
-                },
-                Err(e) => {
-                    had_failure = true;
-                    results.push(RegenResult {
-                        repo:             "(declared hooks)".into(),
-                        cargo_mock:       StageStatus::Skipped("not a repo".into()),
-                        configs:          Vec::new(),
-                        aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
-                        aggregated_hooks: 0,
-                    });
-                    false
-                },
-            };
+            // The manifest's own rows, made entries on every run, a
+            // one-repository run included, since the table is written whole.
+            let declared =
+                crate::cmd::declared::declared_entries(&root, &cfg.agent, &repo_paths, &cfg.scope);
+            if !declared.problems.is_empty() {
+                had_failure = true;
+            }
+            hooks_not_carried.extend(declared.problems);
+            entries.splice(0 .. 0, gate_entry.into_iter().chain(declared.entries));
 
-            let merged = if declared_ok {
-                aggregate::merge_settings(
-                    &root,
-                    &known_repos,
-                    &visited_repos,
-                    &settings_entries,
-                    gate_entry.as_ref(),
-                )
-            } else {
-                Ok(())
-            };
+            // **A failure writing the dispatcher leaves both settings files as
+            // they were**: the merge would sweep the registrations and have none
+            // to write back.
+            let merged = crate::cmd::dispatch::install(&root, &entries, cfg.agent.filter())
+                .and_then(|registrations| {
+                    aggregate::merge_settings(&root, &known_repos, &registrations)
+                });
             if let Err(e) = merged {
                 had_failure = true;
                 results.push(RegenResult {

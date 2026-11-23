@@ -4,8 +4,8 @@
 //--------------------------------------------------------------------------------------------------
 
 //! The shared `settings.json` against the local file: that a local file which
-//! refuses leaves the shared one as it was, and that the shared one is swept
-//! of homma's registrations whichever repo they name.
+//! refuses leaves the shared one as it was, and that both are swept of homma's
+//! registrations whichever repo they name.
 
 use super::*;
 
@@ -24,7 +24,7 @@ fn a_local_file_that_refuses_leaves_the_shared_one_as_it_was() {
         seed(workspace, local);
 
         let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-        let r = merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None);
+        let r = merge_settings(&test_root(workspace), &["arvo"], &entries);
 
         assert!(r.is_err(), "a local file of {local} is refused");
         assert_eq!(
@@ -46,7 +46,7 @@ fn a_local_file_that_parses_lets_the_same_shared_file_be_swept() {
     seed(workspace, "{}");
 
     let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &entries).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -71,14 +71,7 @@ fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
         ]}}"#,
     );
 
-    merge_settings(
-        &test_root(workspace),
-        &["arvo", "kamu"],
-        &["arvo"],
-        &[],
-        None,
-    )
-    .unwrap();
+    merge_settings(&test_root(workspace), &["arvo", "kamu"], &[]).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -86,29 +79,21 @@ fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
 }
 
 #[test]
-fn an_unvisited_repos_registration_is_kept_in_the_local_file_and_swept_from_the_shared_one() {
-    // One command, one run, both files: the two predicates side by side.
+fn a_wrapper_registration_goes_from_both_files_alike() {
+    // One command, one run, both files: a member's hooks live in the
+    // dispatcher's table now, so neither file keeps its wrapper's registration.
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
     let body = r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/kamu--gate.sh"}]}]}}"#;
     seed_shared(workspace, body);
     seed(workspace, body);
 
-    merge_settings(
-        &test_root(workspace),
-        &["arvo", "kamu"],
-        &["arvo"],
-        &[],
-        None,
-    )
-    .unwrap();
+    merge_settings(&test_root(workspace), &["arvo", "kamu"], &[]).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
     assert!(commands(&shared).is_empty(), "{shared}");
-    assert_eq!(commands(&read(workspace)), vec![
-        ".claude/hooks/kamu--gate.sh"
-    ]);
+    assert!(commands(&read(workspace)).is_empty());
 }
 
 #[test]
@@ -127,7 +112,7 @@ fn a_hand_written_name_in_hommas_shape_with_no_file_is_swept_as_homma_s() {
         ]}}"#,
     );
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &[]).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -153,7 +138,7 @@ fn a_file_under_hommas_shape_that_homma_did_not_write_keeps_its_shared_registrat
         ]}}"#;
     seed_shared(workspace, body);
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["arvo"], &[]).unwrap();
 
     // Nothing in it was homma's, so it was not even rewritten.
     assert_eq!(fs::read_to_string(workspace.join(SHARED)).unwrap(), body);

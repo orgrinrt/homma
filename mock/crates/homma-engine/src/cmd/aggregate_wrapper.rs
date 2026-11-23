@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! How a registration names its hook, and the wrapper homma writes in front of
-//! one: the scope check that decides whether a call lands in the hook's
-//! repository, shared by every wrapper homma writes.
+//! How a registration names its hook and the program it runs it with, and the
+//! scope check the dispatcher uses to decide whether a call lands in a hook's
+//! repository.
 
 /// What a registration's command runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,12 +101,12 @@ pub(crate) fn sh_single_quote_escape(s: &str) -> String {
     s.replace('\'', "'\\''")
 }
 
-/// The scope check every wrapper carries, as bash reading the host's JSON from
-/// `$INPUT`. It defines `lands_in <dir>`, true when the call lands anywhere
-/// under that directory: a file tool on its file, a shell call in its directory
-/// and on every path its command names, read relative to that directory. Where
-/// the host names no directory, the wrapper's own stands in, which is the
-/// workspace root whatever the session did.
+/// The scope check the dispatcher carries, as bash reading `$FILE`, `$CWD` and
+/// `$CMD`, which the dispatcher has already read out of the host's JSON, `$CWD`
+/// being the dispatcher's own directory where the host names none. It defines
+/// `lands_in <dir>`, true when the call lands anywhere under that directory: a
+/// file tool on its file, a shell call in its directory and on every path its
+/// command names, read relative to that directory.
 ///
 /// A command is split on everything that cannot be part of a path, which takes
 /// quotes, separators, redirections and the `=` of `--flag=path` apart. A file
@@ -114,12 +114,7 @@ pub(crate) fn sh_single_quote_escape(s: &str) -> String {
 /// in the command counts, which is what catches one with a space in it. Not
 /// seen: a relative path with a space in it, a path spelled through a variable,
 /// and what a script the command runs does next.
-pub(crate) const LANDS_IN_SH: &str = r#"FILE=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null)
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // .tool_input.cwd // empty' 2>/dev/null)
-CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-[ -n "$CWD" ] || CWD=$PWD
-
-under() {
+pub(crate) const LANDS_IN_SH: &str = r#"under() {
     case "$2" in
         "$1"|"$1"/*) return 0 ;;
     esac
@@ -174,94 +169,3 @@ lands_in() {
     return 1
 }
 "#;
-
-/// Build the wrapper script body for an aggregated hook.
-///
-/// Both paths are relative, and that is the whole of this function.
-/// `repo_rel_path` is the repo's path under the workspace, which the manifest
-/// already holds for the detected member; `hook_rel_path` is the hook's
-/// path under the repo. Neither names a machine. `runner` is the program the
-/// registrations run the hook with, as they wrote it, and empty where the host
-/// runs the file itself.
-///
-/// A wrapper sits at `<workspace>/.claude/hooks/<file>`, a fixed depth, so it
-/// finds the workspace from its own location and needs no baked prefix and no
-/// environment variable. That is what keeps a wrapper working after its clone
-/// is moved or renamed.
-///
-/// The emitted wrapper:
-/// 1. Locates the workspace from its own path and derives the repo root and the
-///    real hook under it.
-/// 2. Exits 0 when there is no hook there to run: not executable, or with a
-///    runner, not a file. That is the case where this workspace has not cloned
-///    the repo, and it declines rather than reporting an approval it did not
-///    make.
-/// 3. Hands off without narrowing when `jq` is missing, since it cannot read
-///    where the call lands.
-/// 4. Exits 0 when the call does not land under the repo root, by
-///    [`LANDS_IN_SH`].
-/// 5. Otherwise replaces itself with the real hook, passing on its own
-///    arguments and re-feeding the original stdin, in the directory the host
-///    ran it in. A relative path in the payload is relative to that directory,
-///    so running the hook anywhere else would have it misread one.
-pub(crate) fn wrapper_script(
-    repo_name: &str,
-    repo_rel_path: &str,
-    hook_rel_path: &str,
-    runner: &str,
-) -> String {
-    let repo_rel = sh_single_quote_escape(repo_rel_path);
-    let hook_rel = sh_single_quote_escape(hook_rel_path);
-    let present = if runner.is_empty() { "-x" } else { "-f" };
-    let run = if runner.is_empty() { String::new() } else { format!("{runner} ") };
-    let lands_in = LANDS_IN_SH;
-    format!(
-        r##"#!/usr/bin/env bash
-# Aggregated from `{repo_name}` by `homma agent regen`.
-# Scoped to {repo_rel_path}, relative to the workspace this file sits in.
-# Source hook: {repo_rel_path}/{hook_rel_path}
-
-set -u
-
-WS=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")/../.." && pwd) || exit 0
-REPO_REL='{repo_rel}'
-case "$REPO_REL" in
-    /*) REPO_ROOT="$REPO_REL" ;;
-    *)  REPO_ROOT="$WS/$REPO_REL" ;;
-esac
-ORIG_HOOK="$REPO_ROOT"'/{hook_rel}'
-
-# Not cloned in this workspace: there is no guard here to run, and declining is
-# the honest answer rather than an approval nobody made.
-[ {present} "$ORIG_HOOK" ] || exit 0
-
-# The one layer a hook's notice passes through, where this workspace has it: a line already
-# said in this session within the TTL is left out. It never touches a block, a deny or an error.
-DEDUP=()
-[ -x "$WS/tools/hookdedup/hookdedup" ] && DEDUP=("$WS/tools/hookdedup/hookdedup" run)
-
-INPUT=$(cat)
-
-# Without `jq` this cannot read where the call lands, so it cannot narrow to
-# this repo. It forwards instead of guessing: forwarding is what happens with no
-# aggregation at all, so the guard runs more often than it needs to and never
-# silently fails to run.
-if ! command -v jq >/dev/null 2>&1; then
-    exec ${{DEDUP[@]+"${{DEDUP[@]}}"}} {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
-fi
-
-{lands_in}
-lands_in "$REPO_ROOT" || exit 0
-
-exec ${{DEDUP[@]+"${{DEDUP[@]}}"}} {run}"$ORIG_HOOK" "$@" <<<"$INPUT"
-"##
-    )
-}
-
-#[cfg(test)]
-#[path = "aggregate_wrapper_tests.rs"]
-pub(in crate::cmd) mod tests;
-
-#[cfg(test)]
-#[path = "aggregate_wrapper_handoff_tests.rs"]
-mod handoff_tests;

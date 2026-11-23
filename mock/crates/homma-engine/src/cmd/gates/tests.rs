@@ -31,17 +31,16 @@ fn install_writes_executable_script_and_returns_entry() {
         ("arvo".to_string(), "arvo".to_string()),
         ("notko".to_string(), "notko".to_string()),
     ];
-    let entry = install_workspace_gate(&test_root(workspace), &repos).unwrap();
+    let entry = install_workspace_gate(&test_root(workspace), &repos, 42).unwrap();
+    assert_eq!(entry.event, "PreToolUse");
     assert_eq!(entry.matcher, "Bash");
     assert_eq!(
-        entry.command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_workspace--mockspace-gate.sh",
-        "the registered command must name the host's project-root placeholder",
+        entry.run, ".claude/hooks/_workspace--mockspace-gate.sh",
+        "the entry must name the gate relative to the workspace",
     );
-    assert!(
-        !entry.command.contains(workspace.to_str().unwrap()),
-        "the command named the workspace that generated it: {}",
-        entry.command,
-    );
+    assert!(entry.roots.is_empty(), "the gate scopes itself");
+    assert_eq!(entry.timeout, 42);
+    assert_eq!(entry.from, crate::cmd::dispatch::FROM_GATE);
 
     let script = workspace.join(".claude/hooks/_workspace--mockspace-gate.sh");
     assert!(script.exists());
@@ -63,20 +62,6 @@ fn install_writes_executable_script_and_returns_entry() {
 }
 
 #[test]
-fn is_workspace_gate_command_matches_managed_path() {
-    assert!(is_workspace_gate_command(
-        ".claude/hooks/_workspace--mockspace-gate.sh"
-    ));
-}
-
-#[test]
-fn is_workspace_gate_command_rejects_other_paths() {
-    assert!(!is_workspace_gate_command(
-        ".claude/hooks/arvo--no-alloc.sh"
-    ));
-}
-
-#[test]
 fn a_manifest_path_carrying_a_curdir_component_resolves_to_the_repo() {
     // The gate's repo table is the one place a manifest path reaches an
     // emitted script without passing through a `strip_prefix` that would
@@ -91,10 +76,11 @@ fn a_manifest_path_carrying_a_curdir_component_resolves_to_the_repo() {
     // normalisation inside the function.
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path();
-    install_workspace_gate(&test_root(ws), &[(
-        "arvo".to_string(),
-        "./arvo".to_string(),
-    )])
+    install_workspace_gate(
+        &test_root(ws),
+        &[("arvo".to_string(), "./arvo".to_string())],
+        60,
+    )
     .unwrap();
     let installed =
         fs::read_to_string(ws.join(".claude/hooks/_workspace--mockspace-gate.sh")).unwrap();

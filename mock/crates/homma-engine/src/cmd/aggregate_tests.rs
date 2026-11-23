@@ -150,8 +150,8 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     )
     .unwrap();
 
-    let mut settings = Vec::new();
-    let a = aggregate_repo(&test_root(workspace), "arvo", &repo_abs, &mut settings).unwrap();
+    let mut entries = Vec::new();
+    let a = aggregate_repo(&test_root(workspace), "arvo", &repo_abs, 45, &mut entries).unwrap();
     assert_eq!(a.hooks, 1);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
 
@@ -168,37 +168,52 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         "homma no longer aggregates per-repo rules"
     );
 
-    let hook = fs::read_to_string(workspace.join(".claude/hooks/arvo--no-alloc.sh")).unwrap();
-    assert!(hook.contains("REPO_REL='arvo'"));
-    assert!(hook.contains("ORIG_HOOK="));
-    assert!(
-        !hook.contains(workspace.to_str().unwrap()),
-        "the wrapper baked the generating workspace's path"
-    );
+    // No wrapper: the dispatcher runs the repository's own hook.
+    assert!(!workspace.join(".claude/hooks/arvo--no-alloc.sh").exists());
 
-    assert_eq!(settings.len(), 1);
-    assert_eq!(settings[0].event, "PreToolUse");
-    assert_eq!(settings[0].matcher, "Edit");
-    assert_eq!(
-        settings[0].command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--no-alloc.sh",
-        "the registered command must name the host's project-root placeholder rather \
-         than this run's workspace",
-    );
+    assert_eq!(entries, vec![crate::cmd::dispatch::Entry {
+        event:      "PreToolUse".into(),
+        matcher:    "Edit".into(),
+        run:        "arvo/.claude/hooks/no-alloc.sh".into(),
+        runner:     String::new(),
+        args:       String::new(),
+        roots:      vec!["arvo".into()],
+        timeout:    45,
+        background: false,
+        from:       "arvo".into(),
+    }]);
     assert!(
-        !settings[0].command.contains(workspace.to_str().unwrap()),
-        "expected no generating-workspace path in the command, got: {}",
-        settings[0].command,
+        !entries[0].run.contains(workspace.to_str().unwrap()),
+        "the entry baked the generating workspace's path"
     );
+}
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &settings, None).unwrap();
-    let written = fs::read_to_string(workspace.join(".claude/settings.local.json")).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&written).unwrap();
-    let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["matcher"], "Edit");
-    let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
-    assert!(
-        cmd.ends_with("/.claude/hooks/arvo--no-alloc.sh"),
-        "expected absolute path, got: {cmd}",
-    );
+#[test]
+fn a_hook_keeps_the_timeout_and_async_its_repository_gives_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path();
+    let repo_abs = workspace.join("arvo");
+    fs::create_dir_all(repo_abs.join(".claude/hooks")).unwrap();
+    fs::write(repo_abs.join(".claude/hooks/a.sh"), "#!/usr/bin/env bash\n").unwrap();
+    make_executable(&repo_abs.join(".claude/hooks/a.sh"));
+    fs::write(
+        repo_abs.join(".claude/settings.json"),
+        r#"{"hooks":{
+            "PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/a.sh","timeout":7}]}],
+            "PostToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/a.sh","async":true}]}]
+        }}"#,
+    )
+    .unwrap();
+    let mut entries = Vec::new();
+    aggregate_repo(&test_root(workspace), "arvo", &repo_abs, 45, &mut entries).unwrap();
+    let mut got: Vec<(&str, u32, bool)> = entries
+        .iter()
+        .map(|e| (e.event.as_str(), e.timeout, e.background))
+        .collect();
+    got.sort();
+    // the one that names none gets the default it was handed
+    assert_eq!(got, vec![
+        ("PostToolUse", 45, true),
+        ("PreToolUse", 7, false)
+    ]);
 }

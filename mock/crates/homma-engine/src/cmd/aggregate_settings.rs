@@ -4,7 +4,7 @@
 //--------------------------------------------------------------------------------------------------
 
 //! The settings half of aggregation: sweeping the registrations homma wrote
-//! before and writing this run's, under every event.
+//! before and writing the dispatcher's, under every event.
 //!
 //! Two files, and they are treated differently. `.claude/settings.local.json`
 //! is the clone's own and takes this run's registrations. `.claude/settings.json`
@@ -26,63 +26,32 @@ const LOCAL: &str = ".claude/settings.local.json";
 /// The shared settings, which are swept and never added to.
 const SHARED: &str = ".claude/settings.json";
 
-/// Merge aggregated hook entries into the clone's `settings.local.json`, and
-/// sweep homma's own registrations out of the shared `settings.json`,
-/// preserving everything else in both.
+/// Write the dispatcher's registrations into the clone's `settings.local.json`,
+/// and sweep homma's own registrations out of both it and the shared
+/// `settings.json`, preserving everything else in both.
 ///
-/// Two sets, and the difference between them is the whole of it.
-/// `visited` names the repos this run actually aggregated, and their entries
-/// are swept and rewritten. `known_repos` names every repo the manifest
-/// declares, and is used only to recognise the legacy shape.
+/// Every event is swept, not only `PreToolUse`, and a registration is swept only
+/// when it is homma's: a retired shape, or the dispatcher or a name of homma's
+/// shape (`<repo>--<name>`, which the wrappers before the dispatcher took, the
+/// workspace gate's included), whose file is absent or carries
+/// [`MANAGED_MARK`](super::MANAGED_MARK). A file under such a name that homma
+/// did not write keeps its registration exactly as it is, in either file.
 ///
-/// A repo the manifest declares but this workspace has not cloned aggregates
-/// nothing, so sweeping on the full set deleted working registrations from
-/// whichever workspace happened to run last. Its wrapper survives the sweep,
-/// because the cleanup that would have removed it runs inside the per-repo
-/// pass that was skipped, so the file and its registration ended up
-/// disagreeing. Preserving those entries costs one `[ -x ]` in the wrapper
-/// and makes the guard live the moment that repo is cloned.
-///
-/// The price, stated rather than discovered: a hook deleted upstream lingers
-/// as a registration in every workspace that never clones its repo, pointing
-/// at a wrapper that declines. That is the better side to be wrong on. The
-/// alternative deletes working guards from every workspace holding a
-/// different subset of the manifest, which is every workspace.
-///
-/// All of that is about the local file. The shared one holds nothing homma
-/// writes, so there a registration of homma's shape is swept whichever repo it
-/// names, visited or not.
-///
-/// Every event is swept and written, not only `PreToolUse`, and a registration
-/// is swept only when it is homma's: a retired shape, or a managed name whose
-/// file is absent or carries [`MANAGED_MARK`](super::MANAGED_MARK). A file
-/// under a managed name that homma did not write keeps its registration
-/// exactly as it is, in either file.
+/// The members this run did not visit keep their hooks through the table, which
+/// the dispatcher reads, so no registration here is kept for their sake.
 pub(crate) fn merge_settings(
     root: &Root,
     known_repos: &[&str],
-    visited: &[&str],
-    aggregated_entries: &[HookEntry],
-    gate_entry: Option<&HookEntry>,
+    registrations: &[HookEntry],
 ) -> Result<()> {
     let hooks_dir = root.as_abs().join(".claude/hooks");
     let is_ours = |cmd: &str| -> bool {
         if is_retired_aggregated_command(cmd, known_repos) {
             return true;
         }
-        let managed = is_aggregated_command(cmd, visited)
-            || crate::cmd::gates::is_workspace_gate_command(cmd)
-            || crate::cmd::declared::is_declared_command(cmd);
+        let managed =
+            is_any_aggregated_command(cmd) || crate::cmd::dispatch::is_dispatcher_command(cmd);
         managed && !names_a_file_homma_did_not_write(&hooks_dir, cmd)
-    };
-    // In the shared file nothing homma writes belongs at all, so a
-    // registration of its shape goes whichever repo it names. Keeping an
-    // unvisited repo's entry is the local file's business, where it brings the
-    // guard back once that repo is cloned.
-    let is_ours_anywhere = |cmd: &str| -> bool {
-        is_ours(cmd)
-            || (is_any_aggregated_command(cmd)
-                && !names_a_file_homma_did_not_write(&hooks_dir, cmd))
     };
 
     // Both files are read and swept before either is written, so a file that
@@ -91,7 +60,7 @@ pub(crate) fn merge_settings(
     let shared = contain(root, SHARED)?;
     let mut shared_value = read_settings(&shared)?;
     let shared_swept = match shared_value.as_mut() {
-        Some(value) => sweep(value, SHARED, &is_ours_anywhere)?,
+        Some(value) => sweep(value, SHARED, &is_ours)?,
         None => false,
     };
 
@@ -99,7 +68,7 @@ pub(crate) fn merge_settings(
     let mut value = read_settings(&local)?.unwrap_or_else(|| serde_json::json!({}));
     sweep(&mut value, LOCAL, &is_ours)?;
     let hooks_obj = hooks_of(&mut value, LOCAL)?;
-    for e in gate_entry.into_iter().chain(aggregated_entries) {
+    for e in registrations {
         hooks_obj
             .entry(e.event.clone())
             .or_insert_with(|| serde_json::json!([]))

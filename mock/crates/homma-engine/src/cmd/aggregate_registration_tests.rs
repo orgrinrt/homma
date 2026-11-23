@@ -8,9 +8,30 @@
 
 use std::fs;
 
-use super::chains_tests::{QUIET, plant_repo, reg, regen, registrations, run_with_payload};
+use super::chains_tests::{QUIET, plant_repo, regen};
 use super::wrapper::HookCall;
 use super::*;
+
+/// Every `(run, runner, args, matcher)` among `entries`, sorted.
+fn carried(entries: &[crate::cmd::dispatch::Entry]) -> Vec<(String, String, String, String)> {
+    let mut out: Vec<_> = entries
+        .iter()
+        .map(|e| {
+            (
+                e.run.clone(),
+                e.runner.clone(),
+                e.args.clone(),
+                e.matcher.clone(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn four(run: &str, runner: &str, args: &str, matcher: &str) -> (String, String, String, String) {
+    (run.into(), runner.into(), args.into(), matcher.into())
+}
 
 #[test]
 fn a_hooks_file_is_read_off_every_spelling_of_its_path() {
@@ -71,20 +92,26 @@ fn a_hook_a_registration_runs_through_a_program_is_carried_without_an_execute_bi
         ),
     )
     .unwrap();
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
-    assert_eq!(registrations(&v), vec![(
-        "PreToolUse".to_string(),
-        Some("Bash".to_string()),
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--check.sh --strict".to_string()
+    assert_eq!(carried(&entries), vec![four(
+        "arvo/.claude/hooks/check.sh",
+        "bash",
+        "--strict",
+        "Bash"
     )]);
 
-    let wrapper = ws.path().join(".claude/hooks/arvo--check.sh");
     let payload = format!(
-        r#"{{"cwd":"{}","tool_input":{{"command":"ls"}}}}"#,
+        r#"{{"tool_name":"Bash","cwd":"{}","tool_input":{{"command":"ls"}}}}"#,
         repo.display()
     );
-    run_with_payload(&wrapper, &payload, &["--strict"]);
+    crate::cmd::dispatch::tests::dispatch(
+        &ws.path().join(".claude/hooks/_dispatch.sh"),
+        &["PreToolUse"],
+        &payload,
+        None,
+        &[],
+    );
     assert_eq!(fs::read_to_string(&marker).unwrap(), "--strict");
 }
 
@@ -100,7 +127,7 @@ fn a_hook_two_registrations_run_two_ways_is_reported_and_not_carried() {
             {"matcher":"Edit","hooks":[{"type":"command","command":"sh .claude/hooks/other.sh"}]}
         ]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
     assert!(
         a.problems[0].contains("arvo/.claude/hooks/check.sh"),
@@ -112,12 +139,12 @@ fn a_hook_two_registrations_run_two_ways_is_reported_and_not_carried() {
         "{:?}",
         a.problems
     );
-    assert!(!ws.path().join(".claude/hooks/arvo--check.sh").exists());
     // The control: a hook every registration runs one way is carried.
-    assert_eq!(registrations(&v), vec![reg(
-        "PreToolUse",
-        Some("Edit"),
-        "arvo--other.sh"
+    assert_eq!(carried(&entries), vec![four(
+        "arvo/.claude/hooks/other.sh",
+        "sh",
+        "",
+        "Edit"
     )]);
 }
 
@@ -132,7 +159,7 @@ fn a_hook_run_through_a_line_of_shell_is_reported_and_not_carried() {
             {"matcher":"Edit","hooks":[{"type":"command","command":"bash .claude/hooks/other.sh"}]}
         ]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
     assert!(
         a.problems[0].contains("arvo/.claude/hooks/check.sh")
@@ -140,12 +167,12 @@ fn a_hook_run_through_a_line_of_shell_is_reported_and_not_carried() {
         "{:?}",
         a.problems
     );
-    assert!(!ws.path().join(".claude/hooks/arvo--check.sh").exists());
     // The control: the hook run through a program beside it is carried.
-    assert_eq!(registrations(&v), vec![reg(
-        "PreToolUse",
-        Some("Edit"),
-        "arvo--other.sh"
+    assert_eq!(carried(&entries), vec![four(
+        "arvo/.claude/hooks/other.sh",
+        "bash",
+        "",
+        "Edit"
     )]);
 }
 
@@ -157,8 +184,13 @@ fn a_hidden_file_among_the_hooks_is_neither_carried_nor_reported() {
         &[("guard.sh", QUIET), (".guard.sh.swp", QUIET)],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/guard.sh"}]}]}}"#,
     );
-    let (a, _) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
     assert_eq!(a.hooks, 1);
-    assert!(!ws.path().join(".claude/hooks/arvo--.guard.sh.swp").exists());
+    assert_eq!(carried(&entries), vec![four(
+        "arvo/.claude/hooks/guard.sh",
+        "",
+        "",
+        "Bash"
+    )]);
 }

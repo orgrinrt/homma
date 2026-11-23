@@ -38,6 +38,7 @@ pub mod archive;
 pub mod capture;
 pub mod config;
 pub mod declared;
+pub mod dispatch;
 pub mod docs;
 #[cfg(test)]
 pub mod fake_git;

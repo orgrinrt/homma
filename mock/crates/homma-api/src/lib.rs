@@ -28,7 +28,14 @@ pub mod session;
 pub mod skill;
 pub mod version;
 
-pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
+pub use agent_hooks::{
+    AGENT_EVENTS,
+    AgentHook,
+    AgentHooks,
+    AgentTable,
+    DEFAULT_TIMEOUT,
+    InvalidAgentHooks,
+};
 pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};

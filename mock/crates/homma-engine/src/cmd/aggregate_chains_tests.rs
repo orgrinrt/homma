@@ -4,38 +4,15 @@
 //--------------------------------------------------------------------------------------------------
 
 //! A repository's hooks reach the workspace kept at their events and tools,
-//! and nothing homma did not write is replaced or removed.
+//! through the dispatcher, and nothing homma did not write is replaced or
+//! removed.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::tests::{make_executable, test_root};
 use super::*;
-
-/// Run a wrapper with `payload` on stdin and `args` on its command line,
-/// keeping what it said and how it exited.
-pub(crate) fn run_with_payload(
-    wrapper: &Path,
-    payload: &str,
-    args: &[&str],
-) -> std::process::Output {
-    use std::io::Write;
-    let mut child = std::process::Command::new("bash")
-        .arg(wrapper)
-        .args(args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.as_bytes())
-        .unwrap();
-    child.wait_with_output().unwrap()
-}
+use crate::cmd::dispatch;
 
 /// A hook that swallows its input and does nothing else.
 pub(crate) const QUIET: &str = "#!/usr/bin/env bash\ncat > /dev/null\n";
@@ -63,14 +40,26 @@ pub(crate) fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> P
     repo
 }
 
-/// The pass over the planted repo and the merge after it, returning what the
-/// pass reported and the workspace settings as written.
-pub(crate) fn regen(ws: &Path, repo: &Path) -> (Aggregated, serde_json::Value) {
+/// The pass over the planted repo, the dispatcher written for its entries and
+/// the merge after it, returning what the pass reported, the entries and the
+/// workspace settings as written.
+pub(crate) fn regen(
+    ws: &Path,
+    repo: &Path,
+) -> (Aggregated, Vec<dispatch::Entry>, serde_json::Value) {
     let root = test_root(ws);
     let mut entries = Vec::new();
-    let a = aggregate_repo(&root, "arvo", repo, &mut entries).unwrap();
-    merge_settings(&root, &["arvo"], &["arvo"], &entries, None).unwrap();
-    (a, settings(ws))
+    let a = aggregate_repo(
+        &root,
+        "arvo",
+        repo,
+        homma_api::DEFAULT_TIMEOUT,
+        &mut entries,
+    )
+    .unwrap();
+    let regs = dispatch::install(&root, &entries, &[]).unwrap();
+    merge_settings(&root, &["arvo"], &regs).unwrap();
+    (a, entries, settings(ws))
 }
 
 fn settings(ws: &Path) -> serde_json::Value {
@@ -102,21 +91,47 @@ pub(crate) fn registrations(v: &serde_json::Value) -> Vec<(String, Option<String
     out
 }
 
-pub(crate) fn reg(
-    event: &str,
-    matcher: Option<&str>,
-    file: &str,
-) -> (String, Option<String>, String) {
+/// The dispatcher's registration for `event`.
+pub(crate) fn reg(event: &str, matcher: Option<&str>) -> (String, Option<String>, String) {
     (
         event.to_string(),
         matcher.map(str::to_string),
-        format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{file}"),
+        format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/_dispatch.sh {event}"),
+    )
+}
+
+/// Every `(event, matcher, run)` among `entries`, sorted.
+fn carried(entries: &[dispatch::Entry]) -> Vec<(String, String, String)> {
+    let mut out: Vec<_> = entries
+        .iter()
+        .map(|e| (e.event.clone(), e.matcher.clone(), e.run.clone()))
+        .collect();
+    out.sort();
+    out
+}
+
+fn ran(event: &str, matcher: &str, file: &str) -> (String, String, String) {
+    (
+        event.to_string(),
+        matcher.to_string(),
+        format!("arvo/.claude/hooks/{file}"),
     )
 }
 
 fn workspace_settings(ws: &Path, body: &str) {
     fs::create_dir_all(ws.join(".claude/hooks")).unwrap();
     fs::write(ws.join(".claude/settings.local.json"), body).unwrap();
+}
+
+/// Run the dispatcher at `PreToolUse` with `payload`.
+fn dispatch_at(ws: &Path, payload: &str) -> std::process::Output {
+    dispatch::tests::dispatch(
+        &ws.join(".claude/hooks/_dispatch.sh"),
+        &["PreToolUse"],
+        payload,
+        None,
+        &[],
+    )
 }
 
 #[test]
@@ -131,20 +146,25 @@ fn every_event_and_matcher_a_repository_gives_a_hook_is_carried_to_it() {
             "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/at-the-end.sh"}]}]
         }}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, v) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
     assert_eq!(a.hooks, 2);
 
+    // Exactly these: an event folded into another, a matcher invented for a
+    // registration that named none, or a registration dropped all show here.
+    assert_eq!(carried(&entries), vec![
+        ran("PostToolUse", "Write", "guard.sh"),
+        ran("PreToolUse", "Edit", "guard.sh"),
+        ran("Stop", "", "at-the-end.sh"),
+    ]);
     let mut got = registrations(&v);
     got.sort();
     let mut want = vec![
-        reg("PreToolUse", Some("Edit"), "arvo--guard.sh"),
-        reg("PostToolUse", Some("Write"), "arvo--guard.sh"),
-        reg("Stop", None, "arvo--at-the-end.sh"),
+        reg("PreToolUse", Some("Edit")),
+        reg("PostToolUse", Some("Write")),
+        reg("Stop", None),
     ];
     want.sort();
-    // Exactly these: an event folded into another, a matcher invented for a
-    // registration that named none, or a registration dropped all show here.
     assert_eq!(got, want);
     assert!(
         v["hooks"]["Stop"][0].get("matcher").is_none(),
@@ -160,35 +180,35 @@ fn a_hook_named_only_by_its_own_matchers_line_is_carried_to_pre_tool_use() {
         &[("guard.sh", "#!/usr/bin/env bash\n# @matchers: Bash, Edit\n")],
         "{}",
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, v) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
-    let mut got = registrations(&v);
-    got.sort();
-    assert_eq!(got, vec![
-        reg("PreToolUse", Some("Bash"), "arvo--guard.sh"),
-        reg("PreToolUse", Some("Edit"), "arvo--guard.sh"),
+    assert_eq!(carried(&entries), vec![
+        ran("PreToolUse", "Bash", "guard.sh"),
+        ran("PreToolUse", "Edit", "guard.sh"),
     ]);
+    assert_eq!(registrations(&v), vec![reg(
+        "PreToolUse",
+        Some("Bash|Edit")
+    )]);
 }
 
 #[test]
-fn a_hook_nothing_calls_is_reported_by_path_and_no_wrapper_is_written() {
+fn a_hook_nothing_calls_is_reported_by_path_and_carried_nowhere() {
     let ws = tempfile::tempdir().unwrap();
     let repo = plant_repo(
         ws.path(),
         &[("guard.sh", QUIET), ("orphan.sh", QUIET)],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/guard.sh"}]}]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
     assert!(a.problems[0].contains("arvo/.claude/hooks/orphan.sh"));
     assert!(a.problems[0].contains("nothing would call it"));
-    assert!(!ws.path().join(".claude/hooks/arvo--orphan.sh").exists());
     // The control: its registered sibling in the same pass is carried.
-    assert!(ws.path().join(".claude/hooks/arvo--guard.sh").exists());
-    assert_eq!(registrations(&v), vec![reg(
+    assert_eq!(carried(&entries), vec![ran(
         "PreToolUse",
-        Some("Bash"),
-        "arvo--guard.sh"
+        "Bash",
+        "guard.sh"
     )]);
 }
 
@@ -201,15 +221,14 @@ fn a_hook_the_host_could_not_run_is_reported_and_not_carried() {
     ]}}"#;
     let repo = plant_repo(ws.path(), &[("guard.sh", QUIET)], body);
     fs::write(repo.join(".claude/hooks/plain.sh"), QUIET).unwrap();
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
     assert!(a.problems[0].contains("arvo/.claude/hooks/plain.sh"));
     assert!(a.problems[0].contains("not executable"));
-    assert!(!ws.path().join(".claude/hooks/arvo--plain.sh").exists());
-    assert_eq!(registrations(&v), vec![reg(
+    assert_eq!(carried(&entries), vec![ran(
         "PreToolUse",
-        Some("Bash"),
-        "arvo--guard.sh"
+        "Bash",
+        "guard.sh"
     )]);
 }
 
@@ -222,19 +241,14 @@ fn a_hook_in_any_language_is_carried_and_runs() {
         &[("guard", &recording(&marker))],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/guard"}]}]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
-    assert_eq!(registrations(&v), vec![reg(
-        "PreToolUse",
-        Some("Edit"),
-        "arvo--guard.sh"
-    )]);
-    let wrapper = ws.path().join(".claude/hooks/arvo--guard.sh");
+    assert_eq!(carried(&entries), vec![ran("PreToolUse", "Edit", "guard")]);
     let payload = format!(
-        r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
+        r#"{{"tool_name":"Edit","tool_input":{{"file_path":"{}"}}}}"#,
         repo.join("src/lib.rs").display()
     );
-    run_with_payload(&wrapper, &payload, &[]);
+    dispatch_at(ws.path(), &payload);
     assert!(marker.exists(), "the carried hook did not run");
 }
 
@@ -247,24 +261,19 @@ fn the_arguments_a_registration_carries_reach_the_hook() {
         &[("guard.sh", &recording(&marker))],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/guard.sh --strict"}]}]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, entries, _) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
-    let (_, _, cmd) = &registrations(&v)[0];
-    assert!(cmd.ends_with("arvo--guard.sh --strict"), "{cmd}");
-
-    // What the host does with that command: the wrapper runs with the
-    // argument, and has to pass it on.
-    let wrapper = ws.path().join(".claude/hooks/arvo--guard.sh");
+    assert_eq!(entries[0].args, "--strict");
     let payload = format!(
-        r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
+        r#"{{"tool_name":"Edit","tool_input":{{"file_path":"{}"}}}}"#,
         repo.join("src/lib.rs").display()
     );
-    run_with_payload(&wrapper, &payload, &["--strict"]);
+    dispatch_at(ws.path(), &payload);
     assert_eq!(fs::read_to_string(&marker).unwrap(), "--strict");
 }
 
 #[test]
-fn a_file_homma_did_not_write_is_neither_overwritten_nor_unregistered() {
+fn a_file_homma_did_not_write_is_neither_removed_nor_unregistered() {
     let ws = tempfile::tempdir().unwrap();
     workspace_settings(
         ws.path(),
@@ -276,12 +285,12 @@ fn a_file_homma_did_not_write_is_neither_overwritten_nor_unregistered() {
     let mine = "#!/bin/sh\n# somebody's own guard\n";
     let theirs = ws.path().join(".claude/hooks/arvo--guard.sh");
     fs::write(&theirs, mine).unwrap();
-    // A wrapper homma wrote on an earlier run for a hook the repo has since
-    // dropped: this one is homma's to remove, which is the control.
+    // A wrapper homma wrote on an earlier run: this one is homma's to remove,
+    // which is the control.
     let gone = ws.path().join(".claude/hooks/arvo--gone.sh");
     fs::write(
         &gone,
-        wrapper_script("arvo", "arvo", ".claude/hooks/gone.sh", ""),
+        "#!/usr/bin/env bash\n# Aggregated from `arvo` by `homma agent regen`.\n",
     )
     .unwrap();
 
@@ -290,19 +299,22 @@ fn a_file_homma_did_not_write_is_neither_overwritten_nor_unregistered() {
         &[("guard.sh", QUIET)],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/guard.sh"}]}]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, _, v) = regen(ws.path(), &repo);
 
+    assert!(a.problems.is_empty(), "{:?}", a.problems);
     assert_eq!(fs::read_to_string(&theirs).unwrap(), mine);
-    assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
-    assert!(a.problems[0].contains(".claude/hooks/arvo--guard.sh"));
-    assert!(a.problems[0].contains("not written by homma"));
-    // Its own registration is kept as it was, and none is added for the repo
-    // hook that could not be carried over it.
-    assert_eq!(registrations(&v), vec![reg(
-        "PreToolUse",
-        Some("Bash"),
-        "arvo--guard.sh"
-    )]);
+    let mut got = registrations(&v);
+    got.sort();
+    let mut want = vec![
+        (
+            "PreToolUse".to_string(),
+            Some("Bash".to_string()),
+            "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--guard.sh".to_string(),
+        ),
+        reg("PreToolUse", Some("Edit")),
+    ];
+    want.sort();
+    assert_eq!(got, want);
     assert!(!gone.exists(), "a stale wrapper homma wrote survived");
 }
 
@@ -316,7 +328,7 @@ fn a_file_under_a_repositorys_prefix_that_homma_did_not_write_survives_the_sweep
     let mine = ws.path().join(".claude/hooks/arvo--mine.sh");
     fs::write(&mine, "#!/bin/sh\n").unwrap();
     let repo = plant_repo(ws.path(), &[], "{}");
-    let (a, v) = regen(ws.path(), &repo);
+    let (a, _, v) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
     assert!(mine.exists());
     assert_eq!(registrations(&v), vec![(
@@ -336,12 +348,12 @@ fn every_event_is_swept_of_homma_registrations_and_of_nothing_else() {
                 {"type":"command","command":".claude/hooks/arvo--old.sh"},
                 {"type":"command","command":".claude/hooks/hand.sh"}
             ]}],
-            "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/arvo--old2.sh"}]}],
+            "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/_dispatch.sh Stop"}]}],
             "Notification":[],
             "SessionStart":[{"matcher":"startup"}]
         }}"#,
     );
-    merge_settings(&test_root(ws.path()), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(ws.path()), &["arvo"], &[]).unwrap();
     let v = settings(ws.path());
     assert_eq!(registrations(&v), vec![(
         "PostToolUse".to_string(),
@@ -369,8 +381,8 @@ fn the_mark_is_what_makes_a_file_hommas() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("h.sh");
 
-    fs::write(&p, wrapper_script("arvo", "arvo", ".claude/hooks/x.sh", "")).unwrap();
-    assert!(carries_the_mark(&p), "an aggregated wrapper");
+    fs::write(&p, dispatch::dispatcher_script(&[])).unwrap();
+    assert!(carries_the_mark(&p), "the dispatcher");
 
     fs::write(
         &p,
@@ -388,7 +400,7 @@ fn the_mark_is_what_makes_a_file_hommas() {
     assert!(!carries_the_mark(&dir.path().join("absent")));
 
     let ws = tempfile::tempdir().unwrap();
-    crate::cmd::gates::install_workspace_gate(&test_root(ws.path()), &[]).unwrap();
+    crate::cmd::gates::install_workspace_gate(&test_root(ws.path()), &[], 60).unwrap();
     assert!(
         carries_the_mark(
             &ws.path()
@@ -408,24 +420,23 @@ fn a_shell_call_is_narrowed_by_the_directory_the_host_says_the_session_is_in() {
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/guard.sh"}]}]}}"#,
     );
     regen(ws.path(), &repo);
-    let wrapper = ws.path().join(".claude/hooks/arvo--guard.sh");
     let inside = repo.join("src");
     let outside = ws.path().join("kolli");
 
     let call = |cwd: &Path| {
         format!(
-            r#"{{"cwd":"{}","tool_input":{{"command":"cargo test"}}}}"#,
+            r#"{{"tool_name":"Bash","cwd":"{}","tool_input":{{"command":"cargo test"}}}}"#,
             cwd.display()
         )
     };
-    run_with_payload(&wrapper, &call(&inside), &[]);
+    dispatch_at(ws.path(), &call(&inside));
     assert!(
         marker.exists(),
         "a shell call in the repo skipped the repo's hook"
     );
 
     fs::remove_file(&marker).unwrap();
-    run_with_payload(&wrapper, &call(&outside), &[]);
+    dispatch_at(ws.path(), &call(&outside));
     assert!(
         !marker.exists(),
         "a shell call elsewhere ran the repo's hook"
@@ -433,11 +444,11 @@ fn a_shell_call_is_narrowed_by_the_directory_the_host_says_the_session_is_in() {
 
     // For a file tool the file decides, wherever the session is.
     let write_elsewhere = format!(
-        r#"{{"cwd":"{}","tool_input":{{"file_path":"{}"}}}}"#,
+        r#"{{"tool_name":"Bash","cwd":"{}","tool_input":{{"file_path":"{}"}}}}"#,
         inside.display(),
         outside.join("x.rs").display()
     );
-    run_with_payload(&wrapper, &write_elsewhere, &[]);
+    dispatch_at(ws.path(), &write_elsewhere);
     assert!(
         !marker.exists(),
         "a write outside the repo ran its hook because the session was inside it"
@@ -454,12 +465,13 @@ fn a_file_under_the_gates_name_that_homma_did_not_write_is_refused_and_left() {
     let mine = "#!/bin/sh\n# somebody's own\n";
     fs::write(&gate, mine).unwrap();
 
-    let err = crate::cmd::gates::install_workspace_gate(&test_root(ws.path()), &[]).unwrap_err();
+    let err =
+        crate::cmd::gates::install_workspace_gate(&test_root(ws.path()), &[], 60).unwrap_err();
     assert!(err.to_string().contains("not written by homma"), "{err}");
     assert_eq!(fs::read_to_string(&gate).unwrap(), mine);
 
     // The control: with the file gone the gate is written.
     fs::remove_file(&gate).unwrap();
-    crate::cmd::gates::install_workspace_gate(&test_root(ws.path()), &[]).unwrap();
+    crate::cmd::gates::install_workspace_gate(&test_root(ws.path()), &[], 60).unwrap();
     assert!(carries_the_mark(&gate));
 }
