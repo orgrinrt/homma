@@ -71,7 +71,10 @@ fn a_release_of_a_flagged_history_is_refused_before_anything_moves() {
         .failure()
         .stdout(predicate::str::contains("carries attribution"))
         .stdout(predicate::str::contains("trailer: Co-Authored-By: Claude"))
-        .stdout(predicate::str::contains("rehouse"));
+        .stdout(predicate::str::contains("rehouse"))
+        // the scan comes before the plan: a run that planned first names the
+        // version it would make, and a dry run moves nothing either way
+        .stdout(predicate::str::contains("0.1.").not());
     let after = std::process::Command::new("git")
         .args(["-C", x.to_str().unwrap(), "rev-parse", "HEAD"])
         .output()

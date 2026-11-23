@@ -38,7 +38,8 @@ fn history(dir: &Path, message: &str) -> PathBuf {
 }
 
 /// A stand-in for the workspace's scanner, with its exit codes: 1 where the
-/// history carries a trailer naming an agent, 0 otherwise. It reads the clone
+/// history carries a trailer naming an agent, 2 where it cannot enter the clone,
+/// 0 otherwise. It reads the clone
 /// it is given, never its working directory, as the real one does.
 fn scanner(dir: &Path, body: &str) -> PathBuf {
     let at = dir.join("scan");
@@ -47,7 +48,7 @@ fn scanner(dir: &Path, body: &str) -> PathBuf {
     at
 }
 
-const FLAGS_A_TRAILER: &str = "if git -C \"$1\" log --all --format=%B | grep -q '^Co-Authored-By: Claude'; then \
+const FLAGS_A_TRAILER: &str = "git -C \"$1\" rev-parse --git-dir >/dev/null 2>&1 || exit 2; if git -C \"$1\" log --all --format=%B | grep -q '^Co-Authored-By: Claude'; then \
      echo \"trailer: Co-Authored-By: Claude\"; exit 1; fi; echo clean; exit 0";
 
 #[test]
@@ -72,6 +73,19 @@ fn a_clean_history_goes_on() {
     let root = history(dir.path(), "fix: a thing");
     let scan = scanner(dir.path(), FLAGS_A_TRAILER);
     assert_eq!(history_refusal(&scan, &root), None);
+}
+
+#[test]
+fn a_root_given_relative_is_scanned_where_it_is() {
+    // Mutation: the root handed on as given, which the scan, run from inside
+    // it, reads relative to itself and cannot enter, refusing a clean history.
+    let dir = tempfile::tempdir_in(".").unwrap();
+    history(dir.path(), "fix: a thing");
+    let scan = scanner(dir.path(), FLAGS_A_TRAILER);
+    let name = dir.path().file_name().unwrap();
+    let relative = Path::new(name).join("x");
+    assert!(relative.is_relative());
+    assert_eq!(history_refusal(&scan, &relative), None);
 }
 
 #[test]

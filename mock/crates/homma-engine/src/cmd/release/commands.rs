@@ -64,7 +64,10 @@ pub(super) fn history_scan_of(manifest: &Path) -> Result<Option<PathBuf>> {
 /// that could not run at all, refuses, since a scan that did not happen reads
 /// like a clean one.
 pub(super) fn history_refusal(scan: &Path, root: &Path) -> Option<String> {
-    let out = match Command::new(scan).arg(root).current_dir(root).output() {
+    // absolute, so a root read relative to the workspace is not read again
+    // relative to itself once the scan runs from it
+    let root = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
+    let out = match Command::new(scan).arg(&root).current_dir(&root).output() {
         Ok(out) => out,
         Err(e) => {
             return Some(format!(
