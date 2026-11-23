@@ -665,6 +665,24 @@ pub enum IdentityOp {
         address: String,
     },
 
+    /// The git configuration file an internal tree's commits are written under:
+    /// `[author]` the agent that made the change, `[committer]` the coordinator
+    /// responsible for it, both from the catalogue. The workspace names the file
+    /// from an `includeIf` of the internal tree's git directory.
+    #[command(name = "git-config")]
+    GitConfig {
+        /// The agent that makes the commits, a handle or an alias.
+        author:    String,
+        /// The coordinator responsible for them, a handle or an alias; the author
+        /// where none is given.
+        #[arg(long)]
+        committer: Option<String>,
+        /// A sub-agent's name, put on the author's address as a plus tag:
+        /// lowercase letters, digits and hyphens.
+        #[arg(long)]
+        tag:       Option<String>,
+    },
+
     /// Write every agent address of the catalogue, with its handle and role, to
     /// `[paths] identities`, for a hook that cannot afford to run homma.
     /// `agent regen` writes it too.

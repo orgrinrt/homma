@@ -23,11 +23,13 @@ git_email = "op@example.invalid"
 [org.aku]
 role = "hand"
 handle = "aku"
+git_name = "Aku"
 git_email = "aarne@example.invalid"
 
 [org.ikku]
 role = "journeyman"
 handle = "ikku"
+git_name = "Ikku"
 git_email = "ikku@example.invalid"
 
 [offices.coord]
@@ -105,4 +107,32 @@ fn a_catalogue_with_a_shared_address_is_refused_naming_it() {
             predicate::str::contains("ikku@example.invalid").and(predicate::str::contains("kide")),
         );
     run(&cfg, &["org", "list"]).failure();
+}
+
+#[test]
+fn git_config_prints_the_author_tagged_and_the_committer_from_the_catalogue() {
+    let (_d, cfg) = workspace("");
+    run(&cfg, &[
+        "identity",
+        "git-config",
+        "ikku",
+        "--committer",
+        "aku",
+        "--tag",
+        "probe",
+    ])
+    .success()
+    .stdout(
+        "[author]\n\tname = \"Ikku\"\n\temail = ikku+probe@example.invalid\n\
+         [committer]\n\tname = \"Aku\"\n\temail = aarne@example.invalid\n",
+    );
+}
+
+#[test]
+fn git_config_refuses_the_king_and_says_why() {
+    let (_d, cfg) = workspace("");
+    run(&cfg, &["identity", "git-config", "op"])
+        .failure()
+        .stdout("")
+        .stderr(predicate::str::contains("`op` is the king"));
 }

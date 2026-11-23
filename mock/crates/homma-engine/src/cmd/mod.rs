@@ -515,6 +515,17 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                         None => Ok(Outcome::Exit(1)),
                     }
                 },
+                IdentityOp::GitConfig {
+                    author,
+                    committer,
+                    tag,
+                } => {
+                    let ws = org::load(&config_path(&cli))?;
+                    let id =
+                        homma_org::git_identity(&ws, author, committer.as_deref(), tag.as_deref())?;
+                    print!("{}", homma_org::git_config(&id));
+                    Ok(Outcome::Ok)
+                },
                 IdentityOp::Index => {
                     let ws = org::load(&config_path(&cli))?;
                     let path = identity::write_index(&cfg.workspace.path, &ws)?;

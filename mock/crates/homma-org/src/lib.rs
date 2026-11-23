@@ -14,6 +14,7 @@ pub mod catalogue;
 pub mod character;
 pub mod configs;
 pub mod generate;
+pub mod git_identity;
 pub mod lease;
 pub mod provision;
 pub mod remote;
@@ -24,6 +25,7 @@ mod yaml;
 
 pub use catalogue::{CatalogueFault, check_catalogue};
 pub use generate::{Form, Generated, definition, definition_described, write_definitions};
+pub use git_identity::{GitIdentityRefusal, git_config, git_identity};
 use homma_api::{Identity, Role, Staffing, Workspace};
 pub use provision::{ProvisionError, Provisioned, provision};
 pub use remote::{repo_name, same_repo};
