@@ -415,8 +415,9 @@ create simply not have them.
 
 `homma identity index` writes every agent address of the catalogue, its handle
 and its role, one line each with tabs between, to `[paths] identities`, and
-`agent regen` writes it on every run, so each instance has an index as current as
-its configuration. It is for a hook that has to know whether an author is an
+`agent regen` writes it on every run whose catalogue loads, an empty one where
+the catalogue holds no agent, so each instance has an index as current as its
+configuration. It is for a hook that has to know whether an author is an
 agent and cannot afford to start homma; anything that can run homma asks
 `homma identity match <address>`, which prints the handle and the role, or exits
 1 for an address that is no agent's.
@@ -458,7 +459,12 @@ times. Two sessions can never both land a take of one name, since the second
 always builds on the first's commit or is refused.
 
 `homma identity lease take <handle> --session <id> --job <job> [--replaces <id>]
-[--minutes <n>]`, `renew`, `release` and `show` drive it. The lease is a record
+[--minutes <n>]`, `renew`, `release` and `show` drive it. The name given may be an
+alias, which `resolve` turns into the entry's handle, and every verb, `show`
+included, refuses a name the catalogue does not hold or the king's. A lease lasts
+from one minute to a week; a length outside that, given or configured, is refused.
+A record that is there and cannot be read, or whose `handle` is not its file's,
+is refused rather than taken for a free identity. The lease is a record
 among cooperating sessions and not a proof: any process can name any session.
 
 ## The surface
@@ -473,6 +479,9 @@ entries: a handle or an alias used twice, an address two entries answer to, an
 office whose holder is missing or who holds another office, an office named like
 a participant. It runs on every read of the configuration, because the file is
 hand-editable and every row arrives by a route no command saw.
+
+**`resolve`** turns a handle or an alias into its entry, so an alias reaches the
+same participant wherever a name is taken: a lease, an office's holder.
 
 **`OrgRegistry::agent_at`** answers which agent an address belongs to, the king
 never, with the plus tag stripped first; **`OrgRegistry::agent_addresses`** lists
