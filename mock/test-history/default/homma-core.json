@@ -13,14 +13,14 @@
     }
   },
   "bins": {
-    "homma-core::config_smoke": "b16d2bf39e0b0f1dd138e6a34b8558d3fdfad381d516cf75a77d8339a01678c6",
-    "homma-core::forge_smoke": "4e82d89e206ced804fef3fd45bf20a528434e1ad9393753c7895d93b42386116",
-    "homma-core::hostile_identity_env": "2f3afbcbb7969552e0503e9fa9dc2ad2169c13245ac5bd55b45666fd67769cf8",
-    "homma-core::hostile_template_dir": "27462263ef4db1afb7235668ee43285e6ede2450a9565b36febfe85eacebdbd6",
-    "homma-core::membership_is_detected": "4917befc4f230e721426b5ec47088947b123fa0a55ccf47b0010c4502728a044",
-    "homma-core::reads_the_local_config": "ef5cc09050747ca21d71fd443106b84d8de071f9dca5e6fc9c87d9416504d1c2",
-    "homma-core::repo_smoke": "bbb63a18b6bb94e6c6a5ef2da9ffb53c90a8309c3ce5a353b321a51b1bfb34b3",
-    "homma-core::scope_skips_the_work": "35ccd8d695cddfbaa4ce066268e8321e3ce9d934b038f97f9c29d11d05956263",
-    "homma-core::template_smoke": "11eaea083c7bf47f4389463fdabac947bc3e7960c69db3b92a9a5334dac02c9f"
+    "homma-core::config_smoke": "31eefff6af04c4f7bde02c8f52669bc34cdcc92eb6a9de27b3e5d73a0d507d8a",
+    "homma-core::forge_smoke": "038b872631dd75b90c68b1d7166b897aafb103c906c48389f2206e186dd9905b",
+    "homma-core::hostile_identity_env": "0c4e99235fb884a4d72b53cd9e37605979d85f22b3218eabd5963bd876f5dd45",
+    "homma-core::hostile_template_dir": "b2e3f1239ed7069c0061c7c94f35471125d001d97ca22e5a4dff197762630cee",
+    "homma-core::membership_is_detected": "555d29c7c6d00ce441bc1ce61cf2e0268efd36a26e11c168a39eb45aec27ecfd",
+    "homma-core::reads_the_local_config": "898b1ba878f031438b09dc981ca543291f6ef676206cbc0ea7c836339e626729",
+    "homma-core::repo_smoke": "0c48fe8806ba1d8873a5ae5db2c6d7c7cb0eca07e857bea70a8f1a1e7a4c5c38",
+    "homma-core::scope_skips_the_work": "aff7f83fa80cf609d7f2e4e283941e581dbdb2c42896b794a11663f464b813e0",
+    "homma-core::template_smoke": "47a5c38d12cd0ccbd2a873c5703f2b3d18dc76aebc212f2e7c41f5078e445107"
   }
 }
