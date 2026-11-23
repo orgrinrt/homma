@@ -92,9 +92,10 @@ impl Reference {
             Namespace::Org => {
                 match roles(&self.path) {
                     Some(Role::King) => Rung::Ratified,
-                    Some(Role::Hand) | Some(Role::Expert) | Some(Role::General) => {
-                        Rung::AgentOutput
-                    },
+                    Some(Role::Hand)
+                    | Some(Role::Expert)
+                    | Some(Role::General)
+                    | Some(Role::Journeyman) => Rung::AgentOutput,
                     None => Rung::Unknown,
                 }
             },
