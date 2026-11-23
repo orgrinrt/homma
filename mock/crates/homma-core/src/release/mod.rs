@@ -7,11 +7,16 @@
 //! registry publish that carry `dev` onto `main`. `DEEPDIVE_release.md` in
 //! this crate's design is the whole of it; each module here is one section.
 
+pub mod auth;
 pub mod badges;
 pub mod changelog;
 pub mod check;
+pub mod day;
+pub mod estate;
 pub mod gate;
 pub mod git;
+pub mod history;
+pub mod hygiene;
 pub mod kind;
 pub mod landing;
 pub mod numbers;
@@ -21,6 +26,7 @@ pub mod publish;
 pub mod registry;
 pub mod riders;
 pub mod run;
+pub mod sequence;
 pub mod sh;
 pub mod status;
 pub mod tagline;

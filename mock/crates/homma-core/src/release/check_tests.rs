@@ -42,7 +42,10 @@ impl Fixture {
         f.git(&["config", "commit.gpgsign", "false"]);
         f.git(&["remote", "add", "origin", f._bare.path().to_str().unwrap()]);
         f.manifest(version);
-        f.git(&["add", "Cargo.toml"]);
+        // what a reader lands on, so the warn rows over it stay quiet
+        std::fs::write(f.root().join("README.md"), "x\n").unwrap();
+        std::fs::write(f.root().join("LICENSE"), "x\n").unwrap();
+        f.git(&["add", "Cargo.toml", "README.md", "LICENSE"]);
         f.git(&["commit", "--quiet", "-m", "feat: first"]);
         f.git(&["branch", "dev"]);
         f.git(&["push", "--quiet", "origin", "main", "dev"]);
