@@ -75,12 +75,14 @@ pub enum ReleaseError {
     /// The forge refused a push to the release line, and the forge writes in
     /// use open no pull request.
     NoPullRequest(String),
-    /// After the release pull request into `base` was landed, the remote's
-    /// `base` at `at` is not a merge of `tip` onto where it was.
+    /// After a pull request into `base` was landed, the bump's into the
+    /// trunk or the release's into the release line, the remote's `base` at
+    /// `at` is not a merge of `tip` onto where it was.
     NotLanded {
         base: String,
         at:   String,
-        /// The trunk's tip, untagged: the release line is not moved.
+        /// What was landed, untagged: the bump, or the trunk's tip for the
+        /// release line, which is not moved.
         tip:  String,
     },
     /// A bump set aside before step 1 that could not be put back on the trunk.
@@ -164,7 +166,7 @@ impl fmt::Display for ReleaseError {
             } => {
                 write!(
                     f,
-                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun takes a merge of {tip} on {base} only where its tree is {tip} merged onto the {base} the run saw, and refuses this one again, for a human to settle"
+                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; the forge's {base} is left as it is, for a human to settle"
                 )
             },
             ReleaseError::NotPutBack {
@@ -262,9 +264,11 @@ pub fn step_gate_run(
 }
 
 /// Step 4: bump the manifest and prepend the changelog on the trunk, as one
-/// commit, and push it; a push the forge refuses stops the run, the commit
-/// left on the trunk. A `pending` bump a stopped run left is taken back instead
-/// of a second being written. Returns the bump as the trunk holds it.
+/// commit of what the trunk lacks, and push it; a push the forge refuses is
+/// landed through a pull request, merged with a merge commit, and one the forge
+/// cannot land stops the run, the commit left on the trunk. A `pending` bump a
+/// stopped run left, or a pull request landed, is taken back instead of a
+/// second being written. Returns the bump as the trunk holds it.
 pub fn step_bump(
     setup: &Setup<'_>,
     root: &Path,
@@ -279,14 +283,23 @@ pub fn step_bump(
         Some(p) => landing::resume_bump(setup, root, p, &plan.next),
         None => {
             let sha = write_bump(setup, root, plan)?;
-            landing::push_bump(setup, root, &sha)
+            landing::push_bump(setup, root, &sha, &plan.next)
         },
     }
 }
 
-/// The bump commit itself: the manifest and the changelog, as one commit.
+/// The bump commit itself: the manifest and the changelog, as one commit of
+/// what the trunk lacks. A trunk already at the planned version, with the
+/// changelog already holding its heading, gets no commit, and its tip is what
+/// is returned; a trunk with one half gets the other half alone. The block's
+/// own text is never compared, since the commits since the last tag include the
+/// bump itself once a run is resumed.
 fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, ReleaseError> {
-    let mut paths = vec!["CHANGELOG.md"];
+    let has_block = changelog::holds(root, &plan.next)?;
+    if plan.current == plan.next && has_block {
+        return Ok(git::head(root)?);
+    }
+    let mut paths = Vec::new();
     if plan.current != plan.next {
         match &plan.layout {
             Layout::Single => version::write(root, plan.repo_kind, &plan.next)?,
@@ -316,7 +329,10 @@ fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, Rel
             paths.push("deno.json");
         }
     }
-    changelog::prepend(root, &plan.changelog)?;
+    if !has_block {
+        changelog::prepend(root, &plan.changelog)?;
+        paths.push("CHANGELOG.md");
+    }
     Ok(git::commit_paths(
         root,
         &paths,
@@ -417,9 +433,11 @@ pub fn step_hold_tag(
 
 /// Step 7: the forge release on the tag, with the block as its body.
 pub fn step_forge_release(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), ReleaseError> {
-    setup
-        .forge
-        .release(root, &plan.tag, plan.changelog.trim_end())
+    // the block the file holds is the release's body: where the trunk already
+    // carried it the plan's own was rebuilt over more commits and another date
+    let held = changelog::block_of(root, &plan.next)?;
+    let body = held.as_deref().unwrap_or_else(|| plan.changelog.trim_end());
+    setup.forge.release(root, &plan.tag, body)
 }
 
 /// Step 8: publish everything the plan names, in its order.

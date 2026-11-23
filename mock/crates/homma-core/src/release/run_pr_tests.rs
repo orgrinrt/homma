@@ -4,10 +4,9 @@
 //--------------------------------------------------------------------------------------------------
 //! The release against a forge whose rulesets take `dev` and `main` only
 //! through a pull request: the fixture's origin refuses a push to either the
-//! way GitHub does. A refused `dev` stops the run, since the trunk takes a push
-//! and nothing else; a refused `main` is the release pull request, which the
+//! way GitHub does. A refused `main` is the release pull request, which the
 //! routed fake lands in the origin itself as a merge commit at the head it was
-//! given.
+//! given; a refused `dev` is the bump's, in `run_dev_pr_tests.rs`.
 
 use super::*;
 
@@ -81,6 +80,22 @@ pub(super) fn land_in(origin: &Path, args: &[&str], bad_merge: bool) -> Result<(
     .map(|_| ())
 }
 
+/// `delete-branch <root> <branch> <head>` done in the origin as the route does
+/// it: a branch the origin does not hold is done with, one it holds at another
+/// commit than `head` is refused.
+pub(super) fn drop_in(origin: &Path, branch: &str, head: &str) -> Result<(), String> {
+    let name = format!("refs/heads/{branch}");
+    let Ok(at) = bare(origin, &["rev-parse", "--verify", "--quiet", &name]) else {
+        return Ok(());
+    };
+    if at != head {
+        return Err(format!(
+            "forge-route: delete-branch: {branch} is at {at}, not {head}"
+        ));
+    }
+    bare(origin, &["update-ref", "-d", &name, head]).map(|_| ())
+}
+
 pub(super) fn routed<'a>(runner: &'a Routed<'a>) -> ByRoute<'a> {
     ByRoute {
         route: Path::new(ROUTE),
@@ -107,7 +122,7 @@ pub(super) fn subjects_on(f: &Fixture, rev: &str) -> Vec<String> {
 }
 
 /// Whether the origin holds `branch`.
-fn origin_has(f: &Fixture, branch: &str) -> bool {
+pub(super) fn origin_has(f: &Fixture, branch: &str) -> bool {
     bare(f.origin(), &[
         "rev-parse",
         "--verify",
@@ -115,39 +130,6 @@ fn origin_has(f: &Fixture, branch: &str) -> bool {
         &format!("refs/heads/{branch}"),
     ])
     .is_ok()
-}
-
-#[test]
-fn a_trunk_that_takes_no_push_stops_the_run_and_opens_no_pull_request() {
-    // Mutation: the refused push of `dev` landed through a pull request and a
-    // squash instead of stopping, a branch pushed beside `dev`, or the bump
-    // dropped from the clone's `dev` so the rerun has nothing to push.
-    let f = Fixture::new();
-    refuse_pushes_to(&f, &["dev"]);
-    let tip = f.git(&["rev-parse", "dev"]);
-    let runner = Routed::new(&f);
-    let p = published();
-    let writes = routed(&runner);
-    let s = setup(&runner, &writes, &p, "dev");
-    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
-    assert!(
-        matches!(&err, ReleaseError::Git(_)) && err.to_string().contains("GH013"),
-        "git's own words, not a pull request: {err}"
-    );
-    assert_eq!(pr_calls(&runner), Vec::<String>::new(), "no pull request");
-    assert!(!origin_has(&f, "release/x-0.1.1"), "no branch beside dev");
-    assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
-    assert_eq!(f.git(&["rev-parse", "dev^"]), tip, "the bump stays on dev");
-    assert_eq!(subjects_on(&f, "dev")[0], "chore: release 0.1.1");
-    assert!(
-        git::tag_target(f.root(), "v0.1.1").is_err(),
-        "nothing tagged"
-    );
-    assert_eq!(
-        git::current_branch(f.root()).unwrap().as_deref(),
-        Some("dev")
-    );
-    assert!(git::is_clean(f.root()).unwrap());
 }
 
 #[test]
@@ -223,11 +205,12 @@ fn a_rerun_after_a_stop_at_the_bump_lands_the_same_commit_and_makes_no_second() 
     refuse_pushes_to(&f, &["dev", "main"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
+    *runner.pr_said_into.borrow_mut() = Some(("dev", "forge-route: pr: gh: HTTP 502"));
     let p = published();
     let writes = routed(&runner);
     let s = setup(&runner, &writes, &p, "dev");
     let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
-    assert!(err.to_string().contains("GH013"), "{err}");
+    assert!(matches!(&err, ReleaseError::Route(_)), "{err}");
     let stopped = f.git(&["rev-parse", "dev"]);
     assert_eq!(
         f.git(&["rev-parse", "dev^"]),
@@ -237,15 +220,25 @@ fn a_rerun_after_a_stop_at_the_bump_lands_the_same_commit_and_makes_no_second() 
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
     // the forge takes the push of `dev` now, as it does where the ruleset is
     // lifted, and `main` still wants its pull request
+    *runner.pr_said_into.borrow_mut() = None;
     refuse_pushes_to(&f, &["main"]);
     let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
         .unwrap()
         .unwrap();
     let root = f.root().to_string_lossy().into_owned();
-    assert_eq!(pr_calls(&runner), vec![format!(
-        "{ROUTE} pr {root} dev main release: 0.1.1 merge {}",
-        done.bump_sha
-    )]);
+    assert_eq!(
+        pr_calls(&runner).last().cloned(),
+        Some(format!(
+            "{ROUTE} pr {root} dev main release: 0.1.1 merge {}",
+            done.bump_sha
+        ))
+    );
+    assert_eq!(
+        pr_calls(&runner).len(),
+        2,
+        "the stopped one for dev and the release's, none for the lifted dev: {:?}",
+        pr_calls(&runner)
+    );
     assert_eq!(
         done.bump_sha, stopped,
         "the commit the first run made is the one pushed"
@@ -268,6 +261,7 @@ fn a_rerun_planning_another_version_than_the_stopped_bump_refuses_and_puts_it_ba
     refuse_pushes_to(&f, &["dev"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
+    *runner.pr_said_into.borrow_mut() = Some(("dev", "forge-route: pr: gh: HTTP 502"));
     let p = published();
     let writes = routed(&runner);
     let s = setup(&runner, &writes, &p, "dev");
@@ -288,26 +282,6 @@ fn a_rerun_planning_another_version_than_the_stopped_bump_refuses_and_puts_it_ba
     let err = release(&s, f.root(), Level::Patch, None::<&GateRun>, false).unwrap_err();
     assert!(matches!(err, ReleaseError::NoGreenRun { .. }), "{err}");
     assert_eq!(f.git(&["rev-parse", "dev"]), stopped);
-}
-
-#[test]
-fn a_refused_push_of_dev_says_the_same_with_the_client_as_with_the_route() {
-    // Mutation: the client's git push retried or reported as done, or the
-    // refusal worded as a missing route where `dev` takes no pull request at all.
-    let f = Fixture::new();
-    refuse_pushes_to(&f, &["dev"]);
-    let tip = f.git(&["rev-parse", "dev"]);
-    let runner = Fake(RefCell::new(Vec::new()));
-    let forge = Recorder::default();
-    let p = published();
-    let w = client(&forge);
-    let s = setup(&runner, &w, &p, "dev");
-    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
-    assert!(
-        matches!(&err, ReleaseError::Git(_)) && err.to_string().contains("GH013"),
-        "{err}"
-    );
-    assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
 }
 
 #[test]
@@ -365,6 +339,7 @@ fn a_run_recorded_on_the_tip_is_found_beside_a_leftover_local_bump() {
     refuse_pushes_to(&f, &["dev", "main"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
+    *runner.pr_said_into.borrow_mut() = Some(("dev", "forge-route: pr: gh: HTTP 502"));
     let p = published();
     let writes = routed(&runner);
     let s = setup(&runner, &writes, &p, "dev");

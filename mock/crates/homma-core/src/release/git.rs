@@ -280,6 +280,21 @@ pub fn push(cwd: &Path, remote: &str, refspec: &str, force: bool) -> Result<(), 
     }
 }
 
+/// Delete `branch` on `remote` where it is at `head`, and refuse where it has
+/// moved: the lease is the commit that was landed, never what the branch holds
+/// now.
+pub fn delete_branch(cwd: &Path, remote: &str, branch: &str, head: &str) -> Result<(), GitError> {
+    let lease = format!("--force-with-lease=refs/heads/{branch}:{head}");
+    git(cwd, &[
+        "push",
+        "--quiet",
+        &lease,
+        remote,
+        &format!(":refs/heads/{branch}"),
+    ])
+    .map(|_| ())
+}
+
 /// Stage exactly `paths` and commit them, and nothing else that may be staged,
 /// which is what naming the paths on the commit guarantees.
 pub fn commit_paths(cwd: &Path, paths: &[&str], message: &str) -> Result<String, GitError> {
