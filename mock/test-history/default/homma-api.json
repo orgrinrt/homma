@@ -13,12 +13,6 @@
     }
   },
   "bins": {
-    "homma-api": "e05b672f98252b4ccef347b23f4a519ec3abf3fdef2b12d67b90e01f5636bf82",
-    "homma-api::compile_fail": "9920cfbdba197ae7750156923563f28a209fdde10a73220b000a37e65f606c6c",
-    "homma-api::frontmatter": "1f38214a6fb68b68913fff4f8f95da78cc14449c5f25a961842a553153e4c65b",
-    "homma-api::rule_meta": "1aa809b2668346f930908f5a4491d64a331c5bc0a50a905373ec51a38d1c0dd7",
-    "homma-api::session": "8e50723ba4efe86b5126623264bf1c9d57a20b9b3d2376501a904d507cc17059",
-    "homma-api::skill_meta": "64134f89b416175b62bd92375fd4fa78461946ab2e28f4b1b93c6b76cd6ba08a",
-    "homma-api::the_home_must_be_known": "f7c79969d33a7c310ce75a6a3dcb07b5b06d1ae2907161459401326f90357503"
+    "homma-api::compile_fail": "9920cfbdba197ae7750156923563f28a209fdde10a73220b000a37e65f606c6c"
   }
 }
