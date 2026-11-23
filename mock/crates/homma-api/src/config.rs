@@ -214,6 +214,11 @@ pub struct Paths {
     /// tag and its forge release. Unset, the release tags with git and
     /// releases through the forge client.
     pub forge_route:    Option<RelPath>,
+    /// The command that reads a repository's whole history for attribution
+    /// the workspace forbids, which `homma release run` runs over each repo
+    /// with its root as the one argument, refusing the release on any exit
+    /// but 0. Unset, a release scans nothing.
+    pub history_scan:   Option<RelPath>,
     /// The command that renders the workspace's own rules, skills and
     /// personas, which `homma agent regen` runs as `<command> regen` from the
     /// workspace root after its aggregate. Unset, the regen renders none of
@@ -235,6 +240,7 @@ impl Default for Paths {
             index:          rel(".shared/.index"),
             captures:       rel(".data/op-responses"),
             forge_route:    None,
+            history_scan:   None,
             agent_surfaces: None,
         }
     }
@@ -599,6 +605,32 @@ handle = "proof"
         assert!(
             Workspace::parse(bad).is_err(),
             "a route outside the workspace is refused"
+        );
+    }
+
+    #[test]
+    fn the_history_scan_is_unset_by_default_and_a_contained_path_where_named() {
+        // Mutation: a default scanner compiled in, which is a copy of the
+        // workspace's policy homma does not own.
+        assert!(
+            Workspace::parse(MINIMAL)
+                .unwrap()
+                .paths
+                .history_scan
+                .is_none()
+        );
+        let toml = "content_repo = \"local\"\n\n[paths]\nhistory_scan = \".shared/skills/pr-review/scripts/scan-attribution.sh\"\n";
+        let w = Workspace::parse(toml).expect("a contained scanner is fine");
+        assert_eq!(
+            w.paths.history_scan.as_ref().map(|p| p.as_path()),
+            Some(std::path::Path::new(
+                ".shared/skills/pr-review/scripts/scan-attribution.sh"
+            ))
+        );
+        let bad = "content_repo = \"local\"\n\n[paths]\nhistory_scan = \"/usr/bin/scan\"\n";
+        assert!(
+            Workspace::parse(bad).is_err(),
+            "a scanner outside the workspace is refused"
         );
     }
 
