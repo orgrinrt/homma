@@ -77,11 +77,43 @@ pub(crate) struct Entry {
     pub from:       String,
 }
 
+impl Entry {
+    /// What a registration of its own names it by: a digest of every field, so
+    /// the name follows the entry wherever the table puts it, and a registration
+    /// older than the table names an entry that is not there rather than another
+    /// one.
+    pub(crate) fn key(&self) -> String {
+        let body = serde_json::to_string(self).unwrap_or_default();
+        format!("{:016x}", fnv1a(body.as_bytes()))
+    }
+}
+
+/// FNV-1a over 64 bits: stable across builds and platforms, which a key written
+/// into the settings and read back by a later build needs.
+const fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xCBF2_9CE4_8422_2325;
+    let mut i = 0;
+    while i < bytes.len() {
+        hash ^= bytes[i] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
+        i += 1;
+    }
+    hash
+}
+
+/// An entry as the table holds it, with the key its registration names it by.
+#[derive(Debug, Serialize, Deserialize)]
+struct Keyed {
+    key:   String,
+    #[serde(flatten)]
+    entry: Entry,
+}
+
 /// The table as it is written: the line that makes it homma's, and the entries.
 #[derive(Debug, Serialize, Deserialize)]
 struct Table {
     written: String,
-    entries: Vec<Entry>,
+    entries: Vec<Keyed>,
 }
 
 /// The entries the last regen wrote, or none where there is no table, or one
@@ -92,7 +124,7 @@ pub(crate) fn previous(root: &Root) -> Vec<Entry> {
         .ok()
         .and_then(|s| serde_json::from_str::<Table>(&s).ok())
         .filter(|t| t.written.contains(MANAGED_MARK))
-        .map(|t| t.entries)
+        .map(|t| t.entries.into_iter().map(|k| k.entry).collect())
         .unwrap_or_default()
 }
 
@@ -145,7 +177,15 @@ pub(crate) fn install(root: &Root, entries: &[Entry], filter: &[String]) -> Resu
 
     let body = serde_json::to_string_pretty(&Table {
         written: format!("this file is written {MANAGED_MARK}"),
-        entries: entries.to_vec(),
+        entries: entries
+            .iter()
+            .map(|e| {
+                Keyed {
+                    key:   e.key(),
+                    entry: e.clone(),
+                }
+            })
+            .collect(),
     })?;
     root.write(&table, body + "\n")
         .with_context(|| format!("write {}", table.as_path().display()))?;
@@ -191,18 +231,22 @@ pub(crate) fn retire_wrappers(root: &Root) -> Result<()> {
 /// entries: their alternatives joined, or every tool where one entry takes every
 /// tool, and the longest timeout with [`SLACK`] over. Any other event gets one
 /// per entry, under the entry's own matcher, timeout and `async`, naming the
-/// entry by its place in the table.
+/// entry by its [`Entry::key`]; two entries alike in every field are one.
 pub(crate) fn registrations(entries: &[Entry]) -> Vec<HookEntry> {
     let mut folded: BTreeMap<(&str, bool), Vec<&Entry>> = BTreeMap::new();
-    let mut alone: BTreeMap<&str, Vec<(usize, &Entry)>> = BTreeMap::new();
-    for (i, e) in entries.iter().enumerate() {
+    let mut alone: BTreeMap<&str, Vec<(String, &Entry)>> = BTreeMap::new();
+    for e in entries {
         if FOLDED.contains(&e.event.as_str()) {
             folded
                 .entry((e.event.as_str(), e.background))
                 .or_default()
                 .push(e);
         } else {
-            alone.entry(e.event.as_str()).or_default().push((i, e));
+            let key = e.key();
+            let es = alone.entry(e.event.as_str()).or_default();
+            if !es.iter().any(|(k, _)| *k == key) {
+                es.push((key, e));
+            }
         }
     }
     let command =
@@ -222,7 +266,7 @@ pub(crate) fn registrations(entries: &[Entry]) -> Vec<HookEntry> {
         })
         .collect();
     for (event, es) in alone {
-        for (i, e) in es {
+        for (key, e) in es {
             out.push(HookEntry {
                 event:      event.to_string(),
                 matcher:    if e.matcher.trim().is_empty() {
@@ -230,7 +274,7 @@ pub(crate) fn registrations(entries: &[Entry]) -> Vec<HookEntry> {
                 } else {
                     e.matcher.clone()
                 },
-                command:    command(format!("{event} one {i}")),
+                command:    command(format!("{event} one {key}")),
                 timeout:    Some(e.timeout),
                 background: e.background,
             });
@@ -314,3 +358,7 @@ mod scope_tests;
 #[cfg(test)]
 #[path = "dispatch_fold_tests.rs"]
 mod fold_tests;
+
+#[cfg(test)]
+#[path = "dispatch_timer_tests.rs"]
+mod timer_tests;

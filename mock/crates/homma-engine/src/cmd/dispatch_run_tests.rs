@@ -15,12 +15,14 @@ use super::tests::{dispatch, entry, hook, plant, text};
 #[test]
 fn a_hook_not_in_this_clone_is_passed_over_without_a_word() {
     let ws = tempfile::tempdir().unwrap();
+    let stop = entry("Stop", "*", "arvo/.claude/hooks/gone.sh", &[]);
+    let key = stop.key();
     let d = plant(
         ws.path(),
         &[
             entry("PreToolUse", "*", "arvo/.claude/hooks/gone.sh", &["arvo"]),
             entry("PreToolUse", "*", "arvo/.claude/hooks/gone.sh", &[]),
-            entry("Stop", "*", "arvo/.claude/hooks/gone.sh", &[]),
+            stop,
         ],
         &[],
     );
@@ -29,7 +31,7 @@ fn a_hook_not_in_this_clone_is_passed_over_without_a_word() {
         "tool_input": { "file_path": ws.path().join("arvo/x").display().to_string() },
     })
     .to_string();
-    for args in [&["PreToolUse", "sync"][..], &["Stop", "one", "2"][..]] {
+    for args in [&["PreToolUse", "sync"][..], &["Stop", "one", &key][..]] {
         let out = dispatch(&d, args, &payload, None, &[]);
         assert!(out.status.success(), "{args:?}: {}", text(&out.stderr));
         assert!(
@@ -80,9 +82,63 @@ fn only_the_entries_of_the_event_and_the_mode_run() {
     assert_eq!(ran(&["PreToolUse", "sync"]), vec!["pre"]);
     assert_eq!(ran(&["PostToolUse", "sync"]), vec!["post"]);
     assert_eq!(ran(&["PostToolUse", "async"]), vec!["late"]);
-    assert_eq!(ran(&["Stop", "one", "4"]), vec!["stop2"]);
-    // an entry named for another event is not run under this one
-    assert!(ran(&["Stop", "one", "0"]).is_empty());
+    assert_eq!(ran(&["Stop", "one", &entries[4].key()]), vec!["stop2"]);
+}
+
+#[test]
+fn an_entry_run_alone_is_found_by_its_key_wherever_the_table_puts_it() {
+    let ws = tempfile::tempdir().unwrap();
+    let marks = ws.path().join("marks");
+    fs::create_dir_all(&marks).unwrap();
+    let mut entries = Vec::new();
+    for name in ["a", "b", "c"] {
+        hook(
+            ws.path(),
+            &format!("h/{name}"),
+            &format!("cat > /dev/null; touch '{}/{name}'", marks.display()),
+        );
+        entries.push(entry("Stop", "*", &format!("h/{name}"), &[]));
+    }
+    let b = entries[1].key();
+    let ran = |d: &Path, args: &[&str]| {
+        for f in fs::read_dir(&marks).unwrap() {
+            fs::remove_file(f.unwrap().path()).unwrap();
+        }
+        let out = dispatch(d, args, "{}", None, &[]);
+        let names: Vec<String> = fs::read_dir(&marks)
+            .unwrap()
+            .map(|f| f.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        (out, names)
+    };
+    let d = plant(ws.path(), &entries, &[]);
+    let (out, names) = ran(&d, &["Stop", "one", &b]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(names, vec!["b"]);
+
+    // a later regen puts an entry ahead of it: the same registration runs it
+    let mut moved = entries.clone();
+    moved.reverse();
+    moved.insert(0, entry("Stop", "*", "h/new", &[]));
+    let d = plant(ws.path(), &moved, &[]);
+    let (out, names) = ran(&d, &["Stop", "one", &b]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(names, vec!["b"]);
+
+    // a key the table has not: nothing runs, and it is said, not swallowed
+    let gone = plant(ws.path(), &entries[.. 1], &[]);
+    let (out, names) = ran(&gone, &["Stop", "one", &b]);
+    assert!(names.is_empty(), "{names:?}");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("homma agent regen"),
+        "{}",
+        text(&out.stderr)
+    );
+    // a key of another event is not run under this one, and is said too
+    let (out, names) = ran(&d, &["SessionStart", "one", &b]);
+    assert!(names.is_empty(), "{names:?}");
+    assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
@@ -110,16 +166,17 @@ fn an_entry_run_alone_hands_its_answer_on_as_it_gave_it() {
         "cat > /dev/null; echo 'keep going'; echo 'because' >&2; exit 2",
     );
     hook(ws.path(), "h/y", "cat > /dev/null; echo plain context");
-    let d = plant(
-        ws.path(),
-        &[entry("Stop", "*", "h/x", &[]), entry("SessionStart", "*", "h/y", &[])],
-        &[],
+    let (x, y) = (
+        entry("Stop", "*", "h/x", &[]),
+        entry("SessionStart", "*", "h/y", &[]),
     );
-    let out = dispatch(&d, &["Stop", "one", "0"], "{}", None, &[]);
+    let (kx, ky) = (x.key(), y.key());
+    let d = plant(ws.path(), &[x, y], &[]);
+    let out = dispatch(&d, &["Stop", "one", &kx], "{}", None, &[]);
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(text(&out.stdout), "keep going\n");
     assert_eq!(text(&out.stderr), "because\n");
-    let out = dispatch(&d, &["SessionStart", "one", "1"], "{}", None, &[]);
+    let out = dispatch(&d, &["SessionStart", "one", &ky], "{}", None, &[]);
     assert!(out.status.success());
     assert_eq!(text(&out.stdout), "plain context\n");
 }

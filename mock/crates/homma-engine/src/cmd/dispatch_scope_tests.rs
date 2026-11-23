@@ -326,15 +326,14 @@ fn a_hook_is_handed_the_payload_the_host_sent() {
     let ws = tempfile::tempdir().unwrap();
     let got = ws.path().join("got");
     hook(ws.path(), "h/x", &format!("cat > '{}'", got.display()));
-    let d = plant(
-        ws.path(),
-        &[entry("Stop", "*", "h/x", &[]), entry("PreToolUse", "*", "h/x", &[])],
-        &[],
-    );
+    let stop = entry("Stop", "*", "h/x", &[]);
+    let key = stop.key();
+    let d = plant(ws.path(), &[stop, entry("PreToolUse", "*", "h/x", &[])], &[
+    ]);
     let payload = r#"{"session_id":"s","stop_hook_active":false}"#;
     // Alone and together alike, with the one newline the hand-off adds after it,
     // which a JSON reader passes over.
-    for args in [&["Stop", "one", "0"][..], &["PreToolUse", "sync"][..]] {
+    for args in [&["Stop", "one", &key][..], &["PreToolUse", "sync"][..]] {
         let _ = fs::remove_file(&got);
         assert!(dispatch(&d, args, payload, None, &[]).status.success());
         assert_eq!(fs::read_to_string(&got).unwrap(), format!("{payload}\n"));

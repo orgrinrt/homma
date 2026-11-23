@@ -867,7 +867,12 @@ fold can stand in for the host's. Every other event means something of its own b
 an exit `2`, by plain text and by its matcher, so there the dispatcher is
 registered once per entry, under the entry's own matcher, timeout and `async`,
 and runs that entry alone and hands its answer on exactly as it gave it, for the
-host to read as it would have read the hook's.
+host to read as it would have read the hook's. Such a registration names its
+entry by a key digested from every field of the entry, never by where the table
+puts it, so a table and settings written by different regens can never run one
+entry under another's registration: where the table has no entry of that key
+and event, the dispatcher says so on stderr, naming `homma agent regen`, and
+exits `1`. Two entries alike in every field are one registration.
 
 At a tool event the dispatcher reads the payload and the table once, keeps the
 entries whose event and mode are this handler's and whose matcher takes the
@@ -877,7 +882,10 @@ of exact names where the matcher holds only letters, digits, `_`, `-`, spaces,
 lands as below, and runs those left side by side, each in the session's
 directory with the payload on its stdin. Each runs under its own timer, kept by
 the dispatcher and not by a program a machine may not have: past its seconds it
-is sent `TERM`, and `KILL` five seconds later. A hook not there to run, because
+is sent `TERM`, and `KILL` five seconds later. The hook and its timer each lead
+a process group of their own and are signalled as a group, so what a hook
+stopped for its time had started goes with it, and a hook done in time takes its
+timer's sleep with it. A hook not there to run, because
 the clone does not hold its repository, is passed over.
 
 Where one hook said something, a status other than `0` or anything on stdout, its
@@ -893,7 +901,9 @@ the way the host folds several hooks: `deny` over `defer` over `ask` over
 `systemMessage` and `stopReason` kept, each after the other; `continue` false
 where any says so, `decision` `block` where any blocks, with every blocking
 reason, and any other field as the first hook to give it. Where the fold cannot
-run, a refusal any hook gave still stands, as an exit `2`. Without `jq` the
+run, a refusal any hook gave still stands, as an exit `2`, with each refusing
+hook named on stderr beside its reasons. The fold reads files with `jq` 1.6 or
+later. Without `jq` the
 dispatcher cannot read its table, and it says so on stderr and exits `1` rather
 than run nothing silently.
 

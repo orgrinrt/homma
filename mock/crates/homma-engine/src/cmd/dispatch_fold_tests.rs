@@ -239,3 +239,66 @@ fn a_large_answer_folds_like_a_small_one() {
     assert_eq!(h["permissionDecision"], "deny");
     assert!(h["permissionDecisionReason"].as_str().unwrap().len() > 300_000);
 }
+
+#[test]
+fn where_the_fold_cannot_run_each_refusal_stands_with_its_reasons() {
+    // a decision the fold cannot rank stops it
+    let odd =
+        r#"echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":5}}'"#;
+    let ws = tempfile::tempdir().unwrap();
+    let out = answers(ws.path(), "PreToolUse", &[
+        ("odd", odd),
+        ("style", "echo 'style rule' >&2; exit 2"),
+        ("deny", &decision("deny", "not here")),
+    ]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
+    let err = text(&out.stderr);
+    assert!(err.contains("could not be folded"), "{err}");
+    assert!(err.contains("h/style: style rule"), "{err}");
+    assert!(err.contains("h/deny: not here"), "{err}");
+
+    // the control: with nothing refusing, nothing is said to have refused
+    let ws = tempfile::tempdir().unwrap();
+    let out = answers(ws.path(), "PreToolUse", &[
+        ("odd", odd),
+        ("ok", &context("PreToolUse", "fine")),
+    ]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(
+        !text(&out.stderr).contains("refused"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn the_hooks_nothing_waits_on_fold_the_same_way() {
+    let ws = tempfile::tempdir().unwrap();
+    let mut entries = Vec::new();
+    for (name, body) in [
+        ("a", context("PostToolUse", "one")),
+        ("b", context("PostToolUse", "two")),
+        ("sync", context("PostToolUse", "not this mode")),
+    ] {
+        let run = format!("h/{name}");
+        hook(ws.path(), &run, &format!("cat > /dev/null\n{body}"));
+        let mut e = entry("PostToolUse", "*", &run, &[]);
+        e.background = name != "sync";
+        entries.push(e);
+    }
+    let d = plant(ws.path(), &entries, &[]);
+    let out = dispatch(
+        &d,
+        &["PostToolUse", "async"],
+        r#"{"tool_name":"Bash"}"#,
+        None,
+        &[],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let ctx = json(&out)["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(ctx.contains("one") && ctx.contains("two"), "{ctx}");
+    assert!(!ctx.contains("not this mode"), "{ctx}");
+}

@@ -13,8 +13,9 @@ use crate::cmd::aggregate::{LANDS_IN_SH, MANAGED_MARK, sh_single_quote_escape};
 ///
 /// `_dispatch.sh <event> sync|async` runs, side by side, the entries of a
 /// folded event ([`FOLDED`]) the call is theirs, and folds their answers into
-/// one. `_dispatch.sh <event> one <n>` runs entry `n` alone, where the call is
-/// its, and hands its answer on exactly as it gave it.
+/// one. `_dispatch.sh <event> one <key>` runs the entry of that
+/// [`super::Entry::key`] alone, where the call is its, and hands its answer on
+/// exactly as it gave it; a key the table does not have is said on stderr.
 pub(crate) fn dispatcher_script(filter: &[String]) -> String {
     let filter = match filter.split_first() {
         None => String::new(),
@@ -32,8 +33,9 @@ pub(crate) fn dispatcher_script(filter: &[String]) -> String {
         r##"#!/usr/bin/env bash
 # The agent hooks' dispatcher, written {MANAGED_MARK}.
 # `{DISPATCHER} <event> sync|async` runs the entries of `{TABLE}` beside it that the call
-# is theirs, side by side, and folds their answers into one; `{DISPATCHER} <event> one <n>`
-# runs entry <n> alone and hands its answer on as it gave it. Bash 3.2 and later, and `jq`.
+# is theirs, side by side, and folds their answers into one; `{DISPATCHER} <event> one <key>`
+# runs the entry of that key alone and hands its answer on as it gave it. Bash 3.2 and
+# later, and `jq` 1.6 or later.
 
 set -u
 
@@ -73,11 +75,12 @@ PLAN=$(printf '%s' "$INPUT" | jq -r --arg event "$EVENT" --arg mode "$MODE" --ar
     | "FILE=\(.tool_input.file_path // .tool_input.path // "" | @sh)",
       "CWD=\(.cwd // .tool_input.cwd // "" | @sh)",
       "CMD=\(.tool_input.command // "" | @sh)",
-      ($t[0].entries | to_entries[]
-        | .key as $k | .value
+      ([$t[0].entries[]
         | select(.event == $event)
-        | select(if $mode == "one" then ($k | tostring) == $one
-            else ((.async // false) == ($mode == "async")) and takes(.matcher // ""; $subject) end)
+        | select(if $mode == "one" then .key == $one
+            else ((.async // false) == ($mode == "async")) and takes(.matcher // ""; $subject) end)]
+        | if $mode == "one" then .[:1] else . end
+        | .[]
         | "RUN+=(\(.run | @sh)); RUNNER+=(\(.runner // "" | @sh)); ARGS+=(\(.args // "" | @sh)); TIMEOUT+=(\(.timeout // 60 | tostring | @sh)); ROOTS+=(\((.roots // []) | map(@sh) | join(" ") | @sh))")
 ') || {{
     echo "homma's hook dispatcher: could not read the payload or $TABLE, so no $EVENT hook ran" >&2
@@ -87,7 +90,15 @@ PLAN=$(printf '%s' "$INPUT" | jq -r --arg event "$EVENT" --arg mode "$MODE" --ar
 FILE=; CWD=; CMD=
 RUN=(); RUNNER=(); ARGS=(); TIMEOUT=(); ROOTS=()
 eval "$PLAN"
-[ ${{#RUN[@]}} -gt 0 ] || exit 0
+if [ ${{#RUN[@]}} -eq 0 ]; then
+    # A registration of its own names an entry the table no longer has: the
+    # settings and the table were written by different regens.
+    if [ "$MODE" = one ]; then
+        echo "homma's hook dispatcher: no $EVENT entry $ONE in $TABLE, so the settings are not the table's; run \`homma agent regen\`" >&2
+        exit 1
+    fi
+    exit 0
+fi
 [ -n "$CWD" ] || CWD=$PWD
 
 {LANDS_IN_SH}
@@ -161,6 +172,9 @@ trap 'rm -rf "$TMP"' EXIT
 
 # Each hook under its own timer: past its seconds it is sent TERM, and KILL five
 # seconds later, and the mark says it was stopped rather than that it failed.
+# The hook and its timer each lead a process group of their own, so a signal
+# reaches whatever either started, and the timer is gone with its sleep the
+# moment the hook is done.
 RAN=()
 n=0
 while [ $n -lt ${{#RUN[@]}} ]; do
@@ -178,22 +192,20 @@ while [ $n -lt ${{#RUN[@]}} ]; do
             ;;
     esac
     (
+        set -m
         "${{ARGV[@]}}" <<<"$INPUT" >"$TMP/$i.out" 2>"$TMP/$i.err" &
         pid=$!
         (
-            sleep "${{TIMEOUT[$i]}}" &
-            s=$!
-            trap 'kill $s 2>/dev/null; exit 0' TERM
-            wait $s
+            sleep "${{TIMEOUT[$i]}}"
             : >"$TMP/$i.late"
-            kill -TERM "$pid" 2>/dev/null
+            kill -TERM -- -"$pid" 2>/dev/null
             sleep 5
-            kill -KILL "$pid" 2>/dev/null
+            kill -KILL -- -"$pid" 2>/dev/null
         ) </dev/null >/dev/null 2>&1 &
         timer=$!
         wait "$pid"
         echo $? >"$TMP/$i.rc"
-        kill -TERM "$timer" 2>/dev/null
+        kill -TERM -- -"$timer" 2>/dev/null
     ) </dev/null >/dev/null 2>&1 &
     RAN=(${{RAN[@]+"${{RAN[@]}}"}} "$i")
 done
@@ -298,9 +310,17 @@ if ! jq -s --arg event "$EVENT" '
       else . end
     | clean
 ' "${{PARTS[@]}}"; then
-    # The fold could not run; a refusal any hook gave still stands.
+    # The fold could not run; a refusal any hook gave still stands, with each
+    # refusing hook's reasons.
     if [ -n "$BLOCKED" ] || grep -qE '"(permissionDecision|decision)" *: *"(deny|block)"' "${{PARTS[@]}}" 2>/dev/null; then
         echo "homma's hook dispatcher: the $EVENT answers could not be folded, and one of them refused the call" >&2
+        for i in "${{SAID[@]}}"; do
+            [ -f "$TMP/$i.json" ] || continue
+            grep -qE '"(permissionDecision|decision)" *: *"(deny|block)"' "$TMP/$i.json" 2>/dev/null || continue
+            why=$(jq -r '[.hookSpecificOutput.permissionDecisionReason?, .reason?] | map(select(type == "string" and . != "")) | join("\n")' "$TMP/$i.json" 2>/dev/null) \
+                || why=$(cat "$TMP/$i.json")
+            printf '%s: %s\n' "${{RUN[$i]}}" "$why" >&2
+        done
         exit 2
     fi
     echo "homma's hook dispatcher: the $EVENT answers could not be folded" >&2

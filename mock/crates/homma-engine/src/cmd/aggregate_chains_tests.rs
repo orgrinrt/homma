@@ -158,7 +158,7 @@ fn every_event_and_matcher_a_repository_gives_a_hook_is_carried_to_it() {
         ran("PreToolUse", "Edit", "guard.sh"),
         ran("Stop", "", "at-the-end.sh"),
     ]);
-    let stop = entries.iter().position(|e| e.event == "Stop").unwrap();
+    let stop = entries.iter().find(|e| e.event == "Stop").unwrap().key();
     let mut got = registrations(&v);
     got.sort();
     let mut want = vec![

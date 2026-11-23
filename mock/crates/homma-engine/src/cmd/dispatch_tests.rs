@@ -125,11 +125,16 @@ fn any_other_event_gets_a_registration_per_entry_under_its_own_matcher_and_time(
     let mut late = entry("Stop", "", "b", &[]);
     late.background = true;
     late.timeout = 5;
+    let note = entry("Notification", "idle_prompt", "n", &[]);
+    let stop = entry("Stop", "*", "c", &[]);
+    let (n, l, s) = (note.key(), late.key(), stop.key());
     let regs = registrations(&[
         entry("PreToolUse", "Bash", "a", &[]),
-        entry("Notification", "idle_prompt", "n", &[]),
+        note,
         late,
-        entry("Stop", "*", "c", &[]),
+        stop.clone(),
+        // the same entry twice is one registration
+        stop,
     ]);
     let shown: Vec<(&str, &str, String, Option<u32>, bool)> = regs
         .iter()
@@ -143,7 +148,7 @@ fn any_other_event_gets_a_registration_per_entry_under_its_own_matcher_and_time(
             )
         })
         .collect();
-    // the entry is named by its place in the table, which is written with them
+    // the entry is named by its key, which follows it wherever the table puts it
     assert_eq!(shown, vec![
         (
             "PreToolUse",
@@ -155,15 +160,15 @@ fn any_other_event_gets_a_registration_per_entry_under_its_own_matcher_and_time(
         (
             "Notification",
             "idle_prompt",
-            command("Notification one 1"),
+            command(&format!("Notification one {n}")),
             Some(homma_api::DEFAULT_TIMEOUT),
             false
         ),
-        ("Stop", "", command("Stop one 2"), Some(5), true),
+        ("Stop", "", command(&format!("Stop one {l}")), Some(5), true),
         (
             "Stop",
             "*",
-            command("Stop one 3"),
+            command(&format!("Stop one {s}")),
             Some(homma_api::DEFAULT_TIMEOUT),
             false
         ),
@@ -327,6 +332,62 @@ fn the_table_reads_back_as_written_and_one_homma_did_not_write_reads_as_none() {
     // and is not written over
     let err = install(&root, &written, &[]).unwrap_err().to_string();
     assert!(err.contains("not written by homma"), "{err}");
+}
+
+#[test]
+fn a_key_follows_its_entry_and_any_field_changed_changes_it() {
+    let base = entry("Stop", "*", "h/x", &["arvo"]);
+    assert_eq!(base.key(), base.clone().key());
+    assert_eq!(base.key().len(), 16);
+    let changed: Vec<Entry> = vec![
+        Entry {
+            event: "SubagentStop".into(),
+            ..base.clone()
+        },
+        Entry {
+            matcher: "Bash".into(),
+            ..base.clone()
+        },
+        Entry {
+            run: "h/y".into(),
+            ..base.clone()
+        },
+        Entry {
+            runner: "bash".into(),
+            ..base.clone()
+        },
+        Entry {
+            args: "--quiet".into(),
+            ..base.clone()
+        },
+        Entry {
+            roots: vec![],
+            ..base.clone()
+        },
+        Entry {
+            timeout: 5,
+            ..base.clone()
+        },
+        Entry {
+            background: true,
+            ..base.clone()
+        },
+        Entry {
+            from: "kolli".into(),
+            ..base.clone()
+        },
+    ];
+    for e in &changed {
+        assert_ne!(e.key(), base.key(), "{e:?}");
+    }
+    // the table carries the key the registration names
+    let ws = tempfile::tempdir().unwrap();
+    plant(ws.path(), &[base.clone()], &[]);
+    let table: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(ws.path().join(".claude/hooks").join(TABLE)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(table["entries"][0]["key"], base.key());
 }
 
 #[test]
