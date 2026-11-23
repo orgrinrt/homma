@@ -171,7 +171,7 @@ fn tag(root: &Path, m: &str, trunks: &[&str]) -> Result<Vec<String>> {
             out.push(format!("    {} is not a version, left alone", s.to));
             continue;
         };
-        let name = packages::tag_name(&existing, &v);
+        let name = packages::tag_name_or(&existing, &v, "");
         if existing.contains(&name) || made.contains(&name) {
             out.push(format!("    {name} already exists elsewhere, left alone"));
             continue;

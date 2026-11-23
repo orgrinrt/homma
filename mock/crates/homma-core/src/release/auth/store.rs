@@ -14,10 +14,20 @@ use crate::release::day::Day;
 use crate::release::sh;
 
 /// A secret, and the day it stops being trustworthy where one is recorded.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Stored {
     pub secret:  String,
     pub expires: Option<Day>,
+}
+
+/// Everything but the secret, which never reaches a log or a panic message.
+impl fmt::Debug for Stored {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Stored")
+            .field("secret", &"<redacted>")
+            .field("expires", &self.expires.map(|d| d.to_string()))
+            .finish()
+    }
 }
 
 impl Stored {
@@ -49,6 +59,10 @@ pub trait Store {
     fn put(&self, key: &str, secret: &str, expires: Option<Day>) -> Result<(), Unavailable>;
     /// Delete; `false` where there was nothing to delete.
     fn forget(&self, key: &str) -> Result<bool, Unavailable>;
+    /// Whether a write under `key` could land, before anyone is asked for a secret to write.
+    fn writable(&self, _key: &str) -> Result<(), Unavailable> {
+        Ok(())
+    }
 }
 
 /// The keychain item's service prefix, one service per registry so a search
@@ -203,6 +217,10 @@ impl Store for Environment {
     }
 
     fn put(&self, key: &str, _: &str, _: Option<Day>) -> Result<(), Unavailable> {
+        Err(self.refusal(key))
+    }
+
+    fn writable(&self, key: &str) -> Result<(), Unavailable> {
         Err(self.refusal(key))
     }
 

@@ -8,7 +8,7 @@
 use super::*;
 use crate::release::registry::Registry;
 
-fn sh(d: &Path, args: &[&str]) {
+pub(super) fn sh(d: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
         .current_dir(d)
         .args(args)
@@ -21,7 +21,7 @@ fn sh(d: &Path, args: &[&str]) {
     );
 }
 
-fn commit(d: &Path, path: &str, body: &str, msg: &str) {
+pub(super) fn commit(d: &Path, path: &str, body: &str, msg: &str) {
     let at = d.join(path);
     std::fs::create_dir_all(at.parent().unwrap()).unwrap();
     std::fs::write(at, body).unwrap();
@@ -30,7 +30,7 @@ fn commit(d: &Path, path: &str, body: &str, msg: &str) {
 }
 
 /// A clean repo: a readme, a licence, one tagged release on `main`.
-fn clean() -> tempfile::TempDir {
+pub(super) fn clean() -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
     let p = d.path();
     for args in [
@@ -54,7 +54,12 @@ fn clean() -> tempfile::TempDir {
     d
 }
 
-fn run(p: &Path, published: &Published) -> Vec<String> {
+pub(super) fn run(p: &Path, published: &Published) -> Vec<String> {
+    run_on(p, published, "dev", "main")
+}
+
+/// The rows over `p`, the working trunk and the release branch named.
+pub(super) fn run_on(p: &Path, published: &Published, trunk: &str, release: &str) -> Vec<String> {
     let tags = git::tags(p).unwrap();
     let mut versioned: Vec<(String, Version)> = tags
         .iter()
@@ -65,8 +70,8 @@ fn run(p: &Path, published: &Published) -> Vec<String> {
     findings(&Seen {
         root: p,
         remote: "origin",
-        trunk: "dev",
-        release: "main",
+        trunk,
+        release,
         tags: &tags,
         versioned: &versioned,
         tracked: &tracked,
@@ -83,7 +88,7 @@ fn run(p: &Path, published: &Published) -> Vec<String> {
     .collect()
 }
 
-fn ids(found: &[String]) -> Vec<&str> {
+pub(super) fn ids(found: &[String]) -> Vec<&str> {
     found.iter().map(|f| f.split(' ').next().unwrap()).collect()
 }
 

@@ -387,3 +387,7 @@ pub fn has_conflict(text: &str) -> bool {
 #[cfg(test)]
 #[path = "hygiene_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "hygiene_rows_tests.rs"]
+mod rows_tests;

@@ -11,7 +11,15 @@ use std::path::Path;
 
 use homma_api::{CheckSeverity, Finding, Markers, RepoKind, Target, Version};
 
-pub use super::packages::{Packages, Published, fetch_published, packages, tag_name, tag_version};
+pub use super::packages::{
+    Packages,
+    Published,
+    fetch_published,
+    packages,
+    tag_name,
+    tag_name_or,
+    tag_version,
+};
 use super::registry::Registry;
 use super::workspace::{self, Layout};
 use super::{git, kind, version};

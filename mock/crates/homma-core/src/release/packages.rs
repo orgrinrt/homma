@@ -271,12 +271,20 @@ fn expand_member(root: &Path, member: &str) -> Vec<std::path::PathBuf> {
 /// `v` where its tags carry one, bare where they do not, `v` where it has
 /// none yet.
 pub fn tag_name(tags: &[String], version: &Version) -> String {
-    let bare = tags.iter().any(|t| t.parse::<Version>().is_ok());
+    tag_name_or(tags, version, "v")
+}
+
+/// Like `tag_name`, naming a repo with no version tag yet with `fresh` in front.
+/// A tag that is no version says nothing of the style.
+pub fn tag_name_or(tags: &[String], version: &Version, fresh: &str) -> String {
+    if !tags.iter().any(|t| t.parse::<Version>().is_ok()) {
+        return format!("{fresh}{version}");
+    }
     let prefixed = tags.iter().any(|t| {
         t.strip_prefix('v')
             .is_some_and(|r| r.parse::<Version>().is_ok())
     });
-    if bare && !prefixed { version.to_string() } else { format!("v{version}") }
+    if prefixed { format!("v{version}") } else { version.to_string() }
 }
 
 /// The version a tag names, with or without a `v`.

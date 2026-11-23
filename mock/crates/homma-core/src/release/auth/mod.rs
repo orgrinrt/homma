@@ -31,13 +31,19 @@ pub enum State {
     /// The registry or the store could not be asked, which says nothing
     /// about the credential and so prompts for nothing.
     Unreachable,
+    /// The store will not take a write, so a token cannot be kept and a person has to
+    /// set it where the store is configured.
+    Refused,
 }
 
 impl State {
     /// Whether the credential wants a person to act: never for a registry
     /// that did not answer, since a new token cannot fix a network.
     pub const fn needs_work(self) -> bool {
-        matches!(self, State::Missing | State::Invalid | State::Expiring)
+        matches!(
+            self,
+            State::Missing | State::Invalid | State::Expiring | State::Refused
+        )
     }
 
     /// The seven-column mark a status line opens with.
@@ -48,6 +54,7 @@ impl State {
             State::Invalid => "INVALID",
             State::Expiring => "EXPIRES",
             State::Unreachable => "   ??  ",
+            State::Refused => "REFUSED",
         }
     }
 }
@@ -334,6 +341,7 @@ impl fmt::Display for State {
             State::Invalid => "invalid",
             State::Expiring => "expiring",
             State::Unreachable => "unreachable",
+            State::Refused => "refused",
         })
     }
 }

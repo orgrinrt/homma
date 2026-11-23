@@ -427,6 +427,18 @@ fn the_tag_name_follows_the_repos_convention() {
 }
 
 #[test]
+fn a_repo_with_no_tags_gets_the_style_the_caller_names_and_one_with_tags_keeps_its_own() {
+    let v = Version::new(0, 1, 0);
+    assert_eq!(tag_name_or(&[], &v, ""), "0.1.0");
+    assert_eq!(tag_name_or(&[], &v, "v"), "v0.1.0");
+    assert_eq!(tag_name_or(&["v0.0.1".into()], &v, ""), "v0.1.0");
+    assert_eq!(tag_name_or(&["0.0.1".into()], &v, "v"), "0.1.0");
+    // tags that are no version say nothing of the style
+    assert_eq!(tag_name_or(&["archive/old".into()], &v, ""), "0.1.0");
+    assert_eq!(tag_name_or(&["archive/old".into()], &v, "v"), "v0.1.0");
+}
+
+#[test]
 fn adjacency_is_one_step_at_any_level_and_zero_to_one_counts() {
     let v = |s: &str| s.parse::<Version>().unwrap();
     assert!(is_adjacent(&v("0.1.0"), &v("0.1.1")));

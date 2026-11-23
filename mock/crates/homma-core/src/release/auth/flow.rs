@@ -42,6 +42,13 @@ pub fn fix_token(
     today: Day,
     browser: bool,
 ) -> Status {
+    if let Err(why) = store.writable(entry.key) {
+        prompt.say(&format!(
+            "\n  {}: {}\n    no token is asked for: {why}",
+            entry.key, entry.what
+        ));
+        return Status::new(State::Refused, why.to_string());
+    }
     prompt.say(&format!(
         "\n  {}: {}\n    {}",
         entry.key, entry.what, token.mint_url
@@ -72,7 +79,7 @@ pub fn fix_token(
         if matches!(st.state, State::Ok | State::Expiring) {
             if let Err(why) = store.put(entry.key, &candidate.secret, expires) {
                 prompt.say(&format!("    accepted, and not stored: {why}"));
-                return Status::new(State::Unreachable, why.to_string());
+                return Status::new(State::Refused, why.to_string());
             }
             prompt.say(&format!("    stored and confirmed: {}", st.detail));
             return st;
@@ -171,7 +178,7 @@ pub fn all(
         true
     } else {
         prompt.say(&format!(
-            "\nstill not right: {}. run it again when you have the token.",
+            "\nstill not right: {}. run it again once that is sorted.",
             failed.join(", ")
         ));
         false

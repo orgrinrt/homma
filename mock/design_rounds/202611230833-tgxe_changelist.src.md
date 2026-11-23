@@ -18,8 +18,9 @@ Topic: `202611230833-tgxe_topic.release-review-fixes.md`; the doc changelist is 
   port), the macOS keychain round trip in `store.rs`.
 - `src/release/packages.rs`: `tag_name_or(tags, version, fresh)`, the repo's convention where it has tags and
   `fresh` where it has none; `tag_name` is `tag_name_or` with `v`, so `release run` is unchanged.
-  `src/release/check_tests.rs` gains the fresh-repo cases.
-- `src/release/hygiene_tests.rs`: a fixture with a bare remote and a `dev` branch, and for each of the twelve rows
+  `src/release/check.rs` re-exports it and `src/release/check_tests.rs` gains the fresh-repo cases.
+- `src/release/hygiene_rows_tests.rs`, new beside `hygiene_tests.rs` (whose helpers become `pub(super)`) and
+  declared in `hygiene.rs`: a fixture with a bare remote and a `dev` branch, and for each of the twelve rows
   that no test fired (`tree.uptodate`, `tree.worktrees`, `branch.trunk`, `branch.merged`, `branch.unmerged`,
   `branch.orphan`, `ref.filterrepo`, `tag.order.matches`, `hist.workflow.past`, `hist.large`, `semver.parses`,
   `semver.gaps.closable`) a test that fires it and one that keeps it quiet; the clean-repo test also runs on the
@@ -33,9 +34,11 @@ Topic: `202611230833-tgxe_topic.release-review-fixes.md`; the doc changelist is 
 ## mock/crates/homma-engine
 
 - `src/cmd/release/versions.rs`: `tag` names with `tag_name_or(.., "")`, bare where the repo has no tag.
-- `src/cmd/release/estate.rs`: `--json` beside `jumps` or `missing` is refused with a reason, nothing written.
+- `src/cmd/release/estate.rs`: none. `--json` beside `jumps` or `missing` is already refused at the parse, by
+  `args_conflicts_with_subcommands` on `estate`, so the review's silent ignore does not hold at the command line.
 - `tests/cli_release.rs`: `auth fix` on a machine whose store refuses writes exits non-zero naming the variable
-  and asks for no paste; `estate jumps --json` is refused.
+  and asks for no paste; `estate --json <path> jumps` is refused and writes nothing; `versions tag` names the first
+  tag of a repo bare.
 
 ## Other flat topics
 
