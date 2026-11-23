@@ -1,0 +1,50 @@
+58c57ab chore: lock src changelist 202611230455
+b5eb626 fix: take a landed bump only where it was made on the merge's parent
+03b6c9b chore: lock doc changelist 202611230400
+c88dfd3 docs: a bump landed onto a dev that moved is not taken on a rerun
+35ee7f6 fix: release with the changelog block dev already holds
+b939511 fix: lease the drop of a landed bump's branch on the bump it landed
+830ef40 feat: land the release bump by pull request where dev is protected
+a58183c chore: lock doc changelist 202611230400
+50f3aa1 docs: name the route's branch delete as it is called today
+ba01a08 chore: lock doc changelist 202611230400
+942424d docs: a release lands dev through a pull request where dev is protected
+c7ead96 feat: land the release bump on dev by a push, never a squash
+0a28971 feat: land the release bump on dev by a push, never a squash
+2aa8b9a chore: close design round 202611230020
+0ce2b2a chore: lock src changelist 202611230021
+e475707 fix: give the test's squash a body so it is never the bump itself
+0d31df9 feat: land the release bump on dev by a push, never a squash
+a70fc58 chore: lock doc changelist 202611230020
+4683cb6 docs: a landing into dev is a local push, never a squashed pull request
+1cbc897 docs: file the topic for dev taking local landings
+a152b8f chore: prepare homma for its v2 migration
+a6052d2 chore: prepare homma for its v2 migration
+6bb9e88 fix: take `url` 2.5.9 so the advisory check passes
+229feb1 docs: draft homma's include patterns for the data-ref migration
+0eb8c53 chore: move the mockspace lock entries to the head of dev
+0b10cf6 fix: take renki at 15b1dd2 so a moved pin builds its own engine
+a75ab8e chore: take renki at cbcdbe3 from git until rc.3 is published
+a3caf61 feat: run the workspace surfaces renderer from homma agent regen
+f8fa8e7 chore: configure the `commit-subject` gate
+6964b2b chore: take `renki` 0.0.5-rc.2 so the engine builds in the shared dir
+4c13ecc fix: look up the gate run after a leftover release bump is set aside
+468a786 feat: land a refused release push through a pull request
+0c3b53b feat: release a virtual workspace of independently versioned crates
+0f6831d fix: regenerate agent files without building the member
+77b34d1 docs: plan one copy of every built byte
+5feab37 docs: land the review of the two release forge-route branches
+4ce0eac feat: route a release's tag and forge release through forge-route
+aabfae4 chore: refresh `mock/Cargo.lock` for renki 0.0.5-rc.1
+0967e74 docs: land the record from every unmerged branch
+76f427e chore: take `renki` 0.0.5-rc.1 so the launcher rebuilds in its cache
+3f029dc feat: list the workspace tools in help and suggest the nearest name
+7255ab3 feat: run every generated hook wrapper through hookdedup
+cf2c3e5 fix: let homma release reach the forge from a cloud container
+aee843f docs: give the launcher its own `README.md` and cut the root one
+c3a43fb docs: take the second person out of the readme
+860773c docs: bring the readme onto the shared shape
+b7c22d0 chore: move the mockspace lock entries to the head of dev
+673b4cc feat: milestone rows carry base, freeze, head and tip
+1058fe8 feat: let a clone inherit its project config
+207a09b chore: bump the rustls family past its advisories
