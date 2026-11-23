@@ -435,9 +435,12 @@ never an agent's; so is a name the catalogue does not hold, and an entry with no
 `git_email` or one with no `@`. The tag goes on the author's address only, since
 the committer is the coordinator and not the sub-agent; it is lowercase letters,
 digits and hyphens, one to forty of them, so every address parser keeps it and
-`normalise` strips it back to the launcher. **`GitIdentity`** is the pair, and
-`render` writes it as a git configuration file, `[author]` and `[committer]` with a
-name and an email each.
+`normalise` strips it back to the launcher. The pair is a `CommitIdentity`, the same
+four non-empty parts provisioning writes into a hand's clone, so there is one type for
+what a commit is stamped with; a refusal is a `GitIdentityRefusal` naming the name or
+the tag. **`git_config`** writes the pair as a git configuration file, `[author]` and
+`[committer]` with a name and an email each, the name quoted so git reads it back as
+written.
 
 `homma identity git-config <author> [--committer <name>] [--tag <tag>]` prints that
 file. Where it goes is the workspace's: a session commits on a member's branches
@@ -513,9 +516,9 @@ same participant wherever a name is taken: a lease, an office's holder.
 never, with the plus tag stripped first; **`OrgRegistry::agent_addresses`** lists
 every agent address with its entry, which is what the rendered index holds.
 
-**`git_identity`** turns an author, a committer and a tag into the **`GitIdentity`**
-an internal tree's commits carry, and `GitIdentity::render` writes it as a git
-configuration file.
+**`git_identity`** turns an author, a committer and a tag into the `CommitIdentity` an
+internal tree's commits carry, and **`git_config`** writes it as a git configuration
+file.
 
 **`Layout`** answers where things sit for a given identity, and **`prepare`**
 creates them: the directories, and the memory link into the path the harness
