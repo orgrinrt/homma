@@ -10,9 +10,11 @@
 //! starting it again restores a participant rather than creating a new one.
 
 pub mod agents;
+pub mod catalogue;
 pub mod character;
 pub mod configs;
 pub mod generate;
+pub mod lease;
 pub mod provision;
 pub mod remote;
 pub mod rules;
@@ -20,6 +22,7 @@ pub mod skills;
 pub mod workspace;
 mod yaml;
 
+pub use catalogue::{CatalogueFault, check_catalogue};
 pub use generate::{Form, Generated, definition, definition_described, write_definitions};
 use homma_api::{Identity, Role, Staffing, Workspace};
 pub use provision::{ProvisionError, Provisioned, provision};
@@ -76,6 +79,40 @@ impl<'a> OrgRegistry<'a> {
                 }
             })
             .collect()
+    }
+
+    /// The agent an address belongs to, compared as [`catalogue::normalise`]
+    /// compares, so a sub-agent's plus-tagged address is its launcher's. The
+    /// king is never answered: an address is an agent's or it is not.
+    pub fn agent_at(&self, address: &str) -> Option<&'a Identity> {
+        let wanted = catalogue::normalise(address);
+        self.agent_addresses()
+            .into_iter()
+            .find(|(a, _)| *a == wanted)
+            .map(|(_, id)| id)
+    }
+
+    /// Every agent address with its entry, normalised, in the catalogue's
+    /// order: the author's, then the committer's where it differs.
+    pub fn agent_addresses(&self) -> Vec<(String, &'a Identity)> {
+        let mut out: Vec<(String, &'a Identity)> = Vec::new();
+        for id in self
+            .workspace
+            .org
+            .values()
+            .filter(|i| catalogue::is_agent(i.role))
+        {
+            for address in [&id.git_email, &id.committer_email].into_iter().flatten() {
+                let address = catalogue::normalise(address);
+                if !out
+                    .iter()
+                    .any(|(a, i)| *a == address && i.handle == id.handle)
+                {
+                    out.push((address, id));
+                }
+            }
+        }
+        out
     }
 
     /// Everyone holding a domain without a workspace, which is a decision
@@ -166,6 +203,62 @@ handle = "proof"
             r.mapped().iter().map(|i| &i.handle).collect::<Vec<_>>(),
             vec!["rendering"]
         );
+    }
+
+    #[test]
+    fn an_address_is_matched_to_its_agent_through_case_and_a_plus_tag() {
+        let w = ws();
+        let r = OrgRegistry::new(&w);
+        assert_eq!(
+            r.agent_at("paja@example.invalid")
+                .map(|i| i.handle.as_str()),
+            Some("paja")
+        );
+        assert_eq!(
+            r.agent_at("Paja+review-pass@EXAMPLE.invalid")
+                .map(|i| i.handle.as_str()),
+            Some("paja"),
+            "a sub-agent commits as its launcher's address with a tag"
+        );
+        assert_eq!(
+            r.agent_at("someone@example.invalid"),
+            None,
+            "a human is no agent"
+        );
+        assert_eq!(
+            r.agent_at("pajax@example.invalid"),
+            None,
+            "an exact match, not a prefix"
+        );
+    }
+
+    #[test]
+    fn the_king_is_never_matched_as_an_agent() {
+        let text = ORG.replace(
+            "role = \"king\"\nhandle = \"op\"",
+            "role = \"king\"\nhandle = \"op\"\ngit_email = \"op@example.invalid\"",
+        );
+        let w = Workspace::parse(&text).unwrap();
+        let r = OrgRegistry::new(&w);
+        assert_eq!(r.agent_at("op@example.invalid"), None);
+        assert!(r.agent_addresses().iter().all(|(_, i)| i.handle != "op"));
+    }
+
+    #[test]
+    fn a_committer_address_is_an_agent_address_too_listed_once_when_it_repeats() {
+        let text = ORG.replace(
+            "git_email = \"paja@example.invalid\"",
+            "git_email = \"paja@example.invalid\"\ncommitter_email = \"paja+c@example.invalid\"",
+        );
+        let w = Workspace::parse(&text).unwrap();
+        let r = OrgRegistry::new(&w);
+        let paja: Vec<_> = r
+            .agent_addresses()
+            .into_iter()
+            .filter(|(_, i)| i.handle == "paja")
+            .map(|(a, _)| a)
+            .collect();
+        assert_eq!(paja, vec!["paja@example.invalid"]);
     }
 
     #[test]

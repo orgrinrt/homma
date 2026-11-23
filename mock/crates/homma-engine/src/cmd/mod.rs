@@ -23,6 +23,7 @@ use crate::cli::{
     DocsOp,
     ForgeOp,
     IdentityOp,
+    LeaseOp,
     OrgOp,
     RepoOp,
     RulesOp,
@@ -45,6 +46,7 @@ pub mod forge;
 pub mod gates;
 pub mod hook;
 pub mod identity;
+pub mod lease;
 pub mod local;
 pub mod migrate;
 pub mod milestone;
@@ -339,6 +341,24 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     skip_surfaces,
                 } => {
                     let cfg = load_config(&cli)?;
+                    // The identity index first, so each instance has one as current
+                    // as its catalogue. A catalogue that does not load is said and
+                    // the regen goes on: the rules a session loads matter more than
+                    // the index, and the catalogue's own commands report it in full.
+                    match org::load(&config_path(&cli)) {
+                        Ok(ws)
+                            if ws
+                                .org
+                                .values()
+                                .any(|i| homma_org::catalogue::is_agent(i.role)) =>
+                        {
+                            if let Err(e) = identity::write_index(&cfg.workspace.path, &ws) {
+                                eprintln!("homma: the identity index was not written: {e:#}");
+                            }
+                        },
+                        Ok(_) => {},
+                        Err(e) => eprintln!("homma: the identity index was not written: {e:#}"),
+                    }
                     agent::regen::run_with(
                         &cfg,
                         repo.as_deref(),
@@ -488,6 +508,80 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     args,
                 } => {
                     identity::launch(&cfg, name, args)?;
+                    Ok(Outcome::Ok)
+                },
+                IdentityOp::Match {
+                    address,
+                } => {
+                    let ws = org::load(&config_path(&cli))?;
+                    match identity::match_line(&ws, address) {
+                        Some(line) => {
+                            println!("{line}");
+                            Ok(Outcome::Ok)
+                        },
+                        None => Ok(Outcome::Exit(1)),
+                    }
+                },
+                IdentityOp::Index => {
+                    let ws = org::load(&config_path(&cli))?;
+                    let path = identity::write_index(&cfg.workspace.path, &ws)?;
+                    println!("{}", path.display());
+                    Ok(Outcome::Ok)
+                },
+                IdentityOp::Lease {
+                    op,
+                } => {
+                    use homma_org::lease::Ask;
+                    let ws = org::load(&config_path(&cli))?;
+                    let root = &cfg.workspace.path;
+                    let now = jiff::Timestamp::now();
+                    let (handle, done) = match op {
+                        LeaseOp::Take {
+                            handle,
+                            session,
+                            job,
+                            replaces,
+                            minutes,
+                        } => {
+                            let ask = Ask::Take {
+                                session,
+                                job,
+                                replaces: replaces.as_deref(),
+                            };
+                            (handle, lease::run(root, &ws, handle, ask, *minutes, now)?)
+                        },
+                        LeaseOp::Renew {
+                            handle,
+                            session,
+                            minutes,
+                        } => {
+                            let ask = Ask::Renew {
+                                session,
+                            };
+                            (handle, lease::run(root, &ws, handle, ask, *minutes, now)?)
+                        },
+                        LeaseOp::Release {
+                            handle,
+                            session,
+                        } => {
+                            let ask = Ask::Release {
+                                session,
+                            };
+                            (handle, lease::run(root, &ws, handle, ask, None, now)?)
+                        },
+                        LeaseOp::Show {
+                            handle,
+                        } => {
+                            let (held, _) = lease::read(root, &ws, handle)?;
+                            println!("{}", lease::describe(handle, held.as_ref()));
+                            return Ok(Outcome::Ok);
+                        },
+                    };
+                    let held = match &done {
+                        lease::Done::Held(l) => Some(l),
+                        lease::Done::Free => None,
+                    };
+                    println!("{}", lease::describe(handle, held));
                     Ok(Outcome::Ok)
                 },
             }

@@ -29,7 +29,7 @@ fn add_hand(cfg: &std::path::Path, handle: &str, workspace: &str) {
     bin()
         .args(["--config", cfg.to_str().unwrap(), "org", "add", handle])
         .args(["--role", "hand", "--staffed"])
-        .args(["--git-name", handle, "--git-email", "h@example.invalid"])
+        .args(["--git-name", handle, "--git-email", &format!("{handle}@example.invalid")])
         .args(["--workspace", workspace])
         .assert()
         .success();

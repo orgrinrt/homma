@@ -27,6 +27,7 @@ pub mod release;
 pub mod repo;
 pub mod resolve;
 pub mod scope;
+pub mod swap;
 pub mod testing;
 mod tls;
 
