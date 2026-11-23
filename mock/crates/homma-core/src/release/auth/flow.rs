@@ -26,22 +26,27 @@ pub trait Prompt {
     fn hand_over(&self, argv: &[&str]) -> Result<(), String>;
 }
 
+/// The three capabilities a walk is handed: where a token is kept, how a
+/// registry is asked, and the person at the terminal.
+#[derive(Clone, Copy)]
+pub struct Ports<'a> {
+    pub store:  &'a dyn Store,
+    pub probe:  &'a dyn Probe,
+    pub prompt: &'a dyn Prompt,
+}
+
 /// How many pastes a fix takes before it gives up.
 pub const ATTEMPTS: usize = 3;
 
 /// Mint, paste, prove, then store, in that order: a pasted token is judged
 /// as the candidate before it reaches the store, so one the registry
 /// rejects is never stored at all.
-#[allow(clippy::too_many_arguments)]
-pub fn fix_token(
-    entry: &Entry,
-    token: &Token,
-    store: &dyn Store,
-    probe: &dyn Probe,
-    prompt: &dyn Prompt,
-    today: Day,
-    browser: bool,
-) -> Status {
+pub fn fix_token(entry: &Entry, token: &Token, ports: &Ports, today: Day, browser: bool) -> Status {
+    let Ports {
+        store,
+        probe,
+        prompt,
+    } = *ports;
     if let Err(why) = store.writable(entry.key) {
         prompt.say(&format!(
             "\n  {}: {}\n    no token is asked for: {why}",
@@ -93,27 +98,20 @@ pub fn fix_token(
 }
 
 /// Fix one entry, whatever it reads as now.
-pub fn fix(
-    entry: &Entry,
-    store: &dyn Store,
-    probe: &dyn Probe,
-    prompt: &dyn Prompt,
-    today: Day,
-    browser: bool,
-) -> Status {
+pub fn fix(entry: &Entry, ports: &Ports, today: Day, browser: bool) -> Status {
     match &entry.kind {
-        Kind::Token(t) => fix_token(entry, t, store, probe, prompt, today, browser),
+        Kind::Token(t) => fix_token(entry, t, ports, today, browser),
         Kind::Cli(cli) => {
-            prompt.say(&format!(
+            ports.prompt.say(&format!(
                 "\n  {}: {}\n    running: {}\n    this is that tool's own flow. answer its prompts.\n",
                 entry.key,
                 entry.what,
                 cli.fix.join(" ")
             ));
-            if let Err(why) = prompt.hand_over(cli.fix) {
+            if let Err(why) = ports.prompt.hand_over(cli.fix) {
                 return Status::new(State::Unreachable, why);
             }
-            check(entry, store, probe, today)
+            check(entry, ports.store, ports.probe, today)
         },
     }
 }
@@ -139,14 +137,12 @@ pub fn status(
 }
 
 /// Check all, leave the fine ones alone, and walk through the rest.
-pub fn all(
-    entries: &[Entry],
-    store: &dyn Store,
-    probe: &dyn Probe,
-    prompt: &dyn Prompt,
-    today: Day,
-    browser: bool,
-) -> bool {
+pub fn all(entries: &[Entry], ports: &Ports, today: Day, browser: bool) -> bool {
+    let Ports {
+        store,
+        probe,
+        prompt,
+    } = *ports;
     prompt.say("publish credentials\n");
     let mut pending = Vec::new();
     for e in entries {
@@ -166,11 +162,7 @@ pub fn all(
     ));
     let failed: Vec<&str> = pending
         .into_iter()
-        .filter(|e| {
-            fix(e, store, probe, prompt, today, browser)
-                .state
-                .needs_work()
-        })
+        .filter(|e| fix(e, ports, today, browser).state.needs_work())
         .map(|e| e.key)
         .collect();
     if failed.is_empty() {

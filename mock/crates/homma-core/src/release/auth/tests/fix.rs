@@ -7,6 +7,7 @@
 use std::cell::Cell;
 
 use super::*;
+use crate::release::auth::flow::Ports;
 
 /// A terminal that pastes one token and records what it was told.
 struct Pasting {
@@ -50,9 +51,11 @@ fn drive(answer: Answer) -> (Status, Memory) {
     let st = flow::fix_token(
         e,
         e.token().unwrap(),
-        &store,
-        &Canned(answer),
-        &prompt,
+        &Ports {
+            store:  &store,
+            probe:  &Canned(answer),
+            prompt: &prompt,
+        },
         today(),
         false,
     );
@@ -130,9 +133,11 @@ fn a_store_that_refuses_writes_is_found_out_before_a_paste_is_asked_for() {
     let st = flow::fix_token(
         e,
         e.token().unwrap(),
-        &no_keychain(),
-        &jsr_accepts(),
-        &prompt,
+        &Ports {
+            store:  &no_keychain(),
+            probe:  &jsr_accepts(),
+            prompt: &prompt,
+        },
         today(),
         false,
     );
@@ -153,9 +158,11 @@ fn a_walk_over_a_store_that_refuses_writes_does_not_end_all_good() {
     let prompt = pasting("pasted-token");
     let ok = flow::all(
         &ENTRIES[1 .. 2],
-        &no_keychain(),
-        &jsr_accepts(),
-        &prompt,
+        &Ports {
+            store:  &no_keychain(),
+            probe:  &jsr_accepts(),
+            prompt: &prompt,
+        },
         today(),
         false,
     );
@@ -174,9 +181,11 @@ fn fixing_one_over_a_store_that_refuses_writes_needs_work() {
     let prompt = pasting("pasted-token");
     let st = flow::fix(
         entry("jsr").unwrap(),
-        &no_keychain(),
-        &jsr_accepts(),
-        &prompt,
+        &Ports {
+            store:  &no_keychain(),
+            probe:  &jsr_accepts(),
+            prompt: &prompt,
+        },
         today(),
         false,
     );
@@ -190,9 +199,11 @@ fn a_proven_token_the_store_then_refuses_needs_work() {
     let st = flow::fix_token(
         e,
         e.token().unwrap(),
-        &FullDisk,
-        &jsr_accepts(),
-        &prompt,
+        &Ports {
+            store:  &FullDisk,
+            probe:  &jsr_accepts(),
+            prompt: &prompt,
+        },
         today(),
         false,
     );
@@ -213,9 +224,11 @@ fn a_store_that_takes_writes_is_asked_for_the_paste_as_before() {
     let st = flow::fix_token(
         e,
         e.token().unwrap(),
-        &Memory::default(),
-        &jsr_accepts(),
-        &prompt,
+        &Ports {
+            store:  &Memory::default(),
+            probe:  &jsr_accepts(),
+            prompt: &prompt,
+        },
         today(),
         false,
     );

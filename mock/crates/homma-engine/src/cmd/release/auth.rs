@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
 use homma_core::Config;
-use homma_core::release::auth::flow::{self, Prompt};
+use homma_core::release::auth::flow::{self, Ports, Prompt};
 use homma_core::release::auth::store::default_store;
 use homma_core::release::auth::{ENTRIES, Live, Store, entry};
 use homma_core::release::day::Day;
@@ -132,9 +132,14 @@ pub(crate) fn run(
     let store = store.as_ref();
     let today = Day::today();
     let browser = !no_browser;
+    let ports = Ports {
+        store,
+        probe: &Live,
+        prompt: &Terminal,
+    };
     match op {
         None => {
-            let ok = flow::all(ENTRIES, store, &Live, &Terminal, today, browser);
+            let ok = flow::all(ENTRIES, &ports, today, browser);
             Ok(if ok { Outcome::Ok } else { Outcome::ReportedFailure })
         },
         Some(AuthOp::Status) => {
@@ -150,7 +155,7 @@ pub(crate) fn run(
             let Some(e) = entry(name) else {
                 return refused(format!("no registry called {name}"));
             };
-            let st = flow::fix(e, store, &Live, &Terminal, today, browser);
+            let st = flow::fix(e, &ports, today, browser);
             Ok(if st.state.needs_work() { Outcome::ReportedFailure } else { Outcome::Ok })
         },
         Some(AuthOp::Forget {
