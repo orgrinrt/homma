@@ -242,12 +242,43 @@ fn a_large_answer_folds_like_a_small_one() {
 
 #[test]
 fn where_the_fold_cannot_run_each_refusal_stands_with_its_reasons() {
-    // a decision the fold cannot rank stops it
-    let odd =
-        r#"echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":5}}'"#;
-    let ws = tempfile::tempdir().unwrap();
-    let out = answers(ws.path(), "PreToolUse", &[
-        ("odd", odd),
+    // Every answer is read into a shape the fold takes before it runs, so the
+    // fold failing is a `jq` that fails it: one that refuses the fold's own call
+    // and runs every other.
+    let run = |hooks: &[(&str, &str)]| {
+        let ws = tempfile::tempdir().unwrap();
+        let mut entries = Vec::new();
+        for (name, body) in hooks {
+            let run = format!("h/{name}");
+            hook(ws.path(), &run, &format!("cat > /dev/null\n{body}"));
+            entries.push(entry("PreToolUse", "*", &run, &[]));
+        }
+        let d = plant(ws.path(), &entries, &[]);
+        let real = std::process::Command::new("sh")
+            .args(["-c", "command -v jq"])
+            .output()
+            .unwrap();
+        let real = text(&real.stdout).trim().to_string();
+        hook(
+            ws.path(),
+            "bin/jq",
+            &format!("[ \"$1 $2 $3\" = '-s --arg event' ] && exit 5\nexec '{real}' \"$@\""),
+        );
+        let path = format!(
+            "{}:{}",
+            ws.path().join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        dispatch(
+            &d,
+            &["PreToolUse", "sync"],
+            r#"{"tool_name":"Bash"}"#,
+            None,
+            &[("PATH", Some(&path))],
+        )
+    };
+    let out = run(&[
+        ("ok", &context("PreToolUse", "fine")),
         ("style", "echo 'style rule' >&2; exit 2"),
         ("deny", &decision("deny", "not here")),
     ]);
@@ -256,18 +287,39 @@ fn where_the_fold_cannot_run_each_refusal_stands_with_its_reasons() {
     assert!(err.contains("could not be folded"), "{err}");
     assert!(err.contains("h/style: style rule"), "{err}");
     assert!(err.contains("h/deny: not here"), "{err}");
+    assert!(!err.contains("h/ok"), "{err}");
 
     // the control: with nothing refusing, nothing is said to have refused
-    let ws = tempfile::tempdir().unwrap();
-    let out = answers(ws.path(), "PreToolUse", &[
-        ("odd", odd),
+    let out = run(&[
         ("ok", &context("PreToolUse", "fine")),
+        ("also", &context("PreToolUse", "fine too")),
     ]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert!(
         !text(&out.stderr).contains("refused"),
         "{}",
         text(&out.stderr)
+    );
+}
+
+#[test]
+fn a_decision_that_is_not_a_string_is_named_and_an_ask_beside_it_stands() {
+    let odd =
+        r#"echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":5}}'"#;
+    let ws = tempfile::tempdir().unwrap();
+    let out = answers(ws.path(), "PreToolUse", &[
+        ("odd", odd),
+        ("ask", &decision("ask", "sure?")),
+    ]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let v = json(&out);
+    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "ask");
+    assert!(
+        v["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("h/odd: answered JSON the host does not read"),
+        "{v}"
     );
 }
 

@@ -249,7 +249,7 @@ for i in "${{SAID[@]}}"; do
     rc=$(cat "$TMP/$i.rc")
     case "$rc" in
         0)
-            if jq -se 'length == 1 and (.[0] | type == "object") and ((.[0].hookSpecificOutput // {{}}) | type == "object")' "$TMP/$i.out" >/dev/null 2>&1; then
+            if jq -se 'length == 1 and (.[0] | type == "object") and ((.[0].hookSpecificOutput // {{}}) | type == "object") and ((.[0].hookSpecificOutput.permissionDecision? // "") | type == "string")' "$TMP/$i.out" >/dev/null 2>&1; then
                 jq -s '.[0]' "$TMP/$i.out" >"$TMP/$i.json"
             elif jq -s . "$TMP/$i.out" >/dev/null 2>&1; then
                 jq -n --arg m "${{RUN[$i]}}: answered JSON the host does not read" '{{systemMessage: $m}}' >"$TMP/$i.json"

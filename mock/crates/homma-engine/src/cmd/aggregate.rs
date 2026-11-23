@@ -364,8 +364,19 @@ struct Registration {
 }
 
 /// The fields of a command handler the dispatcher carries; any other is named
-/// in [`Registration::unsupported`].
+/// in [`Registration::unsupported`], but for those [`passes`] lets through.
 const CARRIED: &[&str] = &["type", "command", "timeout", "async"];
+
+/// Whether a handler field the dispatcher does not carry still changes nothing
+/// a hook does: an empty `args`, and `statusMessage`, which only labels the
+/// host's spinner while one hook runs.
+fn passes(key: &str, value: &serde_json::Value) -> bool {
+    match key {
+        "statusMessage" => true,
+        "args" => value.as_array().is_some_and(Vec::is_empty),
+        _ => false,
+    }
+}
 
 /// Map each hook file a repository's `settings.json` calls, by its name under
 /// `.claude/hooks/`, to every event, matcher and argument list it is called
@@ -417,9 +428,9 @@ fn read_settings_hooks(path: &Path) -> BTreeMap<String, Vec<Registration>> {
                     unsupported: h
                         .as_object()
                         .map(|o| {
-                            o.keys()
-                                .filter(|k| !CARRIED.contains(&k.as_str()))
-                                .cloned()
+                            o.iter()
+                                .filter(|(k, v)| !CARRIED.contains(&k.as_str()) && !passes(k, v))
+                                .map(|(k, _)| k.clone())
                                 .collect()
                         })
                         .unwrap_or_default(),

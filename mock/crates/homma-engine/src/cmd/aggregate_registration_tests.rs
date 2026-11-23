@@ -251,3 +251,25 @@ fn a_hook_registered_with_a_field_the_dispatcher_does_not_carry_is_reported() {
     assert_eq!(entries.len(), 1);
     assert_eq!((entries[0].timeout, entries[0].background), (5, true));
 }
+
+#[test]
+fn an_empty_args_and_a_status_message_pass_and_args_with_words_do_not() {
+    let ws = tempfile::tempdir().unwrap();
+    let repo = plant_repo(
+        ws.path(),
+        &[("check.sh", QUIET), ("other.sh", QUIET)],
+        r#"{"hooks":{"PreToolUse":[
+            {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/check.sh","args":[],"statusMessage":"checking"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/other.sh","args":["--quiet"]}]}
+        ]}}"#,
+    );
+    let (a, entries, _) = regen(ws.path(), &repo);
+    assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
+    assert!(
+        a.problems[0].contains("arvo/.claude/hooks/other.sh") && a.problems[0].contains("`args`"),
+        "{:?}",
+        a.problems
+    );
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].run.ends_with("check.sh"), "{entries:?}");
+}
