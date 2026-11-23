@@ -374,11 +374,11 @@ pre-release makes that pre-release's release: a patch from `0.0.5-rc.1` is
    refuses with both numbers rather than picking one. With `--dry-run` it stops
    here.
 4. Bumps the manifest on `dev`, prepends the block to `CHANGELOG.md`, commits
-   both as one commit, and pushes `dev`. Where the forge refuses the push
-   outright, a ruleset that takes changes to `dev` only through a pull request,
-   the commit is pushed as `release/<repo>-<version>` and landed through a pull
-   request squashed into `dev` under its own subject, and the clone's `dev`
-   then takes the commit the forge made, and the branch is deleted.
+   both as one commit, and pushes `dev`. A landing into `dev` is a local commit
+   and a push, never a pull request and never a squash: where the forge refuses
+   the push outright, a ruleset that takes changes to `dev` only through a pull
+   request, the run stops with git's own words and the commit stays on the
+   local `dev`, for the rerun to push once the forge takes it.
 5. Merges `dev` into `main` with a merge commit, never a squash, never a
    fast-forward, so the tag has a commit of its own and `main` keeps every
    constituent commit. Where the forge refuses the push of `main` outright, the
@@ -411,20 +411,19 @@ pre-release makes that pre-release's release: a patch from `0.0.5-rc.1` is
    the next package that depends on it publishes.
 9. Writes the badge json to the `badges` branch.
 
-The forge writes of steps 4 to 7 are one contract, `ReleaseForge`, with its
-`tag`, its `release`, its `land`, a pull request from one branch into
-another merged at a given head the way `Merge` names, a squash or a merge
-commit, and its `drop_branch`, the remote branch a landed pull request leaves. `ByClient` tags with git in the clone, pushes the tag and makes the
-release through the forge client, and has no pull request: a refused push
-stays refused, with the reason, and no branch is left to drop. `ByRoute` asks
-`forge_route` for all four, `drop_branch` as `delete-branch --queue`,
-`land` as `forge_route pr <repo root> <head> <base> <title> <squash|merge>
-<sha>`, which takes the pull request open from the head into the base or
-opens one with no body, and merges it at that sha with the title as its
-subject and no message. That verb is the same mechanism the workspace's
-landing scripts fall back on where a trunk refuses a push, and homma keeps no
-copy of it. A refusal is read off git's `[remote rejected]`, as those scripts
-read it; any other failed push is the error it was.
+The forge writes of steps 5 to 7 are one contract, `ReleaseForge`, with its
+`tag`, its `release` and its `land`, the release pull request from one branch
+into another, merged with a merge commit at a given head. `ByClient` tags with
+git in the clone, pushes the tag and makes the release through the forge
+client, and has no pull request: a refused push stays refused, with the reason.
+`ByRoute` asks `forge_route` for all three, `land` as
+`forge_route pr <repo root> <head> <base> <title> merge <sha>`, which takes
+the pull request open from the head into the base or opens one with no body,
+and merges it at that sha with the title as its subject and no message. That
+verb is the same mechanism the workspace's landing scripts use, and homma
+keeps no copy of it. A refusal of the release line's push is read off git's
+`[remote rejected]`, as those scripts read it; any other failed push is the
+error it was.
 
 A run that stopped after step 4 made its commit is resumed by running it again.
 Before step 1 the run fetches the trunk and the release line, and reads a bump
@@ -432,13 +431,9 @@ as a commit with one parent whose subject is `chore: release <version>`. Where
 the trunk is one commit past the remote's, and that commit is a bump on the
 remote's tip, the run sets it aside, so the check, the gate run and the plan see
 the commit the gate measured, and step 4 takes it back instead of writing a
-second. Where the remote's trunk already holds the bump, its tip the clone's own
-or a commit with the bump's tree on the bump's parent, the pull request merged
-and the run never saw it: the trunk is set back to the bump's parent the same
-way, and step 4 takes the forge's commit without a push or a pull request. A
-squashed bump taken so has its `release/<repo>-<version>` deleted as step 4
-does, and so does a trunk that is already the forge's squash where the forge
-still holds the branch at a commit with the squash's tree on its parent.
+second. Where the remote's trunk already holds the bump as the tip, the push
+made and the run stopped before the tag: the trunk is set back to the bump's
+parent the same way, and step 4 takes the bump without a second push.
 Where the remote's release line has, on its first parents, a merge whose
 second parent is that bump and whose tree is the bump merged onto the release
 line the clone holds, the one the run saw, the release pull request merged
@@ -448,18 +443,18 @@ a human to settle. A bump some tag already contains is released and
 is none of these. A plan for another version than the bump carries refuses,
 and so does any step before 4; either way the trunk is put back where it was.
 
-Once step 4's squash is checked to carry the bump's tree on the bump's parent,
-`release/<repo>-<version>` is deleted through the route,
-`forge_route delete-branch --queue <repo root> <branch> <sha>`, so a branch the
-forge refuses to delete now is queued for the workspace's sweep, and a
-deletion that fails even so does not stop the run. Where the
-forge's trunk or release line after a pull request is not what the release
-asked for, another merge landing between the push and the squash, the run
-stops and says what the forge holds: on the trunk the clone keeps its bump, and
-a rerun stops at the check's `tree.pushed` until the trunk is put where the
-forge's is; on the release line nothing is tagged, and a rerun refuses the
-same merge again, since its tree is not the one the gate measured. A bump that
-cannot be put back is reported together with the refusal that stopped the run.
+Where the forge's release line after the release pull request is not what the
+release asked for, another merge landing between the push and the merge, the
+run stops and says what the forge holds: nothing is tagged, and a rerun refuses
+the same merge again, since its tree is not the one the gate measured. A bump
+that cannot be put back is reported together with the refusal that stopped the
+run.
+
+The pre-push gate measures each tip it is handed and records the run. A tip the
+record already holds a green run for is not measured again in the hook: the
+run is the gate's answer for that commit, and a landing whose push is retried
+over a moved `dev` pays the gate only for the commits it made new. A gate run
+by hand always measures.
 
 The engine picks one per repo: `ByRoute` for a GitHub repo where the
 manifest names the route, since the route reaches GitHub alone, and `ByClient`

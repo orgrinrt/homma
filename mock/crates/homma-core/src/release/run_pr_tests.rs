@@ -4,8 +4,10 @@
 //--------------------------------------------------------------------------------------------------
 //! The release against a forge whose rulesets take `dev` and `main` only
 //! through a pull request: the fixture's origin refuses a push to either the
-//! way GitHub does, and the routed fake lands a pull request in the origin
-//! itself, a squash or a merge commit at the head it was given.
+//! way GitHub does. A refused `dev` stops the run, since the trunk takes a push
+//! and nothing else; a refused `main` is the release pull request, which the
+//! routed fake lands in the origin itself as a merge commit at the head it was
+//! given.
 
 use super::*;
 
@@ -37,55 +39,39 @@ pub(super) fn bare(origin: &Path, args: &[&str]) -> Result<String, String> {
     if out.ok() { Ok(out.stdout.trim().to_string()) } else { Err(out.log()) }
 }
 
-/// `pr <root> <head> <base> <title> <squash|merge> <sha>` done in the origin
-/// as the forge does it, past the ruleset: refused where the head is not at
-/// `sha`, a squash a commit of the head's tree on the base, a merge a merge
-/// commit of the two, keeping the base's tree where `bad_merge` is set.
+/// `pr <root> <head> <base> <title> merge <sha>` done in the origin as the
+/// forge does it, past the ruleset: refused where the head is not at `sha`,
+/// or the method is not a merge, a merge commit of the two, keeping the base's
+/// tree where `bad_merge` is set.
 pub(super) fn land_in(origin: &Path, args: &[&str], bad_merge: bool) -> Result<(), String> {
     let ["pr", _root, head, base, title, how, sha] = args else {
         return Err(format!(
             "forge-route: a pull request takes six arguments: {args:?}"
         ));
     };
+    if *how != "merge" {
+        return Err(format!("forge-route: pr: no merge method {how}"));
+    }
     let at = bare(origin, &["rev-parse", &format!("refs/heads/{head}")])?;
     if at != *sha {
         return Err(format!("forge-route: pr: {head} is at {at}, not {sha}"));
     }
     let onto = bare(origin, &["rev-parse", &format!("refs/heads/{base}")])?;
-    let made = match *how {
-        "squash" => {
-            bare(origin, &[
-                "commit-tree",
-                &format!("{sha}^{{tree}}"),
-                "-p",
-                &onto,
-                "-m",
-                title,
-                // a body of its own, so the squash is never the clone's commit
-                // under a fixed author and date
-                "-m",
-                "squashed by the forge",
-            ])?
-        },
-        "merge" => {
-            let tree = if bad_merge {
-                bare(origin, &["rev-parse", &format!("{onto}^{{tree}}")])?
-            } else {
-                bare(origin, &["merge-tree", "--write-tree", &onto, sha])?
-            };
-            bare(origin, &[
-                "commit-tree",
-                &tree,
-                "-p",
-                &onto,
-                "-p",
-                sha,
-                "-m",
-                title,
-            ])?
-        },
-        other => return Err(format!("forge-route: pr: no merge method {other}")),
+    let tree = if bad_merge {
+        bare(origin, &["rev-parse", &format!("{onto}^{{tree}}")])?
+    } else {
+        bare(origin, &["merge-tree", "--write-tree", &onto, sha])?
     };
+    let made = bare(origin, &[
+        "commit-tree",
+        &tree,
+        "-p",
+        &onto,
+        "-p",
+        sha,
+        "-m",
+        title,
+    ])?;
     bare(origin, &[
         "update-ref",
         &format!("refs/heads/{base}"),
@@ -120,12 +106,56 @@ pub(super) fn subjects_on(f: &Fixture, rev: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether the origin holds `branch`.
+fn origin_has(f: &Fixture, branch: &str) -> bool {
+    bare(f.origin(), &[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        &format!("refs/heads/{branch}"),
+    ])
+    .is_ok()
+}
+
 #[test]
-fn a_trunk_that_takes_no_push_gets_the_bump_through_a_squashed_pull_request() {
-    // Mutation: the refused push of `dev` reported as the run's failure, or
-    // the clone's `dev` left on its own bump beside the forge's squash of it.
+fn a_trunk_that_takes_no_push_stops_the_run_and_opens_no_pull_request() {
+    // Mutation: the refused push of `dev` landed through a pull request and a
+    // squash instead of stopping, a branch pushed beside `dev`, or the bump
+    // dropped from the clone's `dev` so the rerun has nothing to push.
     let f = Fixture::new();
     refuse_pushes_to(&f, &["dev"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(
+        matches!(&err, ReleaseError::Git(_)) && err.to_string().contains("GH013"),
+        "git's own words, not a pull request: {err}"
+    );
+    assert_eq!(pr_calls(&runner), Vec::<String>::new(), "no pull request");
+    assert!(!origin_has(&f, "release/x-0.1.1"), "no branch beside dev");
+    assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
+    assert_eq!(f.git(&["rev-parse", "dev^"]), tip, "the bump stays on dev");
+    assert_eq!(subjects_on(&f, "dev")[0], "chore: release 0.1.1");
+    assert!(
+        git::tag_target(f.root(), "v0.1.1").is_err(),
+        "nothing tagged"
+    );
+    assert_eq!(
+        git::current_branch(f.root()).unwrap().as_deref(),
+        Some("dev")
+    );
+    assert!(git::is_clean(f.root()).unwrap());
+}
+
+#[test]
+fn a_trunk_the_forge_takes_gets_the_bump_by_a_push_and_main_the_one_pull_request() {
+    // Mutation: the bump landed as a new commit on a new sha, a squash, rather
+    // than the commit the run made; or a pull request opened for `dev`.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["main"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
     let p = published();
@@ -135,34 +165,14 @@ fn a_trunk_that_takes_no_push_gets_the_bump_through_a_squashed_pull_request() {
         .unwrap()
         .unwrap();
     let root = f.root().to_string_lossy().into_owned();
-    let calls = pr_calls(&runner);
-    assert_eq!(calls.len(), 1, "{calls:?}");
-    let bump = f.git(&["rev-parse", "origin/release/x-0.1.1"]);
-    assert_eq!(
-        calls[0],
-        format!("{ROUTE} pr {root} release/x-0.1.1 dev chore: release 0.1.1 squash {bump}")
-    );
+    assert_eq!(pr_calls(&runner), vec![format!(
+        "{ROUTE} pr {root} dev main release: 0.1.1 merge {}",
+        done.bump_sha
+    )]);
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), done.bump_sha);
-    assert_eq!(
-        f.git(&["rev-parse", "dev"]),
-        done.bump_sha,
-        "the clone's dev is the forge's"
-    );
+    assert_eq!(f.git(&["rev-parse", "dev"]), done.bump_sha);
     assert_eq!(f.git(&["rev-parse", "dev^"]), tip);
-    assert_eq!(subjects_on(&f, "dev")[0], "chore: release 0.1.1");
-    assert!(
-        f.git(&["show", "dev:Cargo.toml"])
-            .contains("version = \"0.1.1\"")
-    );
-    // main took its push, a merge of the forge's dev, and the tag is on it
-    assert_eq!(git::parent_count(f.root(), "origin/main").unwrap(), 2);
-    assert_eq!(f.git(&["rev-parse", "origin/main^2"]), done.bump_sha);
-    assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), done.tag_sha);
-    assert_eq!(
-        git::current_branch(f.root()).unwrap().as_deref(),
-        Some("dev")
-    );
-    assert!(git::is_clean(f.root()).unwrap());
+    assert!(!origin_has(&f, "release/x-0.1.1"));
 }
 
 #[test]
@@ -213,15 +223,11 @@ fn a_rerun_after_a_stop_at_the_bump_lands_the_same_commit_and_makes_no_second() 
     refuse_pushes_to(&f, &["dev", "main"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
-    *runner.pr_said.borrow_mut() = Some("forge-route: pr o/x release/x-0.1.1: gh: HTTP 502");
     let p = published();
     let writes = routed(&runner);
     let s = setup(&runner, &writes, &p, "dev");
     let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
-    assert!(
-        matches!(&err, ReleaseError::Route(said) if said.contains("HTTP 502")),
-        "{err}"
-    );
+    assert!(err.to_string().contains("GH013"), "{err}");
     let stopped = f.git(&["rev-parse", "dev"]);
     assert_eq!(
         f.git(&["rev-parse", "dev^"]),
@@ -229,27 +235,20 @@ fn a_rerun_after_a_stop_at_the_bump_lands_the_same_commit_and_makes_no_second() 
         "the stop left the bump on dev"
     );
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
-    *runner.pr_said.borrow_mut() = None;
+    // the forge takes the push of `dev` now, as it does where the ruleset is
+    // lifted, and `main` still wants its pull request
+    refuse_pushes_to(&f, &["main"]);
     let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
         .unwrap()
         .unwrap();
     let root = f.root().to_string_lossy().into_owned();
-    let calls = pr_calls(&runner);
+    assert_eq!(pr_calls(&runner), vec![format!(
+        "{ROUTE} pr {root} dev main release: 0.1.1 merge {}",
+        done.bump_sha
+    )]);
     assert_eq!(
-        calls.last().map(String::as_str),
-        Some(
-            format!(
-                "{ROUTE} pr {root} dev main release: 0.1.1 merge {}",
-                done.bump_sha
-            )
-            .as_str()
-        )
-    );
-    assert!(
-        calls.contains(&format!(
-            "{ROUTE} pr {root} release/x-0.1.1 dev chore: release 0.1.1 squash {stopped}"
-        )),
-        "the commit the first run made is the one landed: {calls:?}"
+        done.bump_sha, stopped,
+        "the commit the first run made is the one pushed"
     );
     let bumps = subjects_on(&f, "origin/dev")
         .into_iter()
@@ -269,13 +268,12 @@ fn a_rerun_planning_another_version_than_the_stopped_bump_refuses_and_puts_it_ba
     refuse_pushes_to(&f, &["dev"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
-    *runner.pr_said.borrow_mut() = Some("forge-route: pr: gh: HTTP 502");
     let p = published();
     let writes = routed(&runner);
     let s = setup(&runner, &writes, &p, "dev");
     release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
     let stopped = f.git(&["rev-parse", "dev"]);
-    *runner.pr_said.borrow_mut() = None;
+    refuse_pushes_to(&f, &[]);
     let err = release(&s, f.root(), Level::Minor, Some(&green_run(&tip)), false).unwrap_err();
     assert!(
         matches!(&err, ReleaseError::PendingBump { found, planned } if found == "chore: release 0.1.1" && planned == "0.2.0"),
@@ -293,8 +291,9 @@ fn a_rerun_planning_another_version_than_the_stopped_bump_refuses_and_puts_it_ba
 }
 
 #[test]
-fn a_refused_push_with_no_route_stays_refused_with_its_reason() {
-    // Mutation: the client's git push retried or reported as done.
+fn a_refused_push_of_dev_says_the_same_with_the_client_as_with_the_route() {
+    // Mutation: the client's git push retried or reported as done, or the
+    // refusal worded as a missing route where `dev` takes no pull request at all.
     let f = Fixture::new();
     refuse_pushes_to(&f, &["dev"]);
     let tip = f.git(&["rev-parse", "dev"]);
@@ -305,10 +304,28 @@ fn a_refused_push_with_no_route_stays_refused_with_its_reason() {
     let s = setup(&runner, &w, &p, "dev");
     let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
     assert!(
-        matches!(&err, ReleaseError::NoPullRequest(base) if base == "dev"),
+        matches!(&err, ReleaseError::Git(_)) && err.to_string().contains("GH013"),
         "{err}"
     );
     assert_eq!(f.git(&["rev-parse", "origin/dev"]), tip);
+}
+
+#[test]
+fn a_refused_push_of_main_with_no_route_stays_refused_with_its_reason() {
+    // Mutation: the client's git push retried or reported as done.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Fake(RefCell::new(Vec::new()));
+    let forge = Recorder::default();
+    let p = published();
+    let w = client(&forge);
+    let s = setup(&runner, &w, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(
+        matches!(&err, ReleaseError::NoPullRequest(base) if base == "main"),
+        "{err}"
+    );
 }
 
 /// Another merge landed on `base` in the origin, a commit adding a file of its
@@ -339,17 +356,6 @@ pub(super) fn interlope(origin: &Path, base: &str) -> Result<(), String> {
     bare(origin, &["update-ref", "-d", "refs/heads/between"]).map(|_| ())
 }
 
-/// `delete-branch --queue <root> <branch> <head>` done in the origin as the
-/// route does it: the branch deleted where it is at `head`, and a branch
-/// already gone taken as deleted.
-pub(super) fn delete_in(origin: &Path, branch: &str, head: &str) -> Result<(), String> {
-    let r = format!("refs/heads/{branch}");
-    if bare(origin, &["rev-parse", "--verify", "--quiet", &r]).is_err() {
-        return Ok(());
-    }
-    bare(origin, &["update-ref", "-d", &r, head]).map(|_| ())
-}
-
 #[test]
 fn a_run_recorded_on_the_tip_is_found_beside_a_leftover_local_bump() {
     // Mutation: the run asked for by the local trunk's sha before the bump
@@ -359,14 +365,13 @@ fn a_run_recorded_on_the_tip_is_found_beside_a_leftover_local_bump() {
     refuse_pushes_to(&f, &["dev", "main"]);
     let tip = f.git(&["rev-parse", "dev"]);
     let runner = Routed::new(&f);
-    *runner.pr_said.borrow_mut() = Some("forge-route: pr o/x release/x-0.1.1: gh: HTTP 502");
     let p = published();
     let writes = routed(&runner);
     let s = setup(&runner, &writes, &p, "dev");
     release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
     let stopped = f.git(&["rev-parse", "dev"]);
     assert_ne!(stopped, tip, "the stop left a bump over the tip");
-    *runner.pr_said.borrow_mut() = None;
+    refuse_pushes_to(&f, &["main"]);
     let asked = std::cell::RefCell::new(Vec::new());
     let done = release(
         &s,

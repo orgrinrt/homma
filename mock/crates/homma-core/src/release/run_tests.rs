@@ -494,8 +494,6 @@ struct Routed<'a> {
     origin:       &'a Path,
     makes_tag:    bool,
     said:         Option<&'static str>,
-    /// Where set, a pull request asked of the route fails with it.
-    pr_said:      RefCell<Option<&'static str>>,
     /// Where set, a pull request asked of the route lands and then fails with
     /// it, as a route that merged and lost the answer does.
     pr_after:     RefCell<Option<&'static str>>,
@@ -507,8 +505,6 @@ struct Routed<'a> {
     /// Where set, a merge commit the route makes keeps the base's tree, as a
     /// forge resolving the merge another way does.
     bad_merge:    RefCell<bool>,
-    /// Where set, a branch deletion asked of the route fails with it.
-    drop_said:    RefCell<Option<&'static str>>,
 }
 
 impl<'a> Routed<'a> {
@@ -518,12 +514,10 @@ impl<'a> Routed<'a> {
             origin:       f.origin(),
             makes_tag:    true,
             said:         None,
-            pr_said:      RefCell::new(None),
             pr_after:     RefCell::new(None),
             interloper:   RefCell::new(false),
             pr_said_into: RefCell::new(None),
             bad_merge:    RefCell::new(false),
-            drop_said:    RefCell::new(None),
         }
     }
 }
@@ -562,9 +556,6 @@ impl Runner for Routed<'_> {
             return answer(1, said);
         }
         if args.first() == Some(&"pr") {
-            if let Some(said) = *self.pr_said.borrow() {
-                return answer(1, said);
-            }
             if let Some((into, said)) = *self.pr_said_into.borrow() {
                 if args.get(3) == Some(&into) {
                     return answer(1, said);
@@ -582,15 +573,6 @@ impl Runner for Routed<'_> {
                 (Ok(()), None) => answer(0, ""),
                 (Ok(()), Some(said)) => answer(1, said),
                 (Err(said), _) => answer(1, &said),
-            };
-        }
-        if let ["delete-branch", "--queue", _root, branch, head] = args {
-            if let Some(said) = *self.drop_said.borrow() {
-                return answer(1, said);
-            }
-            return match pr::delete_in(self.origin, branch, head) {
-                Ok(()) => answer(0, ""),
-                Err(said) => answer(1, &said),
             };
         }
         if let (true, ["tag", _root, tag, sha, _message]) = (self.makes_tag, args) {
