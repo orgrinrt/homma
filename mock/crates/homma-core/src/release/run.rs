@@ -72,15 +72,16 @@ pub enum ReleaseError {
         at:  String,
         sha: String,
     },
-    /// The forge refused a push to the branch, and the forge writes in use
-    /// open no pull request.
+    /// The forge refused a push to the release line, and the forge writes in
+    /// use open no pull request.
     NoPullRequest(String),
-    /// After a pull request into `base` was landed, the remote's `base` at
-    /// `at` is not what the release pushed there.
+    /// After the release pull request into `base` was landed, the remote's
+    /// `base` at `at` is not a merge of `tip` onto where it was.
     NotLanded {
         base: String,
         at:   String,
-        left: Left,
+        /// The trunk's tip, untagged: the release line is not moved.
+        tip:  String,
     },
     /// A bump set aside before step 1 that could not be put back on the trunk.
     NotPutBack {
@@ -95,17 +96,6 @@ pub enum ReleaseError {
         found:   String,
         planned: String,
     },
-}
-
-/// What a pull request whose result is not what the release asked for
-/// leaves in the clone.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Left {
-    /// The trunk keeps its own bump, at this sha.
-    Bump(String),
-    /// The release line is not moved and the trunk's tip, at this sha, is
-    /// untagged.
-    Untagged(String),
 }
 
 impl fmt::Display for ReleaseError {
@@ -170,17 +160,7 @@ impl fmt::Display for ReleaseError {
             ReleaseError::NotLanded {
                 base,
                 at,
-                left: Left::Bump(bump),
-            } => {
-                write!(
-                    f,
-                    "the pull request into {base} left the forge's {base} at {at}, which is not the bump {bump} on its parent, so something else landed with it; the clone's {base} keeps the bump, and a rerun stops at the check's `tree.pushed` until the clone's {base} is put where the forge's is, once it is read whether the bump is in it"
-                )
-            },
-            ReleaseError::NotLanded {
-                base,
-                at,
-                left: Left::Untagged(tip),
+                tip,
             } => {
                 write!(
                     f,
@@ -282,9 +262,9 @@ pub fn step_gate_run(
 }
 
 /// Step 4: bump the manifest and prepend the changelog on the trunk, as one
-/// commit, and push it, through a pull request where the forge refuses the
-/// push. A `pending` bump a stopped run left is taken back instead of a
-/// second being written. Returns the bump as the trunk holds it.
+/// commit, and push it; a push the forge refuses stops the run, the commit
+/// left on the trunk. A `pending` bump a stopped run left is taken back instead
+/// of a second being written. Returns the bump as the trunk holds it.
 pub fn step_bump(
     setup: &Setup<'_>,
     root: &Path,
@@ -299,7 +279,7 @@ pub fn step_bump(
         Some(p) => landing::resume_bump(setup, root, p, &plan.next),
         None => {
             let sha = write_bump(setup, root, plan)?;
-            landing::push_bump(setup, root, &sha, &plan.next)
+            landing::push_bump(setup, root, &sha)
         },
     }
 }
@@ -363,7 +343,7 @@ pub fn step_merge_and_tag(
         return Err(ReleaseError::NotLanded {
             base: setup.release.to_string(),
             at:   merge.clone(),
-            left: Left::Untagged(git::head(root)?),
+            tip:  git::head(root)?,
         });
     } else {
         git::switch(root, setup.release)?;
