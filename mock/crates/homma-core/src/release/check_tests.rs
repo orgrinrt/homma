@@ -505,3 +505,47 @@ fn a_tag_on_a_dev_commit_after_the_bump_does_not_clear_it() {
     let findings = run(&f, &published(&["0.1.0", "0.2.0"]), None);
     assert!(ids(&findings).contains(&"tag.bump.tagged"), "{findings:?}");
 }
+
+#[test]
+fn a_nut_toml_bump_on_main_carries_a_tag() {
+    // Mutation: the walk over bumps naming Cargo.toml or deno.json, as it did,
+    // never reads nut.toml, so an untagged bump of a nutshell package passes.
+    let f = Fixture::crate_at("0.1.0");
+    let nut = |v: &str| {
+        std::fs::write(
+            f.root().join("nut.toml"),
+            format!("[package]\nname = \"x\"\nversion = \"{v}\"\n"),
+        )
+        .unwrap()
+    };
+    f.git(&["rm", "--quiet", "Cargo.toml"]);
+    nut("0.1.0");
+    f.git(&["add", "nut.toml"]);
+    f.git(&["commit", "--quiet", "-m", "chore: a nutshell package"]);
+    f.tag("v0.1.0");
+    nut("0.2.0");
+    f.git(&["add", "nut.toml"]);
+    f.git(&["commit", "--quiet", "-m", "chore: release 0.2.0"]);
+    f.git(&["push", "--quiet", "origin", "main"]);
+    let markers = homma_api::Markers::new([("nut.toml".to_string(), homma_api::Signal::Nut)]);
+    let findings = |p: &Published| {
+        check(&Inputs {
+            root:      f.root(),
+            repo:      "x",
+            remote:    "origin",
+            trunk:     "dev",
+            release:   "main",
+            target:    None,
+            published: p,
+            markers:   &markers,
+        })
+        .unwrap()
+    };
+    let p = Published::default();
+    let got = findings(&p);
+    let bumps: Vec<&Finding> = got.iter().filter(|x| x.id == "tag.bump.tagged").collect();
+    assert_eq!(bumps.len(), 1, "{got:?}");
+    assert!(bumps[0].message.contains("0.2.0"));
+    f.tag("v0.2.0");
+    assert!(!ids(&findings(&p)).contains(&"tag.bump.tagged"));
+}
