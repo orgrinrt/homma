@@ -445,10 +445,16 @@ Before step 1 the run fetches the trunk and the release line, and reads a bump
 as a commit with one parent whose subject is `chore: release <version>`, or as
 the merge commit of a pull request that landed one: two parents, the same
 subject, and a second parent that is such a bump. Where the remote's `dev` is
-that merge, whether the run's own pull request or another's landed it, and the
-clone's `dev` is at the bump, at the merge or at the merge's first parent, the
-trunk is set back to the first parent for the check, the gate run and the plan,
-and step 4 takes the merge as it is, with no commit and no push. Where
+that merge, whether the run's own pull request or another's landed it, with the
+tree the bump and the merge's first parent make together, the bump is the
+commit made on that first parent, so the block it holds covers every commit the
+release carries, and the clone's `dev` is at the bump, at the merge or at the
+merge's first parent, the trunk is set back to the first parent for the check,
+the gate run and the plan, and step 4 takes the merge as it is, with no commit
+and no push. A merge of a bump made on another commit than the one it was
+merged onto, a `dev` that moved under the pull request, is none of these: its
+block leaves out the commits that moved `dev`, so nothing is tagged and the
+forge's `dev` is left for a human to settle. Where
 the trunk is one commit past the remote's, and that commit is a bump on the
 remote's tip, the run sets it aside, so the check, the gate run and the plan see
 the commit the gate measured, and step 4 takes it back instead of writing a
