@@ -1,0 +1,34 @@
+# The tenets whose subject is `registry`.
+
+[[tenet]]
+id = "an_id_is_a_path_of_its_schema_kind_its_namespaces_and_a_short_leaf"
+standing = "provisional"
+what = "A row's or a ticket's id is a path, its schema kind first, then the namespaces its domain and subject give it, then a short leaf, so a query by a prefix lists everything under it and a query by an inner segment finds it at any depth."
+because = '''Op, 23 November 2026, unprompted: "Also queue a piece of work we'll have to do before work starts: creating actual hierarchical ids / slugs for all tickets and such. They are long messes of underscores in prose now. We might want to start namespacing like ticket::question::engine::internals::deps::allowed. Then querying for ticket::question::engine gives all engine related tickets. Querying ::internals then gives those. We migrate all domain or such fields into slugs using any namespaces after their schema kind". Intent: the id says where a row sits, so what a field used to carry is a segment of the path, and asking for a branch of the path answers the question the field was there for.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::hierarchical_ids"]
+subject = "registry"
+keywords = ["id", "slug", "path", "hierarchical", "namespace", "schema kind", "leaf", "prefix", "query", "ticket"]
+
+[[tenet]]
+id = "every_id_is_a_letkajenkka_path_and_querying_ids_is_a_letkajenkka_query"
+standing = "provisional"
+what = "Every id homma builds, a unit's name among them, is a letkajenkka path, and asking for ids is a letkajenkka query, with globs and every other selector of the standard."
+because = '''Op, 23 November 2026, unprompted, on the hierarchical ids: "Remember that everything there is letkajenkka spec, so querying the hierarchical namespaces/nodes/segments is also globbable and conforms to the spec so things like inline arrays or whatever syntax in letkajenkka will work on them too." Intent: one path standard for every id, so one query language reaches all of them and nothing needs a lookup of its own.'''
+reading = "He said it of the ids of rows and tickets; that a unit's name is such a path too is read from the nesting he chose, written there as `kaski::render`."
+sources = [
+    "research::t202611231400_homma_canon_sources::sources::ids_are_letkajenkka_paths",
+    "research::t202611231400_homma_canon_sources::sources::whether_units_nest",
+]
+subject = "registry"
+keywords = ["letkajenkka", "path", "query", "glob", "selector", "standard", "id", "unit name"]
+related = ["tenet::an_id_is_a_path_of_its_schema_kind_its_namespaces_and_a_short_leaf", "tenet::units_nest_and_project_and_arc_name_only_a_units_depth"]
+
+[[tenet]]
+id = "a_content_repository_keeps_its_tickets_in_hommas_registry"
+standing = "provisional"
+what = "A homma content repository keeps its tickets and rows in homma's implementation of the mockspace registry, and no second tracker stands beside it."
+because = '''Op, 23 November 2026, unprompted: "Another thing to finish before real work but after the v2 etc bigger work: remove agenda from clause-dev in full and initialize and start using the homma impl of the mockspace-registry on any homma content repo instead." Intent: the registry is the one tracker of a content repository; the tracker that stood beside it goes in full.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::where_the_tickets_live"]
+subject = "registry"
+keywords = ["ticket", "tracker", "registry", "content repository", "agenda", "mockspace registry"]
+related = ["tenet::a_workspace_a_repository_and_a_project_share_one_framework_and_its_verbs"]

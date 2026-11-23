@@ -14,3 +14,6 @@
 
 # mockspace: a lockfile is settled from the merged manifests, see the lockfile merge driver
 /mock/Cargo.lock merge=mockspace-lockfile
+
+# mockspace: registry rows merge by namespace and id, see the registry merge driver
+/mock/registry/**/*.toml merge=mockspace-registry

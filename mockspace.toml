@@ -18,6 +18,11 @@ mock_dir = "mock"
 proc_macro_crates = []
 module_crates = []
 
+# The canon is typed rows under `mock/registry/`: the subjects in `subject.toml` and the tenets in
+# the files under `mock/registry/tenet/`, one file per subject. These globs only say which files are
+# canon; a row is its key path, whichever file it sits in.
+canon_paths = ["mock/registry/*.toml", "mock/registry/tenet/*.toml"]
+
 # Layer labels by depth index, settled by the taxonomy round.
 layers = [
     "L0 contracts",
@@ -34,11 +39,106 @@ layers = [
 
 [crate_colors]
 
+# --- the canon's namespaces --------------------------------------------------
+#
+# `tenet` is a commitment of homma's design, in homma's own terms. Every row stands on the
+# maintainer's words, quoted whole at the head of its `because`, and cites where they were said in
+# `sources`, a citation into this repository's research: a row holds nothing that cannot be
+# resolved inside this repository. `subject` says what a tenet is about, one row per subject, so
+# everything the canon says about units is `refsto(subject::unit)` rather than a grep.
+
+[[registry.namespace]]
+key = "subject"
+title = "Subjects"
+description = "What a tenet is about. Every tenet names one."
+
+[[registry.namespace.field]]
+name = "what"
+type = "string"
+required = true
+description = "The subject, in a sentence: what the tenets under it are about."
+
+[[registry.namespace.field]]
+name = "keywords"
+type = "string[]"
+required = false
+description = "The words somebody would search for to find this subject, especially the ones its sentence does not itself use."
+
+[[registry.namespace]]
+key = "tenet"
+title = "Tenets"
+description = "A commitment of homma's design, standing on the maintainer's words. Its `standing` says whether he has ratified it."
+
+[[registry.namespace.field]]
+name = "what"
+type = "string"
+required = true
+description = "The commitment, in one sentence."
+
+[[registry.namespace.field]]
+name = "standing"
+type = "string"
+required = true
+description = "`provisional` where it matters now and the maintainer has not ratified it: pending his walk, read as the best current statement and never cited as settled. `ratified` where he went through it on a named date. `held` where it was brought to him because a word of his stands against it: binding nothing until he backs it. `demoted` where his walk does not go through it now: kept as reference for a later canon of its domain, binding nothing. A superseded row does not bind whatever its standing."
+values = ["provisional", "ratified", "held", "demoted"]
+
+[[registry.namespace.field]]
+name = "because"
+type = "string"
+required = true
+description = "The maintainer's words first, verbatim and complete, each with when they were said and the question they answer with its options; then the intent in the writer's own words, after `Intent:`."
+
+[[registry.namespace.field]]
+name = "reading"
+type = "string"
+required = false
+description = "Where `what` says more than the maintainer's words do: which part is the writer's reading, in a sentence. Absent where the row states only what the words say."
+
+[[registry.namespace.field]]
+name = "sources"
+type = "ref[]"
+required = true
+description = "Where the words were said, each a citation into this repository's research by heading, `research::<dir>::<file>::<heading>`."
+
+[[registry.namespace.field]]
+name = "subject"
+type = "subject"
+required = true
+description = "What it is about. One subject per tenet: where its words touch several, the one most of them are about."
+
+[[registry.namespace.field]]
+name = "keywords"
+type = "string[]"
+required = false
+description = "The words somebody would search for to find this row."
+
+[[registry.namespace.field]]
+name = "superseded_by"
+type = "tenet[]"
+required = false
+description = "The tenets that replace this one. A superseded tenet is kept rather than deleted, so the canon that replaced it is read with it in view; it no longer binds."
+
+[[registry.namespace.field]]
+name = "related"
+type = "ref[]"
+required = false
+description = "Every row this row relates to, as `namespace::slug`. A link is written once, on the one row; `refsto(<namespace>::<slug>)` gives the other end. What the relation means is said in the row's words."
+
+# A citation of research by heading, `research::<dir>::<file>::<heading>`. Internal, so a generated
+# document never shows a citation its reader cannot open.
+[ref.roots.research]
+path = "mock/research"
+internal = true
+
 # `mock ask <question...>`: a question against this mock dir, answered with
 # the passages that clear. The tool lives in muisti's repository and comes in
 # on the same cdylib a lint pack would; muisti is private, hence ssh.
 [lint-crates]
 ask = { git = "ssh://git@github.com/orgrinrt/muisti.git", branch = "dev" }
+# `mock canon <verb>`: what the canon holds by subject, word and relation, and `check`, which names
+# each provisional row and refuses one that is gone, superseded, held or demoted. The tool alone,
+# without the rest of the pack.
+mockspace-extra-canon = { git = "ssh://git@github.com/orgrinrt/mockspace-extra-lints.git", branch = "dev" }
 
 # The commit types this repository uses, beyond mockspace's defaults (feat, fix, refactor, docs,
 # test, chore, bench, release). The builtin `commit-subject` gate refuses a type that is not listed, so a new

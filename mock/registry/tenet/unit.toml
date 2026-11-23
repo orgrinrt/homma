@@ -1,0 +1,40 @@
+# The tenets whose subject is `unit`.
+
+[[tenet]]
+id = "a_unit_has_one_name_that_addresses_every_piece_of_it"
+standing = "provisional"
+what = "A body of work is a unit, and everything of a unit is addressed by its one name."
+because = '''Op, 23 November 2026, on how the messaging channels are cut [options: one channel per arc; one per team plus one for all; one per arc plus an announcement channel]: "Option 1 but perhaps we should do actual unifying here, and tie those to actual projects, and actual state files, so all of a certain unit can be addressed via same name and its cohesive like that". Op, 23 November 2026, on what the one concept is called [options: unit, with "project" for a path of one segment and "arc" for a deeper one, as words for depth only; project at every depth; arc at every depth]: "unit (Recommended)". Intent: the project, the state, the channel and the rest of one body of work are tied to one name, the unit's, so the unit holds together and any piece of it is found from that name.'''
+sources = [
+    "research::t202611231400_homma_canon_sources::sources::one_name_per_unit",
+    "research::t202611231400_homma_canon_sources::sources::what_the_concept_is_called",
+]
+subject = "unit"
+keywords = ["unit", "one name", "address", "cohesive", "project", "state", "channel"]
+
+[[tenet]]
+id = "units_nest_and_project_and_arc_name_only_a_units_depth"
+standing = "provisional"
+what = "Units nest by path, a unit inside another being the same kind of thing as its parent, and \"project\" and \"arc\" say only how deep a unit sits."
+because = '''Op, 23 November 2026, on whether a unit nests [options: yes, a project and its arcs, `kaski` and `kaski::render`, one channel branch per project with the arcs inside it; no, every arc a flat name with its own branch; only projects are units, an arc staying a team addressed through its hand]: "Nest (Recommended)". Op, 23 November 2026, on what the one concept is called [options: unit, with "project" for a path of one segment and "arc" for a deeper one, as words for depth only; project at every depth; arc at every depth]: "unit (Recommended)". Intent: a project and its arcs are units at two depths of one path, and the two words name the depth and nothing else.'''
+sources = [
+    "research::t202611231400_homma_canon_sources::sources::whether_units_nest",
+    "research::t202611231400_homma_canon_sources::sources::what_the_concept_is_called",
+]
+subject = "unit"
+keywords = ["nest", "nesting", "path", "project", "arc", "depth", "parent", "child"]
+related = ["tenet::a_unit_has_one_name_that_addresses_every_piece_of_it"]
+
+[[tenet]]
+id = "the_tree_holds_the_state_of_live_units_and_git_history_is_the_archive_of_the_rest"
+standing = "provisional"
+what = "The tree holds the state of live units only, and a state that is stale, deprecated, irrelevant or unimportant is removed from the tree and kept in git's history as its archive, while a unit whose work is to be continued stays live however long it has slept."
+because = '''Op, 23 November 2026, on which state files move under the unified names [options: the live ones now; all of them; none renamed]: "We want to be able to deprecate states (projects/arcs) to git history so they remain archived. I think we do an audit of them all and see which ones are stale, deprecated or irrelevant, or unimportant, and retain only those that aren't any of that, then establish a project or an arc for each, depending what the naming will be for our unified concept". Op, 23 November 2026, on three declared units whose state last moved two months earlier [options: keep the row marked parked and archive the state; keep them as they are; archive the state and drop the row]: "Those named three are to be continued and I'd like to keep them". Intent: what the tree carries is current; a state nobody resumes from leaves the tree and git keeps it, and whether a unit is live is whether its work is to go on, never how recently its state moved.'''
+reading = "That dormancy alone never makes a unit stale is read from his answer on three named units, not said as a rule."
+sources = [
+    "research::t202611231400_homma_canon_sources::sources::which_states_are_kept",
+    "research::t202611231400_homma_canon_sources::sources::dormant_units",
+]
+subject = "unit"
+keywords = ["state", "archive", "history", "stale", "deprecated", "irrelevant", "unimportant", "dormant", "live", "audit"]
+related = ["tenet::a_unit_has_one_name_that_addresses_every_piece_of_it"]

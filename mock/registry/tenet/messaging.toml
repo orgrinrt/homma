@@ -1,0 +1,66 @@
+# The tenets whose subject is `messaging`.
+
+[[tenet]]
+id = "git_is_the_truth_of_the_channels_and_a_worker_is_optional"
+standing = "provisional"
+what = "The channels' only source of truth is git, and a worker that speeds them up can be added or dropped at any time, everything resuming from git without it."
+because = '''Op, 23 November 2026, unprompted, on the messaging tool: "we can make improvements to existing msg that optionally uses the workers we have to speed things up or asynchronously manage the channels and such while source of truth always remains the git and a worker can be shut down and things still work via git in its absence, though slower or not as nice. And a worker can be added and dropped at will and everything syncs and stops and resumes seamlessly from/to the git state. The handles is what pings should default to, names, nick or proper, only used in prose if at all. Depends on personality I suppose. We'll want to improve the way attachments and such work too, so they don't just have a parallel place outside of the repos in question that should get reports in their mockspace for example, which had before been a bit of a problem. It needs a smart way to integrate with mockspaces and homma itself I think, and reuse as much as it can from them. Homma primarily in general and mocksoace as extra synergy level if one exists where worked." Intent: a worker holds nothing git does not; with it the channels are faster, without it they are slower and lose nothing.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::git_as_the_truth_of_the_channels"]
+subject = "messaging"
+keywords = ["git", "source of truth", "worker", "optional", "channel", "sync", "resume"]
+
+[[tenet]]
+id = "a_ping_addresses_a_handle_and_names_are_for_prose"
+standing = "provisional"
+what = "A ping addresses an identity by its handle, and a name, given or nick, is used in prose only, if at all."
+because = '''Op, 23 November 2026, unprompted, on the messaging tool: "we can make improvements to existing msg that optionally uses the workers we have to speed things up or asynchronously manage the channels and such while source of truth always remains the git and a worker can be shut down and things still work via git in its absence, though slower or not as nice. And a worker can be added and dropped at will and everything syncs and stops and resumes seamlessly from/to the git state. The handles is what pings should default to, names, nick or proper, only used in prose if at all. Depends on personality I suppose. We'll want to improve the way attachments and such work too, so they don't just have a parallel place outside of the repos in question that should get reports in their mockspace for example, which had before been a bit of a problem. It needs a smart way to integrate with mockspaces and homma itself I think, and reuse as much as it can from them. Homma primarily in general and mocksoace as extra synergy level if one exists where worked." Op, 23 November 2026, on who may message whom [options: anyone, but a message across teams does not wake; anyone, and every message wakes; feudal, through one's lead]: "Option 3, feudal, is the etiquette. But option 2 is the de facto protocol, though discouraged to break retiquette". Intent: the handle is the address; anyone may message anyone and every message wakes its addressee, and going through one's lead is the etiquette the identities keep, breaking it discouraged and never refused.'''
+sources = [
+    "research::t202611231400_homma_canon_sources::sources::git_as_the_truth_of_the_channels",
+    "research::t202611231400_homma_canon_sources::sources::addressing",
+]
+subject = "messaging"
+keywords = ["ping", "handle", "address", "name", "nick", "feudal", "etiquette", "protocol", "wake", "direct message"]
+
+[[tenet]]
+id = "a_project_has_one_channel_and_its_arcs_speak_inside_it"
+standing = "provisional"
+what = "Each unit of the top depth has one channel, and a nested unit's messages sit inside the channel of the project it is in."
+because = '''Op, 23 November 2026, on where a channel lives [options: a sauna/<channel> branch in the workspace repository; keep coord/<channel>; a repository of its own]: "sauna/c/<ch>". Op, 23 November 2026, on whether a unit nests [options: yes, a project and its arcs, `kaski` and `kaski::render`, one channel branch per project with the arcs inside it; no, every arc a flat name with its own branch; only projects are units, an arc staying a team addressed through its hand]: "Nest (Recommended)". Intent: a channel is a branch named after its project, and the arcs of the project speak inside it, so one who follows a project fetches one branch.'''
+sources = [
+    "research::t202611231400_homma_canon_sources::sources::where_a_channel_lives",
+    "research::t202611231400_homma_canon_sources::sources::whether_units_nest",
+]
+subject = "messaging"
+keywords = ["channel", "branch", "project", "arc", "nested", "fetch"]
+related = ["tenet::units_nest_and_project_and_arc_name_only_a_units_depth"]
+
+[[tenet]]
+id = "every_message_is_signed_by_its_identity"
+standing = "provisional"
+what = "Every message is signed by its identity's key, from the first landing of the format on."
+because = '''Op, 23 November 2026, on how far the sender of a message must be trusted [options: advisory now, signed once a secrets store exists; advisory only; signed from the start]: "Sign from the start". Intent: a sender's name is proven by its signature and not taken on its word, and the format is not landed before it can be signed.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::trust_in_the_sender"]
+subject = "messaging"
+keywords = ["signature", "sign", "key", "trust", "sender", "identity", "proof"]
+related = ["tenet::an_identity_is_held_by_one_agent_at_a_time"]
+
+[[tenet]]
+id = "an_identity_with_nothing_to_do_parks_and_is_woken_by_a_ping"
+standing = "provisional"
+what = "An identity is woken only while it is active and needed: after the third wake in a row with nothing to do it parks and messages the one who manages it, who wakes it by a ping when it is needed again."
+because = '''Op, 23 November 2026, on what reaches an identity with no work this hour [options: its hand's fire only; an hourly task for every identity; a six-hourly task while parked]: "Hands fire only and ONLY if they remain active and needed. Let's say that after third consequent "nothing to do" wake, a hand parks and DMs coord to wake them by ping when they are needed again." Intent: an idle identity costs nothing; it stops waking itself after three empty wakes in a row and is brought back by a ping from the one it answers to.'''
+reading = "He named a hand and its coordinator; the row reads it for any identity and the one who manages it."
+sources = ["research::t202611231400_homma_canon_sources::sources::a_parked_identity"]
+subject = "messaging"
+keywords = ["park", "parked", "wake", "idle", "nothing to do", "ping", "lead", "three wakes"]
+related = ["tenet::a_ping_addresses_a_handle_and_names_are_for_prose"]
+
+[[tenet]]
+id = "a_report_lands_in_the_repository_it_is_about"
+standing = "provisional"
+what = "A report or an attachment lands in the repository it concerns, through homma first and that repository's mockspace where it has one, and never in a store beside the repositories."
+because = '''Op, 23 November 2026, unprompted, on the messaging tool: "we can make improvements to existing msg that optionally uses the workers we have to speed things up or asynchronously manage the channels and such while source of truth always remains the git and a worker can be shut down and things still work via git in its absence, though slower or not as nice. And a worker can be added and dropped at will and everything syncs and stops and resumes seamlessly from/to the git state. The handles is what pings should default to, names, nick or proper, only used in prose if at all. Depends on personality I suppose. We'll want to improve the way attachments and such work too, so they don't just have a parallel place outside of the repos in question that should get reports in their mockspace for example, which had before been a bit of a problem. It needs a smart way to integrate with mockspaces and homma itself I think, and reuse as much as it can from them. Homma primarily in general and mocksoace as extra synergy level if one exists where worked." Intent: what a piece of work reports belongs to the repository it is about, where that repository's own tooling files it, and the messaging tool reuses homma and mockspace to get it there rather than keeping a place of its own.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::git_as_the_truth_of_the_channels"]
+subject = "messaging"
+keywords = ["report", "attachment", "research", "repository", "mockspace", "hand-back", "parallel store"]
+related = ["tenet::a_repository_is_self_contained_and_only_a_workspace_reaches_across"]

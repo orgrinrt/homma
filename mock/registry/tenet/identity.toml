@@ -1,0 +1,61 @@
+# The tenets whose subject is `identity`.
+
+[[tenet]]
+id = "the_identity_catalogue_is_the_manifests_identity_rows_and_nothing_else"
+standing = "provisional"
+what = "Who the identities are is said once, by the identity rows of the workspace manifest, and a character's own file carries prose and no field of the catalogue."
+because = '''Op, 23 November 2026, on where the catalogue of identities lives [options: a catalogue file of its own beside the character files; the character files' front matter; the identity rows of homma.toml]: "Homma toml, one source of truth." Intent: the manifest's identity rows are the catalogue, read by one reader and checked by one check, and nothing else declares an identity or disagrees with it.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::where_the_identity_catalogue_lives"]
+subject = "identity"
+keywords = ["catalogue", "identity", "manifest", "homma.toml", "one source of truth", "character", "roster"]
+
+[[tenet]]
+id = "an_identity_is_held_by_one_agent_at_a_time"
+standing = "provisional"
+what = "An agent works under one identity from the catalogue, an identity is held by one agent at a time, a role has an identity that stays the same, and other work draws from the identities that are free."
+because = '''Op, 23 November 2026, on what class of tree the workspace repository is [options: an internal tree; a public-side tree; unchanged]: "Yeah clause dev is private and we want track record going forward. I propose we use the very same identities the applets already allow importing, I suspect they are the Claude compatible agent files, and if not; something similar. Pretty sure we'll want to compare notes with the old hands design in clause dev and make use of the same idea for future agent identities: each agent picks one identity from the catalogue and one identity can only ever be used once at a time, so they act like they are a single person and when they do one thing in one place, they can't be anywhere else. Humanlike names and personalities will make it easier for us, or me at least, to make sense of the things. Names like "coord" or "rebder-coord" aren't really human friendly. We want stable identities for who is primary coord always though, same as for the other coords. The helpers use the pool of those not in use or reserved for a role then. Thoughts? I think we want the fable to also review and give their proposals and thoughts on this side". Intent: an identity acts as one person does, in one place at a time; it has a human name and a personality; each role keeps the same identity, and the rest of the work takes identities nobody holds and no role reserves.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::one_identity_at_a_time"]
+subject = "identity"
+keywords = ["identity", "one at a time", "agent", "holding", "lease", "role", "pool", "human name", "personality"]
+related = ["tenet::the_identity_catalogue_is_the_manifests_identity_rows_and_nothing_else"]
+
+[[tenet]]
+id = "an_identity_keeps_one_container_and_lane_and_is_given_work_by_whoever_manages_it"
+standing = "provisional"
+what = "An identity keeps one container and one lane, and new work is assigned to it there by whoever manages it, rather than each piece of work getting a container of its own."
+because = '''Op, 23 November 2026, unprompted: "Okay so I wonder, would the tracks be more sensible if they were set at start of week and were kept in the one container each until onni repoints slots and one is archived as result maybe? Or is it better to get fresh containers for all work? I'm kind of feeling like each identity/person be it helper or coord, gets one sticky container and lane and new work is assigned to them by whoever manages them, instead of each work being its own container. Thoughts?" Then, on the container [options: sticky per identity; fresh per job; sticky, capped]: "Sticky per identity (Recommended)". Intent: the container belongs to the identity and outlives each job in it; the one who manages the identity re-tasks it where it is.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::a_sticky_container_per_identity"]
+subject = "identity"
+keywords = ["container", "sticky", "lane", "assignment", "manager", "re-task", "job"]
+related = ["tenet::an_identity_is_held_by_one_agent_at_a_time"]
+
+[[tenet]]
+id = "a_hands_team_is_the_journeymen_and_hands_it_reserves_for_a_week"
+standing = "provisional"
+what = "A hand's team is the journeymen, who are juniors, and the other hands it reserves for a week, released again at the weekly wrap-up, so an identity works in one domain for the week."
+because = '''Op, 23 November 2026, on what a lighter helper identity is [options: journeymen, with sub-agents keeping the plus tag; the coordinator with a plus tag; eight journeymen]: "Yeah, this makes sense. I would say that we should establish teams so a hand can reserve a couple of Johnny men no journey men for the team for a week and after the weekly wrap up, those are released so this way, the identities, even for the helpers kind of work in one similar domain over a week and it's not as chaotic they should be considered kind of juniors". Op, 23 November 2026, unprompted: "Also for the teams, other hands can be chosen too, not only journeymen. Perhaps best it's split: hands are opus or fable and journeymen sonnet or haiku. Each hand can be either or, not statically mapped, same for journeymen". Intent: a team is held for a week and let go at its end; who sits in it is chosen by its hand from the journeymen and the other hands, and the week keeps each one in one domain.'''
+reading = "Which model each kind of identity runs on is left out of the row as the workspace's own arrangement."
+sources = ["research::t202611231400_homma_canon_sources::sources::teams"]
+subject = "identity"
+keywords = ["team", "hand", "journeyman", "junior", "week", "reserve", "release", "wrap-up", "domain"]
+related = ["tenet::an_identity_keeps_one_container_and_lane_and_is_given_work_by_whoever_manages_it"]
+
+[[tenet]]
+id = "every_identity_keeps_a_memory_of_its_own"
+standing = "provisional"
+what = "Every identity keeps a memory of its own, which it syncs with and keeps always, beside the memories split by position and those for all, and starts with a past written to its personality."
+because = '''Op, 23 November 2026, unprompted: "Then also we'll want each identity to, in addition of coord and helper split memories (and those that are for all), also have their own special memory each that they sync with and keep always. And we want to QuickStart each identity with some spoofed past memories according to their personality or such, perhaps the design had that already too in the old one". Intent: three layers of memory, the identity's own, the one for its position and the one for all; the identity's own follows it wherever it works, and it is seeded so a new identity does not start empty.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::the_memory_of_an_identity"]
+subject = "identity"
+keywords = ["memory", "identity", "personal memory", "sync", "seed", "past", "personality", "layers"]
+
+[[tenet]]
+id = "a_name_taken_from_a_handle_defaults_to_it_and_a_check_errors_where_it_cannot"
+standing = "provisional"
+what = "A name derived from an identity's handle defaults to the handle, a check errors where the handle cannot be that name, and configuration may set another in its place."
+because = '''Op, 23 November 2026, on how a handle is written inside an id when the path grammar cannot spell it [options: the catalogue row declares a path form beside the handle; the path standard admits an ident that opens on a digit; the handle changes]: "A check should error on the channel, and config should allow optionally specifying a different channel than the handle is. This way it defaults to the handle without excessive configuration but is overrideable on errors or when wished". Intent: nothing is configured where the handle serves; where it cannot, a check says so, and an override is the fix, as it is wherever another name is wanted.'''
+reading = "He answered for a channel named after a handle; the row reads it for every name derived from one."
+sources = ["research::t202611231400_homma_canon_sources::sources::a_handle_the_id_grammar_cannot_spell"]
+subject = "identity"
+keywords = ["handle", "default", "override", "check", "id", "channel", "grammar", "digit"]
+related = ["tenet::every_id_is_a_letkajenkka_path_and_querying_ids_is_a_letkajenkka_query"]

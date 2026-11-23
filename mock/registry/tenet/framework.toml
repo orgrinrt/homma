@@ -1,0 +1,30 @@
+# The tenets whose subject is `framework`.
+
+[[tenet]]
+id = "a_repository_is_self_contained_and_only_a_workspace_reaches_across"
+standing = "provisional"
+what = "A repository holds nothing it cannot resolve inside itself, no reference, citation, path or link, as no symlink may point out of it, and only a repository that is by nature a workspace reaches across, which even then finds what is there instead of assuming it."
+because = '''Op, 23 November 2026, on how homma's canon speaks, homma being public and the workspace's names and his words not [options: two tiers, neutral rows in homma and the workspace's own rows in the workspace's registry; neutral rows citing the workspace by reference; rows quoting inline, the registry hidden first]: "They can't be referencing workspace from the repo. There's a seam that isn't bidirectional. The repo can't contain refs that can't be resolved within the repo, same as symlinks. And for mockspace stuff, it'll be tucked away into its own custom refs, before this work ever starts, so nothing named should remain in the public end, only the harness and abstract/general use homma stuff as intended". Op, 23 November 2026, unprompted, on the reading of that answer as a rule for homma alone: "That isn't just a special rule for homma. Each repo is self contained unless by nature it is a workspace like clause-dev and even there, we'd rather generalise than hard code assumptions of what is contained or available". Intent: every repository stands alone; the seam between a repository and a workspace runs one way, from the workspace into the repository, and a workspace generalises what it may find there, declared or discovered, never hard-coding which repositories or files exist.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::a_repository_is_self_contained"]
+subject = "framework"
+keywords = ["self-contained", "seam", "one-way", "reference", "citation", "symlink", "workspace", "member", "resolve", "hard-code"]
+
+[[tenet]]
+id = "a_workspace_a_repository_and_a_project_share_one_framework_and_its_verbs"
+standing = "provisional"
+what = "homma and mockspace are one framework on shared crates, each taking what the other does better, so a workspace, a repository and a project use the same paths, abstractions, verbs and behaviour, and a fix in either reaches both."
+because = '''Op, 23 November 2026, unprompted: "In fact homma should also adopt down the line the mocksoace tools framework for its tools, and pick and impl into itself the other related things that are going to be similar to what mockspace does. Like the agent/ pipeline. Which means a lot of the things homma does better, are ported upstream, such as the concept of elaboration and rule cards and whatever else. Homma workspaces then also gain lints and rust support for tools. And upstream we want mockspace to support fully nutshell or posix shell tools and lints, not only rust. So we unify the two and both use the mockspace standards and we consolidate them so we pick the best parts of each and share the crates. We then also get much less duplication and similar disjoint code and maintainability hell, when a fix on mockspace lints also reaches homma. And a fix made on homma's hook framework extends to improve all mockspaces too. And when the two conform fully, no need to conjure up complex separate paths for mockspace child repos, just use the one and same path and abstractions and cli verbs and behaviour from workspace to mockspace to project etc." Intent: no second copy of what the other already does; one standard, one set of verbs from the workspace down to a project, the crates shared so a fix is made once.'''
+sources = ["research::t202611231400_homma_canon_sources::sources::one_framework"]
+subject = "framework"
+keywords = ["framework", "mockspace", "shared crates", "verbs", "unify", "tools", "lints", "hooks", "rule cards", "duplication"]
+related = ["tenet::a_repository_is_self_contained_and_only_a_workspace_reaches_across"]
+
+[[tenet]]
+id = "the_pipeline_relies_on_no_forge_feature"
+standing = "provisional"
+what = "Nothing in the pipeline relies on a feature of a forge, and the move from the trunk to the public branch is described for any git host and runs on homma's own flow, a forge's pull request being at most a mirror of it."
+because = '''Op, 23 November 2026, on what guards the boundary of a repository [options: a stamp hook with a periodic audit; a paid plan with the forge's rulesets; a guard only once the repository is public]: "Let's not depend on forge features at all, public or no. No reliance on any GitHub features anywhere in our pipeline. Even the PRs for dev-main should be described generally to fit any forge or git host procedure and fall back to our own internal pr flow using same machinery as promotions." Intent: a forge is a host and nothing more; every gate, record and promotion is git-native, so the work moves to another host with nothing rebuilt.'''
+reading = "That the flow it falls back to is homma's own is read from his \"our own internal pr flow\"."
+sources = ["research::t202611231400_homma_canon_sources::sources::no_forge_feature"]
+subject = "framework"
+keywords = ["forge", "github", "pull request", "rulesets", "git host", "pipeline", "dev to main", "promotion", "release"]

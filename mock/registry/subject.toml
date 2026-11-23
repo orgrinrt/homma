@@ -1,0 +1,30 @@
+# What a tenet is about.
+#
+# One row per subject, so everything the canon says about units is `refsto(subject::unit)` rather
+# than a grep, and a subject nothing says anything about shows as one with no referrers. The
+# `subject` field on every tenet names its subject; the file a tenet sits in says nothing about it.
+
+[[subject]]
+id = "unit"
+what = "The unit: a body of work with one name, how units nest, and the state a unit keeps."
+keywords = ["unit", "project", "arc", "body of work", "nesting", "state", "archive", "name"]
+
+[[subject]]
+id = "identity"
+what = "Who works: the identity catalogue, what an identity holds, its team and its memory, and the names derived from a handle."
+keywords = ["identity", "catalogue", "hand", "journeyman", "team", "memory", "handle", "container", "lane", "lead"]
+
+[[subject]]
+id = "messaging"
+what = "How identities speak: channels, addressing, signing, waking and parking, and where reports land."
+keywords = ["messaging", "channel", "ping", "address", "signature", "wake", "park", "worker", "report", "attachment"]
+
+[[subject]]
+id = "registry"
+what = "The registry's rows and tickets: how an id is written and queried, and where a repository keeps its tickets."
+keywords = ["registry", "id", "slug", "path", "namespace", "ticket", "query", "letkajenkka", "tracker"]
+
+[[subject]]
+id = "framework"
+what = "What homma is beside the repositories it serves: the one framework with mockspace, self-contained repositories, and no reliance on a forge."
+keywords = ["framework", "mockspace", "seam", "self-contained", "workspace", "member", "forge", "pipeline", "shared crates"]
