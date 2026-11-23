@@ -85,16 +85,30 @@ pub fn url(registry: Registry, package: &str) -> String {
 ///
 /// It trusts the system's roots, and the ones `SSL_CERT_FILE` or `SSL_CERT_DIR` name where
 /// set, which is how a cloud container's proxy authority reaches it.
-fn agent() -> crate::tls::Agent {
+pub(crate) fn agent() -> crate::tls::Agent {
     crate::tls::agent_builder()
         .user_agent(concat!("homma/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(15))
         .build()
 }
 
-/// Every version `registry` holds for `package`, in the order the registry
-/// lists them, which is publish order on all three.
+/// Every live version `registry` holds for `package`, in the order the
+/// registry lists them, which is publish order on all three.
 pub fn published_versions(registry: Registry, package: &str) -> Result<Vec<Version>, Unreachable> {
+    holding(registry, package).map(|h| h.live)
+}
+
+/// What a registry holds for a package: the live versions, and apart from
+/// them the yanked ones, which still take their slot since no registry
+/// publishes a version twice.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Holding {
+    pub live:   Vec<Version>,
+    pub yanked: Vec<Version>,
+}
+
+/// Ask `registry` what it holds for `package`.
+pub fn holding(registry: Registry, package: &str) -> Result<Holding, Unreachable> {
     let target = url(registry, package);
     let fail = |why: String| {
         Unreachable {
@@ -105,16 +119,23 @@ pub fn published_versions(registry: Registry, package: &str) -> Result<Vec<Versi
     };
     let body = match agent().get(&target).call() {
         Ok(resp) => resp.into_string().map_err(|e| fail(e.to_string()))?,
-        Err(ureq::Error::Status(404, _)) => return Ok(Vec::new()),
+        Err(ureq::Error::Status(404, _)) => return Ok(Holding::default()),
         Err(e) => return Err(fail(e.to_string())),
     };
-    parse(registry, &body).map_err(fail)
+    parse_holding(registry, &body).map_err(fail)
 }
 
-/// The versions in a registry's answer, kept separate from the fetch so the
-/// three shapes are tested without a network.
+/// The live versions in a registry's answer.
 pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
+    parse_holding(registry, body).map(|h| h.live)
+}
+
+/// What a registry's answer holds, kept separate from the fetch so the
+/// three shapes are tested without a network. jsr marks a yanked version and
+/// the other two list what they hold.
+pub fn parse_holding(registry: Registry, body: &str) -> Result<Holding, String> {
     let mut out = Vec::new();
+    let mut yanked = Vec::new();
     match registry {
         Registry::CratesIo => {
             for line in body.lines().filter(|l| !l.trim().is_empty()) {
@@ -131,7 +152,7 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
         Registry::Jsr => {
             let doc: serde_json::Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
             let Some(map) = doc.get("versions").and_then(|v| v.as_object()) else {
-                return Ok(out);
+                return Ok(Holding::default());
             };
             for (v, meta) in map {
                 if meta
@@ -139,6 +160,10 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
                     .and_then(|y| y.as_bool())
                     .unwrap_or(false)
                 {
+                    yanked.push(
+                        v.parse()
+                            .map_err(|e: homma_api::NotAVersion| e.to_string())?,
+                    );
                     continue;
                 }
                 out.push(
@@ -147,6 +172,7 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
                 );
             }
             out.sort();
+            yanked.sort();
         },
         Registry::Npm => {
             let doc: serde_json::Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
@@ -173,7 +199,10 @@ pub fn parse(registry: Registry, body: &str) -> Result<Vec<Version>, String> {
             }
         },
     }
-    Ok(out)
+    Ok(Holding {
+        live: out,
+        yanked,
+    })
 }
 
 #[cfg(test)]
@@ -232,6 +261,14 @@ mod tests {
         let body = r#"{"scope":"hiisi","name":"x","latest":"0.2.0","versions":{"0.2.0":{},"0.1.0":{},"0.1.5":{"yanked":true}}}"#;
         let v = parse(Registry::Jsr, body).unwrap();
         assert_eq!(v, vec![Version::new(0, 1, 0), Version::new(0, 2, 0)]);
+    }
+
+    #[test]
+    fn a_yanked_jsr_version_is_kept_apart_from_the_live_ones() {
+        let body = r#"{"versions":{"0.2.0":{},"0.1.5":{"yanked":true}}}"#;
+        let h = parse_holding(Registry::Jsr, body).unwrap();
+        assert_eq!(h.live, vec![Version::new(0, 2, 0)]);
+        assert_eq!(h.yanked, vec![Version::new(0, 1, 5)]);
     }
 
     #[test]

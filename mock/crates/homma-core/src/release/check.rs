@@ -11,7 +11,15 @@ use std::path::Path;
 
 use homma_api::{CheckSeverity, Finding, Markers, RepoKind, Target, Version};
 
-pub use super::packages::{Packages, Published, fetch_published, packages, tag_name, tag_version};
+pub use super::packages::{
+    Packages,
+    Published,
+    fetch_published,
+    packages,
+    tag_name,
+    tag_name_or,
+    tag_version,
+};
 use super::registry::Registry;
 use super::workspace::{self, Layout};
 use super::{git, kind, version};
@@ -367,8 +375,10 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                 );
             }
         }
+        // a yanked version was published: its slot is taken for good
+        let yanked = inputs.published.yanked.get(&(*reg, name.clone()));
         for (t, tv) in &versioned {
-            if !versions.contains(tv) {
+            if !versions.contains(tv) && !yanked.is_some_and(|y| y.contains(tv)) {
                 // the newest tag with nothing published for it is a release
                 // half done; an older one is history
                 let newest = versioned.last().is_some_and(|(n, _)| n == t);
@@ -398,6 +408,22 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
             );
         }
     }
+
+    // the rest of the catalogue, at warn
+    let rider_names: Vec<String> = riders.iter().map(|r| r.name.clone()).collect();
+    let manifest = super::history::manifest_for(root, None).ok().flatten();
+    out.extend(super::hygiene::findings(&super::hygiene::Seen {
+        root,
+        remote: inputs.remote,
+        trunk: inputs.trunk,
+        release: inputs.release,
+        tags: &tags,
+        versioned: &versioned,
+        tracked: &tracked,
+        published: inputs.published,
+        riders: &rider_names,
+        manifest: manifest.as_deref(),
+    })?);
 
     out.sort_by_key(|f| std::cmp::Reverse(f.severity));
     Ok(out)

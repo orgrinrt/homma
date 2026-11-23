@@ -25,3 +25,30 @@ half done, and the check does not say so: the forge client reads repositories
 and commits but no releases. A read of the releases on a tag, and a check id
 naming each version tag the remote holds with none, finish it; the run's step 7
 already takes a release that exists as made, so the repair is a rerun of it.
+
+## The rest of the release check catalogue
+
+The rows the release check does not carry yet, each needing a source it does not
+have. A built bundle and the published tarball: reg.hash, reg.filelist,
+reg.notrepo, reg.tests.absent, reg.entrypoint, reg.readme, reg.licence,
+reg.size and the bld set. A deno manifest's exports and include at each tag:
+man.exports, man.exports.exist, man.include.exist, man.include.covers,
+man.exclude.sane, man.export.vanished, man.name.*, man.licence.field,
+man.description. A forge's pull request listing: branch.pr. The npm side read
+against jsr beyond the version sets: both.samename, both.notsquatted,
+both.bridge, both.deprecated, both.order, both.latest, both.missing, with
+order.npm.*, semver.gaps.npm, semver.prerelease.before, semver.latest,
+semver.first, semver.major.zero, order.cascade, order.scars and
+reg.yanked.reason. The internal dependency graph: the dep set. The readme's
+install lines and banned words: doc.readme.current, doc.readme.install,
+doc.readme.works, doc.banned, doc.repo.link. And tag.signed, ref.dangling,
+hist.secret.past, hist.lockfile and hist.linear. branch.stale is not owed: a
+remote branch carrying nothing the trunk lacks is one branch.merged names.
+
+## A jsr backfill publisher
+
+Publishing every tagged and unpublished jsr version in order, each dry-run in a
+worktree of its tag first, with the readme's examples type-checked: a second
+publish path beside the release run, for the history a release run never
+publishes. It wants the bundle source above, and the release run's own publish
+step to share.

@@ -19,6 +19,9 @@ use super::registry::{self, Registry};
 pub struct Published {
     /// Per package name on each registry, in publish order.
     pub versions: BTreeMap<(Registry, String), Vec<Version>>,
+    /// Per package name on each registry, the yanked versions, which keep
+    /// their slot though nothing installs them.
+    pub yanked:   BTreeMap<(Registry, String), Vec<Version>>,
 }
 
 impl Published {
@@ -148,6 +151,103 @@ pub fn members(root: &Path) -> Vec<(String, String)> {
     out
 }
 
+/// One publishable crate of a cargo repo: its name, its version where it has
+/// one, a member's `version.workspace = true` read as the root's
+/// `[workspace.package] version`, and its manifest relative to the root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Crate {
+    pub name:     String,
+    pub version:  Option<String>,
+    pub manifest: String,
+}
+
+/// Every crate of the repo not marked `publish = false`, the root's own
+/// `[package]` first and then each member, a name read once.
+pub fn crates(root: &Path) -> Vec<Crate> {
+    let Some(doc) = read_toml(&root.join("Cargo.toml")) else {
+        return Vec::new();
+    };
+    let inherited = doc
+        .get("workspace")
+        .and_then(|w| w.get("package"))
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let mut out: Vec<Crate> = Vec::new();
+    let mut take = |pkg: &toml::Value, manifest: String| {
+        if !publishable(pkg) {
+            return;
+        }
+        let Some(name) = pkg.get("name").and_then(|n| n.as_str()) else { return };
+        if out.iter().any(|c| c.name == name) {
+            return;
+        }
+        let version = match pkg.get("version") {
+            Some(toml::Value::String(v)) => Some(v.clone()),
+            Some(toml::Value::Table(t))
+                if t.get("workspace").and_then(|w| w.as_bool()) == Some(true) =>
+            {
+                inherited.clone()
+            },
+            _ => None,
+        };
+        out.push(Crate {
+            name: name.to_string(),
+            version,
+            manifest,
+        });
+    };
+    if let Some(pkg) = doc.get("package") {
+        take(pkg, "Cargo.toml".to_string());
+    }
+    for manifest in member_manifests(root) {
+        if let Some(pkg) = read_toml(&root.join(&manifest))
+            .as_ref()
+            .and_then(|d| d.get("package"))
+        {
+            take(pkg, manifest);
+        }
+    }
+    out
+}
+
+/// Every manifest the root's `[workspace] members` names, globs expanded and
+/// `.` left out since the root is read on its own, relative to the root.
+pub fn member_manifests(root: &Path) -> Vec<String> {
+    let Some(doc) = read_toml(&root.join("Cargo.toml")) else {
+        return Vec::new();
+    };
+    let entries = doc
+        .get("workspace")
+        .and_then(|w| w.get("members"))
+        .and_then(|m| m.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for m in entries
+        .iter()
+        .filter_map(|m| m.as_str())
+        .filter(|m| *m != ".")
+    {
+        for dir in expand_member(root, m) {
+            if !dir.join("Cargo.toml").is_file() {
+                continue;
+            }
+            let rel = dir.strip_prefix(root).unwrap_or(&dir).join("Cargo.toml");
+            let rel: Vec<String> = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            out.push(rel.join("/"));
+        }
+    }
+    out
+}
+
+fn read_toml(path: &Path) -> Option<toml::Value> {
+    toml::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
 /// A member entry is a path or a path ending in `/*`.
 fn expand_member(root: &Path, member: &str) -> Vec<std::path::PathBuf> {
     match member.strip_suffix("/*") {
@@ -171,12 +271,20 @@ fn expand_member(root: &Path, member: &str) -> Vec<std::path::PathBuf> {
 /// `v` where its tags carry one, bare where they do not, `v` where it has
 /// none yet.
 pub fn tag_name(tags: &[String], version: &Version) -> String {
-    let bare = tags.iter().any(|t| t.parse::<Version>().is_ok());
+    tag_name_or(tags, version, "v")
+}
+
+/// Like `tag_name`, naming a repo with no version tag yet with `fresh` in front.
+/// A tag that is no version says nothing of the style.
+pub fn tag_name_or(tags: &[String], version: &Version, fresh: &str) -> String {
+    if !tags.iter().any(|t| t.parse::<Version>().is_ok()) {
+        return format!("{fresh}{version}");
+    }
     let prefixed = tags.iter().any(|t| {
         t.strip_prefix('v')
             .is_some_and(|r| r.parse::<Version>().is_ok())
     });
-    if bare && !prefixed { version.to_string() } else { format!("v{version}") }
+    if prefixed { format!("v{version}") } else { version.to_string() }
 }
 
 /// The version a tag names, with or without a `v`.
@@ -188,8 +296,11 @@ pub fn tag_version(tag: &str) -> Option<Version> {
 pub fn fetch_published(packages: &Packages) -> Result<Published, registry::Unreachable> {
     let mut out = Published::default();
     for (reg, name) in packages.each() {
-        let v = registry::published_versions(reg, &name)?;
-        out.versions.insert((reg, name), v);
+        let h = registry::holding(reg, &name)?;
+        out.versions.insert((reg, name.clone()), h.live);
+        if !h.yanked.is_empty() {
+            out.yanked.insert((reg, name), h.yanked);
+        }
     }
     Ok(out)
 }

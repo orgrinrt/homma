@@ -134,6 +134,7 @@ fn a_registry_resolves_the_same_way_a_forge_does() {
     let reg = RegistryConfig {
         token_env: Some(var.into()),
         token_cmd: Some(vec!["echo".into(), "from-cmd".into()]),
+        scope:     None,
     };
     assert_eq!(resolve_registry(&reg).as_deref(), Some("from-env"));
     unsafe { std::env::set_var(var, "") };

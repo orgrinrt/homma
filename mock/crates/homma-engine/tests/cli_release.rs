@@ -493,3 +493,72 @@ fn a_version_named_outright_needs_a_repo_named_with_it() {
         .failure()
         .stderr(predicate::str::contains("names one repository"));
 }
+
+/// On a machine with no keychain the store is the variable `token_env` names, which homma never writes,
+/// so a walk is stopped before it asks for a token it could not keep, and exits non-zero naming the
+/// variable.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn auth_fix_on_a_store_that_refuses_writes_asks_for_no_paste_and_fails_naming_the_variable() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "{}\n[registries.jsr]\ntoken_env = \"HOMMA_CLI_TEST_JSR_TOKEN_UNSET\"\n",
+            minimal_config_toml()
+        ),
+    )
+    .unwrap();
+    bin()
+        .env_remove("HOMMA_CLI_TEST_JSR_TOKEN_UNSET")
+        .args(["-c", cfg.to_str().unwrap(), "release", "auth", "fix", "jsr", "--no-browser"])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("HOMMA_CLI_TEST_JSR_TOKEN_UNSET"))
+        .stderr(predicate::str::contains("paste the token").not());
+}
+
+#[test]
+fn estate_refuses_a_column_beside_json_at_the_parse_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    let out = dir.path().join("out.json");
+    bin()
+        .args([
+            "-c",
+            cfg.to_str().unwrap(),
+            "release",
+            "estate",
+            "--json",
+            out.to_str().unwrap(),
+            "jumps",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+    assert!(
+        !out.exists(),
+        "the refused combination still wrote the file"
+    );
+}
+
+#[test]
+fn versions_tag_names_the_first_tag_of_a_repo_bare() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("homma.toml");
+    std::fs::write(&cfg, minimal_config_toml()).unwrap();
+    committed_crate(dir.path(), "x");
+    bin()
+        .args(["-c", cfg.to_str().unwrap(), "release", "versions", "tag", "x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0.1.0 ->"));
+    let tags = std::process::Command::new("git")
+        .args(["-C", dir.path().join("x").to_str().unwrap(), "tag", "--list"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(tags.stdout).unwrap().trim(), "0.1.0");
+}
