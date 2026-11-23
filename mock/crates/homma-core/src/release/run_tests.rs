@@ -832,5 +832,8 @@ mod pr;
 #[path = "run_dev_pr_tests.rs"]
 mod dev_pr;
 
+#[path = "run_dev_resume_tests.rs"]
+mod dev_resume;
+
 #[path = "run_resume_tests.rs"]
 mod resume;

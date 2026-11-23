@@ -166,7 +166,7 @@ impl fmt::Display for ReleaseError {
             } => {
                 write!(
                     f,
-                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun takes a merge of {tip} on {base} only where its first parent is a commit a green gate run measured and its tree is {tip} merged onto that parent, and goes no further over this one until that holds, for a human to settle"
+                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun takes a merge of {tip} on {base} only where its tree is {tip} merged onto its first parent, and goes no further over this one until that holds, for a human to settle"
                 )
             },
             ReleaseError::NotPutBack {
@@ -433,9 +433,11 @@ pub fn step_hold_tag(
 
 /// Step 7: the forge release on the tag, with the block as its body.
 pub fn step_forge_release(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), ReleaseError> {
-    setup
-        .forge
-        .release(root, &plan.tag, plan.changelog.trim_end())
+    // the block the file holds is the release's body: where the trunk already
+    // carried it the plan's own was rebuilt over more commits and another date
+    let held = changelog::block_of(root, &plan.next)?;
+    let body = held.as_deref().unwrap_or_else(|| plan.changelog.trim_end());
+    setup.forge.release(root, &plan.tag, body)
 }
 
 /// Step 8: publish everything the plan names, in its order.

@@ -131,6 +131,29 @@ pub fn holds(root: &Path, version: &Version) -> std::io::Result<bool> {
     }
 }
 
+/// The block `CHANGELOG.md` at `root` holds under the heading of `version`, to
+/// the next block or the end, as the forge release's body; none where the file
+/// holds no such block.
+pub fn block_of(root: &Path, version: &Version) -> std::io::Result<Option<String>> {
+    let text = match std::fs::read_to_string(root.join("CHANGELOG.md")) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let heading = format!("## {version}");
+    let dated = format!("{heading} (");
+    let mut lines = text.lines();
+    let Some(first) = lines.find(|l| *l == heading || l.starts_with(&dated)) else {
+        return Ok(None);
+    };
+    let mut block = String::from(first);
+    for l in lines.take_while(|l| !l.starts_with("## ")) {
+        block.push('\n');
+        block.push_str(l);
+    }
+    Ok(Some(block.trim_end().to_string()))
+}
+
 /// The newest block in `CHANGELOG.md`, for the release body when the file
 /// already carries it.
 pub fn newest_block(text: &str) -> Option<&str> {

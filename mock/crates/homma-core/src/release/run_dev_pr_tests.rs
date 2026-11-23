@@ -10,17 +10,17 @@
 use super::pr::{bare, land_in, origin_has, pr_calls, refuse_pushes_to, routed};
 use super::*;
 
-const BRANCH: &str = "release/x-0.1.1";
-const FAILED: &str = "forge-route: pr: gh: HTTP 502";
+pub(super) const BRANCH: &str = "release/x-0.1.1";
+pub(super) const FAILED: &str = "forge-route: pr: gh: HTTP 502";
 
 /// The route's call that lands the bump `sha` into `dev`.
-fn dev_pr(f: &Fixture, sha: &str) -> String {
+pub(super) fn dev_pr(f: &Fixture, sha: &str) -> String {
     let root = f.root().to_string_lossy().into_owned();
     format!("{ROUTE} pr {root} {BRANCH} dev chore: release 0.1.1 merge {sha}")
 }
 
 /// The commits on `rev`'s first parents titled as a bump: a landed bump is one.
-fn bumps_on(f: &Fixture, rev: &str) -> usize {
+pub(super) fn bumps_on(f: &Fixture, rev: &str) -> usize {
     f.git(&["log", "--first-parent", "--format=%s", rev])
         .lines()
         .filter(|s| *s == "chore: release 0.1.1")
@@ -28,14 +28,14 @@ fn bumps_on(f: &Fixture, rev: &str) -> usize {
 }
 
 /// How many times `CHANGELOG.md` on `rev` opens a block for 0.1.1.
-fn blocks_on(f: &Fixture, rev: &str) -> usize {
+pub(super) fn blocks_on(f: &Fixture, rev: &str) -> usize {
     f.git(&["show", &format!("{rev}:CHANGELOG.md")])
         .matches("## 0.1.1 (")
         .count()
 }
 
 /// The merge commit the forge made of the bump on `dev`, checked to be one.
-fn merge_on_dev(f: &Fixture, tip: &str) -> String {
+pub(super) fn merge_on_dev(f: &Fixture, tip: &str) -> String {
     let merge = bare(f.origin(), &["rev-parse", "refs/heads/dev"]).unwrap();
     f.git(&["fetch", "--quiet", "origin", "dev"]);
     assert_eq!(
@@ -343,7 +343,7 @@ fn the_client_deletes_a_branch_only_at_the_head_it_names() {
 /// What a person does by hand on a protected `dev`: the bump on a branch of its
 /// own, landed into `dev` of the origin by a merge commit, the clone not told.
 /// Returns the bump and the merge.
-fn landed_by_hand(f: &Fixture) -> (String, String) {
+pub(super) fn landed_by_hand(f: &Fixture) -> (String, String) {
     f.git(&["switch", "--quiet", "-c", BRANCH]);
     std::fs::write(
         f.root().join("Cargo.toml"),
@@ -418,7 +418,7 @@ fn a_bump_landed_on_dev_by_another_pull_request_is_taken_with_no_commit_and_no_s
 
 /// A commit on `dev` that moves the manifest to 0.1.1 and, where `block`,
 /// opens the changelog for it, under a subject that reads as no bump; pushed.
-fn carried(f: &Fixture, manifest: bool, block: bool) -> String {
+pub(super) fn carried(f: &Fixture, manifest: bool, block: bool) -> String {
     if manifest {
         std::fs::write(
             f.root().join("Cargo.toml"),
@@ -556,7 +556,11 @@ fn a_pull_request_the_forge_resolved_to_another_tree_is_never_taken() {
         "the clone's dev is not moved onto it"
     );
     *runner.bad_merge.borrow_mut() = false;
-    release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(
+        matches!(&err, ReleaseError::NoGreenRun { .. }),
+        "refused for the gate run the bump has none of, not taken: {err:?}"
+    );
     assert_eq!(pr_calls(&runner).len(), 1, "no second pull request");
     assert!(
         git::tag_target(f.root(), "v0.1.1").is_err(),
