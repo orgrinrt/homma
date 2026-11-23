@@ -612,10 +612,14 @@ pub mod regen {
             // **A failure writing the dispatcher leaves both settings files as
             // they were**: the merge would sweep the registrations and have none
             // to write back.
+            // The wrappers an earlier regen wrote go only once no registration
+            // names them, so a settings file that does not parse leaves them
+            // running.
             let merged = crate::cmd::dispatch::install(&root, &entries, cfg.agent.filter())
                 .and_then(|registrations| {
                     aggregate::merge_settings(&root, &known_repos, &registrations)
-                });
+                })
+                .and_then(|()| crate::cmd::dispatch::retire_wrappers(&root));
             if let Err(e) = merged {
                 had_failure = true;
                 results.push(RegenResult {

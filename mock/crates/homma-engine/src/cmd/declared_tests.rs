@@ -349,7 +349,7 @@ fn a_row_reaches_settings_through_the_dispatcher_and_leaves_it_when_it_goes() {
     regen(&table(&[("PreToolUse", "Bash", "scripts/guard", &[])]));
     assert_eq!(commands(), vec![
         ".claude/hooks/hand.sh".to_string(),
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse".to_string(),
+        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse sync".to_string(),
     ]);
 
     regen(&table(&[]));

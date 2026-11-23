@@ -8,12 +8,13 @@
 //! The regen gathers an [`Entry`] for every hook a member gives, every row the
 //! manifest declares and the workspace gate, writes them to
 //! `.claude/hooks/_dispatch.json`, writes the dispatcher beside it, and returns
-//! one registration per event and mode for [`super::aggregate::merge_settings`]:
-//! the hooks the call waits on, and the `async` ones. The dispatcher is a shell
+//! its registrations for [`super::aggregate::merge_settings`]. A tool event
+//! whose answers fold ([`FOLDED`]) gets one registration for the hooks the call
+//! waits on and one for the `async` ones, and the dispatcher runs them side by
+//! side and folds what they say. Every other event gets one registration per
+//! entry, so the host reads each answer itself. The dispatcher is a shell
 //! script, so a tool call never waits on homma's engine being built for a new
-//! pin; it reads the payload and the table with one `jq`, runs the entries the
-//! call is theirs side by side, each under its timeout, and folds their answers
-//! into the one the host reads.
+//! pin.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,13 +23,11 @@ use anyhow::{Context, Result, anyhow};
 use homma_api::Root;
 use serde::{Deserialize, Serialize};
 
-use crate::cmd::aggregate::{
-    HookEntry,
-    LANDS_IN_SH,
-    MANAGED_MARK,
-    carries_the_mark,
-    sh_single_quote_escape,
-};
+use crate::cmd::aggregate::{HookEntry, MANAGED_MARK, carries_the_mark};
+
+#[path = "dispatch_script.rs"]
+mod script;
+pub(crate) use script::dispatcher_script;
 
 /// The dispatcher's file name under `.claude/hooks/`.
 pub(crate) const DISPATCHER: &str = "_dispatch.sh";
@@ -42,6 +41,11 @@ pub(crate) const FROM_ROWS: &str = "_declared";
 /// The `from` of the workspace gate's entry.
 pub(crate) const FROM_GATE: &str = "_workspace";
 
+/// The events whose hooks the dispatcher runs together and folds: the tool
+/// events, where hooks are many, every answer is JSON the host folds the same
+/// way, and an exit 2 is a deny before the call and a block after it.
+pub(crate) const FOLDED: &[&str] = &["PreToolUse", "PostToolUse"];
+
 /// The seconds the host gives the dispatcher over its longest entry, so the
 /// host never cuts short a hook the dispatcher would have let run.
 const SLACK: u32 = 10;
@@ -51,15 +55,15 @@ const SLACK: u32 = 10;
 pub(crate) struct Entry {
     /// The host event it runs at.
     pub event:      String,
-    /// The tools it fires for, as the host reads a matcher; empty or `*` for
-    /// every one.
+    /// What it fires for, as the host reads a matcher; empty or `*` for
+    /// everything.
     pub matcher:    String,
     /// The file it runs, relative to the workspace, or absolute for a member
     /// declared outside it.
     pub run:        String,
     /// The program it is run with, as written; empty where the file runs itself.
     pub runner:     String,
-    /// Its arguments, as written.
+    /// Its arguments, as written: words, never a line of shell.
     pub args:       String,
     /// The repositories it is narrowed to, relative to the workspace; empty for
     /// every call.
@@ -108,12 +112,13 @@ pub(crate) fn is_dispatcher_command(cmd: &str) -> bool {
     crate::cmd::aggregate::hook_file_named(cmd).is_some_and(|n| n == DISPATCHER)
 }
 
-/// Write the table and the dispatcher, remove every wrapper an earlier regen
-/// wrote, and return the dispatcher's registrations.
+/// Write the table and the dispatcher, and return the dispatcher's
+/// registrations.
 ///
 /// `filter` is `[agent] filter`, the program the dispatcher runs itself
 /// through. A table or a dispatcher homma did not write is refused by path
-/// rather than written over.
+/// rather than written over. The wrappers an earlier regen wrote are left for
+/// [`retire_wrappers`], once the settings that name them are rewritten.
 pub(crate) fn install(root: &Root, entries: &[Entry], filter: &[String]) -> Result<Vec<HookEntry>> {
     let hooks_dir = root
         .contain(&root.as_abs().join(".claude/hooks"))
@@ -148,14 +153,19 @@ pub(crate) fn install(root: &Root, entries: &[Entry], filter: &[String]) -> Resu
         .with_context(|| format!("write {}", script.as_path().display()))?;
     #[cfg(unix)]
     root.set_executable(&script)?;
-
-    retire_wrappers(root, &hooks_dir)?;
     Ok(registrations(entries))
 }
 
 /// Remove every file under `.claude/hooks/` an earlier regen wrote as a wrapper:
-/// whatever carries the mark but the dispatcher and the workspace gate.
-fn retire_wrappers(root: &Root, hooks_dir: &homma_api::ContainedPath) -> Result<()> {
+/// whatever carries the mark but the dispatcher and the workspace gate. Run once
+/// the settings no longer name them, so a merge that failed leaves them running.
+pub(crate) fn retire_wrappers(root: &Root) -> Result<()> {
+    let hooks_dir = root
+        .contain(&root.as_abs().join(".claude/hooks"))
+        .map_err(|e| anyhow!("{e}"))?;
+    if !hooks_dir.as_path().is_dir() {
+        return Ok(());
+    }
     for entry in fs::read_dir(hooks_dir.as_path())
         .with_context(|| format!("read {}", hooks_dir.as_path().display()))?
     {
@@ -168,7 +178,7 @@ fn retire_wrappers(root: &Root, hooks_dir: &homma_api::ContainedPath) -> Result<
             continue;
         }
         let target = root
-            .contain_under(hooks_dir, &name)
+            .contain_under(&hooks_dir, &name)
             .map_err(|e| anyhow!("{e}"))?;
         if target.as_path().is_file() && carries_the_mark(target.as_path()) {
             root.remove_file(&target).ok();
@@ -177,58 +187,84 @@ fn retire_wrappers(root: &Root, hooks_dir: &homma_api::ContainedPath) -> Result<
     Ok(())
 }
 
-/// One registration per event and mode that has entries: the matchers joined,
-/// or every tool where one entry takes every tool, and the longest timeout with
-/// [`SLACK`] over.
+/// The dispatcher's registrations. A folded event gets one per mode that has
+/// entries: their alternatives joined, or every tool where one entry takes every
+/// tool, and the longest timeout with [`SLACK`] over. Any other event gets one
+/// per entry, under the entry's own matcher, timeout and `async`, naming the
+/// entry by its place in the table.
 pub(crate) fn registrations(entries: &[Entry]) -> Vec<HookEntry> {
-    let mut groups: BTreeMap<(&str, bool), Vec<&Entry>> = BTreeMap::new();
-    for e in entries {
-        groups
-            .entry((e.event.as_str(), e.background))
-            .or_default()
-            .push(e);
+    let mut folded: BTreeMap<(&str, bool), Vec<&Entry>> = BTreeMap::new();
+    let mut alone: BTreeMap<&str, Vec<(usize, &Entry)>> = BTreeMap::new();
+    for (i, e) in entries.iter().enumerate() {
+        if FOLDED.contains(&e.event.as_str()) {
+            folded
+                .entry((e.event.as_str(), e.background))
+                .or_default()
+                .push(e);
+        } else {
+            alone.entry(e.event.as_str()).or_default().push((i, e));
+        }
     }
-    groups
+    let command =
+        |tail: String| format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{DISPATCHER} {tail}");
+    let mut out: Vec<HookEntry> = folded
         .into_iter()
         .map(|((event, background), es)| {
-            let none = |e: &&Entry| e.matcher.trim().is_empty();
-            let every = es.iter().any(|e| none(e) || e.matcher.trim() == "*");
-            // None at all where no entry named one, as their registrations
-            // were written; every tool where any entry takes every tool.
-            let matcher = if es.iter().all(none) {
-                String::new()
-            } else if every {
-                "*".to_string()
-            } else {
-                let mut seen: Vec<String> = Vec::new();
-                for e in &es {
-                    for piece in alternatives(&e.matcher) {
-                        if !seen.contains(&piece) {
-                            seen.push(piece);
-                        }
-                    }
-                }
-                seen.join("|")
-            };
             let longest = es.iter().map(|e| e.timeout).max().unwrap_or(0);
-            let mode = if background { " async" } else { "" };
+            let mode = if background { "async" } else { "sync" };
             HookEntry {
                 event: event.to_string(),
-                matcher,
-                command: format!(
-                    "\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{DISPATCHER} {event}{mode}"
-                ),
-                timeout: Some(longest + SLACK),
+                matcher: joined(&es),
+                command: command(format!("{event} {mode}")),
+                timeout: Some(longest.saturating_add(SLACK)),
                 background,
             }
         })
-        .collect()
+        .collect();
+    for (event, es) in alone {
+        for (i, e) in es {
+            out.push(HookEntry {
+                event:      event.to_string(),
+                matcher:    if e.matcher.trim().is_empty() {
+                    String::new()
+                } else {
+                    e.matcher.clone()
+                },
+                command:    command(format!("{event} one {i}")),
+                timeout:    Some(e.timeout),
+                background: e.background,
+            });
+        }
+    }
+    out
+}
+
+/// The matcher of a folded registration: none where no entry names one, every
+/// tool where any takes every tool, and otherwise the entries' alternatives,
+/// each once, in the order first met.
+fn joined(es: &[&Entry]) -> String {
+    let none = |e: &&Entry| e.matcher.trim().is_empty();
+    if es.iter().all(none) {
+        return String::new();
+    }
+    if es.iter().any(|e| none(e) || e.matcher.trim() == "*") {
+        return "*".to_string();
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for e in es {
+        for piece in alternatives(&e.matcher) {
+            if !seen.contains(&piece) {
+                seen.push(piece);
+            }
+        }
+    }
+    seen.join("|")
 }
 
 /// The alternatives a matcher takes, each whole: the names of a list of exact
 /// names, split on `|` and `,`, or the branches of a regular expression, split on
-/// a `|` outside any group, class or escape. Joined with `|` they take what the
-/// matchers took between them.
+/// a `|` outside any group, class or escape, an empty branch kept since it takes
+/// every name. Joined with `|` they take what the matchers took between them.
 fn alternatives(matcher: &str) -> Vec<String> {
     let plain = matcher
         .chars()
@@ -260,241 +296,16 @@ fn alternatives(matcher: &str) -> Vec<String> {
         }
     }
     out.push(matcher[start ..].to_string());
-    out.retain(|s| !s.is_empty());
     out
-}
-
-/// The dispatcher. It finds the workspace from its own location, two levels up,
-/// so it names no machine, and `filter` is written in relative to it.
-pub(crate) fn dispatcher_script(filter: &[String]) -> String {
-    let filter = match filter.split_first() {
-        None => String::new(),
-        Some((program, rest)) => {
-            let mut words = vec![format!("\"$WS\"/'{}'", sh_single_quote_escape(program))];
-            words.extend(
-                rest.iter()
-                    .map(|w| format!("'{}'", sh_single_quote_escape(w))),
-            );
-            words.join(" ")
-        },
-    };
-    format!(
-        r##"#!/usr/bin/env bash
-# The agent hooks' dispatcher, written {MANAGED_MARK}.
-# `_dispatch.sh <event> [async]` runs the entries of `_dispatch.json` beside it
-# that the call is theirs, side by side, and folds their answers into one. Bash
-# 3.2 and later, and `jq`.
-
-set -u
-
-HERE=$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")" && pwd) || exit 0
-WS=$(cd -- "$HERE/../.." && pwd) || exit 0
-TABLE="$HERE/{TABLE}"
-EVENT=${{1:-}}
-MODE=${{2:-sync}}
-[ -n "$EVENT" ] || {{ echo "homma's hook dispatcher: no event named" >&2; exit 1; }}
-
-# Once round the whole dispatch, where the workspace names a filter and has it.
-FILTER=({filter})
-if [ -z "${{HOMMA_DISPATCH_FILTERED:-}}" ] && [ ${{#FILTER[@]}} -gt 0 ] && [ -x "${{FILTER[0]}}" ]; then
-    HOMMA_DISPATCH_FILTERED=1 exec "${{FILTER[@]}}" "${{BASH_SOURCE[0]}}" "$@"
-fi
-
-[ -f "$TABLE" ] || exit 0
-if ! command -v jq >/dev/null 2>&1; then
-    echo "homma's hook dispatcher: jq is not on PATH, so it cannot read its table and no $EVENT hook ran" >&2
-    exit 1
-fi
-
-INPUT=$(cat)
-
-# One read of the payload and the table: where the call lands, then each entry
-# this handler runs, as shell words. A matcher is read the way the host reads
-# one, and one jq cannot read takes the call, since a guard skipped costs what it
-# is for.
-PLAN=$(printf '%s' "$INPUT" | jq -r --arg event "$EVENT" --arg mode "$MODE" --slurpfile t "$TABLE" '
-    def takes($m; $subject):
-        if $subject == null or $m == "" or $m == "*" then true
-        elif ($m | test("^[A-Za-z0-9_|, -]*$")) then
-            any($m | splits("[|,]") | gsub("^ +| +$"; ""); . == $subject)
-        else (try ($subject | test($m)) catch true) end;
-    (.tool_name // .source // .trigger // null) as $subject
-    | "FILE=\(.tool_input.file_path // .tool_input.path // "" | @sh)",
-      "CWD=\(.cwd // .tool_input.cwd // "" | @sh)",
-      "CMD=\(.tool_input.command // "" | @sh)",
-      ($t[0].entries[]
-        | select(.event == $event)
-        | select((.async // false) == ($mode == "async"))
-        | select(takes(.matcher // ""; $subject))
-        | "RUN+=(\(.run | @sh)); RUNNER+=(\(.runner // "" | @sh)); ARGS+=(\(.args // "" | @sh)); TIMEOUT+=(\(.timeout // 60 | tostring | @sh)); ROOTS+=(\((.roots // []) | map(@sh) | join(" ") | @sh))")
-') || {{
-    echo "homma's hook dispatcher: could not read the payload or $TABLE, so no $EVENT hook ran" >&2
-    exit 1
-}}
-
-FILE=; CWD=; CMD=
-RUN=(); RUNNER=(); ARGS=(); TIMEOUT=(); ROOTS=()
-eval "$PLAN"
-[ ${{#RUN[@]}} -gt 0 ] || exit 0
-[ -n "$CWD" ] || CWD=$PWD
-
-{LANDS_IN_SH}
-TMP=$(mktemp -d 2>/dev/null || mktemp -d -t homma-dispatch) || {{
-    echo "homma's hook dispatcher: no temporary directory, so no $EVENT hook ran" >&2
-    exit 1
-}}
-trap 'rm -rf "$TMP"' EXIT
-LIMIT=
-command -v timeout >/dev/null 2>&1 && LIMIT=timeout
-
-RAN=()
-n=0
-while [ $n -lt ${{#RUN[@]}} ]; do
-    i=$n
-    n=$((n + 1))
-    roots=()
-    eval "roots=(${{ROOTS[i]}})"
-    if [ ${{#roots[@]}} -gt 0 ]; then
-        hit=
-        for r in "${{roots[@]}}"; do
-            case "$r" in
-                /*) ;;
-                *) r="$WS/$r" ;;
-            esac
-            if lands_in "$r"; then
-                hit=1
-                break
-            fi
-        done
-        [ -n "$hit" ] || continue
-    fi
-    hook=${{RUN[i]}}
-    case "$hook" in
-        /*) ;;
-        *) hook="$WS/$hook" ;;
-    esac
-    pre=()
-    post=()
-    eval "pre=(${{RUNNER[i]}})"
-    eval "post=(${{ARGS[i]}})"
-    # Not in this clone: there is no hook here to run.
-    if [ ${{#pre[@]}} -gt 0 ]; then
-        [ -f "$hook" ] || continue
-    else
-        [ -x "$hook" ] || continue
-    fi
-    cmd=()
-    [ -n "$LIMIT" ] && cmd=("$LIMIT" -k 5 "${{TIMEOUT[i]}}")
-    [ ${{#pre[@]}} -gt 0 ] && cmd=(${{cmd[@]+"${{cmd[@]}}"}} "${{pre[@]}}")
-    cmd=(${{cmd[@]+"${{cmd[@]}}"}} "$hook")
-    [ ${{#post[@]}} -gt 0 ] && cmd=("${{cmd[@]}}" "${{post[@]}}")
-    (
-        "${{cmd[@]}}" <<<"$INPUT" >"$TMP/$i.out" 2>"$TMP/$i.err"
-        echo $? >"$TMP/$i.rc"
-    ) &
-    RAN=(${{RAN[@]+"${{RAN[@]}}"}} "$i")
-done
-wait
-[ ${{#RAN[@]}} -gt 0 ] || exit 0
-
-# Fold the answers: a block wins, JSON folds the way the host folds several
-# hooks, plain text stays text, and any other failure is named.
-blocked=
-blocks=
-texts=
-fails=
-JSON=()
-for i in "${{RAN[@]}}"; do
-    rc=$(cat "$TMP/$i.rc" 2>/dev/null) || rc=1
-    case "$rc" in
-        0)
-            if [ -s "$TMP/$i.out" ]; then
-                if jq -e 'type == "object"' "$TMP/$i.out" >/dev/null 2>&1; then
-                    JSON=(${{JSON[@]+"${{JSON[@]}}"}} "$TMP/$i.out")
-                else
-                    texts="$texts$(cat "$TMP/$i.out")"$'\n'
-                fi
-            fi
-            ;;
-        2)
-            blocked=1
-            [ -s "$TMP/$i.err" ] && blocks="$blocks$(cat "$TMP/$i.err")"$'\n'
-            ;;
-        124 | 137)
-            fails="$fails${{RUN[i]}}: ran past its ${{TIMEOUT[i]}} seconds and was stopped"$'\n'
-            [ -s "$TMP/$i.err" ] && fails="$fails$(cat "$TMP/$i.err")"$'\n'
-            ;;
-        *)
-            fails="$fails${{RUN[i]}}: exited $rc"$'\n'
-            [ -s "$TMP/$i.err" ] && fails="$fails$(cat "$TMP/$i.err")"$'\n'
-            ;;
-    esac
-done
-
-if [ -n "$blocked" ]; then
-    printf '%s' "$blocks" >&2
-    if [ ${{#JSON[@]}} -gt 0 ]; then
-        ctx=$(jq -rs '[.[] | .hookSpecificOutput.additionalContext? // empty | select(type == "string" and . != "")] | join("\n\n")' "${{JSON[@]}}" 2>/dev/null)
-        [ -n "$ctx" ] && printf '\n%s\n' "$ctx" >&2
-    fi
-    [ -n "$fails" ] && printf '%s' "$fails" >&2
-    exit 2
-fi
-
-[ -n "$fails" ] && printf '%s' "$fails" >&2
-if [ ${{#JSON[@]}} -eq 0 ]; then
-    if [ -n "$texts" ]; then
-        printf '%s' "$texts"
-        exit 0
-    fi
-    [ -z "$fails" ] || exit 1
-    exit 0
-fi
-
-case "$EVENT" in
-    SessionStart | UserPromptSubmit) ;;
-    *)
-        [ -n "$texts" ] && printf '%s' "$texts" >&2
-        texts=
-        ;;
-esac
-jq -s --arg event "$EVENT" --arg text "$texts" '
-    def joined(f): [.[] | f | select(type == "string" and . != "")]
-        | if length == 0 then null else join("\n\n") end;
-    def rank: . as $d | {{"deny": 4, "defer": 3, "ask": 2, "allow": 1}} | (.[$d] // 0);
-    def clean: with_entries(select(.value != null));
-    . as $all
-    | [$all[] | (.hookSpecificOutput // {{}})] as $h
-    | ([$h[] | .permissionDecision // empty] | max_by(rank)) as $win
-    | ([$all | joined(.hookSpecificOutput.additionalContext), ($text | sub("\n+$"; ""))]
-        | map(select(. != null and . != "")) | if length == 0 then null else join("\n\n") end) as $ctx
-    | (reduce $all[] as $o ({{}}; ($o | del(.hookSpecificOutput)) + .))
-    | .systemMessage = ($all | joined(.systemMessage))
-    | .stopReason = ($all | joined(.stopReason))
-    | .continue = (if any($all[]; .continue == false) then false else null end)
-    | .suppressOutput = (if any($all[]; .suppressOutput == true) then true else null end)
-    | .decision = (if any($all[]; .decision == "block") then "block" else .decision end)
-    | .reason = (if .decision == "block"
-        then ([$all[] | select(.decision == "block")] | joined(.reason))
-        else ($all | joined(.reason)) end)
-    | if ([$h[] | select(length > 0)] | length) > 0 or $ctx != null then
-        .hookSpecificOutput = ((reduce $h[] as $o ({{}}; $o + .))
-            + {{hookEventName: $event, additionalContext: $ctx}}
-            + (if $win == null then {{}} else {{
-                permissionDecision: $win,
-                permissionDecisionReason: ([$h[] | select(.permissionDecision == $win)] | joined(.permissionDecisionReason))
-              }} end)
-            | clean)
-      else . end
-    | clean
-' "${{JSON[@]}}"
-"##
-    )
 }
 
 #[cfg(test)]
 #[path = "dispatch_tests.rs"]
 pub(in crate::cmd) mod tests;
+
+#[cfg(test)]
+#[path = "dispatch_run_tests.rs"]
+mod run_tests;
 
 #[cfg(test)]
 #[path = "dispatch_scope_tests.rs"]

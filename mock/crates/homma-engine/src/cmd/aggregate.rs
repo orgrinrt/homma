@@ -281,6 +281,7 @@ fn aggregate_hooks(
                                     runner: String::new(),
                                     timeout: None,
                                     background: false,
+                                    unsupported: Vec::new(),
                                 }
                             })
                             .collect()
@@ -304,6 +305,21 @@ fn aggregate_hooks(
                 continue;
             },
         };
+        if let Some(r) = registrations.iter().find(|r| !r.unsupported.is_empty()) {
+            problems.push(format!(
+                "`{shown}` is registered with `{}`, which the dispatcher does not carry, so it \
+                 would run otherwise than its repository wrote; not carried",
+                r.unsupported.join("`, `")
+            ));
+            continue;
+        }
+        if let Some(problem) = registrations
+            .iter()
+            .find_map(|r| plain_args(&r.args, &shown).err())
+        {
+            problems.push(problem);
+            continue;
+        }
 
         // Workspace-relative, the portable half, so the table names no machine
         // and stays right when the clone is moved or copied.
@@ -330,20 +346,26 @@ fn aggregate_hooks(
 /// One place a repository's `settings.json` calls a hook from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Registration {
-    event:      String,
+    event:       String,
     /// Empty where the registration named none.
-    matcher:    String,
+    matcher:     String,
     /// Whatever followed the hook's path on its command line, carried onto the
     /// wrapper's command so the hook still receives it.
-    args:       String,
+    args:        String,
     /// Whatever preceded it, the program the host runs the hook with, which
     /// the dispatcher runs it with in turn. Empty where the host runs the file.
-    runner:     String,
+    runner:      String,
     /// The seconds the registration gives it, where it gives any.
-    timeout:    Option<u32>,
+    timeout:     Option<u32>,
     /// Whether the registration runs it `async`.
-    background: bool,
+    background:  bool,
+    /// The handler fields it gives that the dispatcher does not carry, by name.
+    unsupported: Vec<String>,
 }
+
+/// The fields of a command handler the dispatcher carries; any other is named
+/// in [`Registration::unsupported`].
+const CARRIED: &[&str] = &["type", "command", "timeout", "async"];
 
 /// Map each hook file a repository's `settings.json` calls, by its name under
 /// `.claude/hooks/`, to every event, matcher and argument list it is called
@@ -382,16 +404,25 @@ fn read_settings_hooks(path: &Path) -> BTreeMap<String, Vec<Registration>> {
                     continue;
                 };
                 let r = Registration {
-                    event:      event.clone(),
-                    matcher:    matcher.clone(),
-                    args:       call.args,
-                    runner:     call.runner,
-                    timeout:    h
+                    event:       event.clone(),
+                    matcher:     matcher.clone(),
+                    args:        call.args,
+                    runner:      call.runner,
+                    timeout:     h
                         .get("timeout")
                         .and_then(serde_json::Value::as_u64)
                         .and_then(|t| u32::try_from(t).ok())
                         .filter(|t| *t > 0),
-                    background: h.get("async").and_then(serde_json::Value::as_bool) == Some(true),
+                    background:  h.get("async").and_then(serde_json::Value::as_bool) == Some(true),
+                    unsupported: h
+                        .as_object()
+                        .map(|o| {
+                            o.keys()
+                                .filter(|k| !CARRIED.contains(&k.as_str()))
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                 };
                 let regs = out.entry(call.name).or_default();
                 if !regs.contains(&r) {
@@ -430,6 +461,7 @@ pub(crate) use wrapper::{
     hook_call,
     hook_file_named,
     one_runner,
+    plain_args,
     sh_single_quote_escape,
 };
 

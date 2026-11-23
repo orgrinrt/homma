@@ -59,6 +59,7 @@ pub(crate) fn regen(
     .unwrap();
     let regs = dispatch::install(&root, &entries, &[]).unwrap();
     merge_settings(&root, &["arvo"], &regs).unwrap();
+    dispatch::retire_wrappers(&root).unwrap();
     (a, entries, settings(ws))
 }
 
@@ -91,12 +92,12 @@ pub(crate) fn registrations(v: &serde_json::Value) -> Vec<(String, Option<String
     out
 }
 
-/// The dispatcher's registration for `event`.
+/// The dispatcher's registration for a folded `event`, the hooks the call waits on.
 pub(crate) fn reg(event: &str, matcher: Option<&str>) -> (String, Option<String>, String) {
     (
         event.to_string(),
         matcher.map(str::to_string),
-        format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/_dispatch.sh {event}"),
+        format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/_dispatch.sh {event} sync"),
     )
 }
 
@@ -127,7 +128,7 @@ fn workspace_settings(ws: &Path, body: &str) {
 fn dispatch_at(ws: &Path, payload: &str) -> std::process::Output {
     dispatch::tests::dispatch(
         &ws.join(".claude/hooks/_dispatch.sh"),
-        &["PreToolUse"],
+        &["PreToolUse", "sync"],
         payload,
         None,
         &[],
@@ -157,12 +158,17 @@ fn every_event_and_matcher_a_repository_gives_a_hook_is_carried_to_it() {
         ran("PreToolUse", "Edit", "guard.sh"),
         ran("Stop", "", "at-the-end.sh"),
     ]);
+    let stop = entries.iter().position(|e| e.event == "Stop").unwrap();
     let mut got = registrations(&v);
     got.sort();
     let mut want = vec![
         reg("PreToolUse", Some("Edit")),
         reg("PostToolUse", Some("Write")),
-        reg("Stop", None),
+        (
+            "Stop".to_string(),
+            None,
+            format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/_dispatch.sh Stop one {stop}"),
+        ),
     ];
     want.sort();
     assert_eq!(got, want);

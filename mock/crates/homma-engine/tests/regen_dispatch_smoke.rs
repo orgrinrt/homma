@@ -99,7 +99,7 @@ fn a_run_over_one_member_keeps_the_others_hooks_and_a_member_gone_takes_its_own(
     assert_eq!(pre.len(), 1, "one registration for the event: {settings}");
     assert_eq!(
         pre[0]["hooks"][0]["command"],
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse"
+        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_dispatch.sh PreToolUse sync"
     );
     // the members' 30 and the gate's 45, the manifest's default
     assert_eq!(pre[0]["hooks"][0]["timeout"], 55);
@@ -113,4 +113,34 @@ fn a_run_over_one_member_keeps_the_others_hooks_and_a_member_gone_takes_its_own(
     std::fs::remove_dir_all(ws.join("kolli")).unwrap();
     regen(&["--repo", "arvo"]);
     assert_eq!(from(&ws), vec!["_workspace", "arvo"]);
+
+    // A settings file that does not parse fails the run and leaves the wrappers
+    // an earlier regen wrote, so the hooks they run keep running until it is
+    // fixed; with it fixed they go.
+    let old = ws.join(".claude/hooks/arvo--guard.sh");
+    std::fs::write(
+        &old,
+        "#!/usr/bin/env bash\n# Aggregated from `arvo` by `homma agent regen`.\n",
+    )
+    .unwrap();
+    let local = ws.join(".claude/settings.local.json");
+    let good = std::fs::read_to_string(&local).unwrap();
+    std::fs::write(&local, "{ \"hooks\": {}, }").unwrap();
+    let out = bin()
+        .env("HOME", &home)
+        .args(["--config", cfg.to_str().unwrap(), "agent", "regen"])
+        .args(["--skip-cargo-mock", "--skip-configs", "--skip-surfaces"])
+        .output()
+        .expect("the binary runs");
+    assert!(
+        !out.status.success(),
+        "a settings file that does not parse passed"
+    );
+    assert!(
+        old.exists(),
+        "a wrapper went while its registration could not be swept"
+    );
+    std::fs::write(&local, good).unwrap();
+    regen(&[]);
+    assert!(!old.exists(), "the wrapper stayed once the settings moved");
 }

@@ -194,3 +194,60 @@ fn a_hidden_file_among_the_hooks_is_neither_carried_nor_reported() {
         "Bash"
     )]);
 }
+
+#[test]
+fn a_hook_given_a_line_of_shell_after_it_is_reported_and_not_carried() {
+    for args in ["|| true", "2>/dev/null", "; echo x", "$(date)", "`date`", "& wait"] {
+        let ws = tempfile::tempdir().unwrap();
+        let repo = plant_repo(
+            ws.path(),
+            &[("check.sh", QUIET), ("other.sh", QUIET)],
+            &format!(
+                r#"{{"hooks":{{"PreToolUse":[
+                {{"matcher":"Bash","hooks":[{{"type":"command","command":".claude/hooks/check.sh {args}"}}]}},
+                {{"matcher":"Edit","hooks":[{{"type":"command","command":".claude/hooks/other.sh --strict 'two words' \"$X\""}}]}}
+            ]}}}}"#
+            ),
+        );
+        let (a, entries, _) = regen(ws.path(), &repo);
+        assert_eq!(a.problems.len(), 1, "`{args}`: {:?}", a.problems);
+        assert!(
+            a.problems[0].contains("arvo/.claude/hooks/check.sh")
+                && a.problems[0].contains("a line of shell rather than arguments"),
+            "`{args}`: {:?}",
+            a.problems
+        );
+        // The control: quoted words and a variable are arguments, and carried.
+        assert_eq!(carried(&entries), vec![four(
+            "arvo/.claude/hooks/other.sh",
+            "",
+            "--strict 'two words' \"$X\"",
+            "Edit"
+        )]);
+    }
+}
+
+#[test]
+fn a_hook_registered_with_a_field_the_dispatcher_does_not_carry_is_reported() {
+    let ws = tempfile::tempdir().unwrap();
+    let repo = plant_repo(
+        ws.path(),
+        &[("check.sh", QUIET), ("other.sh", QUIET)],
+        r#"{"hooks":{"PreToolUse":[
+            {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/check.sh","if":"Bash(git *)","asyncRewake":true}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/other.sh","timeout":5,"async":true}]}
+        ]}}"#,
+    );
+    let (a, entries, _) = regen(ws.path(), &repo);
+    assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
+    assert!(
+        a.problems[0].contains("arvo/.claude/hooks/check.sh")
+            && a.problems[0].contains("`asyncRewake`")
+            && a.problems[0].contains("`if`"),
+        "{:?}",
+        a.problems
+    );
+    // The control: the fields it carries are carried.
+    assert_eq!(entries.len(), 1);
+    assert_eq!((entries[0].timeout, entries[0].background), (5, true));
+}

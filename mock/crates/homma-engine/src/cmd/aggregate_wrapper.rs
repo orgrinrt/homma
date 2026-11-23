@@ -89,6 +89,23 @@ pub(crate) fn one_runner<'a>(
     Ok(runner.to_string())
 }
 
+/// Whether the arguments a registration gives a hook are words, quoted or bare,
+/// or the problem to report for `shown` where they are a line of shell. The
+/// dispatcher reads them into the hook's argument list, which takes words: a
+/// separator, a pipe, a redirection, a group or a command substitution after
+/// the hook would have run as something else, `x.sh || true` hiding the hook's
+/// refusal and `x.sh 2>/dev/null` its message.
+pub(crate) fn plain_args(args: &str, shown: &str) -> Result<(), String> {
+    let shell = ['&', ';', '|', '(', ')', '`', '<', '>'];
+    if args.contains(shell) || args.contains("$(") {
+        return Err(format!(
+            "`{shown}` is given `{args}` after it, which is a line of shell rather than \
+             arguments, and the dispatcher hands a hook words; not carried"
+        ));
+    }
+    Ok(())
+}
+
 /// The file a hook command runs, by its name under `.claude/hooks/`.
 pub(crate) fn hook_file_named(cmd: &str) -> Option<String> {
     hook_call(cmd).map(|c| c.name)
