@@ -110,6 +110,7 @@ pub use crate::version::{NotAVersion, Version};
 pub enum Signal {
     Cargo,
     Deno,
+    Nut,
     Content,
 }
 
@@ -174,26 +175,29 @@ pub enum RepoKind {
     Crate,
     Deno,
     Both,
+    Nut,
     Content,
 }
 
 impl RepoKind {
     /// The kind a set of signals adds up to, `None` for the empty set.
     pub fn from_signals(signals: impl IntoIterator<Item = Signal>) -> Option<Self> {
-        let (mut cargo, mut deno, mut content) = (false, false, false);
+        let (mut cargo, mut deno, mut nut, mut content) = (false, false, false, false);
         for s in signals {
             match s {
                 Signal::Cargo => cargo = true,
                 Signal::Deno => deno = true,
+                Signal::Nut => nut = true,
                 Signal::Content => content = true,
             }
         }
-        match (cargo, deno, content) {
-            (true, true, _) => Some(RepoKind::Both),
-            (true, false, _) => Some(RepoKind::Crate),
-            (false, true, _) => Some(RepoKind::Deno),
-            (false, false, true) => Some(RepoKind::Content),
-            (false, false, false) => None,
+        match (cargo, deno, nut, content) {
+            (true, true, ..) => Some(RepoKind::Both),
+            (true, false, ..) => Some(RepoKind::Crate),
+            (false, true, ..) => Some(RepoKind::Deno),
+            (false, false, true, _) => Some(RepoKind::Nut),
+            (false, false, false, true) => Some(RepoKind::Content),
+            (false, false, false, false) => None,
         }
     }
 
@@ -279,12 +283,15 @@ mod kind_tests {
     }
 
     #[test]
-    fn a_table_deserialises_over_the_defaults_and_refuses_a_word_outside_the_three() {
+    fn a_table_deserialises_over_the_defaults_and_refuses_a_word_outside_the_four() {
         #[derive(Debug, serde::Deserialize)]
         struct Doc {
             markers: Markers,
         }
-        let d: Doc = toml::from_str("[markers]\n\"polka.toml\" = \"content\"\n").unwrap();
+        let d: Doc =
+            toml::from_str("[markers]\n\"polka.toml\" = \"content\"\n\"nut.toml\" = \"nut\"\n")
+                .unwrap();
+        assert_eq!(d.markers.signal_of("nut.toml"), Some(Signal::Nut));
         assert_eq!(d.markers.signal_of("polka.toml"), Some(Signal::Content));
         assert_eq!(d.markers.signal_of("Cargo.toml"), Some(Signal::Cargo));
         let err = toml::from_str::<Doc>("[markers]\n\"polka.toml\" = \"prose\"\n").unwrap_err();
@@ -327,6 +334,13 @@ mod kind_tests {
         assert!(RepoKind::Both.has_crate() && RepoKind::Both.has_deno());
         assert!(RepoKind::Crate.has_crate() && !RepoKind::Crate.has_deno());
         assert!(!RepoKind::Deno.has_crate() && RepoKind::Deno.has_deno());
+        // nut is versioned and calls nothing; beside a cargo or deno manifest that
+        // manifest names the kind
+        assert_eq!(RepoKind::from_signals([Nut]), Some(RepoKind::Nut));
+        assert_eq!(RepoKind::from_signals([Nut, Content]), Some(RepoKind::Nut));
+        assert_eq!(RepoKind::from_signals([Nut, Cargo]), Some(RepoKind::Crate));
+        assert_eq!(RepoKind::from_signals([Deno, Nut]), Some(RepoKind::Deno));
+        assert!(!RepoKind::Nut.has_crate() && !RepoKind::Nut.has_deno());
     }
 }
 

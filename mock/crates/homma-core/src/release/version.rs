@@ -35,37 +35,84 @@ impl From<std::io::Error> for VersionError {
     }
 }
 
-/// Read the version at `root`. A repo that is both must carry the same one
-/// in each manifest, and disagreeing is an error rather than a pick.
-pub fn read(root: &Path, kind: RepoKind) -> Result<Version, VersionError> {
-    let cargo = kind.has_crate().then(|| read_cargo(root)).transpose()?;
-    let deno = kind.has_deno().then(|| read_deno(root)).transpose()?;
-    match (cargo, deno) {
-        (Some(c), Some(d)) if c != d => {
-            Err(VersionError::Manifest(
-                "Cargo.toml and deno.json".into(),
-                format!("disagree on the version: {c} against {d}"),
-            ))
-        },
-        (Some(c), _) => Ok(c),
-        (None, Some(d)) => Ok(d),
-        (None, None) => {
-            Err(VersionError::Manifest(
-                "manifest".into(),
-                "no manifest".into(),
-            ))
-        },
+/// One manifest that carries a version: its file at the root, and how its
+/// version is read and written in place.
+struct Manifest {
+    file:  &'static str,
+    read:  fn(&Path) -> Result<Version, VersionError>,
+    write: fn(&Path, &Version) -> Result<(), VersionError>,
+}
+
+const CARGO: Manifest = Manifest {
+    file:  "Cargo.toml",
+    read:  read_cargo,
+    write: write_cargo,
+};
+const DENO: Manifest = Manifest {
+    file:  "deno.json",
+    read:  read_deno,
+    write: write_deno,
+};
+const NUT: Manifest = Manifest {
+    file:  "nut.toml",
+    read:  read_nut,
+    write: write_nut,
+};
+
+/// The one list of which manifests carry the version of a repo of `kind`.
+/// Content carries none.
+fn of(kind: RepoKind) -> &'static [Manifest] {
+    match kind {
+        RepoKind::Crate => &[CARGO],
+        RepoKind::Deno => &[DENO],
+        RepoKind::Both => &[CARGO, DENO],
+        RepoKind::Nut => &[NUT],
+        RepoKind::Content => &[],
     }
+}
+
+/// The files that carry the version of a repo of `kind`, in the order a
+/// release names them.
+pub fn manifests(kind: RepoKind) -> impl Iterator<Item = &'static str> {
+    of(kind).iter().map(|m| m.file)
+}
+
+/// The version one manifest of a repo of `kind` carries at `root`, by its
+/// file name; a file the kind does not version is an error.
+pub fn read_manifest(root: &Path, kind: RepoKind, file: &str) -> Result<Version, VersionError> {
+    let m = of(kind).iter().find(|m| m.file == file).ok_or_else(|| {
+        VersionError::Manifest(file.into(), "not a manifest this kind versions".into())
+    })?;
+    (m.read)(root)
+}
+
+/// Read the version at `root`. A repo with several manifests must carry the
+/// same one in each, and disagreeing is an error rather than a pick.
+pub fn read(root: &Path, kind: RepoKind) -> Result<Version, VersionError> {
+    let mut found: Option<(&str, Version)> = None;
+    for m in of(kind) {
+        let v = (m.read)(root)?;
+        match &found {
+            Some((first, f)) if *f != v => {
+                return Err(VersionError::Manifest(
+                    format!("{first} and {}", m.file),
+                    format!("disagree on the version: {f} against {v}"),
+                ));
+            },
+            Some(_) => {},
+            None => found = Some((m.file, v)),
+        }
+    }
+    found
+        .map(|(_, v)| v)
+        .ok_or_else(|| VersionError::Manifest("manifest".into(), "no manifest".into()))
 }
 
 /// Write `version` into every manifest the kind has, preserving the rest of
 /// the file as it was.
 pub fn write(root: &Path, kind: RepoKind, version: &Version) -> Result<(), VersionError> {
-    if kind.has_crate() {
-        write_cargo(root, version)?;
-    }
-    if kind.has_deno() {
-        write_deno(root, version)?;
+    for m in of(kind) {
+        (m.write)(root, version)?;
     }
     Ok(())
 }
@@ -87,27 +134,54 @@ fn cargo_version_item(doc: &mut toml_edit::DocumentMut) -> Option<&mut toml_edit
     }
 }
 
-fn read_cargo(root: &Path) -> Result<Version, VersionError> {
-    let text = std::fs::read_to_string(root.join("Cargo.toml"))?;
-    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
-        VersionError::Manifest("Cargo.toml".into(), e.to_string())
-    })?;
-    let item = cargo_version_item(&mut doc)
+/// `[package] version` alone: `nut.toml` has no workspace table.
+fn package_version_item(doc: &mut toml_edit::DocumentMut) -> Option<&mut toml_edit::Item> {
+    doc.get_mut("package")?.get_mut("version")
+}
+
+type Locate = fn(&mut toml_edit::DocumentMut) -> Option<&mut toml_edit::Item>;
+
+fn read_toml(root: &Path, file: &str, locate: Locate) -> Result<Version, VersionError> {
+    let text = std::fs::read_to_string(root.join(file))?;
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| VersionError::Manifest(file.into(), e.to_string()))?;
+    let item = locate(&mut doc)
         .and_then(|i| i.as_str())
-        .ok_or_else(|| VersionError::Manifest("Cargo.toml".into(), "no version".into()))?;
-    item.parse().map_err(|e: homma_api::NotAVersion| {
-        VersionError::Manifest("Cargo.toml".into(), e.to_string())
-    })
+        .ok_or_else(|| VersionError::Manifest(file.into(), "no version".into()))?;
+    item.parse()
+        .map_err(|e: homma_api::NotAVersion| VersionError::Manifest(file.into(), e.to_string()))
+}
+
+fn read_cargo(root: &Path) -> Result<Version, VersionError> {
+    read_toml(root, "Cargo.toml", cargo_version_item)
+}
+
+fn read_nut(root: &Path) -> Result<Version, VersionError> {
+    read_toml(root, "nut.toml", package_version_item)
 }
 
 fn write_cargo(root: &Path, version: &Version) -> Result<(), VersionError> {
-    let path = root.join("Cargo.toml");
+    write_toml(root, "Cargo.toml", cargo_version_item, version)
+}
+
+fn write_nut(root: &Path, version: &Version) -> Result<(), VersionError> {
+    write_toml(root, "nut.toml", package_version_item, version)
+}
+
+fn write_toml(
+    root: &Path,
+    file: &str,
+    locate: Locate,
+    version: &Version,
+) -> Result<(), VersionError> {
+    let path = root.join(file);
     let text = std::fs::read_to_string(&path)?;
-    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
-        VersionError::Manifest("Cargo.toml".into(), e.to_string())
-    })?;
-    let item = cargo_version_item(&mut doc)
-        .ok_or_else(|| VersionError::Manifest("Cargo.toml".into(), "no version".into()))?;
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| VersionError::Manifest(file.into(), e.to_string()))?;
+    let item =
+        locate(&mut doc).ok_or_else(|| VersionError::Manifest(file.into(), "no version".into()))?;
     let decor = item.as_value().map(|v| v.decor().clone());
     let mut value = toml_edit::Value::from(version.to_string());
     if let Some(d) = decor {
@@ -278,6 +352,48 @@ mod tests {
             read(d.path(), RepoKind::Both).unwrap(),
             Version::new(0, 3, 0)
         );
+    }
+
+    #[test]
+    fn nut_toml_reads_and_writes_the_package_version_in_place_and_not_the_schema_s() {
+        let d = tempfile::tempdir().unwrap();
+        let text = "nutshell_branch = \"dev\"\n\n[package]\nname = \"x\"\nversion = \"0.2.0\" # v\n\n[meta]\n# the schema's\nversion = \"1.0.0\"\n";
+        std::fs::write(d.path().join("nut.toml"), text).unwrap();
+        assert_eq!(
+            read(d.path(), RepoKind::Nut).unwrap(),
+            Version::new(0, 2, 0)
+        );
+        write(d.path(), RepoKind::Nut, &Version::new(0, 3, 0)).unwrap();
+        let after = std::fs::read_to_string(d.path().join("nut.toml")).unwrap();
+        assert_eq!(after, text.replace("0.2.0", "0.3.0"));
+        assert_eq!(
+            read_manifest(d.path(), RepoKind::Nut, "nut.toml").unwrap(),
+            Version::new(0, 3, 0)
+        );
+        assert!(read_manifest(d.path(), RepoKind::Nut, "Cargo.toml").is_err());
+        // a nut.toml with only the schema's version carries none
+        std::fs::write(d.path().join("nut.toml"), "[meta]\nversion = \"1.0.0\"\n").unwrap();
+        assert!(matches!(
+            read(d.path(), RepoKind::Nut),
+            Err(VersionError::Manifest(..))
+        ));
+    }
+
+    #[test]
+    fn each_kind_names_its_manifests_and_content_names_none() {
+        let of = |k| manifests(k).collect::<Vec<_>>();
+        assert_eq!(of(RepoKind::Crate), ["Cargo.toml"]);
+        assert_eq!(of(RepoKind::Deno), ["deno.json"]);
+        assert_eq!(of(RepoKind::Both), ["Cargo.toml", "deno.json"]);
+        assert_eq!(of(RepoKind::Nut), ["nut.toml"]);
+        assert!(of(RepoKind::Content).is_empty());
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(
+            d.path().join("nut.toml"),
+            "[package]\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        assert!(read(d.path(), RepoKind::Content).is_err());
     }
 
     #[test]
