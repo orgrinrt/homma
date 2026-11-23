@@ -66,7 +66,7 @@
         "passed_at": "c7515f5296bf1e43833a949b91b8a4e766e3b318e734610a13688164f25c7a2f"
       },
       "cmd::what::accept_tests::how_op_writes_finds_the_voice_record": {
-        "secs": 60.5,
+        "secs": 60.4,
         "passed": false,
         "passed_at": null
       },
@@ -81,7 +81,7 @@
         "passed_at": "c7515f5296bf1e43833a949b91b8a4e766e3b318e734610a13688164f25c7a2f"
       },
       "cmd::what::accept_tests::land_a_workspace_change_finds_the_workspace_lander": {
-        "secs": 60.6,
+        "secs": 60.7,
         "passed": false,
         "passed_at": null
       },
@@ -174,6 +174,7 @@
   },
   "bins": {
     "homma-engine::catalogue_smoke": "85cebfe93f1d7e376faf04e78a51847781f482713069efa418d67ce9c888e85e",
-    "homma-engine::cli_release_history": "0efc08ca2198c6d510363ced5016d27eadbd333a3f4942aa7f0b3e18c169fc94"
+    "homma-engine::cli_release_history": "bf3f09862f2d214b78d3a8487348fb29523754bee38ad21dd662ddc86735dbd6",
+    "homma-engine::cli_release_nut": "8db1b9faf4892ec609db722867677393cdf8988f57998434fd33438356639da0"
   }
 }

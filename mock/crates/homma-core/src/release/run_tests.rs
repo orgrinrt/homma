@@ -111,6 +111,14 @@ impl Fixture {
     /// A crate at 0.1.0, tagged and released, with one feat commit on `dev`
     /// since, everything pushed, the tree on `dev`.
     fn new() -> Self {
+        Self::with_manifest(
+            "Cargo.toml",
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        )
+    }
+
+    /// The same, with `file` holding `text` as the one manifest.
+    fn with_manifest(file: &str, text: &str) -> Self {
         let work = tempfile::tempdir().unwrap();
         let bare = tempfile::tempdir().unwrap();
         assert!(
@@ -128,11 +136,7 @@ impl Fixture {
         f.git(&["config", "tag.gpgsign", "false"]);
         f.git(&["config", "commit.gpgsign", "false"]);
         f.git(&["remote", "add", "origin", f._bare.path().to_str().unwrap()]);
-        std::fs::write(
-            f.root().join("Cargo.toml"),
-            "[package]\nname = \"x\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
+        std::fs::write(f.root().join(file), text).unwrap();
         f.git(&["add", "."]);
         f.git(&["commit", "--quiet", "-m", "feat: first"]);
         f.git(&["tag", "-a", "v0.1.0", "-m", "v0.1.0"]);
@@ -370,6 +374,39 @@ fn the_whole_release_bumps_merges_tags_releases_publishes_and_writes_badges() {
         git::current_branch(f.root()).unwrap().as_deref(),
         Some("dev")
     );
+    assert!(git::is_clean(f.root()).unwrap());
+}
+
+#[test]
+fn a_nut_package_bumps_its_nut_toml_in_the_bump_commit_tags_it_and_publishes_nothing() {
+    // Mutation: the bump commit naming deno.json alone, as it did, tags a
+    // commit whose nut.toml still carries 0.1.0 and leaves the tree dirty.
+    let text = "nutshell_branch = \"dev\"\n\n[package]\nname = \"x\"\nversion = \"0.1.0\"\n\n[meta]\nversion = \"1.0.0\"\n";
+    let f = Fixture::with_manifest("nut.toml", text);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Fake(RefCell::new(Vec::new()));
+    let forge = Recorder::default();
+    let p = Published::default();
+    let markers = homma_api::Markers::new([("nut.toml".to_string(), homma_api::Signal::Nut)]);
+    let w = client(&forge);
+    let mut s = setup(&runner, &w, &p, "dev");
+    s.markers = &markers;
+    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    let changed = f.git(&["show", "--name-only", "--format=", &done.bump_sha]);
+    assert!(
+        changed.contains("nut.toml") && changed.contains("CHANGELOG.md"),
+        "{changed}"
+    );
+    // the tagged commit carries the new version, and the schema's is untouched
+    let tagged = f.git(&["show", "v0.1.1:nut.toml"]);
+    assert_eq!(tagged, text.replace("0.1.0", "0.1.1").trim_end());
+    assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), done.tag_sha);
+    assert_eq!(forge.releases.borrow().len(), 1);
+    // nothing goes to a registry: a nutshell library is imported by its git uri
+    let ran = runner.0.borrow();
+    assert!(!ran.iter().any(|l| l.contains("publish")), "{ran:?}");
     assert!(git::is_clean(f.root()).unwrap());
 }
 

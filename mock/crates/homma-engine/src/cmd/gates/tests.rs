@@ -555,6 +555,50 @@ fn gate_e2e_a_git_shook_hooks_path_is_not_a_mockspace_surface() {
 }
 
 #[test]
+fn gate_e2e_a_git_shook_hooks_path_counts_in_a_repo_that_adopted_mockspace() {
+    // applets and homma: the mock directory, the launcher pin, and the hooks
+    // path at git-shook's dispatcher, through which mockspace's hooks run.
+    // That is full adoption, and reading the path as unset refused every
+    // commit in them.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = fake_repo(dir.path(), "applets", true, false);
+    fs::write(
+        repo.join("mockspace.toml"),
+        "mock_dir = \"mock\"\nmockspace_branch = \"dev\"\n",
+    )
+    .unwrap();
+    point_hooks_path_at_shook(&repo);
+    let repos = vec![("applets".to_string(), repo.to_string_lossy().to_string())];
+    let input = input_json("git commit -m hi", &repo.to_string_lossy());
+    let out = run_gate(&repos, &input);
+    assert!(
+        !out.contains("\"permissionDecision\":\"deny\""),
+        "mock dir, pin and git-shook's hooks path is full adoption; got: {out}",
+    );
+}
+
+#[test]
+fn gate_e2e_a_git_shook_hooks_path_with_the_mock_dir_still_wants_the_pin() {
+    // The shook path counts once the repo adopted mockspace, and the gate
+    // still names what is missing: here the pin, and not the hooks path.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = fake_repo(dir.path(), "applets", true, false);
+    fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
+    point_hooks_path_at_shook(&repo);
+    let repos = vec![("applets".to_string(), repo.to_string_lossy().to_string())];
+    let input = input_json("git commit -m hi", &repo.to_string_lossy());
+    let out = run_gate(&repos, &input);
+    assert!(
+        out.contains("\"permissionDecision\":\"deny\"") && out.contains("no launcher pin"),
+        "the missing pin is still drift; got: {out}",
+    );
+    assert!(
+        !out.contains("core.hooksPath is not set"),
+        "git-shook's path in an adopted repo is the hooks surface; got: {out}",
+    );
+}
+
+#[test]
 fn gate_e2e_a_hooks_path_that_is_not_git_shooks_still_counts() {
     // The boundary, and the reason the check compares against the
     // directory git-shook generates rather than matching a spelling: any

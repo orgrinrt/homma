@@ -261,8 +261,8 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         Ok(false)
     };
     if let (Some(k), Some(_)) = (repo_kind, &release_sha) {
-        let file = if k.has_crate() { "Cargo.toml" } else { "deno.json" };
-        let mut files = vec![file.to_string()];
+        // the kind's first manifest is the one its bumps are walked on
+        let mut files: Vec<String> = version::manifests(k).take(1).map(str::to_string).collect();
         files.extend(primary.map(|p| p.manifest.clone()));
         // a commit both walks find is one finding
         let mut seen: Vec<String> = Vec::new();
@@ -456,7 +456,9 @@ fn manifest_version_at(
     rev: &str,
     k: RepoKind,
 ) -> Result<Option<Version>, git::GitError> {
-    let file = if k.has_crate() { "Cargo.toml" } else { "deno.json" };
+    let Some(file) = version::manifests(k).next() else {
+        return Ok(None);
+    };
     let Some(text) = git::show(root, rev, file)? else {
         return Ok(None);
     };
@@ -467,8 +469,7 @@ fn manifest_version_at(
         let _ = std::fs::remove_dir_all(&dir);
         return Err(git::GitError::Scratch(e));
     }
-    let k = if k.has_crate() { RepoKind::Crate } else { RepoKind::Deno };
-    let v = version::read(&dir, k).ok();
+    let v = version::read_manifest(&dir, k, file).ok();
     let _ = std::fs::remove_dir_all(&dir);
     Ok(v)
 }

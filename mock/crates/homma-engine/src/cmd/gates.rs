@@ -291,9 +291,16 @@ if [ -f "$WS/homma.toml" ]; then
                 # directory `shook` and mean nothing by it. git-shook writes the
                 # path absolute and this resolves the same way, so the two agree
                 # exactly or the path is somebody else's.
+                #
+                # In a repository that did adopt mockspace, its hooks reach git
+                # through git-shook's dispatcher, so there the same path is the
+                # surface being wired. Only a repository with neither the mock
+                # directory nor the launcher pin reads it as git-shook's alone.
                 common="$(git -C "$match_path" rev-parse --path-format=absolute \
                     --git-common-dir 2>/dev/null)"
                 if [ "$hooks_path" != "$common/shook/hooks" ]; then
+                    has_hooks_path=1
+                elif [ "$has_mock_dir" = "true" ] || [ "$has_pin" = "true" ]; then
                     has_hooks_path=1
                 fi
             fi

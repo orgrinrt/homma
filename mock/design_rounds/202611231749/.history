@@ -1,0 +1,50 @@
+12a43ac fix: count git-shook's hooks path in a repo that adopted mockspace
+fdff79b feat: read one identity catalogue and hold one session per identity
+f7ad9ad feat: read one identity catalogue and hold one session per identity
+8ea70b7 feat: refuse a release whose history the byline scanner flags
+3ed485d feat: refuse a release whose history the byline scanner flags
+5cacbba docs: regenerate API and ORG after the round's second doc pass
+8b2e368 chore: close design round 202611231429
+9b850e1 chore: lock src changelist 202611231513
+a2ec372 docs: regenerate API and ORG from the identity round's design
+247265b fix: aliases resolve, lease lengths bounded, bad lease records refused
+fa5babd chore: close design round 202611231509
+7eeecda fix: hand the history scan an absolute root, and test the order
+5b97757 chore: lock doc changelist 202611231429
+2e6fdc6 docs: aliases resolve, lease lengths bounded, bad records refused
+6906c21 chore: unlock design round, deprecate src and unlock doc
+a29a6c5 docs: file the review fixes of the release history scan
+aeac611 chore: lock src changelist 202611231431
+547cdcf feat: the identity catalogue, offices, the matcher and the lease
+086c5c3 chore: close design round 202611231434
+fac1191 feat: release run refuses a history the workspace scan flags
+c9dca66 chore: lock doc changelist 202611231434
+0470bd2 docs: design release run refusing a history the scan flags
+afabd8f chore: lock doc changelist 202611231429
+5644d08 docs: design the identity catalogue, offices, the matcher and the lease
+3cea5bd feat: release carries auth, versions, estate and hygiene checks
+205d358 feat: release carries auth, versions, estate and hygiene checks
+e6a3cf2 chore: close design round 202611230914-fx00
+59b71d9 chore: lock src changelist 202611230914-fx00
+5950ab5 docs: name the suppression in the auth flow round without its attribute
+beb728e fix: group the auth flow capabilities in one ports struct
+0bdcc76 docs: write the source changelist of the auth flow ports
+684eb98 chore: lock doc changelist 202611230914-fx00
+045ce71 docs: write the doc changelist of the auth flow ports
+17b3fa0 chore: close design round 202611230833-tgxe
+f736927 chore: lock src changelist 202611230833-tgxe
+065fc5e fix: stop a walk the store refuses and test every warn row
+3e25b41 chore: reopen the src changelist for its implementation
+2137ad8 chore: lock src changelist 202611230833-tgxe
+f59f553 docs: write the source changelist of the release review fixes
+22e2364 chore: lock doc changelist 202611230833-tgxe
+7827111 docs: state the refusing store, bare first tag and estate json rule
+4849b32 docs: write the doc changelist of the release review fixes
+05df211 chore: close design round 202611230755-j2eh
+a9b4b46 chore: lock src changelist 202611230755-j2eh
+874a9d3 feat: port the release auth, versions, estate and checks into homma
+c627647 docs: write the source changelist of the release port
+f20a2a8 chore: lock doc changelist 202611230755-j2eh
+1ca38b6 docs: design the release auth, versions and estate verbs
+b26f888 docs: open the round porting the release python
+586670a fix: land a release bump through the forge when dev is protected
