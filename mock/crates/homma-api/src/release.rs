@@ -208,10 +208,6 @@ impl RepoKind {
     pub fn has_deno(self) -> bool {
         matches!(self, RepoKind::Deno | RepoKind::Both)
     }
-
-    pub fn has_nut(self) -> bool {
-        matches!(self, RepoKind::Nut)
-    }
 }
 
 #[cfg(test)]
@@ -344,8 +340,7 @@ mod kind_tests {
         assert_eq!(RepoKind::from_signals([Nut, Content]), Some(RepoKind::Nut));
         assert_eq!(RepoKind::from_signals([Nut, Cargo]), Some(RepoKind::Crate));
         assert_eq!(RepoKind::from_signals([Deno, Nut]), Some(RepoKind::Deno));
-        assert!(RepoKind::Nut.has_nut() && !RepoKind::Nut.has_crate() && !RepoKind::Nut.has_deno());
-        assert!(!RepoKind::Content.has_nut() && !RepoKind::Both.has_nut());
+        assert!(!RepoKind::Nut.has_crate() && !RepoKind::Nut.has_deno());
     }
 }
 
