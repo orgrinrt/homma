@@ -234,7 +234,7 @@ skills render` and `homma agents render` into a slot the session is not reading
 and swaps it in whole; homma stays the writer and the staging stays with the
 thing that owns it. Where it is unset the stage is skipped and says so, and
 `--skip-surfaces` skips it, which the command's own hook path passes when it runs
-the regen for the hook wrappers, so the regen never waits on the render lock its
+the regen for the agent hooks, so the regen never waits on the render lock its
 caller holds. A failed render fails the run.
 
 `homma capture --title <title>` reads an agent session's transcript and writes
@@ -821,8 +821,8 @@ is replaced or removed.
 What the regen writes belongs to the clone it ran in, since a clone holds
 whichever members it holds and the hooks follow them. So its registrations go
 to `.claude/settings.local.json`, which the host reads per checkout and merges
-over `settings.json`, and its wrappers to `.claude/hooks/`, and a workspace
-tracks neither. Two clones with different members then write two different
+over `settings.json`, and its dispatcher and the table it reads to
+`.claude/hooks/`, and a workspace tracks neither. Two clones with different members then write two different
 sets and neither can take the other's away. `settings.json` stays what every
 clone shares, written by hand, and the regen writes nothing into it: a
 registration of its own that it finds there is one an earlier regen put in the
@@ -839,12 +839,50 @@ and swept before either is written, so one that does not parse leaves both as
 they were, and the local file is written first, so a failure between the two
 writes leaves a registration twice rather than nowhere.
 
-The host runs every hook registered for an event, in parallel, and runs a
-handler named twice only once. So the dispatcher git needs, one program at an
-event fanning out to many, is not needed here, and one registration per hook is
-what homma writes. A dispatcher would put a homma process in front of every
-tool call and serialise hooks the host already runs side by side, to buy an
-order nothing here depends on.
+The host starts every handler registered for an event, in parallel, and a
+handler costs a process on every call its matcher takes, whether or not the call
+is that hook's business. One handler per hook made a shell call start a shell for
+every hook every member has, and most of them read the payload only to decline.
+So homma writes one dispatcher, `.claude/hooks/_dispatch.sh`, and registers it
+once per event it has hooks for, and once more for the hooks of that event that
+are `async`, so an event has at most two handlers. The hooks are entries in a
+table beside it, `.claude/hooks/_dispatch.json`: each with its event, its
+matcher, the file it runs, the program it runs it with and its arguments, the
+repositories it is narrowed to, its timeout, whether it is `async`, and where it
+came from. The dispatcher is a shell script and not a homma process, since homma
+builds its engine on the first run after a new pin and a tool call must not wait
+on that, and it needs `bash` and `jq` and nothing else.
+
+On a call the dispatcher reads the payload and the table once, keeps the entries
+whose event and mode are this handler's and whose matcher takes the tool, by the
+host's own reading of a matcher (every tool for `*` or none, a list of exact
+names where the matcher holds only letters, digits, `_`, `-`, spaces, `,` and
+`|`, a regular expression otherwise), narrows each by where the call lands as
+below, and runs those left side by side, each in the session's directory with
+the payload on its stdin and under its own timeout. A hook not there to run,
+because the clone does not hold its repository, is passed over. The answers are
+folded into the one the host reads. A hook that exits `2` blocks, and the
+answer is exit `2` with every blocking hook's stderr, followed by the
+`additionalContext` of every other hook, which would otherwise be lost. Without
+a block, the JSON answers are folded the way the host folds several hooks:
+`deny` over `defer` over `ask` over `allow`, with the reasons of the decision
+that wins; every `additionalContext`, `systemMessage` and `stopReason` kept,
+each after the other; `continue` false where any says so, `decision` `block`
+where any blocks, and any other field as the first hook to give it. A hook that
+answered in plain text is kept as text when none answered in JSON, and folded
+into the `additionalContext` on `SessionStart` and `UserPromptSubmit`, where the
+host reads plain text as context, when some did. A hook that failed another way
+or ran out of its time is named on stderr with its own, and the call goes on, as
+it does for the host. Without `jq` the dispatcher cannot read its table, and it
+says so on stderr and exits `1` rather than run nothing silently.
+
+The handler's matcher is every entry's matcher joined with `|`, or every tool
+where one entry takes every tool. It is wider than any one entry, which is
+harmless, since it only spares the host starting the dispatcher where nothing
+could match and the dispatcher matches each entry exactly. Its timeout is the
+longest of its entries' with ten seconds over, so the host never cuts a hook
+short that the dispatcher would have let run. `if` is not used: it takes one
+permission rule per handler and cannot say where a shell call lands.
 
 What is homma's is decided by what homma wrote. Every file it writes under
 `.claude/hooks/` carries a line saying it was written by `homma agent regen`,
@@ -853,11 +891,12 @@ Anything else is kept exactly as it is, and a file homma would have to overwrite
 to write its own is refused by path, with the regen reporting it and exiting
 `1`. A name alone decides nothing, since a hand-written hook can carry any name.
 
-Each repository hook is registered under every event and matcher its
-repository's `settings.json` gives it, and under the matchers its own
-`@matchers:` line names where the repository gives none. A hook that has
-neither is not written as a wrapper nobody calls: it is reported by path, and
-the regen exits `1`. Any executable file under the repository's `.claude/hooks/`
+Each repository hook is an entry under every event and matcher its
+repository's `settings.json` gives it, with the timeout and `async` that
+registration gives it, and under the matchers its own `@matchers:` line names
+where the repository gives none. A hook that has neither is not an entry nothing
+matches: it is reported by path, and the regen exits `1`. A hook is narrowed to
+its own repository. Any executable file under the repository's `.claude/hooks/`
 is a hook, whatever language it is in, and a file there that is not executable
 and that no registration runs through a program is reported the same way, since
 the host could not run it either.
@@ -870,22 +909,41 @@ one array per event named as the host names it:
 matcher = "Bash"
 run     = "scripts/keep-the-build-off-this-machine"
 repos   = ["engine"]
+timeout = 300
+
+[[agent.hooks.PostToolUse]]
+matcher = "Edit|Write"
+run     = "scripts/start-the-regeneration"
+async   = true
 ```
 
 `run` is a path under the workspace, and `repos` narrows the hook to calls
-landing in those repositories, the way every aggregated hook is narrowed to its
-own. Without it the hook sees every call. homma writes a wrapper for each row
-beside the aggregated ones, carrying the same line, so the rows are kept and
-removed by the same rule, and a guard a workspace wants in every session is a
-line in the manifest rather than a hand edit to a generated file.
+landing in those repositories, the way every member's hook is narrowed to its
+own. Without it the hook sees every call. `timeout` is the seconds it may run,
+and `async` runs it with the hooks nothing waits on, which the host runs in the
+background: such a hook cannot block or decide anything, and what context it
+gives reaches the session on its next turn. A hook that only starts work, or only
+records something, is `async`; a guard, or a hook whose words the call should
+carry, is not. homma makes an entry of each row beside the members', so a guard
+a workspace wants in every session is a line in the manifest rather than a hand
+edit to a generated file.
+
+`[agent]` carries two keys of its own beside the table. `timeout` is the seconds
+every entry that names none may run, a member's hook whose repository gave none
+included, and is 60 where it is absent. `filter` is a program, as a list of words
+with its path under the workspace first, that the dispatcher runs itself through
+when the workspace has that path executable, handed the dispatcher's own command
+line, and empty runs it bare. The workspace sets it to `hookdedup run`, which
+says a notice already said in the session within its time to live only once and
+leaves a status, a stderr and a block alone, so a hook's notice passes it once
+whichever hooks gave it.
 
 The table is read from the same layers as the git hooks: the manifest, then
 each overlay file its `layers` key names, `homma.local.toml` where the key is
 absent. A row in an overlay is appended after the manifest's for its event and
 replaces none of them, so a clone adds a guard of its own and cannot remove a
-shared one. A registration written from an overlay row is the clone's, which is
-where the regen already writes, so it lands in `settings.local.json` like every
-other.
+shared one. An entry made from an overlay row is the clone's, which is where the
+regen already writes, so it lands in the clone's table like every other.
 
 A call is narrowed by where it lands, and a hook sees it when any place it
 lands is under the hook's repository. For a tool writing a file that is the
@@ -896,7 +954,7 @@ root lands in `engine` whatever directory it was typed in. Where the host says
 nothing about a directory, the hook process's own working directory stands in,
 and that is the workspace root whatever the session did.
 
-A wrapper is not a shell, so it reads a command by splitting it on everything
+The dispatcher does not parse shell, so it reads a command by splitting it on everything
 that cannot be part of a path, which takes quotes, separators, redirections and
 the `=` in `--flag=path` apart, and reading each piece as a path. It also looks
 for a repository's absolute root anywhere in the command, and a piece that
@@ -905,30 +963,30 @@ the guard is for. A guard run once too often costs a process where the guard
 only observes. Where it denies, it costs a false refusal: a bare word equal to a
 repository's path, as in `echo engine`, lands there, and a guard that denies on
 anything it is handed denies a call that touched nothing of its repository.
-What the wrapper cannot see is a relative path with a space in it, a path
+What the dispatcher cannot see is a relative path with a space in it, a path
 spelled through a variable, and whatever a script the command runs goes on to
 do. A guard that needs those reads the command itself.
 
-A hook the wrapper runs is run in the directory the session is in, and handed
+A hook the dispatcher runs is run in the directory the session is in, and handed
 the payload exactly as the host sent it. Running it from its repository's root
 instead would satisfy a hook that asks its own working directory where it is,
 and would break every hook that reads a relative path out of the payload, since
-that path is relative to the session's directory. So the wrapper reaching a hook
-decides only that the hook runs, and what it then allows is the hook's own
+that path is relative to the session's directory. So the dispatcher reaching a
+hook decides only that the hook runs, and what it then allows is the hook's own
 reading of the payload. A hook that scopes itself by its working directory
 declines a call typed elsewhere that names its repository by path, however the
-wrapper routed it, and scoping by the payload's directory and the command's
+dispatcher routed it, and scoping by the payload's directory and the command's
 paths is what makes it see one.
 
 A registration names its hook by the first word of its command that reaches
 into `.claude/hooks/`. Whatever precedes that word is the program the host runs
 it with, as in `bash .claude/hooks/check.sh`, and whatever follows is its
-arguments, both of which the wrapper carries. A hook run through a program does
+arguments, both of which its entry carries. A hook run through a program does
 not have to be executable. A hook that two registrations run through two
-different programs is reported by path and not carried, since one wrapper can
-only run it one way. So is a hook whose program is a line of shell rather than a
-program, an assignment in front of it or a separator before it, since the
-wrapper runs a program with arguments and a shell line would run as something
+different programs is reported by path and not carried, since its entries name
+one program between them. So is a hook whose program is a line of shell rather
+than a program, an assignment in front of it or a separator before it, since the
+dispatcher runs a program with arguments and a shell line would run as something
 else: `cd dir && .claude/hooks/x.sh` would run a `cd` binary and report its
 success as the hook's.
 
@@ -937,12 +995,17 @@ editor's or a filesystem's, and is neither carried nor reported. A registration
 in the workspace naming a file homma writes, where that file is no longer
 there, is removed on the next regen, since nothing it could run exists.
 
-Every wrapper, aggregated or declared, runs its hook through
-`tools/hookdedup/hookdedup run` when the workspace has that file executable, so
-a notice already said in the session within the time to live is not said again.
-The tool leaves the hook's status, its stderr and any block or deny alone, and a
-workspace without it runs the hook as before. There is no key for it: the
-file's presence is the switch.
+A regen over some of the members keeps the entries of the members it did not
+visit, read back from the table, so a run over one repository leaves the others'
+hooks running. An entry of a member the manifest no longer names is dropped. The
+manifest's rows and the workspace gate are written whole on every run.
+
+Before the dispatcher, homma wrote a wrapper for every hook,
+`<repo>--<name>.sh` for a member's and `_declared--<event>--<run>.sh` for a
+row's, each registered on its own. The regen removes every such file that
+carries its line and every registration naming one, whichever member it names,
+so a clone upgrades to the dispatcher on its next regen. The workspace gate keeps
+its file, `_workspace--mockspace-gate.sh`, and is an entry like the rest.
 
 ## What a status answers
 
