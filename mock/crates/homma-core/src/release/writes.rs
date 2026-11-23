@@ -77,10 +77,11 @@ impl ReleaseForge for ByClient<'_> {
         Err(ReleaseError::NoPullRequest(base.to_string()))
     }
 
-    /// The deletion pushed, for the branch a refused landing left; one the
-    /// remote will not delete is the error it was.
-    fn drop_branch(&self, root: &Path, branch: &str, _head: &str) -> Result<(), ReleaseError> {
-        git::push(root, self.remote, &format!(":refs/heads/{branch}"), false)?;
+    /// The deletion pushed, leased on `head`, for the branch a refused landing
+    /// left; one the remote will not delete, or holds at another commit, is the
+    /// error it was.
+    fn drop_branch(&self, root: &Path, branch: &str, head: &str) -> Result<(), ReleaseError> {
+        git::delete_branch(root, self.remote, branch, head)?;
         Ok(())
     }
 }

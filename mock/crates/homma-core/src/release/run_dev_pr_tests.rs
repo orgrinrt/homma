@@ -220,6 +220,126 @@ fn a_pull_request_the_route_merged_and_reported_failed_is_taken_as_landed_on_the
     assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), main);
 }
 
+#[test]
+fn a_rerun_with_the_clone_at_the_landed_merge_makes_no_second_pull_request_for_dev() {
+    // Mutation: the clone at the merge, which a release pull request that
+    // failed after `dev` was landed leaves, read as no pending bump, so the
+    // rerun bumps and lands again over it.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["dev", "main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    *runner.pr_said_into.borrow_mut() = Some(("main", FAILED));
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    assert!(matches!(&err, ReleaseError::Route(_)), "{err}");
+    let merge = merge_on_dev(&f, &tip);
+    assert_eq!(
+        f.git(&["rev-parse", "dev"]),
+        merge,
+        "the clone is at the merge"
+    );
+    *runner.pr_said_into.borrow_mut() = None;
+    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(done.bump_sha, merge);
+    let root = f.root().to_string_lossy().into_owned();
+    let calls = pr_calls(&runner);
+    assert_eq!(
+        calls.len(),
+        3,
+        "dev's once, then the release's twice: {calls:?}"
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| c.contains(" dev chore: release"))
+            .count(),
+        1,
+        "{calls:?}"
+    );
+    assert_eq!(
+        calls.last().cloned(),
+        Some(format!(
+            "{ROUTE} pr {root} dev main release: 0.1.1 merge {merge}"
+        ))
+    );
+    assert_eq!(f.git(&["rev-parse", "origin/dev"]), merge);
+    assert_eq!(bumps_on(&f, "origin/dev"), 1);
+    assert_eq!(blocks_on(&f, "dev"), 1);
+}
+
+#[test]
+fn a_merge_a_tag_already_holds_is_no_pending_bump() {
+    // Mutation: a released bump on `dev` taken for one the forge merged unseen,
+    // which would release the same version again.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["dev", "main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    let head = f.git(&["rev-parse", "HEAD"]);
+    assert_eq!(head, done.bump_sha);
+    let set = landing::set_aside(&s, f.root()).unwrap();
+    assert!(set.is_none(), "{set:?}");
+    assert_eq!(f.git(&["rev-parse", "HEAD"]), head, "nothing moved");
+}
+
+#[test]
+fn a_branch_pushed_on_past_the_merged_bump_is_left_and_the_run_goes_on() {
+    // Mutation: the branch deleted at the head it holds now, which loses the
+    // commit a person pushed after the merge.
+    let f = Fixture::new();
+    refuse_pushes_to(&f, &["dev", "main"]);
+    let tip = f.git(&["rev-parse", "dev"]);
+    let runner = Routed::new(&f);
+    *runner.pr_after.borrow_mut() = Some(FAILED);
+    let p = published();
+    let writes = routed(&runner);
+    let s = setup(&runner, &writes, &p, "dev");
+    release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false).unwrap_err();
+    // the branch gets a commit after its pull request merged
+    f.git(&["switch", "--quiet", "-c", "more"]);
+    f.git(&["commit", "--quiet", "--allow-empty", "-m", "fix: after the merge"]);
+    let moved = f.git(&["rev-parse", "HEAD"]);
+    f.git(&["push", "--quiet", "origin", &format!("more:refs/heads/{BRANCH}")]);
+    f.git(&["switch", "--quiet", "dev"]);
+    *runner.pr_after.borrow_mut() = None;
+    release(&s, f.root(), Level::Patch, Some(&green_run(&tip)), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        bare(f.origin(), &["rev-parse", &format!("refs/heads/{BRANCH}")]).unwrap(),
+        moved,
+        "the commit pushed after the merge is still on the forge"
+    );
+}
+
+#[test]
+fn the_client_deletes_a_branch_only_at_the_head_it_names() {
+    // Mutation: the lease dropped, so another's branch at a newer commit goes.
+    let f = Fixture::new();
+    let first = f.git(&["rev-parse", "dev"]);
+    f.git(&["push", "--quiet", "origin", &format!("{first}:refs/heads/{BRANCH}")]);
+    f.git(&["commit", "--quiet", "--allow-empty", "-m", "fix: more"]);
+    let second = f.git(&["rev-parse", "HEAD"]);
+    f.git(&["push", "--quiet", "origin", &format!("{second}:refs/heads/{BRANCH}")]);
+    let forge = Recorder::default();
+    let w = client(&forge);
+    w.drop_branch(f.root(), BRANCH, &first).unwrap_err();
+    assert!(origin_has(&f, BRANCH), "a branch at another commit stays");
+    w.drop_branch(f.root(), BRANCH, &second).unwrap();
+    assert!(!origin_has(&f, BRANCH));
+}
+
 /// What a person does by hand on a protected `dev`: the bump on a branch of its
 /// own, landed into `dev` of the origin by a merge commit, the clone not told.
 /// Returns the bump and the merge.

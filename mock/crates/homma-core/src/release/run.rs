@@ -166,7 +166,7 @@ impl fmt::Display for ReleaseError {
             } => {
                 write!(
                     f,
-                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun takes a merge of {tip} on {base} only where its tree is {tip} merged onto the {base} the run saw, and refuses this one again, for a human to settle"
+                    "the pull request into {base} left the forge's {base} at {at}, which is not a merge of {tip} onto where {base} was, so nothing is tagged; a rerun takes a merge of {tip} on {base} only where its first parent is a commit a green gate run measured and its tree is {tip} merged onto that parent, and goes no further over this one until that holds, for a human to settle"
                 )
             },
             ReleaseError::NotPutBack {

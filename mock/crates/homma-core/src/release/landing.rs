@@ -368,14 +368,19 @@ pub fn resume_bump(
 
 /// The branch a bump's pull request came from, dropped through the forge where
 /// `merge` is that pull request's merge commit and the remote still holds the
-/// branch. A failure does not stop the run: the route queued the deletion
-/// where it could.
+/// branch. The deletion is leased on the bump the merge landed, its second
+/// parent, and never on what the branch holds now, so a branch pushed on past
+/// the bump is left and no commit is lost. A failure does not stop the run: the
+/// route queued the deletion where it could.
 fn drop_landed_branch(setup: &Setup<'_>, root: &Path, merge: &str, version: &Version) {
     if git::parent_count(root, merge).ok() != Some(2) {
         return;
     }
     let branch = bump_branch(setup.repo, version);
-    if let Ok(head) = git::fetch_branch(root, setup.remote, &branch) {
-        let _ = setup.forge.drop_branch(root, &branch, &head);
+    if git::fetch_branch(root, setup.remote, &branch).is_err() {
+        return;
+    }
+    if let Ok(bump) = git::sha(root, &format!("{merge}^2")) {
+        let _ = setup.forge.drop_branch(root, &branch, &bump);
     }
 }
