@@ -215,7 +215,18 @@ fn a_squash_of_the_clone_s_bump_on_the_remote_is_no_landing_of_it() {
     let f = Fixture::new();
     commit_on_dev(&f, "chore: release 0.1.1");
     let squash =
-        f.git(&["commit-tree", "HEAD^{tree}", "-p", "HEAD^", "-m", "chore: release 0.1.1"]);
+        // a body of its own, so the squash is never the clone's commit under
+        // the same author and second
+        f.git(&[
+            "commit-tree",
+            "HEAD^{tree}",
+            "-p",
+            "HEAD^",
+            "-m",
+            "chore: release 0.1.1",
+            "-m",
+            "squashed by the forge",
+        ]);
     f.git(&["push", "--quiet", "--force", "origin", &format!("{squash}:refs/heads/dev")]);
     takes_nothing(&f, "dev");
 }
