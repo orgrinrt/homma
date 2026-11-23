@@ -7,18 +7,19 @@
 //!
 //! An identity is a character file in the hands directory. `render` generates
 //! the agent definition a session loads and maps its memories; `launch` renders
-//! one and starts the session as that agent.
+//! one and starts the session as that agent. `match` and `index` answer which
+//! agent of the catalogue an address is, and `lease` who holds one now.
 
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use homma_api::{AbsPath, Paths};
+use homma_api::{AbsPath, Paths, Role, Workspace};
 use homma_core::Config;
-use homma_org::Layout;
 use homma_org::agents::Personas;
 use homma_org::character::{self, claimed_names};
+use homma_org::{Layout, OrgRegistry};
 use serde::Serialize;
 
 use super::agent::denied_for_aggregating;
@@ -152,11 +153,93 @@ pub fn launch(cfg: &Config, name: &str, extra: &[String]) -> Result<()> {
     }
 }
 
+/// The index of every agent address: one line each, the address, the handle
+/// and the role, tab-separated, in the catalogue's order.
+pub fn index_text(ws: &Workspace) -> String {
+    OrgRegistry::new(ws)
+        .agent_addresses()
+        .into_iter()
+        .map(|(address, id)| format!("{address}\t{}\t{}\n", id.handle, role_word(id.role)))
+        .collect()
+}
+
+/// A role as the catalogue spells it.
+pub fn role_word(role: Role) -> String {
+    toml::Value::try_from(role)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| format!("{role:?}").to_lowercase())
+}
+
+/// Write the index to `[paths] identities` under `root`, and say where.
+pub fn write_index(root: &Path, ws: &Workspace) -> Result<std::path::PathBuf> {
+    let path = root.join(ws.paths.identities.as_path());
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    std::fs::write(&path, index_text(ws)).with_context(|| format!("writing {}", path.display()))?;
+    Ok(path)
+}
+
+/// The handle and role of the agent `address` belongs to, as `match` prints
+/// them, none for an address that is no agent's.
+pub fn match_line(ws: &Workspace, address: &str) -> Option<String> {
+    OrgRegistry::new(ws)
+        .agent_at(address)
+        .map(|id| format!("{}\t{}", id.handle, role_word(id.role)))
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
 
     use super::*;
+
+    const CATALOGUE: &str = r#"
+[org.op]
+role = "king"
+handle = "op"
+git_email = "op@example.invalid"
+
+[org.aku]
+role = "hand"
+handle = "aku"
+git_email = "aarne@example.invalid"
+
+[org.ikku]
+role = "journeyman"
+handle = "ikku"
+git_email = "Ikku@Example.invalid"
+"#;
+
+    #[test]
+    fn the_index_lists_every_agent_address_and_never_the_king() {
+        let ws = Workspace::parse(CATALOGUE).unwrap();
+        assert_eq!(
+            index_text(&ws),
+            "aarne@example.invalid\taku\thand\nikku@example.invalid\tikku\tjourneyman\n"
+        );
+    }
+
+    #[test]
+    fn a_match_strips_the_plus_tag_and_a_person_is_no_match() {
+        let ws = Workspace::parse(CATALOGUE).unwrap();
+        assert_eq!(
+            match_line(&ws, "aarne+review@example.invalid").as_deref(),
+            Some("aku\thand")
+        );
+        assert_eq!(match_line(&ws, "op@example.invalid"), None);
+        assert_eq!(match_line(&ws, "stranger@example.invalid"), None);
+    }
+
+    #[test]
+    fn the_index_is_written_where_the_paths_say() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = Workspace::parse(CATALOGUE).unwrap();
+        let path = write_index(dir.path(), &ws).unwrap();
+        assert_eq!(path, dir.path().join(".shared/.index/identities.tsv"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), index_text(&ws));
+    }
 
     #[test]
     fn a_launch_names_the_agent_and_runs_in_the_workspace() {

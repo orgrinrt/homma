@@ -32,6 +32,10 @@ pub enum Role {
     Expert,
     /// Utility labour. No persona, no memory, no workspace.
     General,
+    /// The lighter identity a hand's team reserves for a while: a name, an
+    /// address and a few lines of temperament. No workspace, and no memory of
+    /// its own.
+    Journeyman,
 }
 
 impl Role {
@@ -91,6 +95,10 @@ pub struct Identity {
     pub role:            Role,
     /// What everything else addresses it by.
     pub handle:          String,
+    /// Further handles that reach the same participant: a nickname beside a
+    /// name, a former title. One namespace with every handle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases:         Vec<String>,
     /// Whether this entry is meant to have a workspace.
     ///
     /// Declared rather than inferred from an absent workspace. Inference is
@@ -149,6 +157,7 @@ impl Identity {
         Self {
             role,
             handle: handle.into(),
+            aliases: Vec::new(),
             staffed: false,
             nickname: None,
             full_name: None,
@@ -224,6 +233,11 @@ pub struct Paths {
     /// workspace root after its aggregate. Unset, the regen renders none of
     /// them and says so.
     pub agent_surfaces: Option<RelPath>,
+    /// The rendered index of every agent address, one line each: the address,
+    /// the handle and the role, tab-separated.
+    pub identities:     RelPath,
+    /// The directory of lease records, one `<handle>.toml` per held identity.
+    pub leases:         RelPath,
 }
 
 impl Default for Paths {
@@ -242,6 +256,8 @@ impl Default for Paths {
             forge_route:    None,
             history_scan:   None,
             agent_surfaces: None,
+            identities:     rel(".shared/.index/identities.tsv"),
+            leases:         rel(".shared/state/leases"),
         }
     }
 }
@@ -276,6 +292,13 @@ pub struct Workspace {
     /// Handle to entry.
     #[serde(default)]
     pub org:          BTreeMap<String, Identity>,
+    /// Office to its row: the standing jobs pinged by name, each with at most
+    /// one holder from `org`.
+    #[serde(default)]
+    pub offices:      BTreeMap<String, crate::Office>,
+    /// Where the lease records live and how long one lasts.
+    #[serde(default)]
+    pub lease:        crate::LeaseConfig,
     /// Places this operator's homma may not write, beyond the ones it derives.
     ///
     /// Two locations are denied wherever homma runs, because they are the same
@@ -784,6 +807,7 @@ handle = "silent"
     /// string and cannot carry a control character.
     const CORRUPTIBLE: &[&str] = &[
         "handle",
+        "aliases",
         "nickname",
         "full_name",
         "domain",
@@ -837,6 +861,7 @@ handle = "silent"
             // Free-form. Each must appear in `CORRUPTIBLE`, and each must be
             // populated with a hostile value in the test below.
             handle,
+            aliases,
             nickname,
             full_name,
             domain,
@@ -854,6 +879,7 @@ handle = "silent"
         let not_free_form = [format!("{role:?}"), format!("{staffed:?}")];
         let free_form = [
             ("handle", format!("{handle:?}")),
+            ("aliases", format!("{aliases:?}")),
             ("nickname", format!("{nickname:?}")),
             ("full_name", format!("{full_name:?}")),
             ("domain", format!("{domain:?}")),
@@ -897,6 +923,7 @@ handle = "silent"
             role:            Role::Hand,
             staffed:         false,
             handle:          "pa\nja".into(),
+            aliases:         vec!["a\x07b".into()],
             nickname:        Some("a\nb".into()),
             full_name:       Some("a\rb".into()),
             domain:          Some("a\tb".into()),
