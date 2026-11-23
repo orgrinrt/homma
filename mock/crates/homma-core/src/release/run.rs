@@ -325,8 +325,9 @@ fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, Rel
                 paths.push("Cargo.lock");
             }
         }
-        if plan.repo_kind.has_deno() {
-            paths.push("deno.json");
+        // the cargo manifest is named above, by the layout
+        for file in version::manifests(plan.repo_kind).filter(|f| *f != "Cargo.toml") {
+            paths.push(file);
         }
     }
     if !has_block {
