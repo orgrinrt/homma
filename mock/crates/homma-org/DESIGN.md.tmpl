@@ -411,12 +411,72 @@ sole writer of the agent configuration directory in every workspace it manages,
 which is what makes the constraints uniform and what makes a workspace it did not
 create simply not have them.
 
+## The identity index
+
+`homma identity index` writes every agent address of the catalogue, its handle
+and its role, one line each with tabs between, to `[paths] identities`, and
+`agent regen` writes it on every run, so each instance has an index as current as
+its configuration. It is for a hook that has to know whether an author is an
+agent and cannot afford to start homma; anything that can run homma asks
+`homma identity match <address>`, which prints the handle and the role, or exits
+1 for an address that is no agent's.
+
+## The lease
+
+An identity is held by one session at a time, so it acts as one person in one
+place. **A `Lease` is the record of who holds one**: the handle, the session, the
+job, when it was taken and when it expires, and, where it was taken over, the
+session it replaced. One file per identity, `<handle>.toml` under `[paths]
+leases`, on the branch `[lease]` names. A free identity has no file. The file's
+history is the ledger of which session held a name when.
+
+**`decide` is the whole rule, pure**, over the record there is now, what is
+asked, and the time:
+
+- A take of a free identity writes a record for the asking session.
+- A take or a renewal by the session that holds it writes the record anew with a
+  fresh expiry, the time it was taken kept.
+- A take of an identity whose lease has lapsed takes it over, and the record names
+  the session it replaced.
+- A take of an identity another session holds live is refused, naming the holder
+  and when its lease lapses, unless the take names that very session as the one
+  it replaces. A takeover is never implicit and never of somebody unnamed.
+- A renewal or a release by a session that does not hold it is refused, naming the
+  holder.
+- A release by the holder removes the record. A release of a free identity is a
+  no-op.
+
+The answer, an `Outcome`, is the record to write, the record to remove, or
+nothing to do; a `Refusal` names why.
+
+**The swap is the trunk.** homma-core's `swap_file` writes one file, or removes it,
+as a commit on the fetched tip of the branch, built through the plumbing so no
+working tree is read or touched, and pushes it without force. A push the remote
+refuses as not a fast-forward means somebody else's swap landed first: the branch
+is fetched again, the record read again and `decide` asked again, up to five
+times. Two sessions can never both land a take of one name, since the second
+always builds on the first's commit or is refused.
+
+`homma identity lease take <handle> --session <id> --job <job> [--replaces <id>]
+[--minutes <n>]`, `renew`, `release` and `show` drive it. The lease is a record
+among cooperating sessions and not a proof: any process can name any session.
+
 ## The surface
 
 **`OrgRegistry`** reads the identities out of a workspace's configuration. It
 answers who exists, who holds a role, and which entries cannot yet be stood up,
 with what each is missing. That last one exists so a gap is reported before a
 clone starts rather than discovered halfway through one.
+
+**`check_catalogue`** refuses a catalogue that breaks a constraint spanning
+entries: a handle or an alias used twice, an address two entries answer to, an
+office whose holder is missing or who holds another office, an office named like
+a participant. It runs on every read of the configuration, because the file is
+hand-editable and every row arrives by a route no command saw.
+
+**`OrgRegistry::agent_at`** answers which agent an address belongs to, the king
+never, with the plus tag stripped first; **`OrgRegistry::agent_addresses`** lists
+every agent address with its entry, which is what the rendered index holds.
 
 **`Layout`** answers where things sit for a given identity, and **`prepare`**
 creates them: the directories, and the memory link into the path the harness
