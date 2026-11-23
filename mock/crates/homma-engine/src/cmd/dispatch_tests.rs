@@ -128,6 +128,26 @@ fn an_event_gets_one_registration_for_what_waits_and_one_for_what_does_not() {
 }
 
 #[test]
+fn the_joined_matcher_names_each_alternative_once() {
+    let regs = registrations(&[
+        entry("PreToolUse", "Bash", "a", &[]),
+        entry("PreToolUse", "Bash|mcp__.*", "b", &[]),
+        entry("PreToolUse", "Edit, Write", "c", &[]),
+        entry(
+            "PreToolUse",
+            "mcp__[^_]+(_[^_]+)*__(add_repo|register_repo_root)",
+            "d",
+            &[],
+        ),
+        entry("PreToolUse", "Agent|Bash", "e", &[]),
+    ]);
+    assert_eq!(
+        regs[0].matcher,
+        "Bash|mcp__.*|Edit|Write|mcp__[^_]+(_[^_]+)*__(add_repo|register_repo_root)|Agent"
+    );
+}
+
+#[test]
 fn one_entry_taking_every_tool_makes_the_registration_take_every_tool() {
     for every in ["*", ""] {
         let regs = registrations(&[

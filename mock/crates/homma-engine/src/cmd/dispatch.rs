@@ -200,10 +200,12 @@ pub(crate) fn registrations(entries: &[Entry]) -> Vec<HookEntry> {
             } else if every {
                 "*".to_string()
             } else {
-                let mut seen: Vec<&str> = Vec::new();
+                let mut seen: Vec<String> = Vec::new();
                 for e in &es {
-                    if !seen.contains(&e.matcher.as_str()) {
-                        seen.push(e.matcher.as_str());
+                    for piece in alternatives(&e.matcher) {
+                        if !seen.contains(&piece) {
+                            seen.push(piece);
+                        }
                     }
                 }
                 seen.join("|")
@@ -221,6 +223,45 @@ pub(crate) fn registrations(entries: &[Entry]) -> Vec<HookEntry> {
             }
         })
         .collect()
+}
+
+/// The alternatives a matcher takes, each whole: the names of a list of exact
+/// names, split on `|` and `,`, or the branches of a regular expression, split on
+/// a `|` outside any group, class or escape. Joined with `|` they take what the
+/// matchers took between them.
+fn alternatives(matcher: &str) -> Vec<String> {
+    let plain = matcher
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ' ' | ',' | '|'));
+    if plain {
+        return matcher
+            .split(['|', ','])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+    }
+    let mut out = Vec::new();
+    let (mut depth, mut class, mut escaped) = (0usize, false, false);
+    let mut start = 0;
+    for (i, c) in matcher.char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' => escaped = true,
+            '[' if !class => class = true,
+            ']' if class => class = false,
+            '(' if !class => depth += 1,
+            ')' if !class => depth = depth.saturating_sub(1),
+            '|' if !class && depth == 0 => {
+                out.push(matcher[start .. i].to_string());
+                start = i + 1;
+            },
+            _ => {},
+        }
+    }
+    out.push(matcher[start ..].to_string());
+    out.retain(|s| !s.is_empty());
+    out
 }
 
 /// The dispatcher. It finds the workspace from its own location, two levels up,
