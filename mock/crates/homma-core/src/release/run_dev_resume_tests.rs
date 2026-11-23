@@ -7,7 +7,7 @@
 //! the pull request was open is taken once the commit under the merge has a
 //! green run.
 
-use super::dev_pr::{BRANCH, blocks_on, bumps_on, carried, landed_by_hand};
+use super::dev_pr::{BRANCH, carried, landed_by_hand};
 use super::pr::{bare, origin_has, pr_calls, refuse_pushes_to, routed};
 use super::*;
 
@@ -64,9 +64,11 @@ fn a_dev_another_pull_request_landed_the_bump_on_releases_with_its_block() {
 }
 
 #[test]
-fn a_dev_that_moved_under_the_pull_request_is_taken_once_the_commit_under_the_merge_is_green() {
-    // Mutation: the merge never taken, so a `dev` an interloper moved can
-    // never be released; or taken with no green run on the commit under it.
+fn a_dev_that_moved_under_the_pull_request_is_never_released_though_the_moved_dev_is_green() {
+    // Mutation: the merge taken because its second parent is a bump and its
+    // first parent has a green run, which tags the commits the interloper
+    // landed that the bump's changelog block, written over the commit before
+    // them, leaves out.
     let f = Fixture::new();
     refuse_pushes_to(&f, &["dev", "main"]);
     let tip = f.git(&["rev-parse", "dev"]);
@@ -81,26 +83,33 @@ fn a_dev_that_moved_under_the_pull_request_is_taken_once_the_commit_under_the_me
     let moved = f.git(&["rev-parse", &format!("{merge}^1")]);
     assert_ne!(moved, tip, "the interloper moved dev");
     *runner.interloper.borrow_mut() = false;
-    let done = release(&s, f.root(), Level::Patch, Some(&green_run(&moved)), false)
-        .unwrap()
-        .unwrap();
-    assert_eq!(done.bump_sha, merge);
-    assert_eq!(f.git(&["rev-parse", "dev"]), merge);
+    let err = release(&s, f.root(), Level::Patch, Some(&green_run(&moved)), false).unwrap_err();
+    assert!(
+        matches!(&err, ReleaseError::NoGreenRun { .. }),
+        "the merge is no pending bump and the bump has no run: {err:?}"
+    );
+    assert!(
+        git::tag_target(f.root(), "v0.1.1").is_err(),
+        "nothing tagged"
+    );
     assert_eq!(
         pr_calls(&runner).len(),
-        2,
-        "dev's once and the release's: {:?}",
+        1,
+        "no second pull request, none for main: {:?}",
         pr_calls(&runner)
     );
-    assert_eq!(bumps_on(&f, "origin/dev"), 1);
-    assert_eq!(blocks_on(&f, "dev"), 1);
-    let main = f.git(&["rev-parse", "origin/main"]);
-    assert_eq!(f.git(&["rev-parse", &format!("{main}^2")]), merge);
-    assert_eq!(git::tag_target(f.root(), "v0.1.1").unwrap(), main);
-    let body = release_body(&runner);
-    assert!(
-        f.git(&["show", "dev:CHANGELOG.md"]).contains(&body),
-        "the release body is the file's block: {body}"
+    assert_eq!(
+        bare(f.origin(), &["rev-parse", "refs/heads/dev"]).unwrap(),
+        merge,
+        "the forge's dev is left as it is"
     );
-    assert!(!origin_has(&f, BRANCH), "the branch is dropped");
+    assert_eq!(
+        bare(f.origin(), &["rev-parse", "refs/heads/main"]).unwrap(),
+        f.git(&["rev-parse", "origin/main"]),
+        "main is not moved"
+    );
+    assert!(
+        origin_has(&f, BRANCH),
+        "the branch is left for the person who settles it"
+    );
 }

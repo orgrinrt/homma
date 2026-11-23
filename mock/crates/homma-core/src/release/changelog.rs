@@ -109,8 +109,15 @@ pub fn prepend(root: &Path, block: &str) -> std::io::Result<()> {
 /// followed by its date, `## <version> (<date>)`, whatever the date and the
 /// commits under it.
 fn opens(text: &str, heading: &str) -> bool {
-    let dated = format!("{heading} (");
-    text.lines().any(|l| l == heading || l.starts_with(&dated))
+    text.lines().any(|l| is_heading(l, heading))
+}
+
+/// Whether `line` is `heading`, alone or followed by its date.
+fn is_heading(line: &str, heading: &str) -> bool {
+    line == heading
+        || line
+            .strip_prefix(heading)
+            .is_some_and(|r| r.starts_with(" ("))
 }
 
 /// The heading `## <version>` a block opens with, without its date.
@@ -141,9 +148,8 @@ pub fn block_of(root: &Path, version: &Version) -> std::io::Result<Option<String
         Err(e) => return Err(e),
     };
     let heading = format!("## {version}");
-    let dated = format!("{heading} (");
     let mut lines = text.lines();
-    let Some(first) = lines.find(|l| *l == heading || l.starts_with(&dated)) else {
+    let Some(first) = lines.find(|l| is_heading(l, &heading)) else {
         return Ok(None);
     };
     let mut block = String::from(first);

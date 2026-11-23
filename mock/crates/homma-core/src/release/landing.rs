@@ -203,8 +203,11 @@ fn landed_version(root: &Path, rev: &str) -> Result<Option<Version>, ReleaseErro
 
 /// The bump the remote's trunk `merge` landed by a pull request, set aside: the
 /// clone's trunk is at the merge, at its first parent or at the bump itself,
-/// the merge holds the tree the two make together, and no tag holds it yet. The
-/// trunk is moved back to the first parent, the commit the gate measured.
+/// the bump was made on that first parent, so its changelog block covers every
+/// commit the release carries and a `dev` that moved under the pull request is
+/// none of these, the merge holds the tree the two make together, and no tag
+/// holds it yet. The trunk is moved back to the first parent, the commit the
+/// gate measured.
 fn set_aside_landed(
     setup: &Setup<'_>,
     root: &Path,
@@ -217,6 +220,7 @@ fn set_aside_landed(
     let first = git::sha(root, &format!("{merge}^1"))?;
     let bump = git::sha(root, &format!("{merge}^2"))?;
     if ![merge, first.as_str(), bump.as_str()].contains(&tip)
+        || git::sha(root, &format!("{bump}^"))? != first
         || !is_merge_onto(root, merge, &first, &bump)?
         || git::tagged(root, merge)?
     {
