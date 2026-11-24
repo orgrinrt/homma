@@ -267,7 +267,7 @@ choice; all four keys sit under `[search]` in the manifest, as `SearchConfig`.
 named, `--limit` bounds the hits, and an index absent, unreadable or of another
 version is a line saying so under an answer from the rest. Every member opened
 for is a line: one whose index is not built is reported so by the index crate,
-and one whose clone is not there is not asked, with that as the reason. A
+and one whose clone is not there is not asked, its line reading `no clone` with no prefix of the index crate. A
 corpus whose own `corpus.index` leaves the content repository, by an absolute
 path or by climbing out, is refused and not asked, and a corpus config that
 does not read is a note on its line, its index then the default. How far an
