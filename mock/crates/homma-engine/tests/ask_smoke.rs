@@ -42,14 +42,15 @@ fn the_verb_answers_from_a_stand_in_model_and_again_from_the_cache_and_refuses_w
             .current_dir(root)
             .env("HOME", root)
             .args(["--config", on.to_str().unwrap()])
-            .args(["ask", "--run", "printf 'alpha\\n'", "what", "is", "printed"])
+            .args(["ask", "what", "is", "printed"])
+            .write_stdin("alpha\n")
             .assert()
     };
     ask()
         .success()
         .stdout(predicate::str::contains("Answer: alpha, line 1"))
         .stdout(predicate::str::contains(
-            "exit 0; 1 chunk(s) of output, 0 of them from the cache",
+            "1 chunk(s) of input, 0 of them from the cache",
         ));
     assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2);
     ask()
@@ -68,7 +69,8 @@ fn the_verb_answers_from_a_stand_in_model_and_again_from_the_cache_and_refuses_w
         .current_dir(root)
         .env("HOME", root)
         .args(["--config", off.to_str().unwrap()])
-        .args(["ask", "--run", "printf 'alpha\\n'", "what", "is", "printed"])
+        .args(["ask", "what", "is", "printed"])
+        .write_stdin("alpha\n")
         .assert()
         .failure()
         .stdout("")

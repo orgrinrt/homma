@@ -3,37 +3,32 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! `homma ask --run <command> <question>`: the command run, its output read through the summarising
-//! pass with the question, and only a short summary framed by the question and the answer printed,
-//! every line naming its place.
+//! `<command> | homma ask <question>`: the output piped in read through the summarising pass with
+//! the question, and only a short summary framed by the question and the answer printed, every line
+//! naming its place. The ask runs no command: the command is the caller's, under the session's own
+//! guards.
 //!
-//! The command meets the session's guards first ([`guard`]). Its output is cut into chunks by
+//! The output is cut into chunks by
 //! content ([`chunks`]); a question-neutral partial is kept per chunk and an answer per
 //! question over a set of chunks ([`cache`]), so unchanged chunks are not read again.
 
+use std::io::Read;
 use std::path::Path;
-use std::process::Stdio;
-use std::time::Duration;
 
 use anyhow::Result;
 use homma_core::Config;
 
 use crate::cmd::Outcome;
 use crate::cmd::summary::{self, Budget, OneShot, call, version_of};
-use crate::cmd::util::bounded::{self, spawn};
 
 pub mod cache;
 pub mod chunks;
-pub mod guard;
 
 #[cfg(test)]
 mod tests;
 
-use cache::Cache;
+use cache::{Asker, Cache};
 use chunks::Chunk;
-
-/// How long the command may run.
-pub const RUN_LIMIT: Duration = Duration::from_secs(600);
 
 /// The rules of a call that makes partials: one question-neutral section per chunk.
 pub const PARTIAL_RULES: &str = "\
@@ -85,14 +80,14 @@ pub struct Asked {
 }
 
 /// Answer `question` over `output` through `model`, keeping and reusing what it pays for in
-/// `cache`, keyed with `model_name`.
+/// `cache`, keyed with `asker`.
 ///
 /// # Errors
 /// Why there is no answer: the output is empty or cannot be cut, or a call failed or left a chunk
 /// out.
 pub fn answer<M: OneShot>(
     model: &M,
-    model_name: &str,
+    asker: Asker<'_>,
     cache: &Cache,
     question: &str,
     output: &str,
@@ -100,7 +95,7 @@ pub fn answer<M: OneShot>(
     let chunks = chunks::cut(output);
     if output.trim().is_empty() || chunks.is_empty() {
         return Err(
-            "the command printed nothing, so there was nothing to answer from and no call was made"
+            "the input was empty, so there was nothing to answer from and no call was made"
                 .to_string(),
         );
     }
@@ -113,7 +108,7 @@ pub fn answer<M: OneShot>(
         .zip(&firsts)
         .flat_map(|(c, f)| [c.digest.as_str(), f.as_str()])
         .collect();
-    let akey = cache::answer_key(question, &rules, model_name, &placed_digests);
+    let akey = cache::answer_key(question, &rules, asker, &placed_digests);
     if let Some(answer) = cache.answer(&akey) {
         return Ok(Asked {
             answer,
@@ -126,7 +121,7 @@ pub fn answer<M: OneShot>(
     let mut notes = Vec::new();
     let keys: Vec<String> = chunks
         .iter()
-        .map(|c| cache::partial_key(&c.digest, &rules, model_name))
+        .map(|c| cache::partial_key(&c.digest, &rules, asker))
         .collect();
     let mut partials: Vec<Option<String>> = keys.iter().map(|k| cache.partial(k)).collect();
     let cached = partials.iter().filter(|p| p.is_some()).count();
@@ -290,12 +285,12 @@ fn sections(said: &str) -> Vec<(usize, String)> {
     out
 }
 
-/// `homma ask`: the guards, the run, the answer printed with a line saying where it came from.
-/// Exits 1 with one line and no answer where the pass is off, the guards refuse, or a call fails.
+/// `homma ask`: the output on stdin read and the answer printed with a line saying where it came
+/// from. Exits 1 with one line and no answer where the pass is off or a call fails.
 ///
 /// # Errors
-/// The `[summary]` table does not read.
-pub fn run(cfg: &Config, root: &Path, command: &str, question: &[String]) -> Result<Outcome> {
+/// The `[summary]` table does not read, or stdin cannot be read.
+pub fn run(cfg: &Config, root: &Path, question: &[String]) -> Result<Outcome> {
     let settings = summary::settings(cfg)?;
     let question = question.join(" ");
     let refuse = |why: String| {
@@ -308,35 +303,17 @@ pub fn run(cfg: &Config, root: &Path, command: &str, question: &[String]) -> Res
                 .to_string(),
         );
     }
-    let cwd = std::env::current_dir()?;
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
-    let session = std::env::var("CLAUDE_CODE_SESSION_ID").ok();
-    let guards = guard::read(&guard::files(home.as_deref(), root));
-    let at = guard::Place {
-        cwd: &cwd,
-        root,
-        session: session.as_deref(),
-    };
-    match guard::check(&guards, command, &at) {
-        guard::Verdict::Refused(why) => return refuse(format!("`{command}` was not run: {why}")),
-        guard::Verdict::Allowed {
-            passed_over,
-        } => {
-            for p in passed_over {
-                eprintln!("ask: a hook could not be run and was passed over: {p}");
-            }
-        },
-    }
-    let (code, output) = match run_command(command, &cwd) {
-        Ok(ran) => ran,
-        Err(why) => return refuse(format!("`{command}` did not run to its end: {why}")),
-    };
+    let output = read_input(std::io::stdin().lock())?;
     let cache = match Cache::of_workspace(root) {
         Ok(c) => c,
         Err(why) => return refuse(format!("no place for the cache: {why}")),
     };
     let model = call::Command::from(&settings);
-    match answer(&model, &settings.model, &cache, &question, &output) {
+    let asker = Asker {
+        command: &settings.command,
+        model:   &settings.model,
+    };
+    match answer(&model, asker, &cache, &question, &output) {
         Ok(asked) => {
             for n in &asked.notes {
                 eprintln!("ask: {n}");
@@ -348,39 +325,20 @@ pub fn run(cfg: &Config, root: &Path, command: &str, question: &[String]) -> Res
             } else {
                 format!("{} of them from the cache", asked.cached)
             };
-            println!("{code}; {} chunk(s) of output, {from}", asked.chunks);
+            println!("{} chunk(s) of input, {from}", asked.chunks);
             Ok(Outcome::Ok)
         },
         Err(why) => refuse(why),
     }
 }
 
-/// Run `command` through `sh -c` in `cwd`: how it exited, and its stdout with its stderr after a
-/// line `[stderr]` where it wrote any.
-fn run_command(command: &str, cwd: &Path) -> Result<(String, String), String> {
-    let child = spawn(
-        std::process::Command::new("sh")
-            .args(["-c", command])
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped()),
-    )
-    .map_err(|e| format!("sh did not start: {e}"))?;
-    let ran = bounded::run(child, "", RUN_LIMIT).map_err(|s| s.reason(RUN_LIMIT))?;
-    let status = ran.status;
-    let (stdout, stderr) = ran.text();
-    let code = status.code().map_or_else(
-        || "the command was ended by a signal".to_string(),
-        |c| format!("exit {c}"),
-    );
-    let mut output = stdout;
-    if !stderr.trim().is_empty() {
-        if !output.ends_with('\n') && !output.is_empty() {
-            output.push('\n');
-        }
-        output.push_str("[stderr]\n");
-        output.push_str(&stderr);
-    }
-    Ok((code, output))
+/// All of `input`, read as UTF-8 with any byte that is not replaced, so output that is not text is
+/// still asked about and never dropped.
+///
+/// # Errors
+/// `input` cannot be read.
+pub fn read_input<R: Read>(mut input: R) -> std::io::Result<String> {
+    let mut bytes = Vec::new();
+    input.read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }

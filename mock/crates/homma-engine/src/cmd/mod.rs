@@ -479,12 +479,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             )
         },
         Command::Ask {
-            run,
             question,
         } => {
             let cfg = load_config(&cli)?;
             let root = tools::root(&config_path(&cli));
-            ask::run(&cfg, &root, run, question)
+            ask::run(&cfg, &root, question)
         },
         Command::Summarise {
             brief,

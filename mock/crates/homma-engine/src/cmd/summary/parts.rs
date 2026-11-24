@@ -58,10 +58,21 @@ fn pieces(n: usize, line: &str, bytes: usize) -> Vec<String> {
         return vec![whole];
     }
     let room = bytes.saturating_sub(head.len() + 1).max(1);
+    cut_at_chars(line, room)
+        .into_iter()
+        .map(|piece| format!("{head}{piece}\n"))
+        .collect()
+}
+
+/// `text` in pieces of at most `bytes` each, every one ending on a character boundary and keeping
+/// at least one character, so a character wider than `bytes` is a piece alone. Empty text is no
+/// piece.
+#[must_use]
+pub fn cut_at_chars(text: &str, bytes: usize) -> Vec<&str> {
     let mut out = Vec::new();
-    let mut rest = line;
+    let mut rest = text;
     while !rest.is_empty() {
-        let mut at = room.min(rest.len());
+        let mut at = bytes.min(rest.len());
         while !rest.is_char_boundary(at) {
             at -= 1;
         }
@@ -69,7 +80,7 @@ fn pieces(n: usize, line: &str, bytes: usize) -> Vec<String> {
             at = rest.chars().next().map_or(rest.len(), char::len_utf8);
         }
         let (piece, after) = rest.split_at(at);
-        out.push(format!("{head}{piece}\n"));
+        out.push(piece);
         rest = after;
     }
     out

@@ -76,16 +76,25 @@ fn write(dir: &Path, key: &str, text: &str) -> Result<(), String> {
     std::fs::rename(&tmp, dir.join(key)).map_err(|e| format!("{}: {e}", dir.display()))
 }
 
-/// A partial's key: the chunk's digest, the rules' version and the model.
-#[must_use]
-pub fn partial_key(digest: &str, rules: &str, model: &str) -> String {
-    version_of(&[digest, rules, model])
+/// What answers: the command `[summary]` names and the model it asks that command for. Two commands
+/// asked for the same model can answer differently, so both are in every key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Asker<'a> {
+    pub command: &'a str,
+    pub model:   &'a str,
 }
 
-/// An answer's key: the question, the rules' version, the model and the chunk digests in order.
+/// A partial's key: the chunk's digest, the rules' version, the command and the model.
 #[must_use]
-pub fn answer_key(question: &str, rules: &str, model: &str, digests: &[&str]) -> String {
-    let mut parts = vec![question, rules, model];
+pub fn partial_key(digest: &str, rules: &str, asker: Asker<'_>) -> String {
+    version_of(&[digest, rules, asker.command, asker.model])
+}
+
+/// An answer's key: the question, the rules' version, the command, the model and the chunk digests
+/// in order.
+#[must_use]
+pub fn answer_key(question: &str, rules: &str, asker: Asker<'_>, digests: &[&str]) -> String {
+    let mut parts = vec![question, rules, asker.command, asker.model];
     parts.extend_from_slice(digests);
     version_of(&parts)
 }

@@ -5,6 +5,11 @@
 //! [`MIN`] bytes, or after the line that takes it to [`MAX`]. A boundary line is one whose digest
 //! has its low four bits zero, so where chunks end depends on the lines and not on where they
 //! sit: text inserted into the output moves only the chunks it lands in.
+//!
+//! A line of [`MAX`] bytes or more is cut into pieces of fewer than [`MAX`] bytes on character
+//! boundaries, by the summarising pass's own cut, each a chunk alone on the line's number.
+
+use crate::cmd::summary::parts::cut_at_chars;
 
 /// The size a chunk holds before a boundary line may end it.
 pub const MIN: usize = 512;
@@ -32,11 +37,16 @@ pub fn cut(output: &str) -> Vec<Chunk> {
         if line.trim().is_empty() {
             continue;
         }
-        // A line as long as a chunk may be is a chunk alone.
+        // A line as long as a chunk may be is cut into pieces, each a chunk alone on its number, so
+        // no chunk outgrows a call.
         if line.len() >= MAX {
             if let Some((first, text)) = open.take() {
                 out.push(close(first, i, text));
             }
+            for piece in cut_at_chars(line, MAX - 1) {
+                out.push(close(i + 1, i + 1, format!("{piece}\n")));
+            }
+            continue;
         }
         let (_, text) = open.get_or_insert_with(|| (i + 1, String::new()));
         text.push_str(line);
