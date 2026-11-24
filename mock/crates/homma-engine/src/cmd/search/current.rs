@@ -82,15 +82,23 @@ impl Currency {
 /// Bring `index` current with `embedder`; where that cannot be, measure how far behind it is and
 /// say why. The index stays open and readable either way, so it is asked as it stands after. A
 /// file that records no definition is named with `build`, the command that writes one, where known.
-pub fn bring<E: Embedder>(index: &mut Index, embedder: &mut E, build: Option<&str>) -> Currency {
+/// Beside the outcome, what the refresh could not read, one sentence each.
+pub fn bring<E: Embedder>(
+    index: &mut Index,
+    embedder: &mut E,
+    build: Option<&str>,
+) -> (Currency, Vec<String>) {
     let why = match index.refresh(embedder) {
         Ok(done) => {
-            return Currency::Refreshed {
-                added:   done.added,
-                changed: done.changed,
-                removed: done.removed,
-                commits: done.commits,
-            };
+            return (
+                Currency::Refreshed {
+                    added:   done.added,
+                    changed: done.changed,
+                    removed: done.removed,
+                    commits: done.commits,
+                },
+                done.caveats,
+            );
         },
         Err(Error::Header {
             field: "model",
@@ -103,16 +111,19 @@ pub fn bring<E: Embedder>(index: &mut Index, embedder: &mut E, build: Option<&st
             )
         },
         Err(e @ Error::Undefined(_)) => {
-            let rebuilt = build
-                .map(|b| format!("; built again by {b}"))
+            let writes = build
+                .map(|b| format!("; {b} writes one"))
                 .unwrap_or_default();
-            return Currency::Unknown {
-                why: format!("{e}{rebuilt}"),
-            };
+            return (
+                Currency::Unknown {
+                    why: format!("{e}{writes}"),
+                },
+                Vec::new(),
+            );
         },
         Err(e) => e.to_string(),
     };
-    match index.behind() {
+    let measured = match index.behind() {
         Ok(b) => {
             let mut why = why;
             for more in [b.definition.as_deref(), b.history.as_deref()]
@@ -133,5 +144,6 @@ pub fn bring<E: Embedder>(index: &mut Index, embedder: &mut E, build: Option<&st
                 why: format!("{why}; and measuring it: {e}"),
             }
         },
-    }
+    };
+    (measured, Vec::new())
 }

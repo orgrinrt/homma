@@ -5,9 +5,10 @@
 
 //! `homma search <words>`: one question across every index the workspace holds.
 //!
-//! A layer over the indexes and nothing more: each is opened read only through the index crate,
-//! asked by its own ranking, and the answers fused by rank there. What is homma's is which indexes
-//! exist and what each is called, in [`discover`], and the printing. No member's command is run and
+//! A layer over the indexes and nothing more: each is opened through the index crate, brought
+//! current by the crate's own refresh, which writes it, in [`current`], asked read only by its own
+//! ranking, and the answers fused by rank there. What is homma's is which indexes exist and what
+//! each is called, in [`discover`], and the printing. No member's command is run and
 //! no member knows of this.
 
 use std::io::Write;
@@ -214,7 +215,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
     };
     // How each place was brought current, in the order given; filled as the question reaches it,
     // so each index is refreshed, asked and dropped before the next is opened.
-    let mut currencies: Vec<Option<Currency>> = Vec::with_capacity(places.len());
+    let mut currencies: Vec<(Option<Currency>, Vec<String>)> = Vec::with_capacity(places.len());
     let across: Across = layer::across(
         places.iter().map(|p| {
             let opened = match &p.shut {
@@ -222,13 +223,14 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                 Some(why) => Err(muisti::Error::Cache(why.clone())),
                 None => layer::open(&p.index),
             };
-            currencies.push(None);
             let opened = opened.map(|mut index| {
-                if let Some(c) = currencies.last_mut() {
-                    *c = Some(current::bring(&mut index, &mut Words, p.build.as_deref()));
-                }
+                let (c, caveats) = current::bring(&mut index, &mut Words, p.build.as_deref());
+                currencies.push((Some(c), caveats));
                 index
             });
+            if opened.is_err() {
+                currencies.push((None, Vec::new()));
+            }
             (p.name.clone(), opened)
         }),
         &q,
@@ -260,7 +262,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         .into_iter()
         .zip(places)
         .zip(currencies)
-        .map(|((m, p), currency)| {
+        .map(|((m, p), (currency, caveats))| {
             // A file written while the question ran is newer than `now`, and was written just now.
             let shut = p.shut.is_some();
             let written = (!shut)
@@ -268,6 +270,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                 .flatten()
                 .map(|t| ago(now.duration_since(t).unwrap_or_default()));
             let mut notes = p.notes.clone();
+            notes.extend(caveats);
             match m.answered {
                 Ok(a) => {
                     notes.extend(a.caveats);

@@ -162,6 +162,7 @@ fn an_index_not_built_names_the_command_that_builds_it() {
         out.indexes[0].currency, None,
         "a file that is not there is not refreshed"
     );
+    assert!(!gone.exists(), "the question built no index from nothing");
     let text = line(&out);
     assert!(text.contains("not built"), "{text}");
     assert!(text.contains("built by `muisti index` in /c"), "{text}");
@@ -173,4 +174,131 @@ fn an_index_not_built_names_the_command_that_builds_it() {
         SystemTime::now(),
     );
     assert!(!line(&bare).contains("built by"), "{}", line(&bare));
+}
+
+#[test]
+fn a_repository_index_is_brought_current_as_a_corpus_is() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("r");
+    write(&dir.join("one.md"), "# One\n\nalpha\n");
+    let file = t.path().join("r.git/mockspace/search.sqlite");
+    let mut index = muisti::repo::RepoIndex::open(&file).unwrap();
+    index
+        .refresh(
+            &[muisti::repo::Root::walked(&dir, "", muisti::repo::DocClass::Research)],
+            None,
+        )
+        .unwrap();
+    drop(index);
+    write(&dir.join("two.md"), "# Two\n\nsaturation of the air\n");
+    let places = vec![Place::at("r".to_string(), file)];
+    let out = ask(&places, "saturation", 10, SystemTime::now());
+    let paths: Vec<&str> = out.hits.iter().map(|h| h.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        vec!["two.md"],
+        "the document written after the build answers"
+    );
+    assert!(
+        matches!(
+            out.indexes[0].currency,
+            Some(Currency::Refreshed {
+                added: 1,
+                ..
+            })
+        ),
+        "{:?}",
+        out.indexes[0].currency
+    );
+    // THE CONTROL: asked again with nothing moved, it was current.
+    let again = ask(&places, "saturation", 10, SystemTime::now());
+    assert!(line(&again).contains(", current"), "{}", line(&again));
+}
+
+#[test]
+fn a_refresh_that_fails_gives_its_words_and_the_index_is_asked_as_it_stands() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("c");
+    write(&dir.join("a.md"), "# A\n\nsaturation\n");
+    let file = built(&dir, &mut Words);
+    // The recorded root is gone, so the refresh under it cannot walk.
+    std::fs::rename(&dir, t.path().join("moved")).unwrap();
+    let places = vec![Place::at("c".to_string(), file)];
+    let out = ask(&places, "saturation", 10, SystemTime::now());
+    // THE CONTROL: what the index held still answers.
+    assert_eq!(out.hits.len(), 1);
+    let currency = out.indexes[0].currency.clone().unwrap();
+    assert!(
+        !matches!(currency, Currency::Refreshed { .. }),
+        "{currency:?}"
+    );
+    let text = line(&out);
+    assert!(
+        text.contains("not brought current") || text.contains("not known"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&dir.display().to_string()),
+        "the crate's words name the root: {text}"
+    );
+}
+
+#[test]
+fn a_file_recording_no_definition_names_the_command_that_writes_one() {
+    let t = tempfile::tempdir().unwrap();
+    let file = t.path().join("old.sqlite");
+    let mut store = Store::open(&file, Header::new("words", std::num::NonZeroUsize::MIN)).unwrap();
+    store
+        .upsert(
+            &muisti::Source::new("one.md", "# One\n\nsaturation\n".as_bytes()),
+            &mut Words,
+        )
+        .unwrap();
+    drop(store);
+    let named =
+        Place::at("old".to_string(), file.clone()).built_by("`muisti index` in /c".to_string());
+    let out = ask(&[named], "saturation", 10, SystemTime::now());
+    assert!(
+        line(&out).contains("`muisti index` in /c writes one"),
+        "{}",
+        line(&out)
+    );
+    // THE CONTROL: with no command known, none is named.
+    let bare = ask(
+        &[Place::at("old".to_string(), file)],
+        "saturation",
+        10,
+        SystemTime::now(),
+    );
+    assert!(!line(&bare).contains("writes one"), "{}", line(&bare));
+}
+
+#[test]
+fn what_a_refresh_skipped_is_a_note_on_the_line() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("c");
+    write(&dir.join("a.md"), "# A\n\nsaturation\n");
+    let file = built(&dir, &mut Words);
+    std::fs::write(dir.join("c.bin"), [0xFF, 0xFE]).unwrap();
+    let places = vec![Place::at("c".to_string(), file)];
+    let out = ask(&places, "saturation", 10, SystemTime::now());
+    assert!(
+        out.indexes[0]
+            .notes
+            .iter()
+            .any(|n| n.contains("c.bin was skipped")),
+        "{:?}",
+        out.indexes[0].notes
+    );
+    // THE CONTROL: a refresh that skipped nothing leaves no such note.
+    std::fs::remove_file(dir.join("c.bin")).unwrap();
+    let again = ask(&places, "saturation", 10, SystemTime::now());
+    assert!(
+        !again.indexes[0]
+            .notes
+            .iter()
+            .any(|n| n.contains("was skipped")),
+        "{:?}",
+        again.indexes[0].notes
+    );
 }
