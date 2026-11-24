@@ -5,8 +5,8 @@ identity, matches an address to an agent and takes, renews and releases the leas
 that lets one session at a time hold a name; `milestone` records each milestone with its freeze, head and tip, tells where
 the current one began and reports on the range since; `search` asks one question of
 every index the workspace holds, each hit naming its index; `summarise` reads a large text through one isolated
-call of a small model and gives back a summary whose every line names its place; `ask` runs a
-command and answers a question over its output through that pass, keeping what it paid for per
+call of a small model and gives back a summary whose every line names its place; `ask` answers a
+question over a command's output piped to it through that pass, keeping what it paid for per
 chunk; `release` gates a commit, records the
 run, carries `dev` onto `main` as a tagged, published release, keeps the publish
 credentials valid, and reports a repo's version timeline and the estate of
