@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "flavour": "cmd::ask the_verb_answers aggregate summary",
+  "member": "homma-engine",
+  "green": null,
+  "tests": {},
+  "bins": {
+    "homma-engine::ask_smoke": "d7a3cbaf7e1e10a708d59b2dc28af26a63bc259a93340faf1e40758b731bde14",
+    "homma-engine::summarise_smoke": "a1f82710c47cc22f0c0434f20b436cc3486010e5524305ed23af45f1351c5809"
+  }
+}

@@ -368,6 +368,21 @@ pub enum Command {
         #[arg(long)]
         summarise: bool,
     },
+    /// A question answered over a command's output, with none of the output.
+    ///
+    /// Runs the command, once the session's `Bash` deny rules and `PreToolUse` hooks have let it,
+    /// and prints a short summary framed by the question and the answer, every line naming its
+    /// place. Unchanged chunks of output, and an unchanged question over unchanged output, are not
+    /// read again. Needs `enabled = true` under `[summary]`; without it, or with a call failing, it
+    /// prints why and exits 1.
+    Ask {
+        /// The shell command whose output the question is about.
+        #[arg(long)]
+        run:      String,
+        /// The question, in words.
+        #[arg(required = true, num_args = 1..)]
+        question: Vec<String>,
+    },
     /// A large text read by one isolated call of a small model, and its summary.
     ///
     /// Reads the file, or stdin, and prints a summary whose every line names the place it

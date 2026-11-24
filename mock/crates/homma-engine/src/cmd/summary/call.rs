@@ -6,7 +6,7 @@
 //! result. homma reads no credential: the command finds its own in the environment it inherits.
 
 use std::io::{Read, Write};
-use std::process::{Child, Stdio};
+use std::process::{Child, ExitStatus, Stdio};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -87,6 +87,7 @@ impl OneShot for Command {
         )
         .map_err(|e| format!("`{}` did not start: {e}", self.program))?;
         let (status, stdout, stderr) = drive(child, content, self.limit)?;
+        let status = status.success();
         let answer: Option<Answer> = stdout
             .lines()
             .rev()
@@ -114,7 +115,7 @@ impl OneShot for Command {
 
 /// Spawn `command` alone in a process group of its own where the platform has them, so that ending
 /// the call ends whatever it started too.
-fn spawn(command: &mut std::process::Command) -> std::io::Result<Child> {
+pub(crate) fn spawn(command: &mut std::process::Command) -> std::io::Result<Child> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -141,11 +142,11 @@ fn end(child: &mut Child) {
 /// Feed `content` to the child, read both its pipes, and wait at most `limit` for it to exit and
 /// for both pipes to close, ending it and its group past that, so a process it left holding a pipe
 /// cannot keep the call waiting. Gives whether it exited 0, and what it printed.
-fn drive(
+pub(crate) fn drive(
     mut child: Child,
     content: &str,
     limit: Duration,
-) -> Result<(bool, String, String), String> {
+) -> Result<(ExitStatus, String, String), String> {
     let ran_past = || format!("the call ran past {} s and was ended", limit.as_secs());
     let mut stdin = child.stdin.take();
     let body = content.to_owned();
@@ -175,7 +176,7 @@ fn drive(
     };
     let read = |pipe: &Receiver<String>| pipe.recv_timeout(limit.saturating_sub(start.elapsed()));
     match (read(&out), read(&err)) {
-        (Ok(stdout), Ok(stderr)) => Ok((status.success(), stdout, stderr)),
+        (Ok(stdout), Ok(stderr)) => Ok((status, stdout, stderr)),
         _ => {
             end(&mut child);
             Err(ran_past())

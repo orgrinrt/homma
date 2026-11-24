@@ -112,6 +112,18 @@ pub fn rules_version() -> String {
     blake3::hash(RULES.as_bytes()).to_hex()[.. 16].to_string()
 }
 
+/// The first sixteen hex digits of the BLAKE3 digest of `parts`, each followed by a NUL so no two
+/// lists of parts run together into the same bytes.
+#[must_use]
+pub fn version_of(parts: &[&str]) -> String {
+    let mut h = blake3::Hasher::new();
+    for p in parts {
+        h.update(p.as_bytes());
+        h.update(&[0]);
+    }
+    h.finalize().to_hex()[.. 16].to_string()
+}
+
 /// The `[summary]` table, with its defaults where it is absent.
 ///
 /// # Errors

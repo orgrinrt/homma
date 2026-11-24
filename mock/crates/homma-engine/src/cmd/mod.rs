@@ -36,6 +36,7 @@ pub mod agents;
 pub mod aggregate;
 pub mod answers;
 pub mod archive;
+pub mod ask;
 pub mod capture;
 pub mod config;
 pub mod declared;
@@ -476,6 +477,14 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 summary.as_ref(),
                 cli.output,
             )
+        },
+        Command::Ask {
+            run,
+            question,
+        } => {
+            let cfg = load_config(&cli)?;
+            let root = tools::root(&config_path(&cli));
+            ask::run(&cfg, &root, run, question)
         },
         Command::Summarise {
             brief,
