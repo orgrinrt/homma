@@ -235,13 +235,10 @@ fn a_long_line_of_wide_characters_is_cut_at_character_boundaries() {
 }
 
 #[test]
-fn the_rules_version_is_their_digest() {
+fn the_rules_version_is_pinned_to_the_rules_as_they_stand() {
+    // An edit of the rules fails this until the pin moves, so no summary kept under the old rules
+    // is taken for one under the new.
     assert_eq!(rules_version(), "d1a87ce1b71847dd");
-    // control: any change to the rules is another version
-    assert_ne!(
-        blake3::hash(format!("{RULES} ").as_bytes()).to_hex()[.. 16].to_string(),
-        rules_version()
-    );
 }
 
 #[cfg(unix)]

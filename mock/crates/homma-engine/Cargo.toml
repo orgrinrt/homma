@@ -52,7 +52,7 @@ renki-dirs = "0.0.1"
 notko = { version = "0.0.1", default-features = false }
 # A child the engine may have to end leads a process group, and the group is ended by a signal sent
 # from homma, never by whatever `kill` is on `PATH`.
-rustix = { version = "1", features = ["process"] }
+rustix = { version = "1.1.6", features = ["process"] }
 
 [dev-dependencies]
 assert_cmd = "2"

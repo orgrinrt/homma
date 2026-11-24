@@ -59,7 +59,10 @@ impl Stopped {
             Self::RanPast if limit.as_secs() == 0 => {
                 format!("it ran past {} ms and was ended", limit.as_millis())
             },
-            Self::RanPast => format!("it ran past {} s and was ended", limit.as_secs()),
+            Self::RanPast if limit.subsec_nanos() == 0 => {
+                format!("it ran past {} s and was ended", limit.as_secs())
+            },
+            Self::RanPast => format!("it ran past {} s and was ended", limit.as_secs_f64()),
             Self::Wait(e) => format!("waiting on it failed, and it was ended: {e}"),
         }
     }
@@ -86,25 +89,66 @@ pub(crate) fn spawn(command: &mut Command) -> std::io::Result<Child> {
 
 /// End the child and, where it leads a process group, everything in the group.
 pub(crate) fn end(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        // The group's id is the child's pid, since it was spawned to lead one. A group already gone
-        // has nothing left to end, so the signal's failure says nothing.
-        if let Some(pid) = i32::try_from(child.id())
-            .ok()
-            .and_then(rustix::process::Pid::from_raw)
-        {
-            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
-        }
-    }
+    end_group(child);
     let _ = child.kill();
     let _ = child.wait();
 }
 
+/// Signal the group the child leads, where the platform has groups.
+fn end_group(child: &Child) {
+    #[cfg(unix)]
+    {
+        // The group's id is the child's pid, since it was spawned to lead one. A group already gone
+        // has nothing left to end, so the signal's failure says nothing.
+        if let Some(pid) = pid(child) {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn pid(child: &Child) -> Option<rustix::process::Pid> {
+    i32::try_from(child.id())
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+}
+
+/// Whether the child has exited, read without reaping it, so its pid and its group's id stay its
+/// own until it is waited on.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd"
+))]
+fn exited(child: &mut Child) -> std::io::Result<bool> {
+    use rustix::process::{WaitId, WaitIdOptions, waitid};
+    let Some(pid) = pid(child) else {
+        return child.try_wait().map(|s| s.is_some());
+    };
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    Ok(waitid(WaitId::Pid(pid), options)?.is_some())
+}
+
+/// Whether the child has exited, where the platform cannot read that without reaping it.
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd"
+)))]
+fn exited(child: &mut Child) -> std::io::Result<bool> {
+    child.try_wait().map(|s| s.is_some())
+}
+
 /// Feed `input` to the child where it was spawned with a piped stdin, read both its pipes, and wait
-/// at most `limit` for it to exit, then at most [`GRACE`] (or what is left of `limit`, if less) for
-/// both pipes to close. A pipe still open after that is held by something the child left running,
-/// so the group is ended and what arrived is all there is.
+/// at most `limit` for it to exit, then at most [`GRACE`] for both pipes to close, however little
+/// of `limit` was left. A pipe still open after that is held by something the child left running,
+/// so the group is ended and what arrived is all there is. Where the platform can read the exit
+/// without reaping it, the child is reaped only after that, so the signal never reaches a group
+/// that took its number.
 ///
 /// # Errors
 /// The child ran past `limit`, or waiting on it failed; either way its group is ended.
@@ -120,26 +164,33 @@ pub(crate) fn run(mut child: Child, input: &str, limit: Duration) -> Result<Ran,
     let out = drain(child.stdout.take());
     let err = drain(child.stderr.take());
     let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) if start.elapsed() >= limit => {
+    loop {
+        match exited(&mut child) {
+            Ok(true) => break,
+            Ok(false) if start.elapsed() >= limit => {
                 end(&mut child);
                 return Err(Stopped::RanPast);
             },
-            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
+            Ok(false) => std::thread::sleep(Duration::from_millis(40)),
             Err(e) => {
                 end(&mut child);
                 return Err(Stopped::Wait(e));
             },
         }
-    };
-    let until = Instant::now() + GRACE.min(limit.saturating_sub(start.elapsed()));
+    }
+    let until = Instant::now() + GRACE;
     let (stdout, out_ended) = out.take(until);
     let (stderr, err_ended) = err.take(until);
     if !(out_ended && err_ended) {
-        end(&mut child);
+        end_group(&child);
     }
+    let status = match child.wait() {
+        Ok(s) => s,
+        Err(e) => {
+            end(&mut child);
+            return Err(Stopped::Wait(e));
+        },
+    };
     Ok(Ran {
         status,
         stdout,
@@ -177,10 +228,14 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> Pipe {
     std::thread::spawn(move || {
         if let Some(mut r) = pipe {
             let mut chunk = [0_u8; 8192];
-            while let Ok(n) = r.read(&mut chunk) {
-                if n == 0 {
-                    break;
-                }
+            loop {
+                let n = match r.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    // An interrupted read is not the end of the pipe.
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                };
                 if let Ok(mut b) = shared.lock() {
                     b.extend_from_slice(&chunk[.. n]);
                 }
