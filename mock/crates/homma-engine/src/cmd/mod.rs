@@ -55,6 +55,8 @@ pub mod registry;
 pub mod release;
 pub mod repo;
 pub mod rules;
+#[cfg(feature = "search")]
+pub mod search;
 pub mod skills;
 pub mod stand;
 pub mod status;
@@ -444,6 +446,26 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         } => {
             let root = tools::root(&config_path(&cli));
             what::run(&root, words, *limit as usize, kinds, *no_mock, cli.output)
+        },
+        #[cfg(feature = "search")]
+        Command::Search {
+            words,
+            only,
+            members,
+            limit,
+        } => {
+            let cfg = load_config(&cli)?;
+            let root = tools::root(&config_path(&cli));
+            let settings = search::discover::search_config(&cfg, *members)?;
+            let content = search::discover::content_name(cfg.content_repo.as_deref(), &root);
+            let members = cfg.repos.iter().map(|(name, entry)| {
+                (
+                    name.clone(),
+                    util::resolve_local_path(&cfg.workspace.path, &entry.local_path),
+                )
+            });
+            let places = search::discover::places(&root, &content, &settings, members)?;
+            search::run(places, words, only, *limit as usize, cli.output)
         },
         Command::External(words) => {
             let root = tools::root(&config_path(&cli));

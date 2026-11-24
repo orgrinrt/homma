@@ -262,6 +262,36 @@ impl Default for Paths {
     }
 }
 
+/// Where `homma search` finds the indexes it asks, the `[search]` table.
+///
+/// The content repository's corpora are the `corpus_config` files it tracks, each with its index at
+/// the path its own file sets or `corpus_index` beside it. A member's index is `member_index` under
+/// its own git directory, and is asked only where `members` says so.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SearchConfig {
+    /// Whether the members' own indexes are asked beside the content repository's corpora.
+    pub members:       bool,
+    /// The file that makes a directory of the content repository a corpus.
+    pub corpus_config: RelPath,
+    /// A corpus's index, relative to its config file's directory, where that file names none.
+    pub corpus_index:  RelPath,
+    /// A member's index, relative to the member's git directory.
+    pub member_index:  RelPath,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        let rel = |s: &str| RelPath::new(s).expect("a default path is relative and contained");
+        Self {
+            members:       false,
+            corpus_config: rel("muisti.toml"),
+            corpus_index:  rel(".muisti/index.sqlite"),
+            member_index:  rel("mockspace/search.sqlite"),
+        }
+    }
+}
+
 /// The literal meaning "this directory is the content repository".
 pub const LOCAL: &str = "local";
 
