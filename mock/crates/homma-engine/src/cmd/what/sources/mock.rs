@@ -11,11 +11,12 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use homma_core::scope::Scope;
 
 use super::super::doc::{Doc, Gap, Gathered, Kind};
+use crate::cmd::util::bounded;
 
 /// How long one repository's listing may take.
 pub(super) const LIMIT: Duration = Duration::from_secs(60);
@@ -111,103 +112,21 @@ pub fn merge(listed: Vec<(String, Result<String, String>)>) -> Gathered {
     out
 }
 
-/// What a pipe has delivered so far, and whether it reached its end.
-struct Pipe {
-    bytes: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
-    done:  std::sync::mpsc::Receiver<()>,
-}
-
-impl Pipe {
-    /// The bytes read, after waiting up to `wait` for the end of the pipe: a grandchild that kept it
-    /// open leaves the end out, and what arrived is then all there is.
-    fn take(&self, wait: Duration) -> (Vec<u8>, bool) {
-        let ended = self.done.recv_timeout(wait).is_ok();
-        (
-            self.bytes.lock().map(|b| b.clone()).unwrap_or_default(),
-            ended,
-        )
-    }
-}
-
-/// Read a pipe on a thread of its own, so a child that writes more than the pipe holds is never left
-/// waiting for a reader that is waiting for the child.
-fn drain<R: std::io::Read + Send + 'static>(r: Option<R>) -> Pipe {
-    let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let (tx, done) = std::sync::mpsc::channel();
-    let shared = std::sync::Arc::clone(&bytes);
-    std::thread::spawn(move || {
-        if let Some(mut r) = r {
-            let mut chunk = [0_u8; 8192];
-            while let Ok(n) = r.read(&mut chunk) {
-                if n == 0 {
-                    break;
-                }
-                if let Ok(mut b) = shared.lock() {
-                    b.extend_from_slice(&chunk[.. n]);
-                }
-            }
-        }
-        let _ = tx.send(());
-    });
-    Pipe {
-        bytes,
-        done,
-    }
-}
-
-/// End the child and what it started: its process group where there is one.
-fn end(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    {
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &format!("-{}", child.id())])
-            .output();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-/// What `cargo mock tools` prints in `dir`.
+/// What `cargo mock tools` prints in `dir`, run as the engine's bounded run of a child.
 pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String> {
-    let mut cmd = Command::new(program);
-    cmd.args(["mock", "tools"])
-        .current_dir(dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("cargo mock could not start: {e}"))?;
-    let out = drain(child.stdout.take());
-    let err = drain(child.stderr.take());
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break st,
-            Ok(None) if start.elapsed() > limit => {
-                end(&mut child);
-                return Err(format!(
-                    "cargo mock tools took longer than {} seconds",
-                    limit.as_secs()
-                ));
-            },
-            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
-            Err(e) => return Err(e.to_string()),
-        }
-    };
-    // A grandchild that kept the pipe open outlives the child, so the reads get a second and no more.
-    let grace = Duration::from_secs(1).min(limit.saturating_sub(start.elapsed()));
-    let until = Instant::now() + grace;
-    let (out, out_ended) = out.take(grace);
-    let (err, err_ended) = err.take(until.saturating_duration_since(Instant::now()));
-    // A pipe still open after the grace is held by something the child left running, which is ended.
-    if !(out_ended && err_ended) {
-        end(&mut child);
-    }
-    if !status.success() {
-        let err = String::from_utf8_lossy(&err);
+    let child = bounded::spawn(
+        Command::new(program)
+            .args(["mock", "tools"])
+            .current_dir(dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped()),
+    )
+    .map_err(|e| format!("cargo mock could not start: {e}"))?;
+    let ran = bounded::run(child, "", limit)
+        .map_err(|s| format!("cargo mock tools: {}", s.reason(limit)))?;
+    let (out, err) = ran.text();
+    if !ran.status.success() {
         let line = err
             .lines()
             .rev()
@@ -215,7 +134,7 @@ pub fn list(program: &str, dir: &Path, limit: Duration) -> Result<String, String
             .unwrap_or("it exited non-zero");
         return Err(format!("cargo mock tools failed: {}", line.trim()));
     }
-    Ok(String::from_utf8_lossy(&out).into_owned())
+    Ok(out)
 }
 
 /// The commands in a listing: `    mock <usage>  [<kind>  ]<summary>` under a heading in capitals.

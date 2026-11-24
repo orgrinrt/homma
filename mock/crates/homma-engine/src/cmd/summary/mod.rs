@@ -98,7 +98,7 @@ pub struct Pass {
 }
 
 impl Pass {
-    const fn none(note: String) -> Self {
+    pub(crate) const fn none(note: String) -> Self {
         Self {
             summary: None,
             note:    Some(note),
@@ -164,12 +164,18 @@ pub fn summarise<M: OneShot>(model: &M, budget: &Budget, brief: &str, text: &str
             budget.system
         ));
     }
+    if text.trim().is_empty() {
+        return Pass::none(
+            "summary: the text is empty, so there was nothing to summarise and no call was made"
+                .to_string(),
+        );
+    }
     let cut = parts::cut(text, budget.part_bytes(system.len()));
     let whole = cut.len();
     let mut read = Vec::with_capacity(whole);
     for (i, part) in cut.iter().enumerate() {
-        match model.ask(&system, &part.body) {
-            Ok(answer) => read.push(answer.trim().to_string()),
+        match model.ask(&system, &part.body).and_then(|a| checked(&a)) {
+            Ok(answer) => read.push(answer),
             Err(why) => {
                 return Pass::none(format!(
                     "summary: the call for part {} of {whole} failed: {why}; the output is whole",
@@ -205,6 +211,22 @@ pub fn summarise<M: OneShot>(model: &M, budget: &Budget, brief: &str, text: &str
         summary: Some(summary),
         note:    None,
     }
+}
+
+/// `answer` trimmed, where it holds a summary: refused where it is empty once trimmed or has no line
+/// starting `- `, since taken as a summary it would put nothing in the output's place.
+///
+/// # Errors
+/// Which of the two it was.
+pub fn checked(answer: &str) -> Result<String, String> {
+    let answer = answer.trim();
+    if answer.is_empty() {
+        return Err("the answer was empty".to_string());
+    }
+    if !answer.lines().any(|l| l.trim_start().starts_with("- ")) {
+        return Err("the answer had no summary line, none starting `- `".to_string());
+    }
+    Ok(answer.to_string())
 }
 
 /// How many summary lines, those starting `- `, do not begin with a place: `line <n>`, or a word

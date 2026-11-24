@@ -9,7 +9,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use crate::cmd::aggregate::registrations;
-use crate::cmd::summary::call::{drive, spawn};
+use crate::cmd::util::bounded::{self, spawn};
 
 /// How long one hook may run.
 pub const HOOK_LIMIT: Duration = Duration::from_secs(60);
@@ -206,7 +206,9 @@ fn run_hook(hook: &str, payload: &str, at: &Place<'_>) -> Result<Option<String>,
             .stderr(Stdio::piped()),
     )
     .map_err(|e| format!("did not start: {e}"))?;
-    let (status, stdout, stderr) = drive(child, payload, HOOK_LIMIT)?;
+    let ran = bounded::run(child, payload, HOOK_LIMIT).map_err(|s| s.reason(HOOK_LIMIT))?;
+    let status = ran.status;
+    let (stdout, stderr) = ran.text();
     let said = |s: &str| {
         let s = s.trim();
         if s.is_empty() {

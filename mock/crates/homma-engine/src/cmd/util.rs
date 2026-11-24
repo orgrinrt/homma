@@ -12,6 +12,8 @@ use homma_api::AbsPath;
 use homma_core::RepoConfig;
 use homma_core::config::Config;
 
+pub(crate) mod bounded;
+
 /// Resolve a repo-relative path against the workspace root.
 ///
 /// **A second, untyped copy of [`AbsPath::resolve`] stood here** with six

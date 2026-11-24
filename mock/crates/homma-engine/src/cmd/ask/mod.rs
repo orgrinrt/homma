@@ -19,8 +19,8 @@ use anyhow::Result;
 use homma_core::Config;
 
 use crate::cmd::Outcome;
-use crate::cmd::summary::call::{self, drive, spawn};
-use crate::cmd::summary::{self, Budget, OneShot, version_of};
+use crate::cmd::summary::{self, Budget, OneShot, call, version_of};
+use crate::cmd::util::bounded::{self, spawn};
 
 pub mod cache;
 pub mod chunks;
@@ -98,8 +98,11 @@ pub fn answer<M: OneShot>(
     output: &str,
 ) -> Result<Asked, String> {
     let chunks = chunks::cut(output);
-    if chunks.is_empty() {
-        return Err("the command printed nothing to ask about".to_string());
+    if output.trim().is_empty() || chunks.is_empty() {
+        return Err(
+            "the command printed nothing, so there was nothing to answer from and no call was made"
+                .to_string(),
+        );
     }
     let rules = rules_version();
     // Each chunk's first line beside its digest: the answer cites output lines, so the same chunks
@@ -176,9 +179,15 @@ pub fn answer<M: OneShot>(
     };
     let answer = model
         .ask(&system, &input)
-        .map_err(|why| format!("the answering call failed: {why}"))?
-        .trim()
-        .to_string();
+        .and_then(|a| summary::checked(&a))
+        .and_then(|a| {
+            if a.lines().any(|l| l.trim_start().starts_with("Answer:")) {
+                Ok(a)
+            } else {
+                Err("the answer had no line starting `Answer:`".to_string())
+            }
+        })
+        .map_err(|why| format!("the answering call failed: {why}"))?;
     if let Err(e) = cache.keep_answer(&akey, &answer) {
         notes.push(format!("the answer was not kept: {e}"));
     }
@@ -358,7 +367,9 @@ fn run_command(command: &str, cwd: &Path) -> Result<(String, String), String> {
             .stderr(Stdio::piped()),
     )
     .map_err(|e| format!("sh did not start: {e}"))?;
-    let (status, stdout, stderr) = drive(child, "", RUN_LIMIT)?;
+    let ran = bounded::run(child, "", RUN_LIMIT).map_err(|s| s.reason(RUN_LIMIT))?;
+    let status = ran.status;
+    let (stdout, stderr) = ran.text();
     let code = status.code().map_or_else(
         || "the command was ended by a signal".to_string(),
         |c| format!("exit {c}"),

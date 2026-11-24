@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use homma_api::SummaryConfig;
 
 use super::parts::cut;
-use super::{Budget, OneShot, Pass, RULES, pass, placeless, rules_version, summarise};
+use super::{Budget, OneShot, Pass, RULES, checked, pass, placeless, rules_version, summarise};
 
 /// A model that records what it was handed and answers each call from a list, or fails.
 struct Recorded {
@@ -131,7 +131,6 @@ fn every_line_goes_with_its_number_and_a_line_with_no_place_is_counted() {
         placeless("- a.toml:key.sub: x\n- line 3-5: y\n- enabled: a key\nprose is not a line"),
         0
     );
-    assert_eq!(rules_version().len(), 16);
 }
 
 #[test]
@@ -148,34 +147,130 @@ fn a_brief_over_the_budget_is_not_sent() {
     assert!(got.summary.is_some());
 }
 
-#[cfg(unix)]
 #[test]
-fn the_command_is_run_isolated_with_the_content_on_stdin() {
+fn an_answer_with_no_summary_line_is_a_failed_call() {
+    for (said, why) in [
+        ("   \n", "the answer was empty"),
+        ("Here is a summary of the text.", "no summary line"),
+    ] {
+        let model = Recorded::answering(vec![Ok(said.into())]);
+        let got = summarise(&model, &Budget::DEFAULT, "brief", "a\n");
+        assert_eq!(got.summary, None, "{said:?}");
+        let note = got.note.unwrap();
+        assert!(
+            note.contains("part 1 of 1 failed") && note.contains(why),
+            "{note}"
+        );
+    }
+    assert_eq!(checked("  - line 1: a  \n"), Ok("- line 1: a".into()));
+
+    // control: an answer with one `- ` line among prose is a summary
+    let model = Recorded::answering(vec![Ok("Summary:\n- line 1: a".into())]);
+    let got = summarise(&model, &Budget::DEFAULT, "brief", "a\n");
+    assert_eq!(got.summary.as_deref(), Some("Summary:\n- line 1: a"));
+}
+
+#[test]
+fn empty_text_makes_no_call() {
+    let model = Recorded::answering(vec![Ok("- line 1: a".into())]);
+    let got = summarise(&model, &Budget::DEFAULT, "brief", " \n\n\t\n");
+    assert!(model.calls.borrow().is_empty());
+    assert_eq!(got.summary, None);
+    assert!(got.note.unwrap().contains("nothing to summarise"));
+
+    // control: one character of text is sent
+    let got = summarise(&model, &Budget::DEFAULT, "brief", "a");
+    assert_eq!(model.calls.borrow().len(), 1);
+    assert!(got.summary.is_some());
+}
+
+#[test]
+fn a_failing_later_part_fails_the_pass_after_the_earlier_ones_were_read() {
+    let budget = Budget {
+        system:  10_000,
+        request: (RULES.len() + 2 + 11).div_ceil(super::BYTES_PER_TOKEN),
+        reserve: 0,
+    };
+    let text = "xxxxxxxx\nxxxxxxxx\nxxxxxxxx\n";
+    let model = Recorded::answering(vec![
+        Ok("- line 1: x".into()),
+        Err("overloaded".into()),
+        Ok("- line 3: x".into()),
+    ]);
+    let got = summarise(&model, &budget, "b", text);
+    assert_eq!(
+        model.calls.borrow().len(),
+        2,
+        "it stops at the part that failed"
+    );
+    assert_eq!(got.summary, None);
+    assert_eq!(
+        got.note.as_deref(),
+        Some("summary: the call for part 2 of 3 failed: overloaded; the output is whole")
+    );
+
+    // control: the same three parts all answering give a summary of three parts
+    let model = Recorded::answering(vec![
+        Ok("- line 1: x".into()),
+        Ok("- line 2: x".into()),
+        Ok("- line 3: x".into()),
+    ]);
+    let got = summarise(&model, &budget, "b", text).summary.unwrap();
+    assert!(got.contains("part 3 of 3, lines 3-3"), "{got}");
+}
+
+#[test]
+fn a_long_line_of_wide_characters_is_cut_at_character_boundaries() {
+    // `ä` is two bytes: a part of 9 holds `1\t`, three of them and the newline.
+    let parts = cut("ääääää\n", 9);
+    let bodies: Vec<&str> = parts.iter().map(|p| p.body.as_str()).collect();
+    assert_eq!(bodies, vec!["1\täää\n", "1\täää\n"]);
+    // A part too narrow for even one character still carries one, rather than none or a split one.
+    let narrow = cut("€€\n", 3);
+    let bodies: Vec<&str> = narrow.iter().map(|p| p.body.as_str()).collect();
+    assert_eq!(bodies, vec!["1\t€\n", "1\t€\n"]);
+
+    // control: the same line in a part wide enough is whole
+    assert_eq!(cut("ääääää\n", 64)[0].body, "1\tääääää\n");
+}
+
+#[test]
+fn the_rules_version_is_their_digest() {
+    assert_eq!(rules_version(), "d1a87ce1b71847dd");
+    // control: any change to the rules is another version
+    assert_ne!(
+        blake3::hash(format!("{RULES} ").as_bytes()).to_hex()[.. 16].to_string(),
+        rules_version()
+    );
+}
+
+#[cfg(unix)]
+fn stand_in(dir: &std::path::Path, body: &str) -> super::call::Command {
     use std::os::unix::fs::PermissionsExt;
-
-    use super::call::Command;
-
-    let dir = tempfile::tempdir().unwrap();
-    let log = dir.path().join("log");
-    let script = dir.path().join("model");
-    std::fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\npwd > {log}.dir\nls -A > {log}.ls\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > {log}.args\ncat > {log}.stdin\nprintf '%s\\n' '{{\"type\":\"result\",\"is_error\":false,\"result\":\"- line 1: hello\"}}'\n",
-            log = log.display()
-        ),
-    )
-    .unwrap();
+    let script = dir.join("model");
+    std::fs::write(&script, format!("#!/bin/sh\n{body}")).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let cmd = Command {
+    super::call::Command {
         program: script.display().to_string(),
         model:   "haiku".into(),
         limit:   super::call::LIMIT,
-    };
-    assert_eq!(
-        cmd.ask("SYSTEM", "1\thello\n"),
-        Ok("- line 1: hello".into())
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn the_command_is_run_isolated_with_the_brief_in_a_file_and_the_content_on_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("log");
+    let cmd = stand_in(
+        dir.path(),
+        &format!(
+            "pwd > {log}.dir\nls -A > {log}.ls\nprev=\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> {log}.args; if [ \"$prev\" = --system-prompt-file ]; then cat \"$a\" > {log}.prompt; printf '%s' \"$a\" > {log}.where; fi; prev=$a; done\ncat > {log}.stdin\nprintf '%s\\n' '{{\"type\":\"result\",\"is_error\":false,\"result\":\"- line 1: hello\"}}'\n",
+            log = log.display()
+        ),
     );
+    let brief = "SYSTEM PROMPT TEXT";
+    assert_eq!(cmd.ask(brief, "1\thello\n"), Ok("- line 1: hello".into()));
     let args = std::fs::read_to_string(log.with_extension("args")).unwrap();
     let args: Vec<&str> = args.lines().collect();
     for flag in [
@@ -191,72 +286,78 @@ fn the_command_is_run_isolated_with_the_content_on_stdin() {
     assert_eq!(after("--model"), "haiku");
     assert_eq!(after("--tools"), "");
     assert_eq!(after("--setting-sources"), "");
-    assert_eq!(after("--system-prompt"), "SYSTEM");
+    // the brief is in the file the arguments name, and nowhere in the arguments
+    assert!(!args.contains(&"--system-prompt"));
+    assert!(args.iter().all(|a| !a.contains(brief)), "{args:?}");
+    assert_eq!(
+        std::fs::read_to_string(log.with_extension("prompt")).unwrap(),
+        brief
+    );
     assert_eq!(
         std::fs::read_to_string(log.with_extension("stdin")).unwrap(),
         "1\thello\n"
     );
-    // a fresh empty directory, not the caller's
+    // a fresh empty directory, not the caller's, and the prompt's file outside it
     let ran_in = std::fs::read_to_string(log.with_extension("dir")).unwrap();
-    assert_ne!(
-        ran_in.trim(),
-        std::env::current_dir().unwrap().display().to_string()
-    );
+    let ran_in = std::path::Path::new(ran_in.trim());
+    assert_ne!(ran_in, std::env::current_dir().unwrap());
     assert_eq!(
         std::fs::read_to_string(log.with_extension("ls")).unwrap(),
         ""
     );
-
-    // control: an error result is a failure with its words
-    std::fs::write(
-        &script,
-        "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"is_error\":true,\"result\":\"Not logged in\"}'\n",
-    )
-    .unwrap();
-    assert_eq!(cmd.ask("S", "x"), Err("Not logged in".into()));
-    // and a run past its limit is ended
-    std::fs::write(&script, "#!/bin/sh\nsleep 5\n").unwrap();
-    let slow = Command {
-        limit: std::time::Duration::from_millis(200),
-        ..cmd
-    };
-    assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
-    // and so is one that exits while something it started still holds its output open, and what
-    // it started is ended with it rather than left running
-    let pid = dir.path().join("pid");
-    std::fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nsleep 30 &\necho $! > {}\nprintf '%s\\n' '{{\"is_error\":false,\"result\":\"- line 1: x\"}}'\n",
-            pid.display()
-        ),
-    )
-    .unwrap();
-    let begun = std::time::Instant::now();
-    assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
-    assert!(begun.elapsed() < std::time::Duration::from_secs(4));
-    #[cfg(target_os = "linux")]
-    {
-        let pid = std::fs::read_to_string(&pid).unwrap();
-        assert!(
-            ended(pid.trim()),
-            "the process the call started, {pid}, is still running"
-        );
-    }
+    let file = std::fs::read_to_string(log.with_extension("where")).unwrap();
+    assert!(!std::path::Path::new(&file).starts_with(ran_in), "{file}");
 }
 
-/// Whether process `pid` is gone, or dead and waiting only to be reaped, within a second, read off
-/// `/proc`.
-#[cfg(target_os = "linux")]
-fn ended(pid: &str) -> bool {
-    let stat = std::path::Path::new("/proc").join(pid).join("stat");
-    for _ in 0 .. 20 {
-        match std::fs::read_to_string(&stat) {
-            Err(_) => return true,
-            // The state follows the name, which is in parentheses and may hold spaces.
-            Ok(s) if s.rsplit_once(") ").is_some_and(|(_, r)| r.starts_with('Z')) => return true,
-            Ok(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
-        }
-    }
-    false
+#[cfg(unix)]
+#[test]
+fn each_way_a_call_fails_gives_its_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = |body: &str| stand_in(dir.path(), body).ask("S", "x");
+
+    // an error result is a failure with its words
+    assert_eq!(
+        answers(
+            "cat > /dev/null\nprintf '%s\\n' '{\"is_error\":true,\"result\":\"Not logged in\"}'\n"
+        ),
+        Err("Not logged in".into())
+    );
+    // a non-zero exit with no result gives the first line of its stderr
+    assert_eq!(
+        answers(
+            "cat > /dev/null\necho 'out' \necho '' >&2\necho '  bad flag: --x  ' >&2\necho more >&2\nexit 3\n"
+        ),
+        Err("bad flag: --x".into())
+    );
+    // and with nothing on stderr, the first line of stdout
+    assert_eq!(
+        answers("cat > /dev/null\necho 'only out'\nexit 1\n"),
+        Err("only out".into())
+    );
+    // an exit 0 with no JSON line
+    assert_eq!(
+        answers("cat > /dev/null\necho 'plain words'\n"),
+        Err("the command printed no JSON result".into())
+    );
+    // a reason longer than the cap is cut to it
+    let long = "w".repeat(super::call::REASON + 50);
+    let got = answers(&format!("cat > /dev/null\necho '{long}' >&2\nexit 1\n")).unwrap_err();
+    assert_eq!(got.chars().count(), super::call::REASON);
+    // control: a short reason is whole, and a JSON result with exit 0 answers
+    assert_eq!(
+        answers("cat > /dev/null\necho 'short' >&2\nexit 1\n"),
+        Err("short".into())
+    );
+    assert_eq!(
+        answers(
+            "cat > /dev/null\nprintf '%s\\n' '{\"is_error\":false,\"result\":\"- line 1: x\"}'\n"
+        ),
+        Ok("- line 1: x".into())
+    );
+    // a run past its limit is ended
+    let slow = super::call::Command {
+        limit: std::time::Duration::from_millis(200),
+        ..stand_in(dir.path(), "sleep 5\n")
+    };
+    assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
 }

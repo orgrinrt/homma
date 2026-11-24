@@ -390,3 +390,58 @@ fn every_hit_names_its_index_and_an_index_not_built_is_a_line_under_the_answer()
             .starts_with("nothing in any index answers")
     );
 }
+
+#[test]
+fn a_summarised_search_with_no_hits_makes_no_call() {
+    use std::cell::Cell;
+
+    use homma_api::SummaryConfig;
+
+    use crate::cmd::summary::OneShot;
+
+    struct Counted(Cell<usize>);
+    impl OneShot for Counted {
+        fn ask(&self, _: &str, _: &str) -> Result<String, String> {
+            self.0.set(self.0.get() + 1);
+            Ok("- one.md:3: the saturation of the air".to_string())
+        }
+    }
+
+    let t = tempfile::tempdir().unwrap();
+    let a = t.path().join("a.sqlite");
+    index(&a, &[("one.md", "# One\n\nthe saturation of the air\n")]);
+    let places = vec![Place::at("first".to_string(), a)];
+    let on = SummaryConfig {
+        enabled: true,
+        ..SummaryConfig::default()
+    };
+    let model = Counted(Cell::new(0));
+    let out = answer(
+        &places,
+        "zyzzogeton",
+        10,
+        Some((&on, &model)),
+        SystemTime::now(),
+    );
+    assert!(out.hits.is_empty());
+    assert_eq!(model.0.get(), 0);
+    assert_eq!(out.summary, None);
+    assert!(
+        out.summary_note
+            .as_deref()
+            .is_some_and(|n| n.contains("no hits to summarise")),
+        "{:?}",
+        out.summary_note
+    );
+
+    // THE CONTROL: a search with a hit is sent.
+    let out = answer(
+        &places,
+        "saturation",
+        10,
+        Some((&on, &model)),
+        SystemTime::now(),
+    );
+    assert_eq!(model.0.get(), 1);
+    assert!(out.summary.is_some());
+}

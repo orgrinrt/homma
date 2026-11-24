@@ -2,24 +2,26 @@
 //!
 //! The run gets no tools, safe mode, no setting sources, no MCP servers, no slash commands and no
 //! session kept, the rules and the brief as its whole system prompt and the content on stdin, in a
-//! fresh empty directory so no instruction file beside it is read. Its answer is read from its JSON
-//! result. homma reads no credential: the command finds its own in the environment it inherits.
+//! fresh empty directory so no instruction file beside it is read. The system prompt goes in a file
+//! outside that directory, named by `--system-prompt-file`, so it is not in the command's arguments.
+//! Its answer is read from its JSON result. homma reads no credential: the command finds its own in
+//! the environment it inherits. The run is the engine's bounded run of a child.
 
-use std::io::{Read, Write};
-use std::process::{Child, ExitStatus, Stdio};
-use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::process::Stdio;
+use std::time::Duration;
 
 use homma_api::SummaryConfig;
 use serde::Deserialize;
 
 use super::OneShot;
+use crate::cmd::util::bounded;
 
 /// How long one call may run.
 pub const LIMIT: Duration = Duration::from_secs(300);
 
 /// How many characters of a failed call's words its reason keeps.
-const REASON: usize = 200;
+pub const REASON: usize = 200;
 
 /// The command and the model it is asked to use.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,9 +42,9 @@ impl From<&SummaryConfig> for Command {
 }
 
 impl Command {
-    /// The arguments of one call with `system` as its whole system prompt.
+    /// The arguments of one call whose whole system prompt is in the file at `system`.
     #[must_use]
-    pub fn args(&self, system: &str) -> Vec<String> {
+    pub fn args(&self, system: &Path) -> Vec<String> {
         [
             "-p",
             "--model",
@@ -57,8 +59,8 @@ impl Command {
             "--no-session-persistence",
             "--output-format",
             "json",
-            "--system-prompt",
-            system,
+            "--system-prompt-file",
+            &system.display().to_string(),
         ]
         .iter()
         .map(|s| (*s).to_string())
@@ -76,18 +78,26 @@ struct Answer {
 
 impl OneShot for Command {
     fn ask(&self, system: &str, content: &str) -> Result<String, String> {
+        // Two directories: the run's own stays empty, and the prompt's file sits in the other.
         let dir = tempfile::tempdir().map_err(|e| format!("no empty directory to run in: {e}"))?;
-        let child = spawn(
+        let held =
+            tempfile::tempdir().map_err(|e| format!("no place for the system prompt: {e}"))?;
+        let prompt = held.path().join("system-prompt");
+        std::fs::write(&prompt, system)
+            .map_err(|e| format!("the system prompt could not be written: {e}"))?;
+        let child = bounded::spawn(
             std::process::Command::new(&self.program)
-                .args(self.args(system))
+                .args(self.args(&prompt))
                 .current_dir(dir.path())
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped()),
         )
         .map_err(|e| format!("`{}` did not start: {e}", self.program))?;
-        let (status, stdout, stderr) = drive(child, content, self.limit)?;
-        let status = status.success();
+        let ran = bounded::run(child, content, self.limit)
+            .map_err(|s| format!("the call: {}", s.reason(self.limit)))?;
+        let (stdout, stderr) = ran.text();
+        let status = ran.status.success();
         let answer: Option<Answer> = stdout
             .lines()
             .rev()
@@ -111,91 +121,6 @@ impl OneShot for Command {
             _ => Err("the command printed no JSON result".to_string()),
         }
     }
-}
-
-/// Spawn `command` alone in a process group of its own where the platform has them, so that ending
-/// the call ends whatever it started too.
-pub(crate) fn spawn(command: &mut std::process::Command) -> std::io::Result<Child> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    command.spawn()
-}
-
-/// End the child and, where it leads a process group, everything in the group.
-fn end(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        // The group's id is the child's pid, since it was spawned to lead one.
-        let _ = std::process::Command::new("kill")
-            .args(["-KILL", "--", &format!("-{}", child.id())])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-/// Feed `content` to the child, read both its pipes, and wait at most `limit` for it to exit and
-/// for both pipes to close, ending it and its group past that, so a process it left holding a pipe
-/// cannot keep the call waiting. Gives whether it exited 0, and what it printed.
-pub(crate) fn drive(
-    mut child: Child,
-    content: &str,
-    limit: Duration,
-) -> Result<(ExitStatus, String, String), String> {
-    let ran_past = || format!("the call ran past {} s and was ended", limit.as_secs());
-    let mut stdin = child.stdin.take();
-    let body = content.to_owned();
-    // Not joined: a command that never reads leaves the write blocked until the call is ended.
-    std::thread::spawn(move || {
-        if let Some(s) = stdin.as_mut() {
-            // A command that exits before reading closes the pipe; its exit says why.
-            let _ = s.write_all(body.as_bytes());
-        }
-    });
-    let out = reader(child.stdout.take());
-    let err = reader(child.stderr.take());
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) if start.elapsed() >= limit => {
-                end(&mut child);
-                return Err(ran_past());
-            },
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(e) => {
-                end(&mut child);
-                return Err(format!("waiting on the call: {e}"));
-            },
-        }
-    };
-    let read = |pipe: &Receiver<String>| pipe.recv_timeout(limit.saturating_sub(start.elapsed()));
-    match (read(&out), read(&err)) {
-        (Ok(stdout), Ok(stderr)) => Ok((status, stdout, stderr)),
-        _ => {
-            end(&mut child);
-            Err(ran_past())
-        },
-    }
-}
-
-/// Read `pipe` to its end on a thread of its own, the text arriving on the channel returned.
-fn reader<R: Read + Send + 'static>(pipe: Option<R>) -> Receiver<String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        if let Some(mut p) = pipe {
-            let _ = p.read_to_end(&mut bytes);
-        }
-        // Bytes that are not UTF-8 are replaced rather than losing the whole text.
-        let _ = tx.send(String::from_utf8_lossy(&bytes).into_owned());
-    });
-    rx
 }
 
 /// The first line that says anything, at most [`REASON`] characters.

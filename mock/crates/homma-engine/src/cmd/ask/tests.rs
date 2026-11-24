@@ -7,7 +7,7 @@ use super::{ANSWER_RULES, PARTIAL_RULES, answer, chunks};
 use crate::cmd::summary::OneShot;
 
 /// A model that answers a partials call with a section per chunk, naming the chunk's first word at
-/// its line 1, and an answering call with `Answer: <its input's first line>`, recording both.
+/// its line 1, and an answering call with its input's first line and `Answer: <that line>`, recording both.
 #[derive(Default)]
 struct Reader {
     partial_calls: RefCell<Vec<String>>,
@@ -16,6 +16,8 @@ struct Reader {
     skip:          Vec<usize>,
     /// Chunk numbers whose section it gives with no line under the header.
     empty:         Vec<usize>,
+    /// What the answering call says in place of its usual answer, where set.
+    says:          Option<String>,
 }
 
 impl OneShot for Reader {
@@ -48,7 +50,11 @@ impl OneShot for Reader {
         } else {
             assert!(system.starts_with(ANSWER_RULES), "{system}");
             self.answer_calls.borrow_mut().push(content.to_string());
-            Ok(format!("Answer: {}", content.lines().next().unwrap_or("")))
+            if let Some(s) = &self.says {
+                return Ok(s.clone());
+            }
+            let first = content.lines().next().unwrap_or("");
+            Ok(format!("{first}\nAnswer: {first}"))
         }
     }
 }
@@ -370,4 +376,52 @@ fn an_answer_missing_a_chunk_fails_the_ask() {
         whole.partial_calls.borrow()[0],
         "=== chunk 2 ===\n1\tbeta two\n"
     );
+}
+
+#[test]
+fn an_answer_with_no_summary_or_no_answer_line_fails_and_is_not_kept() {
+    let out = "alpha one\n\nbeta two\n";
+    for (says, why) in [
+        ("  \n", "the answer was empty"),
+        ("Answer: alpha", "no summary line"),
+        ("- line 1: alpha", "no line starting `Answer:`"),
+    ] {
+        let (_t, cache) = cache();
+        let model = Reader {
+            says: Some(says.to_string()),
+            ..Reader::default()
+        };
+        let err = answer(&model, "m", &cache, "q", out).unwrap_err();
+        assert!(err.contains(why), "{says:?}: {err}");
+        // Nothing was kept: asked again, it calls again.
+        let _ = answer(&model, "m", &cache, "q", out);
+        assert_eq!(model.answer_calls.borrow().len(), 2, "{says:?}");
+    }
+
+    // THE CONTROL: an answer with both is kept and served from the cache with no call.
+    let (_t, cache) = cache();
+    let model = Reader {
+        says: Some("- line 1: alpha\nAnswer: alpha".to_string()),
+        ..Reader::default()
+    };
+    answer(&model, "m", &cache, "q", out).unwrap();
+    let again = answer(&model, "m", &cache, "q", out).unwrap();
+    assert!(again.whole);
+    assert_eq!(again.answer, "- line 1: alpha\nAnswer: alpha");
+    assert_eq!(model.answer_calls.borrow().len(), 1);
+}
+
+#[test]
+fn empty_output_makes_no_call() {
+    let (_t, cache) = cache();
+    let model = Reader::default();
+    let err = answer(&model, "m", &cache, "q", " \n\n").unwrap_err();
+    assert!(err.contains("nothing to answer from"), "{err}");
+    assert!(model.partial_calls.borrow().is_empty());
+    assert!(model.answer_calls.borrow().is_empty());
+
+    // THE CONTROL: one line of output is read and answered.
+    answer(&model, "m", &cache, "q", "alpha\n").unwrap();
+    assert_eq!(model.partial_calls.borrow().len(), 1);
+    assert_eq!(model.answer_calls.borrow().len(), 1);
 }

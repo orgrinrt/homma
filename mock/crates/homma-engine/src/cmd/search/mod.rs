@@ -178,6 +178,12 @@ pub fn answer<M: OneShot>(
 ) -> SearchOut {
     let mut out = ask(places, question, limit, now);
     if let Some((settings, model)) = summarise {
+        if out.hits.is_empty() {
+            out.take(Pass::none(
+                "summary: there were no hits to summarise, so no call was made".to_string(),
+            ));
+            return out;
+        }
         out.take(summary::pass_with(
             settings,
             model,
