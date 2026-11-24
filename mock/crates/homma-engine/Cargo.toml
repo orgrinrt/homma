@@ -36,7 +36,7 @@ tempfile = "3"
 # one. Turning `search` off leaves the verb and its code out of the build and nothing more: cargo
 # resolves an optional git dependency whether its feature is on or not, so homma is publishable only
 # once this crate is reachable by a public build.
-muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "work/cross-repo-search", default-features = false, optional = true }
+muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "dev", default-features = false, optional = true }
 
 # The host half of renki's extension api: a tool's descriptor is read, checked, located and run by
 # `renki::extension`. `renki-dirs` and `notko` are what the cache root that api fetches into is read
