@@ -265,12 +265,18 @@ member clone is not the content repository's and asking it is the workspace's
 choice; all four keys sit under `[search]` in the manifest, as `SearchConfig`.
 `--in <name>` asks only the indexes
 named, `--limit` bounds the hits, and an index absent, unreadable or of another
-version is a line saying so under an answer from the rest. How far an index is
-behind its files is its owner's to say; homma says when each was last written.
-The verb brings no embedder, so every index answers by its words and its line
-names its model. The verb is behind the engine's `search` feature, on by
-default, since the index crate is not public: a build without it has no
-`search` and everything else.
+version is a line saying so under an answer from the rest. Every member opened
+for is a line: one whose index is not built is reported so by the index crate,
+and one whose clone is not there is not asked, with that as the reason. A
+corpus whose own `corpus.index` leaves the content repository, by an absolute
+path or by climbing out, is refused and not asked, and a corpus config that
+does not read is a note on its line, its index then the default. How far an
+index is behind its files is its owner's to say; homma says when each was last
+written. The verb brings no embedder, so every index answers by its words and
+its line names its model. The verb is behind the engine's `search` feature, on
+by default. The feature only leaves the verb and its code out of the build:
+cargo resolves the index crate whether the feature is on or not, so homma is
+publishable only once the index crate is reachable by a public build.
 
 `homma capture --title <title>` reads an agent session's transcript and writes
 what the person typed into it, and every question put to them with the options
