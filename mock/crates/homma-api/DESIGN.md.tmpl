@@ -187,6 +187,9 @@ is the rendered index of every agent address. **`leases`**, default
 `SearchConfig`, the `[search]` table, names where `homma search` finds the
 indexes: `members`, false unless set, `corpus_config`, `corpus_index` and
 `member_index`, with the defaults the command surface gives.
+`SummaryConfig`, the `[summary]` table, turns on the summarising pass and says
+what makes its call: `enabled`, false unless set, `command`, `claude`, and
+`model`, `haiku`.
 `LeaseConfig`, the `[lease]` table, names the remote and the branch the records
 live on and how many minutes a lease lasts before it lapses: `origin`, `main` and
 120 unless set.
