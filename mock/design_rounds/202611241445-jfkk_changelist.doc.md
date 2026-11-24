@@ -1,0 +1,11 @@
+# doc changelist
+
+Descends from `202611241445-jfkk_topic.a-question-answered-over-a-commands-output.md`.
+
+## CHANGE: the command surface FROM no question over a command's output TO `homma ask` in the list and a section naming the run, the session's checks, the chunks, the two caches and their home, the two kinds of call, and what reaches the caller
+File: `mock/DESIGN.md.tmpl`
+Verification: the command list has `homma ask`; the section "Asking a question over a command's output" names `--run`, the `search` feature, the deny rules of the three settings files matched whole and per command, the `PreToolUse` hooks for `Bash` with their payload and what refuses, the index crate's chunker and the chunk digest, the partial and answer keys, `homma/ask/` under the git directory, the partials' relative lines moved to the output's, the batched partial calls and the one answer call, the exit 1 with no answer, and the lines printed.
+
+## CHANGE: the engine's summary FROM no `ask` TO `ask` named among the families
+File: `mock/crates/homma-engine/README.md.tmpl`
+Verification: the summary has the clause on `ask`.
