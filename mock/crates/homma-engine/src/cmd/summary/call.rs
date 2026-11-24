@@ -167,7 +167,10 @@ fn drive(
                 return Err(ran_past());
             },
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(e) => return Err(format!("waiting on the call: {e}")),
+            Err(e) => {
+                end(&mut child);
+                return Err(format!("waiting on the call: {e}"));
+            },
         }
     };
     let read = |pipe: &Receiver<String>| pipe.recv_timeout(limit.saturating_sub(start.elapsed()));

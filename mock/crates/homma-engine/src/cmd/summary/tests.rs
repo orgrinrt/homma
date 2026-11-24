@@ -221,13 +221,42 @@ fn the_command_is_run_isolated_with_the_content_on_stdin() {
         ..cmd
     };
     assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
-    // and so is one that exits while something it started still holds its output open
+    // and so is one that exits while something it started still holds its output open, and what
+    // it started is ended with it rather than left running
+    let pid = dir.path().join("pid");
     std::fs::write(
         &script,
-        "#!/bin/sh\nsleep 5 &\nprintf '%s\\n' '{\"is_error\":false,\"result\":\"- line 1: x\"}'\n",
+        format!(
+            "#!/bin/sh\nsleep 30 &\necho $! > {}\nprintf '%s\\n' '{{\"is_error\":false,\"result\":\"- line 1: x\"}}'\n",
+            pid.display()
+        ),
     )
     .unwrap();
     let begun = std::time::Instant::now();
     assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
     assert!(begun.elapsed() < std::time::Duration::from_secs(4));
+    #[cfg(target_os = "linux")]
+    {
+        let pid = std::fs::read_to_string(&pid).unwrap();
+        assert!(
+            ended(pid.trim()),
+            "the process the call started, {pid}, is still running"
+        );
+    }
+}
+
+/// Whether process `pid` is gone, or dead and waiting only to be reaped, within a second, read off
+/// `/proc`.
+#[cfg(target_os = "linux")]
+fn ended(pid: &str) -> bool {
+    let stat = std::path::Path::new("/proc").join(pid).join("stat");
+    for _ in 0 .. 20 {
+        match std::fs::read_to_string(&stat) {
+            Err(_) => return true,
+            // The state follows the name, which is in parentheses and may hold spaces.
+            Ok(s) if s.rsplit_once(") ").is_some_and(|(_, r)| r.starts_with('Z')) => return true,
+            Ok(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    false
 }
