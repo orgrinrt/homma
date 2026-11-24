@@ -1,0 +1,50 @@
+00d5c61 build: follow muisti dev and pin its head
+2b20c52 fix: say a member with no clone in the place's own words
+df1dbc1 docs: name homma search in the readme's command table
+4f4c5cb docs: say a member with no clone reads no clone
+bcda5de chore: close design round 202611241014
+79ef3a8 chore: lock src changelist 202611241016
+787b8a0 fix: say every member asked for and refuse an index outside
+28ff782 chore: lock doc changelist 202611241014
+b372d63 docs: say every member asked for and what the feature leaves out
+bb93878 chore: file the topic of an index not built being said
+bba5d46 chore: close design round 202611240919
+997dcbb chore: lock src changelist 202611240919
+8e9af31 feat: ask one question across every index of the workspace
+8a35315 chore: lock doc changelist 202611240919
+d9c292c docs: design one search across the workspace
+10ef505 chore: file the topic of one search across the workspace
+2a4f6bb feat: take search from the lint pack in place of muisti's ask
+0ea1aab feat: take search from the lint pack in place of muisti's ask
+981a420 feat: take `search` from the lint pack in place of muisti's `ask`
+1d6c84e fix: count git-shook's dispatcher as a set hooks key
+bbcd9c1 fix: count git-shook's dispatcher as a set hooks key
+1d16848 Merge remote-tracking branch 'origin/dev' into work/hooks-lane-gate
+ccfbeff chore: close design round 202611231749
+12a43ac fix: count git-shook's hooks path in a repo that adopted mockspace
+aeb3744 fix: release reads nut.toml and refuses a flagged history
+bcb2135 fix: release reads nut.toml and refuses a flagged history
+f0dd7a3 chore: close design round 202611231717
+8052a98 chore: lock src changelist 202611231718
+b47f256 test: hold a nut release's bump commit and tag check to nut.toml
+c62a86e chore: lock doc changelist 202611231717
+6dbe2ed docs: open the review round of the nut signal
+24a070b chore: record the test history of the merged tree
+b5d359f Merge remote-tracking branch 'origin/dev' into work/guards-lane
+1f6b5d3 chore: close design round 202611231633
+6b7e851 chore: lock src changelist 202611231646
+e6e022f feat: release a nutshell package off its nut.toml version
+4d42b9a chore: lock doc changelist 202611231633
+f0d3c24 docs: design the nut signal, a versioned nutshell package
+fdff79b feat: read one identity catalogue and hold one session per identity
+f7ad9ad feat: read one identity catalogue and hold one session per identity
+8ea70b7 feat: refuse a release whose history the byline scanner flags
+3ed485d feat: refuse a release whose history the byline scanner flags
+5cacbba docs: regenerate API and ORG after the round's second doc pass
+8b2e368 chore: close design round 202611231429
+9b850e1 chore: lock src changelist 202611231513
+a2ec372 docs: regenerate API and ORG from the identity round's design
+247265b fix: aliases resolve, lease lengths bounded, bad lease records refused
+fa5babd chore: close design round 202611231509
+7eeecda fix: hand the history scan an absolute root, and test the order
+5b97757 chore: lock doc changelist 202611231429
