@@ -51,6 +51,7 @@ Where a credential lives somewhere other than an environment variable, a forge c
 | `homma migrate` | mirror-clones a repo to another forge and pushes it |
 | `homma archive` | archives the source, as a step of its own after a migration |
 | `homma search` | asks the indexes of this repository and, when asked, of its members, as one list |
+| `homma summarise` | has a small model read a long text and hands back a summary that points at its places, when `[summary]` turns it on |
 | `homma capture` | copies what a person said to an agent session into the capture store |
 | `homma answers <op>` | takes answers and notes left on a page or channel into the capture store |
 | `homma org <op>` | the registry of who works here |
