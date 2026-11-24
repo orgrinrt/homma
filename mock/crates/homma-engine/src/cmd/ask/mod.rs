@@ -12,7 +12,7 @@
 //! content ([`chunks`]); a question-neutral partial is kept per chunk and an answer per
 //! question over a set of chunks ([`cache`]), so unchanged chunks are not read again.
 
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::path::Path;
 
 use anyhow::Result;
@@ -303,7 +303,13 @@ pub fn run(cfg: &Config, root: &Path, question: &[String]) -> Result<Outcome> {
                 .to_string(),
         );
     }
-    let output = read_input(std::io::stdin().lock())?;
+    let stdin = std::io::stdin();
+    let Some(output) = read_piped(stdin.is_terminal(), stdin.lock())? else {
+        return refuse(
+            "nothing was piped to it; give it a command's output, `<command> | homma ask <question>`"
+                .to_string(),
+        );
+    };
     let cache = match Cache::of_workspace(root) {
         Ok(c) => c,
         Err(why) => return refuse(format!("no place for the cache: {why}")),
@@ -330,6 +336,18 @@ pub fn run(cfg: &Config, root: &Path, question: &[String]) -> Result<Outcome> {
         },
         Err(why) => refuse(why),
     }
+}
+
+/// The input, where it was piped: none where it is a terminal, which is left unread, since reading
+/// a terminal to its end waits on a person who is not typing.
+///
+/// # Errors
+/// `input` cannot be read.
+pub fn read_piped<R: Read>(terminal: bool, input: R) -> std::io::Result<Option<String>> {
+    if terminal {
+        return Ok(None);
+    }
+    read_input(input).map(Some)
 }
 
 /// All of `input`, read as UTF-8 with any byte that is not replaced, so output that is not text is

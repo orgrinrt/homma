@@ -351,3 +351,22 @@ fn empty_output_makes_no_call() {
     assert_eq!(model.partial_calls.borrow().len(), 1);
     assert_eq!(model.answer_calls.borrow().len(), 1);
 }
+
+/// A reader the test fails on if anything reads it.
+struct Untouched;
+
+impl std::io::Read for Untouched {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+        panic!("a terminal was read");
+    }
+}
+
+#[test]
+fn a_terminal_on_stdin_is_refused_unread() {
+    assert_eq!(super::read_piped(true, Untouched).unwrap(), None);
+    // THE CONTROL: input that is not a terminal is read whole.
+    assert_eq!(
+        super::read_piped(false, &b"alpha\n"[..]).unwrap(),
+        Some("alpha\n".to_string())
+    );
+}
