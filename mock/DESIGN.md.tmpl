@@ -417,11 +417,13 @@ empty once trimmed, has no line starting `- `, or has no line starting
 `Answer:` is a failed call, and it is not kept. Output that is empty once
 trimmed makes no call at all: the ask says there was nothing to answer from.
 
-What is printed is the summary and the answer, then one line with the
-command's exit status and how many chunks there were and how many partials
-came from the cache, or that the whole answer did. A command that exits
-non-zero is still asked about, since its output may be what the question is
-about, and its status is in that line.
+What is printed is the summary and the answer, then one line with how many
+chunks of input there were and how many partials came from the cache, or that
+the whole answer did. The ask knows no exit status: a command's status belongs
+to the caller's pipeline, which sees it as it sees any, and output of a command
+that failed is asked about like any other. With stdin a terminal, nothing was
+piped and reading it would wait on a person who is not typing, so the ask says
+nothing was piped to it and exits 1 without reading.
 
 `homma capture --title <title>` reads an agent session's transcript and writes
 what the person typed into it, and every question put to them with the options
