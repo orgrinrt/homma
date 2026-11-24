@@ -179,11 +179,19 @@ fn a_member_asked_for_is_a_line_whether_its_index_is_built_or_its_clone_is_there
         "{:?}",
         out.indexes[1].notes
     );
-    assert!(
-        out.indexes[2].notes[0].contains("no clone"),
+    // The line is the place's own reason, with no prefix of the index crate's error that stands in.
+    assert_eq!(
+        out.indexes[2].notes.first(),
+        got[2].shut.as_ref(),
         "{:?}",
         out.indexes[2].notes
     );
+    assert!(
+        out.indexes[2].notes[0].starts_with("no clone"),
+        "{:?}",
+        out.indexes[2].notes
+    );
+    assert!(!out.indexes[2].notes[0].contains("cache:"));
     assert_eq!(out.hits.len(), 1);
 }
 

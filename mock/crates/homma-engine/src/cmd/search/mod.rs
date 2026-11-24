@@ -116,6 +116,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
     let across: Across = layer::across(
         places.iter().map(|p| {
             let opened = match &p.shut {
+                // Stands in for the place so it stays a member; its line is the reason, not this error.
                 Some(why) => Err(muisti::Error::Cache(why.clone())),
                 None => layer::open(&p.index),
             };
@@ -172,7 +173,9 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                     }
                 },
                 Err(why) => {
-                    notes.push(why);
+                    // A place that is shut is said in its own words; the index crate's error for it is
+                    // only the stand-in that keeps it a member of the question, and its prefix is not true.
+                    notes.push(p.shut.clone().unwrap_or(why));
                     IndexOut {
                         name: m.name,
                         file: p.index.display().to_string(),
