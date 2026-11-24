@@ -31,7 +31,16 @@ pub mod version;
 
 pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
 pub use catalogue::{LeaseConfig, Office};
-pub use config::{Identity, Paths, Role, Staffing, UNREADABLE, Unreadable, Workspace};
+pub use config::{
+    Identity,
+    Paths,
+    Role,
+    SearchConfig,
+    Staffing,
+    UNREADABLE,
+    Unreadable,
+    Workspace,
+};
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};
 pub use deny_entry::DenyEntry;

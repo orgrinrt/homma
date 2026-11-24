@@ -32,6 +32,9 @@ anyhow = "1"
 jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
+# The index crate, through which `homma search` opens every index of the workspace and asks them as
+# one. It is not public, so it sits behind `search` and a build that cannot reach it turns that off.
+muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "work/cross-repo-search", default-features = false, optional = true }
 
 # The host half of renki's extension api: a tool's descriptor is read, checked, located and run by
 # `renki::extension`. `renki-dirs` and `notko` are what the cache root that api fetches into is read
@@ -52,3 +55,8 @@ predicates = "3"
 # `homma-core` the other way round for the same reason, and neither is built
 # outside a test.
 homma = { path = "../../../launcher" }
+
+[features]
+default = ["search"]
+# `homma search`, one question across every index of the workspace.
+search = ["dep:muisti"]
