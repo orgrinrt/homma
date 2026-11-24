@@ -341,9 +341,7 @@ beside the hits, each present only when there is one.
 `homma ask --run <command> <question>` runs the command, reads its output
 through the summarising pass with the question, and prints only a short summary
 framed by the question and the answer, every line naming its place, and never
-the output. It reads the output through the index crate's chunker, so it sits
-behind the engine's `search` feature with `homma search`. It is off with the
-pass: with `[summary]` off, or any call failing, it prints no answer, says why
+the output. It is off with the pass: with `[summary]` off, or any call failing, it prints no answer, says why
 in one line, and exits 1, since printing the output whole would hand the caller
 what it asked not to read, and the caller can run the command itself.
 
@@ -373,10 +371,16 @@ who is not there.
 
 The command runs through `sh -c` in the verb's directory, for at most ten
 minutes. Its output is its stdout, and its stderr after a line `[stderr]` where
-it wrote any. That text is cut by the index crate's paragraph chunker, as a
-file named `output.txt` would be, each chunk keeping its first and last line,
-and each chunk's digest is the BLAKE3 of its text. A record of the output is a
-chunk, so the same record printed at another position is the same chunk.
+it wrote any. That text is cut into chunks by content, never by position: a
+chunk ends after a line followed by a blank line, or after a line whose BLAKE3
+digest has its low four bits zero once the chunk holds 512 bytes, or after the
+line that takes it to 8 192 bytes, a line longer than that being a chunk alone.
+Blank lines belong to no chunk. Each chunk keeps its first and last line, and
+its digest is the first sixteen hex digits of the BLAKE3 of its text. Text
+inserted into the output moves only the chunks it lands in, so the same record
+printed at another position is the same chunk; only the 8 192-byte cut is
+positional, and it meets only a run that long with no blank line and no
+boundary line in it.
 
 Two caches keep what was paid for, both as files under the workspace root's git
 directory in `homma/ask/`, so nothing of them is tracked. A partial is a
