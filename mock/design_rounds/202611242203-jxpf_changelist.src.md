@@ -12,7 +12,7 @@ Verification: `SearchConfig` has `corpus_build: String` defaulting to `muisti in
 
 ## CHANGE: a place FROM its name, file, reason shut and notes TO those and the command that builds its index, said with where it runs
 File: `mock/crates/homma-engine/src/cmd/search/discover.rs`
-Verification: `Place` has `build: String`; a corpus's is `corpus_build` in the corpus's directory, a member's `member_build` in its clone; `Place::at` takes it.
+Verification: `Place` has `build: Option<String>`, set by `Place::built_by`; a corpus's is `corpus_build` in the corpus's directory, a member's `member_build` in its clone; `Place::at` leaves it unset.
 
 ## CHANGE: an index FROM asked as it stands TO brought current first, or measured and said behind
 File: `mock/crates/homma-engine/src/cmd/search/current.rs` (new), `mock/crates/homma-engine/src/cmd/search/mod.rs`
