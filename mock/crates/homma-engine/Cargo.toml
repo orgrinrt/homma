@@ -32,6 +32,11 @@ anyhow = "1"
 jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
+# The index crate, through which `homma search` opens every index of the workspace and asks them as
+# one. Turning `search` off leaves the verb and its code out of the build and nothing more: cargo
+# resolves an optional git dependency whether its feature is on or not, so homma is publishable only
+# once this crate is reachable by a public build.
+muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "dev", default-features = false, optional = true }
 
 # The host half of renki's extension api: a tool's descriptor is read, checked, located and run by
 # `renki::extension`. `renki-dirs` and `notko` are what the cache root that api fetches into is read
@@ -52,3 +57,8 @@ predicates = "3"
 # `homma-core` the other way round for the same reason, and neither is built
 # outside a test.
 homma = { path = "../../../launcher" }
+
+[features]
+default = ["search"]
+# `homma search`, one question across every index of the workspace.
+search = ["dep:muisti"]

@@ -344,6 +344,27 @@ pub enum Command {
         #[arg(long)]
         no_mock: bool,
     },
+    /// One question across every index the workspace holds, each hit naming its index.
+    ///
+    /// The content repository's corpora, and the members' own indexes where `members = true` under
+    /// `[search]` in the manifest. Each index is opened read only and asked by its own ranking, and
+    /// the answers are fused by rank. A line per index follows the hits: what it holds, its model,
+    /// when it was last written, or why it could not be asked. Exits non-zero when no index answered.
+    #[cfg(feature = "search")]
+    Search {
+        /// The question, in words.
+        #[arg(required = true, num_args = 1..)]
+        words:   Vec<String>,
+        /// Ask only the index of this name. Repeatable.
+        #[arg(long = "in")]
+        only:    Vec<String>,
+        /// Ask the members' own indexes as well, whatever `members` under `[search]` says.
+        #[arg(long)]
+        members: bool,
+        /// How many hits to give.
+        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
+        limit:   u32,
+    },
     /// A promoted tool of the content repository, `homma <tool> <verb> ...`.
     #[command(external_subcommand)]
     External(Vec<OsString>),
