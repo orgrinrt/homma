@@ -186,7 +186,10 @@ is the rendered index of every agent address. **`leases`**, default
 `.shared/state/leases`, is the directory of lease records, one file per identity.
 `SearchConfig`, the `[search]` table, names where `homma search` finds the
 indexes: `members`, false unless set, `corpus_config`, `corpus_index` and
-`member_index`, with the defaults the command surface gives.
+`member_index`, with the defaults the command surface gives; and the commands
+an index not built is named with, `corpus_build`, `muisti index` by default and
+run in the corpus's directory, and `member_build`, `cargo mock search --refresh`
+by default and run in the member's clone.
 `SummaryConfig`, the `[summary]` table, turns on the summarising pass and says
 what makes its call: `enabled`, false unless set, `command`, `claude`, and
 `model`, `haiku`.
