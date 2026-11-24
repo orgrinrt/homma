@@ -244,13 +244,8 @@ fn leave_poster(manifest: &Path, name: &str, sha: &str) -> std::io::Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // its own process group, so the hook's exit does not take it along
-        cmd.process_group(0);
-    }
-    cmd.spawn().map(drop)
+    // Its own process group, so the hook's exit does not take it along.
+    crate::cmd::util::bounded::spawn(&mut cmd).map(drop)
 }
 
 /// The distinct local shas a pre-push hook is handed on stdin, one

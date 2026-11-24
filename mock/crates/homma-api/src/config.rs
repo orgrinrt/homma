@@ -292,6 +292,30 @@ impl Default for SearchConfig {
     }
 }
 
+/// The summarising pass, the `[summary]` table: whether it runs, and what makes its call.
+///
+/// Off unless `enabled` is set, since every summary is a call of a model the workspace pays for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SummaryConfig {
+    /// Whether the verbs that offer a summary make one.
+    pub enabled: bool,
+    /// The command run in print mode for each call.
+    pub command: String,
+    /// The model the command is asked to use.
+    pub model:   String,
+}
+
+impl Default for SummaryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            command: "claude".to_string(),
+            model:   "haiku".to_string(),
+        }
+    }
+}
+
 /// The literal meaning "this directory is the content repository".
 pub const LOCAL: &str = "local";
 

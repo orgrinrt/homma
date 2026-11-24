@@ -15,12 +15,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
+use homma_api::SummaryConfig;
 use muisti::layer::{self, Across, Question};
 use muisti::repo::Words;
 use serde::Serialize;
 
 use crate::cli::OutputFormat;
 use crate::cmd::Outcome;
+use crate::cmd::summary::{self, OneShot, Pass};
 use crate::output::{HumanRender, emit};
 
 pub mod discover;
@@ -74,9 +76,65 @@ pub struct IndexOut {
 /// The answer.
 #[derive(Debug, Serialize)]
 pub struct SearchOut {
-    pub question: String,
-    pub hits:     Vec<HitOut>,
-    pub indexes:  Vec<IndexOut>,
+    pub question:     String,
+    pub hits:         Vec<HitOut>,
+    pub indexes:      Vec<IndexOut>,
+    /// The hits summarised, printed in their place, where `--summarise` asked and there is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary:      Option<String>,
+    /// Why `--summarise` gave no summary, where it did not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_note: Option<String>,
+}
+
+impl SearchOut {
+    /// The brief the hits are summarised for.
+    #[must_use]
+    pub fn brief(&self) -> String {
+        format!(
+            "the hits of a search for \"{}\": which places answer it and what each says",
+            self.question
+        )
+    }
+
+    /// The hits as printed, the text the pass reads.
+    #[must_use]
+    pub fn hits_text(&self) -> String {
+        let mut text = Vec::new();
+        // Writing to a vector does not fail.
+        let _ = self.render_hits(&mut text);
+        String::from_utf8_lossy(&text).into_owned()
+    }
+
+    /// Take what the pass gave: the summary, or the reason there is none.
+    pub fn take(&mut self, pass: Pass) {
+        self.summary = pass.summary;
+        self.summary_note = pass.note;
+    }
+
+    fn render_hits(&self, out: &mut dyn Write) -> std::io::Result<()> {
+        if self.hits.is_empty() {
+            writeln!(out, "nothing in any index answers `{}`", self.question)?;
+        }
+        let width = self.hits.iter().map(|h| h.index.len()).max().unwrap_or(0);
+        for h in &self.hits {
+            let mut said = Vec::new();
+            if let Some(c) = &h.class {
+                said.push(c.clone());
+            }
+            if let Some(d) = &h.date {
+                said.push(d.clone());
+            }
+            let said =
+                if said.is_empty() { String::new() } else { format!("  ({})", said.join(", ")) };
+            writeln!(out, "{:width$}  {}:{}{said}", h.index, h.path, h.line)?;
+            writeln!(out, "{:width$}      {}", "", h.excerpt)?;
+            for c in &h.copies {
+                writeln!(out, "{:width$}      also {c}", "")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// `homma search`: discover the indexes under `root`, ask them, print the answer. Fails as a
@@ -89,17 +147,51 @@ pub fn run(
     words: &[String],
     only: &[String],
     limit: usize,
+    summarise: Option<&SummaryConfig>,
     format: OutputFormat,
 ) -> Result<Outcome> {
     let places = discover::narrowed(places, only)?;
     let question = words.join(" ");
-    let out = ask(&places, &question, limit, SystemTime::now());
+    let model = summarise.map(summary::call::Command::from);
+    let out = answer(
+        &places,
+        &question,
+        limit,
+        summarise.zip(model.as_ref()),
+        SystemTime::now(),
+    );
     emit(&out, format)?;
     Ok(if out.indexes.iter().any(|i| i.answered) {
         Outcome::Ok
     } else {
         Outcome::ReportedFailure
     })
+}
+
+/// [`ask`], and where `summarise` is given, its hits through the pass with that table and model.
+pub fn answer<M: OneShot>(
+    places: &[Place],
+    question: &str,
+    limit: usize,
+    summarise: Option<(&SummaryConfig, &M)>,
+    now: SystemTime,
+) -> SearchOut {
+    let mut out = ask(places, question, limit, now);
+    if let Some((settings, model)) = summarise {
+        if out.hits.is_empty() {
+            out.take(Pass::none(
+                "summary: there were no hits to summarise, so no call was made".to_string(),
+            ));
+            return out;
+        }
+        out.take(summary::pass_with(
+            settings,
+            model,
+            &out.brief(),
+            &out.hits_text(),
+        ));
+    }
+    out
 }
 
 /// Ask `question` of every place, one open at a time, and shape the answer.
@@ -194,6 +286,8 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         question: question.to_string(),
         hits,
         indexes,
+        summary: None,
+        summary_note: None,
     }
 }
 
@@ -226,25 +320,12 @@ fn date_of(day: i64) -> Option<String> {
 
 impl HumanRender for SearchOut {
     fn render_human(&self, out: &mut dyn Write) -> std::io::Result<()> {
-        if self.hits.is_empty() {
-            writeln!(out, "nothing in any index answers `{}`", self.question)?;
+        match &self.summary {
+            Some(s) => writeln!(out, "{s}")?,
+            None => self.render_hits(out)?,
         }
-        let width = self.hits.iter().map(|h| h.index.len()).max().unwrap_or(0);
-        for h in &self.hits {
-            let mut said = Vec::new();
-            if let Some(c) = &h.class {
-                said.push(c.clone());
-            }
-            if let Some(d) = &h.date {
-                said.push(d.clone());
-            }
-            let said =
-                if said.is_empty() { String::new() } else { format!("  ({})", said.join(", ")) };
-            writeln!(out, "{:width$}  {}:{}{said}", h.index, h.path, h.line)?;
-            writeln!(out, "{:width$}      {}", "", h.excerpt)?;
-            for c in &h.copies {
-                writeln!(out, "{:width$}      also {c}", "")?;
-            }
+        if let Some(n) = &self.summary_note {
+            writeln!(out, "{n}")?;
         }
         writeln!(out)?;
         writeln!(out, "INDEXES")?;

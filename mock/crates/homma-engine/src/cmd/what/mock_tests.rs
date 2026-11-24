@@ -48,7 +48,7 @@ fn a_listing_that_overruns_is_ended_with_what_it_started() {
         &format!("sleep 300 &\necho $! > {}\nwait", marker.display()),
     );
     let err = mock::list(&prog, dir.path(), std::time::Duration::from_millis(600)).unwrap_err();
-    assert!(err.contains("took longer"), "{err}");
+    assert!(err.contains("ran past 600 ms"), "{err}");
     let pid = std::fs::read_to_string(&marker).unwrap().trim().to_string();
     std::thread::sleep(std::time::Duration::from_millis(200));
     // Dead means gone, or a zombie nobody has reaped yet; `ps` answers on every unix.

@@ -405,38 +405,39 @@ fn read_settings_hooks(path: &Path) -> BTreeMap<String, Vec<Registration>> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
         return out;
     };
+    for (event, matcher, cmd) in registrations(&v) {
+        let Some(call) = hook_call(cmd) else {
+            continue;
+        };
+        let r = Registration {
+            event:   event.to_string(),
+            matcher: matcher.to_string(),
+            args:    call.args,
+            runner:  call.runner,
+        };
+        let regs = out.entry(call.name).or_default();
+        if !regs.contains(&r) {
+            regs.push(r);
+        }
+    }
+    out
+}
+
+/// Every hook a settings document registers, as its event, its matcher (empty where the entry
+/// names none) and its command line, in the order the document gives them. The one walk of a
+/// settings file's `hooks` table.
+pub(crate) fn registrations(v: &serde_json::Value) -> Vec<(&str, &str, &str)> {
+    let mut out = Vec::new();
     let Some(events) = v.get("hooks").and_then(|h| h.as_object()) else {
         return out;
     };
     for (event, entries) in events {
-        let Some(arr) = entries.as_array() else {
-            continue;
-        };
-        for entry in arr {
-            let matcher = entry
-                .get("matcher")
-                .and_then(|m| m.as_str())
-                .unwrap_or("")
-                .to_string();
-            let Some(hooks) = entry.get("hooks").and_then(|h| h.as_array()) else {
-                continue;
-            };
-            for h in hooks {
-                let Some(cmd) = h.get("command").and_then(|c| c.as_str()) else {
-                    continue;
-                };
-                let Some(call) = hook_call(cmd) else {
-                    continue;
-                };
-                let r = Registration {
-                    event:   event.clone(),
-                    matcher: matcher.clone(),
-                    args:    call.args,
-                    runner:  call.runner,
-                };
-                let regs = out.entry(call.name).or_default();
-                if !regs.contains(&r) {
-                    regs.push(r);
+        for entry in entries.as_array().into_iter().flatten() {
+            let matcher = entry.get("matcher").and_then(|m| m.as_str()).unwrap_or("");
+            let hooks = entry.get("hooks").and_then(|h| h.as_array());
+            for h in hooks.into_iter().flatten() {
+                if let Some(cmd) = h.get("command").and_then(|c| c.as_str()) {
+                    out.push((event.as_str(), matcher, cmd));
                 }
             }
         }

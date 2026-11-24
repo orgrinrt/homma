@@ -32,6 +32,10 @@ anyhow = "1"
 jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
+# The version of the summarising pass's rules is their digest, which a cache of summaries keys on.
+blake3 = "1"
+# A hook's matcher in the settings `homma ask` reads is a regular expression, as the host reads it.
+regex = "1"
 # The index crate, through which `homma search` opens every index of the workspace and asks them as
 # one. Turning `search` off leaves the verb and its code out of the build and nothing more: cargo
 # resolves an optional git dependency whether its feature is on or not, so homma is publishable only
@@ -46,6 +50,9 @@ muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "dev", default
 renki = "0.0.3"
 renki-dirs = "0.0.1"
 notko = { version = "0.0.1", default-features = false }
+# A child the engine may have to end leads a process group, and the group is ended by a signal sent
+# from homma, never by whatever `kill` is on `PATH`.
+rustix = { version = "1.1.6", features = ["process"] }
 
 [dev-dependencies]
 assert_cmd = "2"
