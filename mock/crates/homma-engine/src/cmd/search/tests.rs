@@ -272,7 +272,9 @@ fn the_content_repository_is_named_by_its_last_segment_or_by_the_root() {
 
 #[test]
 fn a_summarised_search_prints_the_summary_in_place_of_the_hits() {
-    use crate::cmd::summary::{Budget, OneShot, summarise};
+    use homma_api::SummaryConfig;
+
+    use crate::cmd::summary::OneShot;
 
     struct Echo;
     impl OneShot for Echo {
@@ -293,9 +295,17 @@ fn a_summarised_search_prints_the_summary_in_place_of_the_hits() {
         String::from_utf8(text).unwrap()
     };
 
-    let mut out = ask(&places, "saturation", 10, SystemTime::now());
-    let pass = summarise(&Echo, &Budget::DEFAULT, &out.brief(), &out.hits_text());
-    out.take(pass);
+    let on = SummaryConfig {
+        enabled: true,
+        ..SummaryConfig::default()
+    };
+    let out = answer(
+        &places,
+        "saturation",
+        10,
+        Some((&on, &Echo)),
+        SystemTime::now(),
+    );
     let text = render(&out);
     assert!(
         text.starts_with("- one.md:3: the saturation of the air\n"),
@@ -308,15 +318,23 @@ fn a_summarised_search_prints_the_summary_in_place_of_the_hits() {
     assert!(json.get("summary_note").is_none());
 
     // THE CONTROL: with the pass off the hits are printed as before, and the reason under them.
-    let mut out = ask(&places, "saturation", 10, SystemTime::now());
-    out.take(crate::cmd::summary::pass(
-        &homma_api::SummaryConfig::default(),
-        "b",
-        "t",
-    ));
-    let text = render(&out);
+    let off = answer(
+        &places,
+        "saturation",
+        10,
+        Some((&SummaryConfig::default(), &Echo)),
+        SystemTime::now(),
+    );
+    let text = render(&off);
     assert!(text.contains("first  one.md:"), "{text}");
     assert!(text.contains("summary: off"), "{text}");
+    // and without `--summarise` nothing is said of a summary at all
+    let plain = answer::<Echo>(&places, "saturation", 10, None, SystemTime::now());
+    let text = render(&plain);
+    assert!(
+        text.contains("first  one.md:") && !text.contains("summary"),
+        "{text}"
+    );
     let cli =
         crate::cli::Cli::try_parse_from(["homma-engine", "search", "--summarise", "word"]).unwrap();
     assert!(matches!(cli.command, crate::cli::Command::Search {

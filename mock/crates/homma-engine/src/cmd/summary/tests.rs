@@ -128,7 +128,7 @@ fn every_line_goes_with_its_number_and_a_line_with_no_place_is_counted() {
 
     // control: every line with a place adds nothing
     assert_eq!(
-        placeless("- a.toml:key.sub: x\n- line 3-5: y\nprose is not a line"),
+        placeless("- a.toml:key.sub: x\n- line 3-5: y\n- enabled: a key\nprose is not a line"),
         0
     );
     assert_eq!(rules_version().len(), 16);
@@ -221,4 +221,13 @@ fn the_command_is_run_isolated_with_the_content_on_stdin() {
         ..cmd
     };
     assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
+    // and so is one that exits while something it started still holds its output open
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nsleep 5 &\nprintf '%s\\n' '{\"is_error\":false,\"result\":\"- line 1: x\"}'\n",
+    )
+    .unwrap();
+    let begun = std::time::Instant::now();
+    assert!(slow.ask("S", "x").unwrap_err().contains("ran past"));
+    assert!(begun.elapsed() < std::time::Duration::from_secs(4));
 }

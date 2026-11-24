@@ -126,18 +126,19 @@ pub fn settings(cfg: &Config) -> Result<SummaryConfig> {
 /// The pass with the model `[summary]` names, or the reason there is none where it is off.
 #[must_use]
 pub fn pass(settings: &SummaryConfig, brief: &str, text: &str) -> Pass {
+    pass_with(settings, &call::Command::from(settings), brief, text)
+}
+
+/// The pass through `model`, or the reason there is none where `settings` has it off.
+#[must_use]
+pub fn pass_with<M: OneShot>(settings: &SummaryConfig, model: &M, brief: &str, text: &str) -> Pass {
     if !settings.enabled {
         return Pass::none(
             "summary: off; `enabled = true` under `[summary]` in homma.toml turns it on, and the output is whole"
                 .to_string(),
         );
     }
-    summarise(
-        &call::Command::from(settings),
-        &Budget::DEFAULT,
-        brief,
-        text,
-    )
+    summarise(model, &Budget::DEFAULT, brief, text)
 }
 
 /// Summarise `text` for `brief` through `model`, in parts where it does not fit one call.
@@ -215,7 +216,7 @@ fn has_place(rest: &str) -> bool {
                     .all(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
             })
         },
-        Some(word) => word.trim_end_matches(':').contains(':'),
+        Some(word) => word.contains(':'),
         None => false,
     }
 }

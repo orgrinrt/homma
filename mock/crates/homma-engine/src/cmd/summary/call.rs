@@ -7,6 +7,7 @@
 
 use std::io::{Read, Write};
 use std::process::{Child, Stdio};
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use homma_api::SummaryConfig;
@@ -76,14 +77,15 @@ struct Answer {
 impl OneShot for Command {
     fn ask(&self, system: &str, content: &str) -> Result<String, String> {
         let dir = tempfile::tempdir().map_err(|e| format!("no empty directory to run in: {e}"))?;
-        let child = std::process::Command::new(&self.program)
-            .args(self.args(system))
-            .current_dir(dir.path())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("`{}` did not start: {e}", self.program))?;
+        let child = spawn(
+            std::process::Command::new(&self.program)
+                .args(self.args(system))
+                .current_dir(dir.path())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+        .map_err(|e| format!("`{}` did not start: {e}", self.program))?;
         let (status, stdout, stderr) = drive(child, content, self.limit)?;
         let answer: Option<Answer> = stdout
             .lines()
@@ -110,16 +112,45 @@ impl OneShot for Command {
     }
 }
 
-/// Feed `content` to the child, read both its pipes, and wait for it at most `limit`, ending it past
-/// that. Gives whether it exited 0, and what it printed.
+/// Spawn `command` alone in a process group of its own where the platform has them, so that ending
+/// the call ends whatever it started too.
+fn spawn(command: &mut std::process::Command) -> std::io::Result<Child> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command.spawn()
+}
+
+/// End the child and, where it leads a process group, everything in the group.
+fn end(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        // The group's id is the child's pid, since it was spawned to lead one.
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", "--", &format!("-{}", child.id())])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Feed `content` to the child, read both its pipes, and wait at most `limit` for it to exit and
+/// for both pipes to close, ending it and its group past that, so a process it left holding a pipe
+/// cannot keep the call waiting. Gives whether it exited 0, and what it printed.
 fn drive(
     mut child: Child,
     content: &str,
     limit: Duration,
 ) -> Result<(bool, String, String), String> {
+    let ran_past = || format!("the call ran past {} s and was ended", limit.as_secs());
     let mut stdin = child.stdin.take();
     let body = content.to_owned();
-    let feed = std::thread::spawn(move || {
+    // Not joined: a command that never reads leaves the write blocked until the call is ended.
+    std::thread::spawn(move || {
         if let Some(s) = stdin.as_mut() {
             // A command that exits before reading closes the pipe; its exit says why.
             let _ = s.write_all(body.as_bytes());
@@ -132,31 +163,34 @@ fn drive(
         match child.try_wait() {
             Ok(Some(s)) => break s,
             Ok(None) if start.elapsed() >= limit => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "the call ran past {} s and was ended",
-                    limit.as_secs()
-                ));
+                end(&mut child);
+                return Err(ran_past());
             },
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(e) => return Err(format!("waiting on the call: {e}")),
         }
     };
-    let _ = feed.join();
-    let stdout = out.join().unwrap_or_default();
-    let stderr = err.join().unwrap_or_default();
-    Ok((status.success(), stdout, stderr))
+    let read = |pipe: &Receiver<String>| pipe.recv_timeout(limit.saturating_sub(start.elapsed()));
+    match (read(&out), read(&err)) {
+        (Ok(stdout), Ok(stderr)) => Ok((status.success(), stdout, stderr)),
+        _ => {
+            end(&mut child);
+            Err(ran_past())
+        },
+    }
 }
 
-fn reader<R: Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<String> {
+/// Read `pipe` to its end on a thread of its own, the text arriving on the channel returned.
+fn reader<R: Read + Send + 'static>(pipe: Option<R>) -> Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut s = String::new();
         if let Some(mut p) = pipe {
             let _ = p.read_to_string(&mut s);
         }
-        s
-    })
+        let _ = tx.send(s);
+    });
+    rx
 }
 
 /// The first line that says anything, at most [`REASON`] characters.

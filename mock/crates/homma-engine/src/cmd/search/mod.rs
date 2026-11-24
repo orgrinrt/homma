@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use crate::cli::OutputFormat;
 use crate::cmd::Outcome;
-use crate::cmd::summary::{self, Pass};
+use crate::cmd::summary::{self, OneShot, Pass};
 use crate::output::{HumanRender, emit};
 
 pub mod discover;
@@ -152,16 +152,40 @@ pub fn run(
 ) -> Result<Outcome> {
     let places = discover::narrowed(places, only)?;
     let question = words.join(" ");
-    let mut out = ask(&places, &question, limit, SystemTime::now());
-    if let Some(settings) = summarise {
-        out.take(summary::pass(settings, &out.brief(), &out.hits_text()));
-    }
+    let model = summarise.map(summary::call::Command::from);
+    let out = answer(
+        &places,
+        &question,
+        limit,
+        summarise.zip(model.as_ref()),
+        SystemTime::now(),
+    );
     emit(&out, format)?;
     Ok(if out.indexes.iter().any(|i| i.answered) {
         Outcome::Ok
     } else {
         Outcome::ReportedFailure
     })
+}
+
+/// [`ask`], and where `summarise` is given, its hits through the pass with that table and model.
+pub fn answer<M: OneShot>(
+    places: &[Place],
+    question: &str,
+    limit: usize,
+    summarise: Option<(&SummaryConfig, &M)>,
+    now: SystemTime,
+) -> SearchOut {
+    let mut out = ask(places, question, limit, now);
+    if let Some((settings, model)) = summarise {
+        out.take(summary::pass_with(
+            settings,
+            model,
+            &out.brief(),
+            &out.hits_text(),
+        ));
+    }
+    out
 }
 
 /// Ask `question` of every place, one open at a time, and shape the answer.
