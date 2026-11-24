@@ -34,9 +34,10 @@ impl Embedder for Other {
 }
 
 /// The index of the corpus over `dir`, built through the walk by `embedder`, so its file records
-/// the definition it was built from.
+/// the definition it was built from. It sits beside the corpus, not in it, so what the store
+/// writes next to its file is no document of the corpus.
 fn built<E: Embedder>(dir: &Path, embedder: &mut E) -> PathBuf {
-    let file = dir.join(".muisti/index.sqlite");
+    let file = dir.with_extension("index").join("index.sqlite");
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     let dimension = std::num::NonZeroUsize::new(embedder.dimension()).unwrap();
     let mut store = Store::open(&file, Header::new(embedder.model(), dimension)).unwrap();
