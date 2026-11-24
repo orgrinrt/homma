@@ -33,7 +33,9 @@ jiff = "0.2"
 toml = "0.8"
 tempfile = "3"
 # The index crate, through which `homma search` opens every index of the workspace and asks them as
-# one. It is not public, so it sits behind `search` and a build that cannot reach it turns that off.
+# one. Turning `search` off leaves the verb and its code out of the build and nothing more: cargo
+# resolves an optional git dependency whether its feature is on or not, so homma is publishable only
+# once this crate is reachable by a public build.
 muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "work/cross-repo-search", default-features = false, optional = true }
 
 # The host half of renki's extension api: a tool's descriptor is read, checked, located and run by

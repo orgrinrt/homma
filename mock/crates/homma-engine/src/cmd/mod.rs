@@ -456,8 +456,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         } => {
             let cfg = load_config(&cli)?;
             let root = tools::root(&config_path(&cli));
-            let mut settings = search::discover::search_config(&cfg)?;
-            settings.members |= *members;
+            let settings = search::discover::search_config(&cfg, *members)?;
             let content = search::discover::content_name(cfg.content_repo.as_deref(), &root);
             let members = cfg.repos.iter().map(|(name, entry)| {
                 (

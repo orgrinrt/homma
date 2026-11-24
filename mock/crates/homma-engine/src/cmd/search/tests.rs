@@ -5,6 +5,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::SystemTime;
 
+use clap::Parser;
 use homma_api::SearchConfig;
 use muisti::repo::Words;
 use muisti::{Header, Source, Store};
@@ -55,31 +56,94 @@ fn the_corpora_are_the_tracked_configs_each_at_the_index_it_names_or_the_default
     write(&root.join("stray/muisti.toml"), "muisti_branch = \"dev\"\n");
     let got = places(root, "content", &SearchConfig::default(), []).unwrap();
     assert_eq!(got, vec![
-        Place {
-            name:  "content".to_string(),
-            index: root.join(".muisti/index.sqlite"),
-        },
-        Place {
-            name:  "content/notes".to_string(),
-            index: root.join("notes/idx/notes.sqlite"),
-        },
+        Place::at("content".to_string(), root.join(".muisti/index.sqlite")),
+        Place::at(
+            "content/notes".to_string(),
+            root.join("notes/idx/notes.sqlite")
+        ),
     ]);
 }
 
 #[test]
-fn a_members_index_is_asked_only_where_the_manifest_opts_in_and_only_where_it_is_built() {
+fn a_corpus_index_leaving_the_repository_is_refused_and_a_config_that_does_not_read_is_a_note() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path();
+    git(root, &["init", "-q"]);
+    write(
+        &root.join("up/muisti.toml"),
+        "corpus.index = \"../../outside.sqlite\"\n",
+    );
+    write(
+        &root.join("abs/muisti.toml"),
+        "corpus.index = \"/elsewhere/index.sqlite\"\n",
+    );
+    write(&root.join("bad/muisti.toml"), "corpus.index = [\n");
+    // THE CONTROL: climbing out of its own directory and staying in the repository is the config's
+    // to do.
+    write(
+        &root.join("near/muisti.toml"),
+        "corpus.index = \"../shared/near.sqlite\"\n",
+    );
+    git(root, &["add", "."]);
+    let got = places(root, "content", &SearchConfig::default(), []).unwrap();
+    let by = |n: &str| got.iter().find(|p| p.name == n).unwrap();
+    for refused in ["content/up", "content/abs"] {
+        let why = by(refused).shut.as_deref().unwrap_or_default();
+        assert!(
+            why.contains("leaves the content repository"),
+            "{refused}: {why}"
+        );
+    }
+    let near = by("content/near");
+    assert_eq!(near.shut, None);
+    assert_eq!(near.index, root.join("near/../shared/near.sqlite"));
+    let bad = by("content/bad");
+    assert_eq!(bad.shut, None);
+    assert_eq!(bad.index, root.join("bad/.muisti/index.sqlite"));
+    assert!(bad.notes[0].contains("does not read"), "{:?}", bad.notes);
+    // THE CONTROL: a config that reads carries no note.
+    assert!(near.notes.is_empty());
+    // Asked, the refused corpus is a line saying why and is never opened.
+    let out = ask(&got, "anything", 10, SystemTime::now());
+    let up = out.indexes.iter().find(|i| i.name == "content/up").unwrap();
+    assert!(!up.answered);
+    assert!(
+        up.notes
+            .iter()
+            .any(|n| n.contains("leaves the content repository"))
+    );
+    let bad = out
+        .indexes
+        .iter()
+        .find(|i| i.name == "content/bad")
+        .unwrap();
+    assert!(bad.notes.iter().any(|n| n.contains("does not read")));
+}
+
+#[test]
+fn a_member_asked_for_is_a_line_whether_its_index_is_built_or_its_clone_is_there() {
     let t = tempfile::tempdir().unwrap();
     let root = t.path().join("content");
     std::fs::create_dir_all(&root).unwrap();
     git(&root, &["init", "-q"]);
     let built = t.path().join("built");
     let bare = t.path().join("bare");
+    let absent = t.path().join("absent");
     for m in [&built, &bare] {
         std::fs::create_dir_all(m).unwrap();
         git(m, &["init", "-q"]);
     }
-    write(&built.join(".git/mockspace/search.sqlite"), "an index\n");
-    let members = || vec![("built".to_string(), built.clone()), ("bare".to_string(), bare.clone())];
+    index(&built.join(".git/mockspace/search.sqlite"), &[(
+        "one.md",
+        "# One\n\nsaturation\n",
+    )]);
+    let members = || {
+        vec![
+            ("built".to_string(), built.clone()),
+            ("bare".to_string(), bare.clone()),
+            ("absent".to_string(), absent.clone()),
+        ]
+    };
     // Off by default: the members are not the content repository's to open.
     let off = places(&root, "content", &SearchConfig::default(), members()).unwrap();
     assert!(off.is_empty());
@@ -88,23 +152,91 @@ fn a_members_index_is_asked_only_where_the_manifest_opts_in_and_only_where_it_is
         ..SearchConfig::default()
     };
     let got = places(&root, "content", &on, members()).unwrap();
-    assert_eq!(got, vec![Place {
-        name:  "built".to_string(),
-        index: built.join(".git/mockspace/search.sqlite"),
-    }]);
+    let names: Vec<&str> = got.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, vec!["built", "bare", "absent"]);
+    assert_eq!(got[1].index, bare.join(".git/mockspace/search.sqlite"));
+    assert_eq!(got[1].shut, None);
+    assert!(
+        got[2]
+            .shut
+            .as_deref()
+            .is_some_and(|w| w.contains("no clone"))
+    );
+    let out = ask(&got, "saturation", 10, SystemTime::now());
+    let lines: Vec<(&str, bool)> = out
+        .indexes
+        .iter()
+        .map(|i| (i.name.as_str(), i.answered))
+        .collect();
+    // THE CONTROL: the built one answers, so the other two are lines for not being there.
+    assert_eq!(lines, vec![
+        ("built", true),
+        ("bare", false),
+        ("absent", false)
+    ]);
+    assert!(
+        out.indexes[1].notes[0].contains("not built"),
+        "{:?}",
+        out.indexes[1].notes
+    );
+    assert!(
+        out.indexes[2].notes[0].contains("no clone"),
+        "{:?}",
+        out.indexes[2].notes
+    );
+    assert_eq!(out.hits.len(), 1);
+}
+
+/// A manifest carrying `body` beside the workspace name every manifest has.
+fn manifest(body: &str) -> homma_core::Config {
+    homma_core::Config::parse(&format!("[workspace]\nname = \"w\"\n{body}")).unwrap()
+}
+
+#[test]
+fn the_members_flag_asks_the_members_for_one_run_whatever_the_manifest_says() {
+    use super::discover::search_config;
+    // THE CONTROL: without the flag the default is off, so the flag is what turns it on.
+    assert!(!search_config(&manifest(""), false).unwrap().members);
+    assert!(search_config(&manifest(""), true).unwrap().members);
+    // The flag only adds: a manifest that opts in stays in without it.
+    let opted = manifest("[search]\nmembers = true\n");
+    assert!(search_config(&opted, false).unwrap().members);
+    // The flag reaches the command as `members`.
+    let cli =
+        crate::cli::Cli::try_parse_from(["homma-engine", "search", "--members", "word"]).unwrap();
+    assert!(matches!(cli.command, crate::cli::Command::Search {
+        members: true,
+        ..
+    }));
+}
+
+#[test]
+fn the_search_table_refuses_a_key_it_does_not_read_and_a_value_of_the_wrong_type() {
+    use super::discover::search_config;
+    let read = search_config(
+        &manifest("[search]\ncorpus_index = \"idx/one.sqlite\"\n"),
+        false,
+    )
+    .unwrap();
+    // THE CONTROL: a key it reads, with a value of its type, is taken.
+    assert_eq!(read.corpus_index.as_path(), Path::new("idx/one.sqlite"));
+    for body in [
+        "[search]\nmembres = true\n",
+        "[search]\nmembers = \"yes\"\n",
+        "[search]\ncorpus_index = \"../out.sqlite\"\n",
+    ] {
+        assert!(
+            search_config(&manifest(body), false).is_err(),
+            "accepted: {body}"
+        );
+    }
 }
 
 #[test]
 fn a_question_narrowed_to_names_keeps_those_and_refuses_one_nothing_carries() {
     let all = vec![
-        Place {
-            name:  "a".to_string(),
-            index: "a.sqlite".into(),
-        },
-        Place {
-            name:  "b".to_string(),
-            index: "b.sqlite".into(),
-        },
+        Place::at("a".to_string(), "a.sqlite".into()),
+        Place::at("b".to_string(), "b.sqlite".into()),
     ];
     let one = narrowed(all.clone(), &["b".to_string()]).unwrap();
     assert_eq!(one.len(), 1);
@@ -138,18 +270,9 @@ fn every_hit_names_its_index_and_an_index_not_built_is_a_line_under_the_answer()
     index(&a, &[("one.md", "# One\n\nthe saturation of the air\n")]);
     index(&b, &[("two.md", "# Two\n\nsaturation curves\n")]);
     let places = vec![
-        Place {
-            name:  "first".to_string(),
-            index: a,
-        },
-        Place {
-            name:  "gone".to_string(),
-            index: t.path().join("gone.sqlite"),
-        },
-        Place {
-            name:  "second".to_string(),
-            index: b,
-        },
+        Place::at("first".to_string(), a),
+        Place::at("gone".to_string(), t.path().join("gone.sqlite")),
+        Place::at("second".to_string(), b),
     ];
     let out = ask(&places, "saturation", 10, SystemTime::now());
     let named: Vec<(&str, &str)> = out

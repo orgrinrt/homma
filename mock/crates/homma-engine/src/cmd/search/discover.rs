@@ -9,6 +9,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, anyhow};
 use homma_api::SearchConfig;
+use homma_api::path::RelPath;
 use homma_core::Config;
 
 /// One index the question can be put to.
@@ -18,22 +19,42 @@ pub struct Place {
     pub name:  String,
     /// The index file.
     pub index: PathBuf,
+    /// Why it is not asked at all, where finding it already failed.
+    pub shut:  Option<String>,
+    /// What was found wrong on the way to it that still left it askable.
+    pub notes: Vec<String>,
 }
 
-/// The `[search]` table, with its defaults where it is absent.
+impl Place {
+    /// A place asked at `index`, with nothing said about it.
+    #[must_use]
+    pub const fn at(name: String, index: PathBuf) -> Self {
+        Self {
+            name,
+            index,
+            shut: None,
+            notes: Vec::new(),
+        }
+    }
+}
+
+/// The `[search]` table, with its defaults where it is absent, and the members asked as well where
+/// `members` says so for this one run, whatever the table says.
 ///
 /// # Errors
 /// A table that does not read as one.
-pub fn search_config(cfg: &Config) -> Result<SearchConfig> {
-    match &cfg.search {
-        Some(v) => v.clone().try_into().context("reading `[search]`"),
-        None => Ok(SearchConfig::default()),
-    }
+pub fn search_config(cfg: &Config, members: bool) -> Result<SearchConfig> {
+    let mut read: SearchConfig = match &cfg.search {
+        Some(v) => v.clone().try_into().context("reading `[search]`")?,
+        None => SearchConfig::default(),
+    };
+    read.members |= members;
+    Ok(read)
 }
 
 /// Every index of the workspace: the corpora of the content repository at `root`, named by
 /// `content` and the directory below it, then each member's in the order given where `members` is
-/// set and its index is there.
+/// set, built or not, so one that is not is a line saying so.
 ///
 /// # Errors
 /// Git's words where the content repository's files cannot be listed.
@@ -46,12 +67,15 @@ pub fn places(
     let mut out = corpora(root, content, search)?;
     if search.members {
         for (name, dir) in members {
-            if let Some(index) = member_index(&dir, search).filter(|p| p.is_file()) {
-                out.push(Place {
-                    name,
-                    index,
-                });
-            }
+            out.push(match member_index(&dir, search) {
+                Ok(index) => Place::at(name, index),
+                Err(why) => {
+                    Place {
+                        shut: Some(why),
+                        ..Place::at(name, dir)
+                    }
+                },
+            });
         }
     }
     Ok(out)
@@ -85,39 +109,68 @@ fn corpora(root: &Path, content: &str, search: &SearchConfig) -> Result<Vec<Plac
     let listed = git(root, &["ls-files", "-z", "--", spec.as_str()])?;
     let mut out = Vec::new();
     for rel in listed.split('\0').filter(|s| !s.is_empty()) {
-        let config = root.join(rel);
         let dir = Path::new(rel).parent().unwrap_or(Path::new(""));
-        let index = config.parent().unwrap_or(root).join(
-            own_index(&config).unwrap_or_else(|| search.corpus_index.as_path().to_path_buf()),
-        );
         let name = if dir.as_os_str().is_empty() {
             content.to_string()
         } else {
             format!("{content}/{}", dir.display())
         };
+        let mut notes = Vec::new();
+        let named = match own_index(&root.join(rel)) {
+            Ok(named) => named,
+            Err(why) => {
+                notes.push(why);
+                None
+            },
+        };
+        let index = named.unwrap_or_else(|| search.corpus_index.as_path().to_path_buf());
+        // The index is the config's own to place, inside the content repository and nowhere else.
+        let place = match RelPath::new(dir.join(&index)) {
+            Ok(inside) => Place::at(name, root.join(inside.as_path())),
+            Err(_) => {
+                Place {
+                    shut: Some(format!(
+                        "`corpus.index = \"{}\"` in {rel} leaves the content repository, so it is \
+                         not opened",
+                        index.display()
+                    )),
+                    ..Place::at(name, index)
+                }
+            },
+        };
         out.push(Place {
-            name,
-            index,
+            notes,
+            ..place
         });
     }
     Ok(out)
 }
 
-/// The index a corpus config names for itself, `corpus.index`, where it names one.
-fn own_index(config: &Path) -> Option<PathBuf> {
-    let text = std::fs::read_to_string(config).ok()?;
-    let value: toml::Value = toml::from_str(&text).ok()?;
-    value
-        .get("corpus")?
-        .get("index")?
-        .as_str()
-        .map(PathBuf::from)
+/// The index a corpus config names for itself, `corpus.index`, where it names one, or why the
+/// config could not be read for it.
+fn own_index(config: &Path) -> Result<Option<PathBuf>, String> {
+    let unread = |e: &dyn std::fmt::Display| {
+        format!(
+            "{} does not read ({e}), so its index is the default",
+            config.display()
+        )
+    };
+    let text = std::fs::read_to_string(config).map_err(|e| unread(&e))?;
+    let value: toml::Value = toml::from_str(&text).map_err(|e| unread(&e))?;
+    match value.get("corpus").and_then(|c| c.get("index")) {
+        None => Ok(None),
+        Some(toml::Value::String(s)) => Ok(Some(PathBuf::from(s))),
+        Some(_) => Err(unread(&"`corpus.index` is not a string")),
+    }
 }
 
-/// Where a member's index is, under its own git directory.
-fn member_index(dir: &Path, search: &SearchConfig) -> Option<PathBuf> {
-    let git_dir = git(dir, &["rev-parse", "--absolute-git-dir"]).ok()?;
-    Some(PathBuf::from(git_dir.trim()).join(search.member_index.as_path()))
+/// Where a member's index is, under its own git directory, or why there is no git directory.
+fn member_index(dir: &Path, search: &SearchConfig) -> Result<PathBuf, String> {
+    if !dir.is_dir() {
+        return Err(format!("no clone at {}", dir.display()));
+    }
+    let git_dir = git(dir, &["rev-parse", "--absolute-git-dir"]).map_err(|e| e.to_string())?;
+    Ok(PathBuf::from(git_dir.trim()).join(search.member_index.as_path()))
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String> {

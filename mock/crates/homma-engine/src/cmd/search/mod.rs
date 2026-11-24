@@ -114,9 +114,13 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         today,
     };
     let across: Across = layer::across(
-        places
-            .iter()
-            .map(|p| (p.name.clone(), layer::open(&p.index))),
+        places.iter().map(|p| {
+            let opened = match &p.shut {
+                Some(why) => Err(muisti::Error::Cache(why.clone())),
+                None => layer::open(&p.index),
+            };
+            (p.name.clone(), opened)
+        }),
         &q,
         None::<&mut Words>,
     );
@@ -147,9 +151,15 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         .zip(places)
         .map(|(m, p)| {
             // A file written while the question ran is newer than `now`, and was written just now.
-            let written = written(&p.index).map(|t| ago(now.duration_since(t).unwrap_or_default()));
+            let shut = p.shut.is_some();
+            let written = (!shut)
+                .then(|| written(&p.index))
+                .flatten()
+                .map(|t| ago(now.duration_since(t).unwrap_or_default()));
+            let mut notes = p.notes.clone();
             match m.answered {
                 Ok(a) => {
+                    notes.extend(a.caveats);
                     IndexOut {
                         name: m.name,
                         file: p.index.display().to_string(),
@@ -158,10 +168,11 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                         model: Some(a.model),
                         meaning: a.meaning,
                         written,
-                        notes: a.caveats,
+                        notes,
                     }
                 },
                 Err(why) => {
+                    notes.push(why);
                     IndexOut {
                         name: m.name,
                         file: p.index.display().to_string(),
@@ -170,7 +181,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                         model: None,
                         meaning: false,
                         written,
-                        notes: vec![why],
+                        notes,
                     }
                 },
             }
