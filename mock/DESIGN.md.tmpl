@@ -353,17 +353,19 @@ or does not parse being read as empty. A rule under `permissions.deny` that is
 `Bash` refuses every command; `Bash(<text>)` refuses a command equal to the
 text, `Bash(<prefix>:*)` one starting with the prefix, and a `*` in the text
 matches any run of characters. Each rule is matched against the whole command
-and against each command of it split at `&&`, `||`, `;` and `|`, trimmed. Then
-every `PreToolUse` hook the three files register under a matcher that is empty,
-`*`, or names `Bash` among its `|`-separated words, is run as the host runs it,
+and against each command of it split at a newline, `&&`, `||`, `;`, `|` and a
+lone `&`, trimmed. Then every `PreToolUse` hook the three files register under
+a matcher that is empty or `*`, or that matches `Bash` whole when read as a
+regular expression (`Bash`, `Edit|Bash`, `.*`, `^Bash$`), is run as the host runs it,
 through `sh -c` from the directory the verb runs in, with
 `CLAUDE_PROJECT_DIR` set to the workspace root and on stdin the payload a `Bash`
 call of the command carries: `hook_event_name`, `tool_name`, `tool_input` with
 the `command`, `cwd`, and the `session_id` the harness named to the shell where
-it did. A hook that exits 2, or prints JSON whose
-`hookSpecificOutput.permissionDecision` is `deny` or whose `decision` is
-`block`, refuses the command, with its reason, its stderr or the JSON's, as the
-line; a hook that runs past a minute or does not start is passed over and
+it did. A hook that exits 2, or prints JSON, its whole stdout or else its last
+line that parses, whose `hookSpecificOutput.permissionDecision` is `deny` or
+`ask` or whose `decision` is `block`, refuses the command, with its reason, its
+stderr or the JSON's, as the line; `ask` refuses because the person it would
+ask is not there, the reason the allow rules are not read either; a hook that runs past a minute or does not start is passed over and
 named on stderr, since a guard that could not run is not a guard that refused.
 A refused command exits 1 and nothing is run. The allow rules are not read: the
 session already allowed `homma ask` to run, and an allow list asks a person,
@@ -371,7 +373,8 @@ who is not there.
 
 The command runs through `sh -c` in the verb's directory, for at most ten
 minutes. Its output is its stdout, and its stderr after a line `[stderr]` where
-it wrote any. That text is cut into chunks by content, never by position: a
+it wrote any, each read as UTF-8 with any byte that is not replaced, so output
+that is not text is still asked about and never dropped. That text is cut into chunks by content, never by position: a
 chunk ends after a line followed by a blank line, or after a line whose BLAKE3
 digest has its low four bits zero once the chunk holds 512 bytes, or after the
 line that takes it to 8 192 bytes, a line longer than that being a chunk alone.
@@ -386,11 +389,15 @@ Two caches keep what was paid for, both as files under the workspace root's git
 directory in `homma/ask/`, so nothing of them is tracked. A partial is a
 question-neutral summary of one chunk, in `partials/<key>`, keyed by the chunk's
 digest, the rules' version and the model. Its lines cite `line <n>` counted from
-the chunk's first line, and when it is used every `line <n>` and `line <a>-<b>`
-in it is moved by the chunk's place in the output, so the same chunk elsewhere
-cites where it now is. An answer, in `answers/<key>`, is keyed by the question,
-the rules' version, the model and the chunk digests in order, and is printed
-again with no call while every one of those is unchanged. A cache file that
+the chunk's first line, and when it is used, every `line <n>`, `line <a>-<b>`,
+`lines <n>` and `lines <a>-<b>`, each a whole word, in the place a line of it
+begins with (after its `- ` and before the first `: `) is moved by the chunk's
+place in the output, so the same chunk elsewhere cites where it now is and the
+words of what a line says are left alone. An answer, in `answers/<key>`, is
+keyed by the question, the rules' version, the model and each chunk's digest
+and first line in order, so an output whose chunks sit on other lines is
+answered again, and it is printed again with no call while every one of those
+is unchanged. A cache file that
 cannot be read is a miss, and one that cannot be written is said on stderr and
 does not fail the ask.
 
@@ -398,13 +405,16 @@ There are two kinds of call, both the summarising pass's isolated call. The
 chunks with no partial go in as few calls as the request budget allows, each
 chunk numbered from its own first line and headed `=== chunk <i> ===`, under
 rules asking for one section per chunk, headed the same way, of lines citing
-`line <n>`. A chunk the answer gives no section is a failed call, since an
-answer missing part of its input would read as whole. Then one call takes the
-question as its brief and every partial in output order, and gives the summary
-framed by the question, then a line `Answer:` and the answer, every line naming
-its place. Partials that do not fit one call go through the summarising pass
-first, with the question as the brief, and the answer is made from what it
-gives.
+`line <n>`. A chunk the answer gives no section, or a section with no line, is
+a failed call, since an answer missing part of its input would read as whole;
+the sections it did give are kept. Then one call takes the question as its
+brief and every partial in output order, and gives the summary framed by the
+question, then a line `Answer:` and the answer, every line naming its place.
+Partials that do not fit one call go through the summarising pass first, with a
+brief asking for what bears on the question and for each place copied as the
+partial line gives it, never a line number of the partials themselves; its
+part headings are left out, and the answer is made from what it gives. Where
+that pass gives no summary, the ask fails with its reason.
 
 What is printed is the summary and the answer, then one line with the
 command's exit status and how many chunks there were and how many partials
