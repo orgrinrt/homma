@@ -354,16 +354,31 @@ pub enum Command {
     Search {
         /// The question, in words.
         #[arg(required = true, num_args = 1..)]
-        words:   Vec<String>,
+        words:     Vec<String>,
         /// Ask only the index of this name. Repeatable.
         #[arg(long = "in")]
-        only:    Vec<String>,
+        only:      Vec<String>,
         /// Ask the members' own indexes as well, whatever `members` under `[search]` says.
         #[arg(long)]
-        members: bool,
+        members:   bool,
         /// How many hits to give.
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
-        limit:   u32,
+        limit:     u32,
+        /// Print a summary of the hits in their place, made by the pass `[summary]` turns on.
+        #[arg(long)]
+        summarise: bool,
+    },
+    /// A large text read by one isolated call of a small model, and its summary.
+    ///
+    /// Reads the file, or stdin, and prints a summary whose every line names the place it
+    /// summarises. Off unless `enabled = true` under `[summary]` in the manifest; off, or with the
+    /// call failing, the text is printed whole and the reason goes to stderr.
+    Summarise {
+        /// What the summary is for, in a line: what the reader wants out of the text.
+        #[arg(long)]
+        brief: String,
+        /// The text to read; stdin where none is named.
+        file:  Option<std::path::PathBuf>,
     },
     /// A promoted tool of the content repository, `homma <tool> <verb> ...`.
     #[command(external_subcommand)]

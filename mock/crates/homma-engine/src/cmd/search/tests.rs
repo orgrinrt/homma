@@ -271,6 +271,61 @@ fn the_content_repository_is_named_by_its_last_segment_or_by_the_root() {
 }
 
 #[test]
+fn a_summarised_search_prints_the_summary_in_place_of_the_hits() {
+    use crate::cmd::summary::{Budget, OneShot, summarise};
+
+    struct Echo;
+    impl OneShot for Echo {
+        fn ask(&self, system: &str, content: &str) -> Result<String, String> {
+            assert!(system.contains("a search for \"saturation\""), "{system}");
+            assert!(content.contains("one.md:"), "{content}");
+            Ok("- one.md:3: the saturation of the air".to_string())
+        }
+    }
+
+    let t = tempfile::tempdir().unwrap();
+    let a = t.path().join("a.sqlite");
+    index(&a, &[("one.md", "# One\n\nthe saturation of the air\n")]);
+    let places = vec![Place::at("first".to_string(), a)];
+    let render = |out: &SearchOut| {
+        let mut text = Vec::new();
+        out.render_human(&mut text).unwrap();
+        String::from_utf8(text).unwrap()
+    };
+
+    let mut out = ask(&places, "saturation", 10, SystemTime::now());
+    let pass = summarise(&Echo, &Budget::DEFAULT, &out.brief(), &out.hits_text());
+    out.take(pass);
+    let text = render(&out);
+    assert!(
+        text.starts_with("- one.md:3: the saturation of the air\n"),
+        "{text}"
+    );
+    assert!(!text.contains("first  one.md:"), "{text}");
+    assert!(text.contains("INDEXES"), "{text}");
+    let json = serde_json::to_value(&out).unwrap();
+    assert_eq!(json["summary"], "- one.md:3: the saturation of the air");
+    assert!(json.get("summary_note").is_none());
+
+    // THE CONTROL: with the pass off the hits are printed as before, and the reason under them.
+    let mut out = ask(&places, "saturation", 10, SystemTime::now());
+    out.take(crate::cmd::summary::pass(
+        &homma_api::SummaryConfig::default(),
+        "b",
+        "t",
+    ));
+    let text = render(&out);
+    assert!(text.contains("first  one.md:"), "{text}");
+    assert!(text.contains("summary: off"), "{text}");
+    let cli =
+        crate::cli::Cli::try_parse_from(["homma-engine", "search", "--summarise", "word"]).unwrap();
+    assert!(matches!(cli.command, crate::cli::Command::Search {
+        summarise: true,
+        ..
+    }));
+}
+
+#[test]
 fn every_hit_names_its_index_and_an_index_not_built_is_a_line_under_the_answer() {
     let t = tempfile::tempdir().unwrap();
     let a = t.path().join("a.sqlite");
