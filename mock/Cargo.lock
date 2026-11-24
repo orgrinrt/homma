@@ -1726,6 +1726,7 @@ dependencies = [
  "muisti",
  "notko",
  "predicates",
+ "regex",
  "renki 0.0.3",
  "renki-dirs 0.0.1",
  "serde",

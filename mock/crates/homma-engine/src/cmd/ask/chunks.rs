@@ -71,13 +71,36 @@ pub fn numbered(text: &str) -> String {
         .collect()
 }
 
-/// `partial` with every `line <n>` and `line <a>-<b>` in it moved on by `by` lines.
+/// `partial` with every `line <n>`, `line <a>-<b>`, `lines <n>` and `lines <a>-<b>` in the place
+/// each of its lines begins with, after the `- ` and before the first `: `, moved on by `by`
+/// lines. What a line says after its place is left as it is.
 #[must_use]
 pub fn moved(partial: &str, by: usize) -> String {
-    let mut out = String::with_capacity(partial.len());
-    let mut rest = partial;
-    while let Some(i) = rest.find("line ") {
-        let (before, after) = rest.split_at(i + "line ".len());
+    partial
+        .split_inclusive('\n')
+        .map(|line| {
+            let Some(at) = line.find("- ").filter(|at| line[.. *at].trim().is_empty()) else {
+                return line.to_string();
+            };
+            let start = at + 2;
+            let end = line[start ..].find(": ").map_or(line.len(), |i| start + i);
+            format!(
+                "{}{}{}",
+                &line[.. start],
+                moved_place(&line[start .. end], by),
+                &line[end ..]
+            )
+        })
+        .collect()
+}
+
+/// One place with its line numbers moved: a `line` or `lines` that is a whole word, then a space,
+/// then a number or a range.
+fn moved_place(place: &str, by: usize) -> String {
+    let mut out = String::with_capacity(place.len());
+    let mut rest = place;
+    while let Some((i, word)) = next_line_word(rest) {
+        let (before, after) = rest.split_at(i + word.len());
         out.push_str(before);
         rest = after;
         let mut first = true;
@@ -104,4 +127,28 @@ pub fn moved(partial: &str, by: usize) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// Where the next `line ` or `lines ` that starts a word is, and which of the two it is.
+fn next_line_word(text: &str) -> Option<(usize, &'static str)> {
+    let mut from = 0;
+    while let Some(i) = text[from ..].find("line") {
+        let at = from + i;
+        let starts_word = text[.. at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric());
+        let word = if text[at ..].starts_with("lines ") {
+            Some("lines ")
+        } else if text[at ..].starts_with("line ") {
+            Some("line ")
+        } else {
+            None
+        };
+        if let (true, Some(w)) = (starts_word, word) {
+            return Some((at, w));
+        }
+        from = at + "line".len();
+    }
+    None
 }

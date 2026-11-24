@@ -14,6 +14,8 @@ struct Reader {
     answer_calls:  RefCell<Vec<String>>,
     /// Chunk numbers whose section it leaves out.
     skip:          Vec<usize>,
+    /// Chunk numbers whose section it gives with no line under the header.
+    empty:         Vec<usize>,
 }
 
 impl OneShot for Reader {
@@ -36,7 +38,9 @@ impl OneShot for Reader {
                     .and_then(|t| t.split_whitespace().next())
                     .unwrap_or("")
                     .to_string();
-                if !self.skip.contains(&n) {
+                if self.empty.contains(&n) {
+                    out.push_str(&format!("=== chunk {n} ===\n"));
+                } else if !self.skip.contains(&n) {
                     out.push_str(&format!("=== chunk {n} ===\n- line 1: {first}\n"));
                 }
             }
@@ -65,6 +69,14 @@ fn a_deny_rule_refuses_the_command_whole_or_in_part() {
     assert_eq!(
         guard::denied(&deny, "cat a | git push origin main"),
         Some("Bash(git push*main)".into())
+    );
+    assert_eq!(
+        guard::denied(&deny, "echo ok\nrm -rf x"),
+        Some("Bash(rm:*)".into())
+    );
+    assert_eq!(
+        guard::denied(&deny, "sleep 1 & rm -rf x"),
+        Some("Bash(rm:*)".into())
     );
     // THE CONTROL: commands no rule matches are not refused, a bare `Bash` refuses every one.
     assert_eq!(guard::denied(&deny, "ls; git push origin dev"), None);
@@ -139,6 +151,22 @@ fn a_bash_hook_that_blocks_refuses_the_command_and_one_that_allows_does_not() {
         Verdict::Refused("a hook refused it: read only".into())
     );
 
+    // Pretty-printed JSON is read whole, and `ask` refuses, since nobody is there to be asked.
+    let pretty = settings_with_hook(
+        t.path(),
+        ".*",
+        "cat > /dev/null; printf '{\\n  \"hookSpecificOutput\": {\\n    \"permissionDecision\": \"ask\",\\n    \"permissionDecisionReason\": \"needs a person\"\\n  }\\n}\\n'",
+    );
+    assert_eq!(pretty.hooks.len(), 1, "`.*` sees a Bash call");
+    assert_eq!(
+        guard::check(&pretty, "git push", &at),
+        Verdict::Refused("a hook refused it: needs a person".into())
+    );
+    assert_eq!(
+        settings_with_hook(t.path(), "^Bash$", "true").hooks.len(),
+        1
+    );
+
     // THE CONTROL: a hook that lets it through, and a blocking one registered for another tool.
     let allows = settings_with_hook(t.path(), "Bash", "cat > /dev/null; exit 0");
     assert!(matches!(
@@ -147,6 +175,11 @@ fn a_bash_hook_that_blocks_refuses_the_command_and_one_that_allows_does_not() {
     ));
     let other = settings_with_hook(t.path(), "Edit", "exit 2");
     assert!(other.hooks.is_empty());
+    assert!(
+        settings_with_hook(t.path(), "Bas", "exit 2")
+            .hooks
+            .is_empty()
+    );
     assert!(matches!(
         guard::check(&other, "git push", &at),
         Verdict::Allowed { .. }
@@ -180,19 +213,9 @@ fn chunks_end_at_blank_and_boundary_lines_and_stay_put_when_text_is_inserted() {
         .filter(|c| now.contains(&c.digest.as_str()))
         .count();
     assert!(kept + 2 >= cut.len(), "{kept} of {} kept", cut.len());
-    // THE CONTROL: cutting by position, every boundary after the insertion moves.
-    let by_position = |t: &str| -> Vec<String> {
-        t.as_bytes()
-            .chunks(1024)
-            .skip(1)
-            .map(|c| blake3::hash(c).to_hex()[.. 16].to_string())
-            .collect()
-    };
-    let common = by_position(&run)
-        .iter()
-        .filter(|d| by_position(&shifted).contains(d))
-        .count();
-    assert_eq!(common, 0);
+    // THE CONTROL: the insertion did change what it landed in, so the run is not one chunk the
+    // check above trivially keeps.
+    assert!(kept < cut.len());
     // A line as long as a chunk may be is a chunk of its own.
     let long = format!("short\n{}\nshort\n", "x".repeat(chunks::MAX));
     assert_eq!(spans(&long), vec![(1, 1), (2, 2), (3, 3)]);
@@ -235,15 +258,50 @@ fn a_chunk_keeps_its_partial_wherever_it_moves_in_the_output() {
         model.answer_calls.borrow()[1],
         "- line 1: gamma\n\n- line 3: alpha\n\n- line 5: beta\n"
     );
-    // THE CONTROL: moving a partial by nothing leaves it as it was, and ranges move whole.
+    // Only the place a partial line begins with moves, ranges and `lines` whole; what the line says
+    // is left alone, and so is a word that only ends in `line`.
     assert_eq!(
-        chunks::moved("- line 2-4: x, line 7", 0),
-        "- line 2-4: x, line 7"
+        chunks::moved("- line 2-4, lines 7-8: the pipeline 3 is at line 9\n", 10),
+        "- line 12-14, lines 17-18: the pipeline 3 is at line 9\n"
     );
+    assert_eq!(chunks::moved("- deadline 3: x\n", 10), "- deadline 3: x\n");
     assert_eq!(
-        chunks::moved("- line 2-4: x, line 7", 10),
-        "- line 12-14: x, line 17"
+        chunks::moved("not a summary line 3\n", 10),
+        "not a summary line 3\n"
     );
+    // THE CONTROL: moving a partial by nothing leaves it as it was.
+    assert_eq!(chunks::moved("- line 2-4: x\n", 0), "- line 2-4: x\n");
+}
+
+#[test]
+fn an_answer_is_not_reused_once_its_chunks_sit_on_other_lines() {
+    let (_t, cache) = cache();
+    let model = Reader::default();
+    answer(&model, "m", &cache, "q", "alpha one\n\nbeta two\n").unwrap();
+    // The same chunks, with one more blank line between them: beta is at line 4 now.
+    let again = answer(&model, "m", &cache, "q", "alpha one\n\n\nbeta two\n").unwrap();
+    assert!(!again.whole);
+    assert_eq!(again.cached, 2);
+    assert_eq!(
+        model.answer_calls.borrow()[1],
+        "- line 1: alpha\n\n- line 4: beta\n"
+    );
+    // THE CONTROL: the same output again is reused whole.
+    let same = answer(&model, "m", &cache, "q", "alpha one\n\n\nbeta two\n").unwrap();
+    assert!(same.whole);
+}
+
+#[cfg(unix)]
+#[test]
+fn output_that_is_not_text_is_read_not_dropped() {
+    let t = tempfile::tempdir().unwrap();
+    let (code, out) =
+        super::run_command("printf 'a\\377b\\n'; printf 'warn\\n' >&2", t.path()).unwrap();
+    assert_eq!(code, "exit 0");
+    assert_eq!(out, "a\u{FFFD}b\n[stderr]\nwarn\n");
+    // THE CONTROL: text that is UTF-8 comes through as it is.
+    let (_, plain) = super::run_command("printf 'ab\\n'", t.path()).unwrap();
+    assert_eq!(plain, "ab\n");
 }
 
 #[test]
@@ -293,6 +351,16 @@ fn an_answer_missing_a_chunk_fails_the_ask() {
     let err = answer(&model, "m", &cache, "q", "alpha one\n\nbeta two\n").unwrap_err();
     assert!(err.contains("no section for chunk 2 (lines 3-3)"), "{err}");
     assert!(model.answer_calls.borrow().is_empty());
+
+    // A section with a header and no line is as good as none.
+    let t2 = tempfile::tempdir().unwrap();
+    let fresh = Cache::at(t2.path().join("ask"));
+    let hollow = Reader {
+        empty: vec![1],
+        ..Reader::default()
+    };
+    let err = answer(&hollow, "m", &fresh, "q", "alpha one\n\nbeta two\n").unwrap_err();
+    assert!(err.contains("no section for chunk 1 (lines 1-1)"), "{err}");
 
     // THE CONTROL: the same model leaving nothing out answers; the kept partial of chunk 1 is used.
     let whole = Reader::default();

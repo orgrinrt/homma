@@ -68,18 +68,27 @@ pub fn read(files: &[PathBuf]) -> Guards {
     g
 }
 
-/// Whether a hook registered under `matcher` sees a `Bash` call.
+/// Whether a hook registered under `matcher` sees a `Bash` call: empty and `*` see every call, and
+/// anything else is a regular expression that must match `Bash` whole. One that does not compile
+/// is read as the literal words it is made of, `|`-separated.
 fn matches_bash(matcher: &str) -> bool {
-    matcher.is_empty() || matcher == "*" || matcher.split('|').any(|w| w.trim() == "Bash")
+    if matcher.is_empty() || matcher == "*" {
+        return true;
+    }
+    match regex::Regex::new(&format!("^(?:{matcher})$")) {
+        Ok(re) => re.is_match("Bash"),
+        Err(_) => matcher.split('|').any(|w| w.trim() == "Bash"),
+    }
 }
 
-/// The command and each command of it split at `&&`, `||`, `;` and `|`, trimmed and non-empty.
+/// The command and each command of it split at a newline, `&&`, `||`, `;`, `|` and a lone `&`,
+/// trimmed and non-empty.
 #[must_use]
 pub fn commands(command: &str) -> Vec<&str> {
     let mut out = vec![command.trim()];
     let mut rest = command;
     while !rest.is_empty() {
-        let cut = ["&&", "||", ";", "|"]
+        let cut = ["\n", "&&", "||", ";", "|", "&"]
             .iter()
             .filter_map(|sep| rest.find(sep).map(|i| (i, sep.len())))
             .min_by_key(|(i, len)| (*i, std::cmp::Reverse(*len)));
@@ -209,16 +218,25 @@ fn run_hook(hook: &str, payload: &str, at: &Place<'_>) -> Result<Option<String>,
     if status.code() == Some(2) {
         return Ok(Some(said(&stderr)));
     }
-    let json = stdout
-        .lines()
-        .rev()
-        .find_map(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok());
+    // The host reads the whole of stdout; a hook printing other lines before its JSON is read by
+    // its last line that parses.
+    let json = serde_json::from_str::<serde_json::Value>(stdout.trim())
+        .ok()
+        .or_else(|| {
+            stdout
+                .lines()
+                .rev()
+                .find_map(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())
+        });
     if let Some(v) = json {
         let specific = v.get("hookSpecificOutput");
-        let deny = specific
-            .and_then(|s| s.get("permissionDecision"))
-            .and_then(|d| d.as_str())
-            == Some("deny");
+        // `ask` would ask a person, and none is there to answer.
+        let deny = matches!(
+            specific
+                .and_then(|s| s.get("permissionDecision"))
+                .and_then(|d| d.as_str()),
+            Some("deny" | "ask")
+        );
         let block = v.get("decision").and_then(|d| d.as_str()) == Some("block");
         if deny || block {
             let reason = specific

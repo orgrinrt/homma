@@ -102,8 +102,15 @@ pub fn answer<M: OneShot>(
         return Err("the command printed nothing to ask about".to_string());
     }
     let rules = rules_version();
-    let digests: Vec<&str> = chunks.iter().map(|c| c.digest.as_str()).collect();
-    let akey = cache::answer_key(question, &rules, model_name, &digests);
+    // Each chunk's first line beside its digest: the answer cites output lines, so the same chunks
+    // on other lines are another answer.
+    let firsts: Vec<String> = chunks.iter().map(|c| c.first.to_string()).collect();
+    let placed_digests: Vec<&str> = chunks
+        .iter()
+        .zip(&firsts)
+        .flat_map(|(c, f)| [c.digest.as_str(), f.as_str()])
+        .collect();
+    let akey = cache::answer_key(question, &rules, model_name, &placed_digests);
     if let Some(answer) = cache.answer(&akey) {
         return Ok(Asked {
             answer,
@@ -152,8 +159,20 @@ pub fn answer<M: OneShot>(
     let input = if placed.len() <= budget.part_bytes(system.len()) {
         placed
     } else {
-        let pass = summary::summarise(model, &budget, question, &placed);
-        pass.summary.ok_or_else(|| pass.note.unwrap_or_default())?
+        let brief = format!(
+            "what bears on the question \"{}\"; every line of the text begins with the place it \
+             summarises, and each summary line names that place copied exactly as the text's line \
+             gives it, never a line number of this text itself",
+            question.trim()
+        );
+        let pass = summary::summarise(model, &budget, &brief, &placed);
+        let summary = pass.summary.ok_or_else(|| {
+            format!(
+                "the partials did not fit one call, and summarising them failed: {}",
+                pass.note.unwrap_or_default()
+            )
+        })?;
+        without_part_headings(&summary)
     };
     let answer = model
         .ask(&system, &input)
@@ -170,6 +189,19 @@ pub fn answer<M: OneShot>(
         whole: false,
         notes,
     })
+}
+
+/// `summary` without the `part <i> of <n>, lines <a>-<b>` headings the summarising pass puts over
+/// each part, whose lines count the text it was given and not the output.
+fn without_part_headings(summary: &str) -> String {
+    summary
+        .lines()
+        .filter(|l| {
+            let l = l.trim();
+            !(l.starts_with("part ") && l.contains(" of ") && l.contains(", lines "))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The chunk at each index of `missing`, packed in order into batches whose numbered text fits one
@@ -216,7 +248,11 @@ fn read_batch<M: OneShot>(
     let mut read = Vec::new();
     let mut left_out = None;
     for &i in batch {
-        match sections.iter().find(|(n, _)| *n == i + 1) {
+        // A section with no line is as good as none: its chunk would add nothing ever after.
+        match sections
+            .iter()
+            .find(|(n, text)| *n == i + 1 && !text.trim().is_empty())
+        {
             Some((_, text)) => read.push((i, text.clone())),
             None => left_out = left_out.or(Some(i)),
         }

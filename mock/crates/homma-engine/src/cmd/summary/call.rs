@@ -188,11 +188,12 @@ pub(crate) fn drive(
 fn reader<R: Read + Send + 'static>(pipe: Option<R>) -> Receiver<String> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let mut s = String::new();
+        let mut bytes = Vec::new();
         if let Some(mut p) = pipe {
-            let _ = p.read_to_string(&mut s);
+            let _ = p.read_to_end(&mut bytes);
         }
-        let _ = tx.send(s);
+        // Bytes that are not UTF-8 are replaced rather than losing the whole text.
+        let _ = tx.send(String::from_utf8_lossy(&bytes).into_owned());
     });
     rx
 }
