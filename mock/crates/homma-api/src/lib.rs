@@ -37,6 +37,7 @@ pub use config::{
     Role,
     SearchConfig,
     Staffing,
+    SummaryConfig,
     UNREADABLE,
     Unreadable,
     Workspace,

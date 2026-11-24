@@ -36,6 +36,7 @@ pub mod agents;
 pub mod aggregate;
 pub mod answers;
 pub mod archive;
+pub mod ask;
 pub mod capture;
 pub mod config;
 pub mod declared;
@@ -61,6 +62,7 @@ pub mod skills;
 pub mod stand;
 pub mod status;
 pub mod stray_targets;
+pub mod summary;
 pub mod tools;
 pub(crate) mod util;
 pub mod verify;
@@ -453,8 +455,10 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             only,
             members,
             limit,
+            summarise,
         } => {
             let cfg = load_config(&cli)?;
+            let summary = summarise.then(|| summary::settings(&cfg)).transpose()?;
             let root = tools::root(&config_path(&cli));
             let settings = search::discover::search_config(&cfg, *members)?;
             let content = search::discover::content_name(cfg.content_repo.as_deref(), &root);
@@ -465,7 +469,28 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 )
             });
             let places = search::discover::places(&root, &content, &settings, members)?;
-            search::run(places, words, only, *limit as usize, cli.output)
+            search::run(
+                places,
+                words,
+                only,
+                *limit as usize,
+                summary.as_ref(),
+                cli.output,
+            )
+        },
+        Command::Ask {
+            question,
+        } => {
+            let cfg = load_config(&cli)?;
+            let root = tools::root(&config_path(&cli));
+            ask::run(&cfg, &root, question)
+        },
+        Command::Summarise {
+            brief,
+            file,
+        } => {
+            let cfg = load_config(&cli)?;
+            summary::run(&cfg, brief, file.as_deref())
         },
         Command::External(words) => {
             let root = tools::root(&config_path(&cli));
