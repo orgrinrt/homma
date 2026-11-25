@@ -27,7 +27,10 @@ impl Cache {
     /// # Errors
     /// Git's words where `root` is not in a repository.
     pub fn of_workspace(root: &Path) -> Result<Self, String> {
+        // The root's own git directory: a caller's `GIT_DIR` would answer for another repository.
         let out = std::process::Command::new("git")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
             .arg("-C")
             .arg(root)
             .args(["rev-parse", "--absolute-git-dir"])
@@ -63,7 +66,8 @@ impl Cache {
     /// least recently read until the whole is at most `max_bytes`.
     ///
     /// Silent: an entry that cannot be read or removed is left where it is, and
-    /// the ask goes on.
+    /// the ask goes on. A dot file is a write in flight and is neither counted
+    /// nor removed.
     pub fn sweep(&self, now: SystemTime, expire: Duration, max_bytes: u64) {
         let mut kept: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
         for sub in ["partials", "answers"] {
@@ -71,6 +75,10 @@ impl Cache {
                 continue;
             };
             for e in entries.flatten() {
+                // A dot name is a write in flight, another ask's until it is renamed over its place.
+                if e.file_name().as_encoded_bytes().starts_with(b".") {
+                    continue;
+                }
                 let Ok(meta) = e.metadata() else { continue };
                 if !meta.is_file() {
                     continue;

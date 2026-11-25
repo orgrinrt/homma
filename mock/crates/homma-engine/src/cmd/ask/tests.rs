@@ -429,11 +429,31 @@ fn over_the_cap_the_least_recently_read_go_first() {
     );
 }
 
-/// Failing control: with the sweep taken out of `run`, the old partial is still there.
+/// Failing control: a write in flight swept with the entries is gone.
+#[test]
+fn a_write_in_flight_is_neither_counted_nor_swept() {
+    let (_t, c) = cache();
+    let now = aged(&c, 3 * HOUR, 4);
+    let tmp = c.dir().join("partials/.old.4242");
+    std::fs::write(&tmp, "x".repeat(64)).unwrap();
+    stamp(&c, "partials/.old.4242", now - 3 * HOUR);
+    c.sweep(now, 2 * HOUR, 8);
+    assert!(!c.dir().join("partials/old").exists());
+    assert!(tmp.exists(), "another ask's write is left alone");
+    assert!(
+        c.dir().join("answers/new").exists(),
+        "the dot file does not count toward the cap"
+    );
+}
+
+/// Failing control: with `GIT_DIR` exported at another repository and not removed in
+/// `of_workspace`, the cache is that repository's and not under the planted root.
 #[test]
 fn an_ask_sweeps_its_cache_before_it_answers_even_a_refused_one() {
     let ws = tempfile::tempdir().unwrap();
     let git = std::process::Command::new("git")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
         .arg("-C")
         .arg(ws.path())
         .args(["init", "-q"])
@@ -441,6 +461,11 @@ fn an_ask_sweeps_its_cache_before_it_answers_even_a_refused_one() {
         .unwrap();
     assert!(git.success());
     let c = Cache::of_workspace(ws.path()).unwrap();
+    assert!(
+        c.dir().starts_with(ws.path().canonicalize().unwrap()) || c.dir().starts_with(ws.path()),
+        "the cache is the planted root's: {}",
+        c.dir().display()
+    );
     c.keep_partial("old", "o").unwrap();
     stamp(&c, "partials/old", std::time::SystemTime::now() - 3 * HOUR);
     let cfg = homma_core::Config::parse(&format!(

@@ -9,52 +9,48 @@ use super::sources::{corpora, scripts, verbs};
 
 #[test]
 fn a_banner_header_is_a_name_a_summary_and_usage_lines() {
-    let text = "#!/usr/bin/env nutshell\n# ====\n# sessions - which helper sessions are finished\n# ====\n#   sessions finished <arc> <listing>   ids of idle helpers whose channel says done\n#   sessions blocked  <arc>             ids of helpers stopped\n#\n# More prose that explains.\n";
+    let text = "#!/usr/bin/env sh\n# ====\n# harvest - which crops are ripe or rotting\n# ====\n#   harvest ripe <bed> <row>   crops ready to pick in a row\n#   harvest rotten  <bed>      crops past saving\n#\n# More prose that explains.\n";
     let d =
-        scripts::parse("sessions", ".shared/scripts/remote/sessions", text).expect("a descriptor");
-    assert_eq!(d.summary, "which helper sessions are finished");
+        scripts::parse("harvest", ".shared/scripts/chores/harvest", text).expect("a descriptor");
+    assert_eq!(d.summary, "which crops are ripe or rotting");
     let verbs: Vec<(&str, &str)> = d
         .verbs
         .iter()
         .map(|v| (v.name.as_str(), v.summary.as_str()))
         .collect();
     assert_eq!(verbs, [
-        ("finished", "ids of idle helpers whose channel says done"),
-        ("blocked", "ids of helpers stopped")
+        ("ripe", "crops ready to pick in a row"),
+        ("rotten", "crops past saving")
     ]);
-    assert_eq!(
-        d.verbs[0].command,
-        ".shared/scripts/remote/sessions finished"
-    );
+    assert_eq!(d.verbs[0].command, ".shared/scripts/chores/harvest ripe");
     assert_eq!(d.body, "More prose that explains.");
 }
 
 #[test]
 fn a_plain_first_sentence_is_the_summary() {
-    let text = "#!/usr/bin/env bash\n# Restore paths from a ref, after copying what they hold aside.\n#\n#   git-restore-safely.sh <ref> <path>...\n";
-    let d = scripts::parse("git-restore-safely.sh", "p/git-restore-safely.sh", text)
-        .expect("a descriptor");
-    assert_eq!(d.name, "git-restore-safely");
+    let text = "#!/usr/bin/env bash\n# Mend a fence from a plan, after setting what stands aside.\n#\n#   fence-mend.sh <plan> <post>...\n";
+    let d = scripts::parse("fence-mend.sh", "p/fence-mend.sh", text).expect("a descriptor");
+    assert_eq!(d.name, "fence-mend");
     assert_eq!(
         d.summary,
-        "Restore paths from a ref, after copying what they hold aside."
+        "Mend a fence from a plan, after setting what stands aside."
     );
-    assert!(d.verbs.is_empty(), "`<ref>` is an argument and not a verb");
+    assert!(d.verbs.is_empty(), "`<plan>` is an argument and not a verb");
 }
 
 #[test]
 fn a_python_docstring_is_read_with_its_dash() {
-    let text = "#!/usr/bin/env python3\n\"\"\"agenda \u{2014} everything outstanding, in one place.\n\n    agenda   the whole picture\n\"\"\"\nimport sys\n";
-    let d = scripts::parse("agenda", "p/agenda", text).expect("a descriptor");
-    assert_eq!(d.summary, "everything outstanding, in one place.");
+    let text = "#!/usr/bin/env python3\n\"\"\"almanac \u{2014} everything due in the garden, in one place.\n\n    almanac   the whole year\n\"\"\"\nimport sys\n";
+    let d = scripts::parse("almanac", "p/almanac", text).expect("a descriptor");
+    assert_eq!(d.summary, "everything due in the garden, in one place.");
 }
 
 #[test]
 fn a_block_comment_is_read() {
-    let text = "#!/usr/bin/env -S deno run\n/** memory: whether the corpus and its index agree.\n *\n * Memory is a directory.\n */\nconst x = 1;\n";
-    let d = scripts::parse("memory.ts", "p/memory.ts", text).expect("a descriptor");
-    assert_eq!(d.summary, "whether the corpus and its index agree.");
-    assert_eq!(d.body, "Memory is a directory.");
+    let text = "#!/usr/bin/env -S deno run\n/** seed-bank: whether the seeds and their labels agree.\n *\n * The seed bank is a drawer.\n */\nconst x = 1;\n";
+    let d = scripts::parse("seed-bank.ts", "p/seed-bank.ts", text).expect("a descriptor");
+    assert_eq!(d.summary, "whether the seeds and their labels agree.");
+    assert_eq!(d.body, "The seed bank is a drawer.");
 }
 
 #[test]
@@ -80,9 +76,19 @@ fn only_the_leading_block_is_the_header() {
     assert!(scripts::parse("x", "p/x", text).is_none());
 }
 
+/// Failing control: with the planted directory kept in a static, its root outlives the test.
+#[test]
+fn a_planted_workspace_is_gone_once_its_holder_drops_it() {
+    let ws = workspace();
+    let root = ws.path().to_path_buf();
+    assert!(root.join(".shared/scripts/chores/harvest").is_file());
+    drop(ws);
+    assert!(!root.exists(), "{} is left behind", root.display());
+}
+
 #[test]
 fn a_planted_scripts_verbs_and_place_are_read() {
-    let g = scripts::gather(&workspace());
+    let g = scripts::gather(workspace().path());
     let s = g
         .docs
         .iter()
@@ -100,7 +106,7 @@ fn a_planted_scripts_verbs_and_place_are_read() {
 
 #[test]
 fn tests_and_fixtures_are_not_scripts() {
-    let g = scripts::gather(&workspace());
+    let g = scripts::gather(workspace().path());
     assert!(g.docs.iter().any(|d| d.name == "water-plants"));
     assert!(
         g.docs
@@ -246,13 +252,13 @@ fn homma_verbs_are_read_from_the_command_line_itself() {
 #[test]
 fn the_planted_skills_and_rules_are_read() {
     let ws = workspace();
-    let s = corpora::skills(&ws);
+    let s = corpora::skills(ws.path());
     assert!(
         s.docs
             .iter()
             .any(|d| d.name == "plan-a-season" && !d.summary.is_empty())
     );
-    let r = corpora::rules(&ws);
+    let r = corpora::rules(ws.path());
     assert!(
         r.docs
             .iter()
@@ -263,7 +269,7 @@ fn the_planted_skills_and_rules_are_read() {
 #[cfg(unix)]
 #[test]
 fn the_planted_tools_carry_their_verbs_and_how_to_run_them() {
-    let g = super::sources::tools::gather(&workspace());
+    let g = super::sources::tools::gather(workspace().path());
     let t = g
         .docs
         .iter()
@@ -284,12 +290,12 @@ fn the_planted_tools_carry_their_verbs_and_how_to_run_them() {
 #[test]
 fn the_first_line_of_prose_is_the_summary_even_when_it_starts_with_the_name() {
     let d = scripts::parse(
-        "merge-dev",
-        ".shared/scripts/merge-dev",
-        "#!/bin/sh\n# merge-dev merges dev into the branch\n#   merge-dev check  see what would conflict\n",
+        "graft",
+        ".shared/scripts/graft",
+        "#!/bin/sh\n# graft joins a scion onto the stock\n#   graft check  see whether it would take\n",
     )
     .unwrap();
-    assert_eq!(d.summary, "merge-dev merges dev into the branch");
+    assert_eq!(d.summary, "graft joins a scion onto the stock");
     assert_eq!(
         d.verbs.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
         ["check"]
@@ -299,9 +305,9 @@ fn the_first_line_of_prose_is_the_summary_even_when_it_starts_with_the_name() {
 #[test]
 fn a_column_of_description_after_the_name_is_not_a_verb() {
     let d = scripts::parse(
-        "storage.py",
-        "python3 .shared/scripts/watch/storage.py",
-        "#!/usr/bin/env python3\n# storage.py - the catalogue, scored\n#   storage.py      every storage purpose, its candidates\n#   storage.py show  one purpose\n",
+        "seeds.py",
+        "python3 .shared/scripts/garden/seeds.py",
+        "#!/usr/bin/env python3\n# seeds.py - the catalogue, scored\n#   seeds.py      every seed variety, its candidates\n#   seeds.py show  one variety\n",
     )
     .unwrap();
     assert_eq!(

@@ -99,17 +99,17 @@ fn a_word_outside_every_group_is_not_a_synonym() {
 
 #[test]
 fn a_prefix_of_four_letters_matches_and_a_shorter_one_does_not() {
-    assert_eq!(grade("coord", "coordinator"), Some(Grade::Prefix));
-    assert_eq!(grade("coordinator", "coord"), Some(Grade::Prefix));
+    assert_eq!(grade("cultiv", "cultivator"), Some(Grade::Prefix));
+    assert_eq!(grade("cultivator", "cultiv"), Some(Grade::Prefix));
     assert_eq!(grade("pro", "promote"), None);
 }
 
 #[test]
 fn a_misspelling_matches_by_the_length_of_the_word() {
     assert_eq!(grade("mesag", "messag"), Some(Grade::Fuzzy));
-    assert_eq!(grade("cordinator", "coordinator"), Some(Grade::Fuzzy));
+    assert_eq!(grade("cultivater", "cultivator"), Some(Grade::Fuzzy));
     assert_eq!(
-        grade("cordinatr", "coordinator"),
+        grade("cultvatr", "cultivator"),
         Some(Grade::Fuzzy),
         "two edits are allowed from eight letters"
     );

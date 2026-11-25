@@ -18,7 +18,7 @@ fn everything() -> &'static (Vec<super::doc::Doc>, Vec<super::doc::Gap>) {
         std::sync::OnceLock::new();
     ALL.get_or_init(|| {
         let g = gather(
-            &workspace(),
+            workspace().path(),
             &[],
             true,
             &homma_core::scope::Scope::everything(),
@@ -94,7 +94,7 @@ fn a_sourced_library_is_never_an_answer() {
 #[test]
 fn what_a_kind_filter_leaves_out_is_said_in_the_footer() {
     let g = gather(
-        &workspace(),
+        workspace().path(),
         &[Kind::Rule],
         true,
         &homma_core::scope::Scope::everything(),

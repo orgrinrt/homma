@@ -32,18 +32,18 @@ fn a_query_must_match_both_of_two_words_two_of_up_to_six_and_a_third_of_a_longer
 
 #[test]
 fn a_thing_matching_none_of_the_terms_is_not_an_answer() {
-    let docs = vec![doc(Kind::Tool, "disk-trim", "give the disk back", &["hygiene"])];
+    let docs = vec![doc(Kind::Tool, "disk-tidy", "give the disk back", &["hygiene"])];
     assert!(names(&docs, "bake sourdough loaf").is_empty());
 }
 
 #[test]
 fn a_thing_matching_too_few_terms_is_not_an_answer() {
-    let docs = vec![doc(Kind::Tool, "disk-trim", "give the disk back", &[])];
+    let docs = vec![doc(Kind::Tool, "disk-tidy", "give the disk back", &[])];
     assert!(
         names(&docs, "translate disk quarterly report").is_empty(),
         "one of three is under half"
     );
-    assert_eq!(names(&docs, "trim disk"), ["disk-trim"]);
+    assert_eq!(names(&docs, "tidy disk"), ["disk-tidy"]);
 }
 
 #[test]
@@ -137,29 +137,24 @@ fn a_thing_matching_too_few_of_a_long_query_is_not_an_answer() {
 
 #[test]
 fn the_verb_that_matched_best_is_named() {
-    let mut d = doc(
-        Kind::Script,
-        "sessions",
-        "which helper sessions are what",
-        &[],
-    );
+    let mut d = doc(Kind::Script, "harvest", "which crops are what", &[]);
     d.verbs = vec![
         Verb {
-            name:    "blocked".into(),
-            summary: "ids of helpers stopped on a refusal".into(),
-            command: "sessions blocked".into(),
+            name:    "rotten".into(),
+            summary: "crops lost to the frost".into(),
+            command: "harvest rotten".into(),
             example: false,
         },
         Verb {
-            name:    "finished".into(),
-            summary: "ids of idle helpers whose channel says done".into(),
-            command: "sessions finished".into(),
+            name:    "ripe".into(),
+            summary: "crops in a bed that are ready to pick".into(),
+            command: "harvest ripe".into(),
             example: false,
         },
     ];
     let docs = vec![d];
-    let r = rank(&docs, &terms("which helpers are done"));
-    assert_eq!(docs[0].verbs[r[0].verb.expect("a verb")].name, "finished");
+    let r = rank(&docs, &terms("which crops are ready"));
+    assert_eq!(docs[0].verbs[r[0].verb.expect("a verb")].name, "ripe");
 }
 
 #[test]
@@ -195,13 +190,13 @@ fn related_things_are_the_ones_nearest_in_their_words() {
     let mut docs = vec![
         doc(
             Kind::Tool,
-            "disk-trim",
+            "disk-tidy",
             "give the disk back by clearing stale build output",
             &["hygiene", "disk"],
         ),
         doc(
             Kind::Tool,
-            "build-sweep",
+            "stale-clear",
             "clear stale build output to give disk back",
             &["hygiene"],
         ),
@@ -213,12 +208,12 @@ fn related_things_are_the_ones_nearest_in_their_words() {
         ])
     }));
     let ranked = rank(&docs, &terms("disk"));
-    assert_eq!(docs[ranked[0].doc].name, "disk-trim");
+    assert_eq!(docs[ranked[0].doc].name, "disk-tidy");
     let rel = related(&docs, &ranked[.. 1], 1, 3);
     let got: Vec<&str> = rel[0].iter().map(|&i| docs[i].name.as_str()).collect();
     assert_eq!(
         got,
-        ["build-sweep"],
+        ["stale-clear"],
         "a thing that shares nothing is not named"
     );
 }
@@ -226,7 +221,7 @@ fn related_things_are_the_ones_nearest_in_their_words() {
 #[test]
 fn related_never_names_an_answer() {
     let docs = vec![
-        doc(Kind::Tool, "disk-trim", "give the disk back", &["hygiene"]),
+        doc(Kind::Tool, "disk-tidy", "give the disk back", &["hygiene"]),
         doc(Kind::Tool, "disk-sweep", "give the disk back", &["hygiene"]),
     ];
     let ranked = rank(&docs, &terms("disk"));
@@ -237,13 +232,13 @@ fn related_never_names_an_answer() {
 #[test]
 fn a_tool_is_not_related_to_a_rule_by_a_shared_word() {
     let docs = vec![
-        doc(Kind::Tool, "disk-trim", "give the disk back", &["hygiene"]),
+        doc(Kind::Tool, "disk-tidy", "give the disk back", &["hygiene"]),
         doc(Kind::Tool, "pad", "other", &[]),
-        doc(Kind::Rule, "disk-trim-rule", "give the disk back", &[
+        doc(Kind::Rule, "disk-tidy-rule", "give the disk back", &[
             "hygiene",
         ]),
     ];
-    let ranked = rank(&docs, &terms("trim"));
+    let ranked = rank(&docs, &terms("tidy"));
     let rel = related(&docs, &ranked[.. 1], 1, 3);
     assert!(rel[0].is_empty(), "{rel:?}");
 }
