@@ -82,6 +82,33 @@ fn the_hosts_own_fields_are_taken_and_kept() {
     );
 }
 
+/// Failing control: with `effort` out of the known set this is an unknown key.
+#[test]
+fn an_effort_is_taken_and_kept_as_written() {
+    let parsed = skill::parse(&manifest("effort: xhigh\n")).unwrap();
+    assert!(
+        parsed
+            .meta
+            .extra
+            .iter()
+            .any(|(k, v)| k == "effort" && v == "xhigh")
+    );
+}
+
+#[test]
+fn an_effort_the_host_does_not_read_is_refused_by_name() {
+    match skill::parse(&manifest("effort: extreme\n")).unwrap_err() {
+        SkillError::BadValue {
+            key,
+            reason,
+        } => {
+            assert_eq!(key, "effort");
+            assert!(reason.contains("extreme"), "{reason}");
+        },
+        other => panic!("wrong refusal: {other}"),
+    }
+}
+
 #[test]
 fn a_field_outside_the_known_set_is_refused_by_name() {
     match skill::parse(&manifest("descriptoin: y\n")).unwrap_err() {

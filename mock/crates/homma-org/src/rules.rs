@@ -16,17 +16,14 @@
 //! `.claude/rules/` and never edited by hand; what `about` and a fetch return
 //! is the whole file.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use homma_api::rule::{self, MetaError, RuleMeta};
 use homma_api::session::Session;
-use mockspace_template::template::TemplateEnv;
 use serde::Serialize;
 
-/// Suffix of an authored rule.
-const RULE_SUFFIX: &str = ".md.tmpl";
+use crate::surface::{self, Kind, Shape, TMPL_SUFFIX as RULE_SUFFIX};
 
 /// One rule, as authored.
 #[derive(Debug, Clone)]
@@ -41,10 +38,16 @@ pub struct Rule {
     pub elaboration: String,
 }
 
-/// Everything under one `.shared/rules/` directory.
+/// Everything under one `.shared/rules/` directory, and the principles beside it.
+///
+/// The principles are kept apart from the rules: nothing that compares rules
+/// with each other sees one, and `about` answers with rules only. Their cards
+/// are written by the same renderer under the same session binding.
 #[derive(Debug, Clone, Default)]
 pub struct Corpus {
-    pub rules: Vec<Rule>,
+    pub rules:      Vec<Rule>,
+    /// Each named with its card prefix, which is the name its card is written as.
+    pub principles: Vec<Rule>,
 }
 
 /// Why a corpus could not be read or rendered.
@@ -72,6 +75,11 @@ pub enum CorpusError {
         path:  PathBuf,
         cause: io::Error,
     },
+    /// A principle is not shaped as one.
+    Principle {
+        path:   PathBuf,
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for CorpusError {
@@ -86,6 +94,10 @@ impl std::fmt::Display for CorpusError {
                 cause,
             } => write!(f, "{}: {cause}", path.display()),
             Self::Render {
+                path,
+                reason,
+            }
+            | Self::Principle {
                 path,
                 reason,
             } => write!(f, "{}: {reason}", path.display()),
@@ -145,70 +157,44 @@ impl Corpus {
     /// healthier corpus than the one on disk, which is the shape that passes
     /// every check and governs nothing.
     pub fn load(dir: &Path) -> Result<Self, CorpusError> {
-        let entries = fs::read_dir(dir).map_err(|cause| {
-            CorpusError::Unreadable {
-                path: dir.to_path_buf(),
-                cause,
-            }
-        })?;
+        Ok(Self {
+            rules:      surface::load(&Rules, dir)?,
+            principles: Vec::new(),
+        })
+    }
 
-        // Sorted by name, so the order the corpus is walked in does not depend
-        // on the order the filesystem happens to list it in.
-        let mut files: BTreeMap<String, PathBuf> = BTreeMap::new();
-        for entry in entries {
-            let entry = entry.map_err(|cause| {
-                CorpusError::Unreadable {
-                    path: dir.to_path_buf(),
-                    cause,
-                }
-            })?;
-            let path = entry.path();
-            let Some(file) = path.file_name().and_then(|f| f.to_str()) else {
-                continue;
-            };
-            if let Some(name) = file.strip_suffix(RULE_SUFFIX) {
-                // **Every `.md.tmpl` here is a rule, dot in its name or not.**
-                //
-                // This guard used to skip a name containing a dot, to stop the
-                // old `x.card.md.tmpl` sidecar loading as a rule called
-                // `x.card`. That shape is gone and the guard outlived it: it
-                // silently dropped `no-legacy-shims-pre-1.0`, whose dot is a
-                // version number. That rule was authored, discoverable through
-                // `about`, and in no session at all, which is precisely the
-                // failure the single-file shape exists to make impossible.
-                //
-                // Skipping is what made it invisible. A file here that cannot
-                // be read is refused by name below rather than passed over, so
-                // a future sidecar announces itself instead of quietly
-                // becoming a rule.
-                files.insert(name.to_string(), path);
-            }
-        }
-
-        let mut rules = Vec::with_capacity(files.len());
-        for (name, path) in files {
-            let source = fs::read_to_string(&path).map_err(|cause| {
-                CorpusError::Unreadable {
-                    path: path.clone(),
-                    cause,
-                }
-            })?;
-            let parsed = rule::parse(&source).map_err(|cause| {
-                CorpusError::Meta {
-                    path: path.clone(),
-                    cause,
-                }
-            })?;
-            rules.push(Rule {
-                name,
-                meta: parsed.meta.clone(),
-                card: parsed.card().to_string(),
-                elaboration: parsed.elaboration().to_string(),
+    /// Read every principle under `dir` beside the rules, refusing one with an
+    /// elaboration or a first heading that is not its title.
+    pub fn load_principles(
+        &mut self,
+        dir: &Path,
+        kind: &Principles<'_>,
+    ) -> Result<(), CorpusError> {
+        let principles: Vec<Rule> = surface::load(kind, dir)?;
+        // A rule already named as a principle's card would be written to the
+        // same file, the last one winning without a word.
+        if let Some(p) = principles
+            .iter()
+            .find(|p| self.rules.iter().any(|r| r.name == p.name))
+        {
+            return Err(CorpusError::Principle {
+                path:   dir.join(format!(
+                    "{}{RULE_SUFFIX}",
+                    &p.name[kind.card_prefix.len() ..]
+                )),
+                reason: format!(
+                    "its card is `{}.md`, which the rule `{}` already writes",
+                    p.name, p.name
+                ),
             });
         }
-        Ok(Self {
-            rules,
-        })
+        self.principles = principles;
+        Ok(())
+    }
+
+    /// The rules and the principles, every card this corpus writes.
+    fn cards(&self) -> impl Iterator<Item = &Rule> {
+        self.rules.iter().chain(&self.principles)
     }
 
     /// The rules answering a query, best first.
@@ -254,8 +240,8 @@ impl Corpus {
             }
         })?;
 
-        let mut written = Vec::with_capacity(self.rules.len());
-        for r in &self.rules {
+        let mut written = Vec::with_capacity(self.rules.len() + self.principles.len());
+        for r in self.cards() {
             let path = dst.join(format!("{}.md", r.name));
             if !session.admits(&r.meta) {
                 match fs::remove_file(&path) {
@@ -271,7 +257,7 @@ impl Corpus {
                 continue;
             }
             let body = self.card_text(r)?;
-            fs::write(&path, body).map_err(|cause| {
+            surface::write(&path, &body).map_err(|cause| {
                 CorpusError::Write {
                     path: path.clone(),
                     cause,
@@ -298,12 +284,12 @@ impl Corpus {
         Ok(self.card_text(r)?.len())
     }
 
-    /// The rules the session does not load, which discovery still answers for.
+    /// The rules and principles the session does not load.
     pub fn withheld<'a>(&'a self, session: &'a Session) -> impl Iterator<Item = &'a Rule> {
-        self.rules.iter().filter(move |r| !session.admits(&r.meta))
+        self.cards().filter(move |r| !session.admits(&r.meta))
     }
 
-    /// Cards in `dst` that no authored rule claims.
+    /// Cards in `dst` that no authored rule or principle claims.
     ///
     /// Reported rather than removed, on the same ground the skill corpus gives
     /// for an unclaimed directory: one is either a rule that has not been moved
@@ -315,36 +301,10 @@ impl Corpus {
     /// directory, it is a document that keeps being injected into every session
     /// with nothing saying so.
     pub fn unclaimed(&self, dst: &Path) -> Result<Vec<String>, CorpusError> {
-        if !dst.is_dir() {
-            return Ok(Vec::new());
-        }
-        let entries = fs::read_dir(dst).map_err(|cause| {
-            CorpusError::Unreadable {
-                path: dst.to_path_buf(),
-                cause,
-            }
-        })?;
-        let mut stray = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|cause| {
-                CorpusError::Unreadable {
-                    path: dst.to_path_buf(),
-                    cause,
-                }
-            })?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("md") {
-                continue;
-            }
-            let Some(name) = path.file_stem().and_then(|f| f.to_str()) else {
-                continue;
-            };
-            if !self.rules.iter().any(|r| r.name == name) {
-                stray.push(name.to_string());
-            }
-        }
-        stray.sort();
-        Ok(stray)
+        surface::unclaimed(dst, Shape::File, |name| {
+            self.cards().any(|r| r.name == name)
+        })
+        .map_err(|cause| Rules::unreadable(dst.to_path_buf(), cause))
     }
 
     /// The whole rule, card and elaboration, rendered as one document.
@@ -362,10 +322,6 @@ impl Corpus {
 
     /// Render one piece of a rule against its own meta.
     fn render(&self, r: &Rule, source: &str, variant: &str) -> Result<String, CorpusError> {
-        // A fresh environment per render rather than one shared: strict
-        // undefined behaviour is the point, and a shared registry would let a
-        // template resolve a name some other rule happened to define.
-        let env = TemplateEnv::new();
         let ctx = Ctx {
             name: &r.name,
             topics: &r.meta.topics,
@@ -374,11 +330,97 @@ impl Corpus {
             paths: &r.meta.paths,
             variant,
         };
-        env.render_str(source, &ctx).map_err(|e| {
+        surface::render(source, &ctx).map_err(|reason| {
             CorpusError::Render {
-                path:   PathBuf::from(format!("{}{RULE_SUFFIX}", r.name)),
-                reason: e.to_string(),
+                path: PathBuf::from(format!("{}{RULE_SUFFIX}", r.name)),
+                reason,
             }
         })
+    }
+}
+
+/// The rules as a kind: every `.md.tmpl` in the directory is one.
+///
+/// **Every `.md.tmpl` here is a rule, dot in its name or not.** A guard that
+/// once skipped a name containing a dot, to keep an old sidecar shape from
+/// loading as a rule, outlived that shape and silently dropped
+/// `no-legacy-shims-pre-1.0`, whose dot is a version number: authored,
+/// discoverable, and in no session at all. A file here that cannot be read is
+/// refused by name rather than passed over.
+struct Rules;
+
+impl Kind for Rules {
+    type Error = CorpusError;
+    type Item = Rule;
+
+    const SHAPE: Shape = Shape::File;
+
+    fn unreadable(path: PathBuf, cause: io::Error) -> CorpusError {
+        CorpusError::Unreadable {
+            path,
+            cause,
+        }
+    }
+
+    fn read(&self, name: &str, path: &Path) -> Result<Rule, CorpusError> {
+        let source = surface::read_text::<Self>(path)?;
+        let parsed = rule::parse(&source).map_err(|cause| {
+            CorpusError::Meta {
+                path: path.to_path_buf(),
+                cause,
+            }
+        })?;
+        Ok(Rule {
+            name:        name.to_string(),
+            meta:        parsed.meta.clone(),
+            card:        parsed.card().to_string(),
+            elaboration: parsed.elaboration().to_string(),
+        })
+    }
+}
+
+/// The principles as a kind: a rule's frontmatter and a card, nothing after it,
+/// named and titled by the configured prefixes.
+#[derive(Debug, Clone, Copy)]
+pub struct Principles<'a> {
+    /// What a principle's card is named: this, then its name.
+    pub card_prefix:  &'a str,
+    /// What its first heading opens with, before its name.
+    pub title_prefix: &'a str,
+}
+
+impl Kind for Principles<'_> {
+    type Error = CorpusError;
+    type Item = Rule;
+
+    const SHAPE: Shape = Shape::File;
+
+    fn unreadable(path: PathBuf, cause: io::Error) -> CorpusError {
+        Rules::unreadable(path, cause)
+    }
+
+    fn read(&self, name: &str, path: &Path) -> Result<Rule, CorpusError> {
+        let mut r = Rules.read(name, path)?;
+        let refuse = |reason: String| {
+            CorpusError::Principle {
+                path: path.to_path_buf(),
+                reason,
+            }
+        };
+        if !r.elaboration.is_empty() || r.card.lines().any(|l| l.trim() == rule::ELABORATION_MARKER)
+        {
+            return Err(refuse(
+                "carries an elaboration, and a principle is a card and nothing after it".into(),
+            ));
+        }
+        let want = format!("# {}{name}", self.title_prefix);
+        let title = r.card.lines().find(|l| l.starts_with('#')).unwrap_or("");
+        if title.trim_end() != want {
+            return Err(refuse(format!(
+                "its first heading is `{title}`, and a principle's is `{want}`"
+            )));
+        }
+        r.name = format!("{}{name}", self.card_prefix);
+        Ok(r)
     }
 }

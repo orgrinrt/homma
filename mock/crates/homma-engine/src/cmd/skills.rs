@@ -13,10 +13,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use homma_core::Config;
+use homma_org::modes::Modes;
 use homma_org::skills::Skills;
 use serde::Serialize;
 
-use crate::cli::OutputFormat;
+use crate::cli::{ModesArgs, OutputFormat};
 use crate::output::{HumanRender, emit};
 
 /// Where the corpus is authored, relative to the workspace root.
@@ -85,6 +86,17 @@ pub mod list {
     }
 }
 
+/// The modes the caller names, none where it names none.
+pub fn modes(cfg: &Config, args: &ModesArgs) -> Result<Modes> {
+    let (Some(dir), Some(prefix), Some(max)) = (&args.modes, &args.mode_prefix, args.mode_body_max)
+    else {
+        return Ok(Modes::default());
+    };
+    let dir = cfg.workspace.path.join(dir);
+    Modes::load(&dir, prefix, max)
+        .with_context(|| format!("reading the modes at {}", dir.display()))
+}
+
 pub mod render {
     use super::*;
 
@@ -94,6 +106,10 @@ pub mod render {
         pub authored:  String,
         pub generated: String,
         pub skills:    Vec<String>,
+        /// The mode skills written, empty where the gate is off.
+        pub modes:     Vec<String>,
+        /// Whether the effort keys and the mode skills were kept.
+        pub effort:    bool,
         pub files:     usize,
         /// Directories in the generated tree that no authored skill claims.
         pub unclaimed: Vec<String>,
@@ -109,6 +125,18 @@ pub mod render {
                 self.authored,
                 self.generated
             )?;
+            if self.effort {
+                write!(
+                    out,
+                    "\n\n{} mode skills, effort keys kept",
+                    self.modes.len()
+                )?;
+            } else {
+                write!(
+                    out,
+                    "\n\neffort keys taken out and no mode skill written, as --no-effort asked"
+                )?;
+            }
             if !self.unclaimed.is_empty() {
                 // Named rather than removed: one is either a skill not moved to
                 // the authored side yet or something else entirely, and this
@@ -123,19 +151,44 @@ pub mod render {
         }
     }
 
-    pub fn run(cfg: &Config, format: OutputFormat) -> Result<()> {
+    /// Render the skills, and the modes the caller names, keeping the effort
+    /// keys and the mode skills where `effort` is true and taking them out where
+    /// it is false.
+    pub fn run(cfg: &Config, args: &ModesArgs, effort: bool, format: OutputFormat) -> Result<()> {
         let src = authored_dir(cfg);
         let dst = cfg.workspace.path.join(GENERATED);
         let corpus = load(&src)?;
-        let written = corpus
-            .render(&dst)
+        let modes = modes(cfg, args)?;
+        if let Some(clash) = corpus.skills.iter().find(|s| modes.claims(&s.name)) {
+            anyhow::bail!(
+                "the skill `{}` and a mode's skill have the same name, and both would be written to \
+                 one directory",
+                clash.name
+            );
+        }
+        let mut written = corpus
+            .render(&dst, effort)
             .with_context(|| format!("generating skills into {}", dst.display()))?;
-        let unclaimed = corpus.unclaimed(&dst)?;
+        let mode_names = if effort {
+            written.extend(
+                modes
+                    .render(&dst)
+                    .with_context(|| format!("generating mode skills into {}", dst.display()))?,
+            );
+            modes.modes.iter().map(|m| modes.skill_name(m)).collect()
+        } else {
+            modes.remove(&dst)?;
+            Vec::new()
+        };
+        let mut unclaimed = corpus.unclaimed(&dst)?;
+        unclaimed.retain(|n| !modes.claims(n));
         emit(
             &RenderReport {
                 authored: src.display().to_string(),
                 generated: dst.display().to_string(),
                 skills: corpus.skills.iter().map(|s| s.name.clone()).collect(),
+                modes: mode_names,
+                effort,
                 files: written.len(),
                 unclaimed,
             },
@@ -144,3 +197,7 @@ pub mod render {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "skills_tests.rs"]
+mod tests;
