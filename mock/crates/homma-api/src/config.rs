@@ -324,6 +324,26 @@ impl Default for SummaryConfig {
     }
 }
 
+/// What `homma ask` keeps, the `[ask]` table: how long an entry lives after its
+/// last read, and the size the cache is cut back under.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AskConfig {
+    /// Hours after its last read an entry expires.
+    pub cache_expire_hours: u64,
+    /// Bytes the cache is cut back under, least recently read first.
+    pub cache_max_bytes:    u64,
+}
+
+impl Default for AskConfig {
+    fn default() -> Self {
+        Self {
+            cache_expire_hours: 14 * 24,
+            cache_max_bytes:    64 * 1024 * 1024,
+        }
+    }
+}
+
 /// The literal meaning "this directory is the content repository".
 pub const LOCAL: &str = "local";
 
@@ -594,6 +614,15 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Failing control: without `deny_unknown_fields` the misspelt key reads.
+    #[test]
+    fn the_ask_table_refuses_an_unknown_key_and_defaults_what_is_absent() {
+        let a: AskConfig = toml::from_str("cache_expire_hours = 1\n").unwrap();
+        assert_eq!(a.cache_expire_hours, 1);
+        assert_eq!(a.cache_max_bytes, AskConfig::default().cache_max_bytes);
+        assert!(toml::from_str::<AskConfig>("cache_expiry_hours = 1\n").is_err());
+    }
 
     const MINIMAL: &str = r#"
 content_repo = "git@example.invalid:someone/content.git"

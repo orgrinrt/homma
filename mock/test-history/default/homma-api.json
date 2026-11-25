@@ -3,19 +3,19 @@
   "flavour": "",
   "member": "homma-api",
   "green": {
-    "full": "1189d1599a3f28e061ab07efcaa26ffd021cb8aa0acbc8997a40282cf5831de1",
+    "full": "3777c8a521eb4b7d590db55b8174b5fbde32181e8ac0536f7815708c25f3f716",
     "own": {
-      "homma-api": "d2f81e8934b43f322b27e8aa82bcb9f45ae949a60cbd3f6beb8ce92bfe86ef6c"
+      "homma-api": "da91a85bc3dabba116b35d1594a0db7f2d64743c63b93bfb8b162b1e364c5239"
     }
   },
   "tests": {},
   "bins": {
-    "homma-api": "17dd431bffcc51b21a967ba8320c6d7ad96a29f1d0c5999add638eed2d564d6e",
-    "homma-api::compile_fail": "9cf4b60c862e297e1e7944f4136078910547f4706495bcf7ec659539c4cffcaf",
-    "homma-api::frontmatter": "b7449048027a944bd2ae918fc000619177a9c9d3a7db7aef21e7395f8dfd8336",
-    "homma-api::rule_meta": "29430226203fef612fd9b18777aedb2b21653de750c28fef147b294b3a5d3c25",
-    "homma-api::session": "8eaa321e052b26732e0537d7aff29a496b974fa97a180126785c3733d9fe21c0",
-    "homma-api::skill_meta": "ee2d06240cc18238db139c1aac819e58854a3191044b6ae8138eb858a087145c",
-    "homma-api::the_home_must_be_known": "81a3bb052678c9b4218b3bcd6567940878209e6e75302a068028762ad669e369"
+    "homma-api": "86887049c0966f422efcad7cc8f54407392e2f89f46695b7fbae95efe2942957",
+    "homma-api::compile_fail": "3d9fdcb46822eb310d4e6fc88669c2484ab93e5035b2f176f29e8482118f703a",
+    "homma-api::frontmatter": "d2e41287db4c838c241cd88432ca0042ce8a0baa18447bdb556fd113a2862fc3",
+    "homma-api::rule_meta": "a26708778cdd371e9912cf68283bb0b1f6464ef52ee9bc496c27136db6011bb2",
+    "homma-api::session": "ab40ada6ba3d86a65ea45ae9797a68704320e980c4330392ca1124ed2d657717",
+    "homma-api::skill_meta": "47dc32541920a5ba06d2797541d14bba8708f7915525ee9e407d3bb585904e2f",
+    "homma-api::the_home_must_be_known": "f43e689acc68d0e39448983c7af7d12622267b676c36af00dd795a1e9c648ecc"
   }
 }
