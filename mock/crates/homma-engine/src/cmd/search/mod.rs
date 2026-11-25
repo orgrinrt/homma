@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use homma_api::SummaryConfig;
-use muisti::layer::{self, Across, Question};
+use muisti::layer::{self, Across, Member, Question};
 use muisti::repo::Words;
 use serde::Serialize;
 
@@ -28,6 +28,7 @@ use crate::output::{HumanRender, emit};
 
 pub mod current;
 pub mod discover;
+pub mod fresh;
 
 use current::Currency;
 use discover::Place;
@@ -36,6 +37,8 @@ use discover::Place;
 mod tests;
 #[cfg(test)]
 mod tests_current;
+#[cfg(test)]
+mod tests_fresh;
 
 /// One hit, as printed.
 #[derive(Debug, Serialize)]
@@ -47,9 +50,12 @@ pub struct HitOut {
     /// Who wrote it, where the index knows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class:   Option<String>,
-    /// The day it was written, where the index knows.
+    /// The day it was written, where the index knows; in a listing, the last day it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date:    Option<String>,
+    /// How many days before today that was, in a listing, where the day is known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub age:     Option<String>,
     pub excerpt: String,
     /// Its rank in its own index's answer.
     pub rank:    usize,
@@ -85,6 +91,9 @@ pub struct IndexOut {
 #[derive(Debug, Serialize)]
 pub struct SearchOut {
     pub question:     String,
+    /// The days a listing of what changed covers, present only for a listing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window:       Option<u32>,
     pub hits:         Vec<HitOut>,
     pub indexes:      Vec<IndexOut>,
     /// The hits summarised, printed in their place, where `--summarise` asked and there is one.
@@ -99,10 +108,20 @@ impl SearchOut {
     /// The brief the hits are summarised for.
     #[must_use]
     pub fn brief(&self) -> String {
-        format!(
-            "the hits of a search for \"{}\": which places answer it and what each says",
-            self.question
-        )
+        match self.window {
+            Some(days) => {
+                format!(
+                    "everything that changed in the last {days} days across the workspace's \
+                     indexes: what changed where, newest first"
+                )
+            },
+            None => {
+                format!(
+                    "the hits of a search for \"{}\": which places answer it and what each says",
+                    self.question
+                )
+            },
+        }
     }
 
     /// The hits as printed, the text the pass reads.
@@ -122,7 +141,12 @@ impl SearchOut {
 
     fn render_hits(&self, out: &mut dyn Write) -> std::io::Result<()> {
         if self.hits.is_empty() {
-            writeln!(out, "nothing in any index answers `{}`", self.question)?;
+            match self.window {
+                Some(days) => {
+                    writeln!(out, "nothing in any index changed in the last {days} days")?;
+                },
+                None => writeln!(out, "nothing in any index answers `{}`", self.question)?,
+            }
         }
         let width = self.hits.iter().map(|h| h.index.len()).max().unwrap_or(0);
         for h in &self.hits {
@@ -132,6 +156,9 @@ impl SearchOut {
             }
             if let Some(d) = &h.date {
                 said.push(d.clone());
+            }
+            if let Some(a) = &h.age {
+                said.push(a.clone());
             }
             let said =
                 if said.is_empty() { String::new() } else { format!("  ({})", said.join(", ")) };
@@ -152,22 +179,28 @@ impl SearchOut {
 /// What kept the indexes from being listed, or a name `only` gives that no index carries.
 pub fn run(
     places: Vec<Place>,
-    words: &[String],
+    asked: &Asked,
     only: &[String],
-    limit: usize,
+    limit: Option<usize>,
     summarise: Option<&SummaryConfig>,
     format: OutputFormat,
 ) -> Result<Outcome> {
     let places = discover::narrowed(places, only)?;
-    let question = words.join(" ");
     let model = summarise.map(summary::call::Command::from);
-    let out = answer(
-        &places,
-        &question,
-        limit,
-        summarise.zip(model.as_ref()),
-        SystemTime::now(),
-    );
+    let summarise = summarise.zip(model.as_ref());
+    let now = SystemTime::now();
+    let out = match asked {
+        Asked::Words(words) => {
+            answer(
+                &places,
+                &words.join(" "),
+                limit.unwrap_or(QUESTION_LIMIT),
+                summarise,
+                now,
+            )
+        },
+        Asked::Fresh(days) => fresh::answer(&places, *days, limit, summarise, now),
+    };
     emit(&out, format)?;
     Ok(if out.indexes.iter().any(|i| i.answered) {
         Outcome::Ok
@@ -175,6 +208,18 @@ pub fn run(
         Outcome::ReportedFailure
     })
 }
+
+/// What a search is asked: a question in words, or what changed in the last days.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Asked {
+    /// A question, its words as given.
+    Words(Vec<String>),
+    /// Everything that changed in the last so many days, counting today.
+    Fresh(u32),
+}
+
+/// How many hits a question gives where `--limit` is not given.
+pub const QUESTION_LIMIT: usize = 10;
 
 /// [`ask`], and where `summarise` is given, its hits through the pass with that table and model.
 pub fn answer<M: OneShot>(
@@ -184,7 +229,15 @@ pub fn answer<M: OneShot>(
     summarise: Option<(&SummaryConfig, &M)>,
     now: SystemTime,
 ) -> SearchOut {
-    let mut out = ask(places, question, limit, now);
+    summarised(ask(places, question, limit, now), summarise)
+}
+
+/// `out` with its hits through the pass, where `summarise` is given; a search with no hits makes no
+/// call.
+fn summarised<M: OneShot>(
+    mut out: SearchOut,
+    summarise: Option<(&SummaryConfig, &M)>,
+) -> SearchOut {
     if let Some((settings, model)) = summarise {
         if out.hits.is_empty() {
             out.take(Pass::none(
@@ -204,33 +257,18 @@ pub fn answer<M: OneShot>(
 
 /// Ask `question` of every place, one open at a time, and shape the answer.
 pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> SearchOut {
-    let since_epoch = now
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let today = i64::try_from(since_epoch.as_secs() / 86_400).unwrap_or(0);
     let q = Question {
         text: question,
         limit,
-        today,
+        today: today(now),
     };
     // How each place was brought current, in the order given; filled as the question reaches it,
     // so each index is refreshed, asked and dropped before the next is opened.
-    let mut currencies: Vec<(Option<Currency>, Vec<String>)> = Vec::with_capacity(places.len());
+    let mut currencies: Vec<Opened> = Vec::with_capacity(places.len());
     let across: Across = layer::across(
         places.iter().map(|p| {
-            let opened = match &p.shut {
-                // Stands in for the place so it stays a member; its line is the reason, not this error.
-                Some(why) => Err(muisti::Error::Cache(why.clone())),
-                None => layer::open(&p.index),
-            };
-            let opened = opened.map(|mut index| {
-                let (c, caveats) = current::bring(&mut index, &mut Words, p.build.as_deref());
-                currencies.push((Some(c), caveats));
-                index
-            });
-            if opened.is_err() {
-                currencies.push((None, Vec::new()));
-            }
+            let (opened, how) = open_current(p);
+            currencies.push(how);
             (p.name.clone(), opened)
         }),
         &q,
@@ -246,6 +284,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                 line:    h.passage.line,
                 class:   h.passage.class.map(|c| c.label().to_string()),
                 date:    h.passage.day.and_then(date_of),
+                age:     None,
                 excerpt: h.passage.excerpt,
                 rank:    h.rank,
                 score:   h.score,
@@ -262,64 +301,100 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         .into_iter()
         .zip(places)
         .zip(currencies)
-        .map(|((m, p), (currency, caveats))| {
-            // A file written while the question ran is newer than `now`, and was written just now.
-            let shut = p.shut.is_some();
-            let written = (!shut)
-                .then(|| written(&p.index))
-                .flatten()
-                .map(|t| ago(now.duration_since(t).unwrap_or_default()));
-            let mut notes = p.notes.clone();
-            notes.extend(caveats);
-            match m.answered {
-                Ok(a) => {
-                    notes.extend(a.caveats);
-                    IndexOut {
-                        name: m.name,
-                        file: p.index.display().to_string(),
-                        answered: true,
-                        documents: Some(a.documents),
-                        model: Some(a.model),
-                        meaning: a.meaning,
-                        written,
-                        currency,
-                        notes,
-                    }
-                },
-                Err(why) => {
-                    // A place that is shut is said in its own words; the index crate's error for it is
-                    // only the stand-in that keeps it a member of the question, and its prefix is not true.
-                    notes.push(p.shut.clone().unwrap_or(why));
-                    // An index not there is built by its own command, never by the question.
-                    if let Some(build) = p
-                        .build
-                        .as_ref()
-                        .filter(|_| p.shut.is_none() && !p.index.exists())
-                    {
-                        notes.push(format!("built by {build}"));
-                    }
-                    IndexOut {
-                        name: m.name,
-                        file: p.index.display().to_string(),
-                        answered: false,
-                        documents: None,
-                        model: None,
-                        meaning: false,
-                        written,
-                        currency,
-                        notes,
-                    }
-                },
-            }
-        })
+        .map(|((m, p), how)| index_out(m, p, how, now))
         .collect();
     SearchOut {
         question: question.to_string(),
+        window: None,
         hits,
         indexes,
         summary: None,
         summary_note: None,
     }
+}
+
+/// How current a place was made before it was asked, where its file opened, and what the refresh
+/// could not read.
+pub type Opened = (Option<Currency>, Vec<String>);
+
+/// The place's index opened and brought current, or the error that kept it shut; and how current
+/// it was made. Every way a search reaches a place goes through here, so a question and a listing
+/// open, refresh and say a place alike.
+pub fn open_current(p: &Place) -> (Result<layer::Index, muisti::Error>, Opened) {
+    let opened = match &p.shut {
+        // Stands in for the place so it stays a member; its line is the reason, not this error.
+        Some(why) => Err(muisti::Error::Cache(why.clone())),
+        None => layer::open(&p.index),
+    };
+    match opened {
+        Ok(mut index) => {
+            let (c, caveats) = current::bring(&mut index, &mut Words, p.build.as_deref());
+            (Ok(index), (Some(c), caveats))
+        },
+        Err(e) => (Err(e), (None, Vec::new())),
+    }
+}
+
+/// The line of one place: how it answered or why it did not, how current it was made, and when
+/// its file was last written as of `now`.
+pub fn index_out(m: Member, p: &Place, (currency, caveats): Opened, now: SystemTime) -> IndexOut {
+    // A file written while the question ran is newer than `now`, and was written just now.
+    let shut = p.shut.is_some();
+    let written = (!shut)
+        .then(|| written(&p.index))
+        .flatten()
+        .map(|t| ago(now.duration_since(t).unwrap_or_default()));
+    let mut notes = p.notes.clone();
+    notes.extend(caveats);
+    match m.answered {
+        Ok(a) => {
+            notes.extend(a.caveats);
+            IndexOut {
+                name: m.name,
+                file: p.index.display().to_string(),
+                answered: true,
+                documents: Some(a.documents),
+                model: Some(a.model),
+                meaning: a.meaning,
+                written,
+                currency,
+                notes,
+            }
+        },
+        Err(why) => {
+            // A place that is shut is said in its own words; the index crate's error for it is
+            // only the stand-in that keeps it a member of the question, and its prefix is not true.
+            notes.push(p.shut.clone().unwrap_or(why));
+            // An index not there is built by its own command, never by the question.
+            if let Some(build) = p
+                .build
+                .as_ref()
+                .filter(|_| p.shut.is_none() && !p.index.exists())
+            {
+                notes.push(format!("built by {build}"));
+            }
+            IndexOut {
+                name: m.name,
+                file: p.index.display().to_string(),
+                answered: false,
+                documents: None,
+                model: None,
+                meaning: false,
+                written,
+                currency,
+                notes,
+            }
+        },
+    }
+}
+
+/// `now` as days since 1970-01-01, in UTC.
+#[must_use]
+pub fn today(now: SystemTime) -> i64 {
+    let since_epoch = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    i64::try_from(since_epoch.as_secs() / 86_400).unwrap_or(0)
 }
 
 /// When the index file or the log written ahead of it last changed, whichever is later.

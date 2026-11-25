@@ -452,13 +452,23 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         #[cfg(feature = "search")]
         Command::Search {
             words,
+            fresh,
             only,
             members,
             limit,
             summarise,
         } => {
             let cfg = load_config(&cli)?;
-            let summary = summarise.then(|| summary::settings(&cfg)).transpose()?;
+            // A listing is large by design, so it takes the pass wherever it is on; asked for, the
+            // pass says why where it is off.
+            let summary = (*summarise || fresh.is_some())
+                .then(|| summary::settings(&cfg))
+                .transpose()?
+                .filter(|s| *summarise || s.enabled);
+            let asked = match fresh {
+                Some(days) => search::Asked::Fresh(*days),
+                None => search::Asked::Words(words.clone()),
+            };
             let root = tools::root(&config_path(&cli));
             let settings = search::discover::search_config(&cfg, *members)?;
             let content = search::discover::content_name(cfg.content_repo.as_deref(), &root);
@@ -471,9 +481,9 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             let places = search::discover::places(&root, &content, &settings, members)?;
             search::run(
                 places,
-                words,
+                &asked,
                 only,
-                *limit as usize,
+                limit.map(|n| n as usize),
                 summary.as_ref(),
                 cli.output,
             )

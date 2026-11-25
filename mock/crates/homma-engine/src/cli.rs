@@ -350,20 +350,33 @@ pub enum Command {
     /// `[search]` in the manifest. Each index is opened read only and asked by its own ranking, and
     /// the answers are fused by rank. A line per index follows the hits: what it holds, its model,
     /// when it was last written, or why it could not be asked. Exits non-zero when no index answered.
+    ///
+    /// With `--fresh [<days>]` it lists, in place of a question, everything the indexes hold that
+    /// changed in the last days, newest first, through the summarising pass where `[summary]` is on.
     #[cfg(feature = "search")]
     Search {
         /// The question, in words.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "fresh", num_args = 1..)]
         words:     Vec<String>,
+        /// List everything that changed in the last so many days counting today, three where no
+        /// number is given, in place of a question.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            default_missing_value = "3",
+            conflicts_with = "words",
+            value_parser = clap::value_parser!(u32).range(1..)
+        )]
+        fresh:     Option<u32>,
         /// Ask only the index of this name. Repeatable.
         #[arg(long = "in")]
         only:      Vec<String>,
         /// Ask the members' own indexes as well, whatever `members` under `[search]` says.
         #[arg(long)]
         members:   bool,
-        /// How many hits to give.
-        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
-        limit:     u32,
+        /// How many hits to give: ten for a question, every one for `--fresh`, where not given.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        limit:     Option<u32>,
         /// Print a summary of the hits in their place, made by the pass `[summary]` turns on.
         #[arg(long)]
         summarise: bool,
