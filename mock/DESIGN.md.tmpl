@@ -500,7 +500,9 @@ positional, and it meets only a run that long with no blank line and no
 boundary line in it, or a line that long.
 
 Two caches keep what was paid for, both as files under the workspace root's git
-directory in `homma/ask/`, so nothing of them is tracked. A partial is a
+directory in `homma/ask/`, so nothing of them is tracked. That directory is the
+root's own: git is asked for it with `GIT_DIR` and `GIT_WORK_TREE` removed, so an
+ask run from a hook that exports them keeps its cache where it always does. A partial is a
 question-neutral summary of one chunk, in `partials/<key>`, keyed by the chunk's
 digest, the rules' version, the command that answers (`command` under
 `[summary]`) and the model. Its lines cite `line <n>` counted from
@@ -521,7 +523,10 @@ time after it was last read: a hit stamps it read now, and a written entry is re
 as it is written. The cache is also capped by size, and past the cap the least
 recently read entries go first until it is under. Both numbers are under `[ask]`.
 The sweep runs on every ask, before the question is answered, and prints nothing;
-an entry it cannot read or remove is left where it is and the ask goes on.
+an entry it cannot read or remove is left where it is and the ask goes on. An
+entry is written beside its place under a dot name and renamed over it, and the
+sweep neither counts nor removes a dot file, so one ask never takes another's
+write from under it.
 
 There are two kinds of call, both the summarising pass's isolated call. The
 chunks with no partial go in as few calls as the request budget allows, each
