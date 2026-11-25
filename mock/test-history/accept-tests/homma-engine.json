@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "flavour": "accept_tests",
+  "member": "homma-engine",
+  "green": null,
+  "tests": {
+    "homma-engine::bin/homma-engine": {
+      "cmd::what::accept_tests::a_misspelt_long_word_is_found_by_its_edit": {
+        "secs": 8.6,
+        "passed": true,
+        "passed_at": "3696fd1fd63c47c11095565a9897956abc65c55b6ab3effc8da97ac51d9b8c48"
+      },
+      "cmd::what::accept_tests::a_misspelt_query_finds_the_same_tool": {
+        "secs": 7.3,
+        "passed": true,
+        "passed_at": "3696fd1fd63c47c11095565a9897956abc65c55b6ab3effc8da97ac51d9b8c48"
+      }
+    }
+  },
+  "bins": {}
+}
