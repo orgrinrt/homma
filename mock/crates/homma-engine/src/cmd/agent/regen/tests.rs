@@ -113,14 +113,12 @@ fn the_cargo_mock_command_carries_generate_only() {
 /// the way a red `cargo check` does otherwise.
 #[cfg(unix)]
 fn stub_launcher(dir: &std::path::Path) -> std::path::PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let p = dir.join("stub-cargo");
-    std::fs::write(
+    crate::cmd::planted::script(
         &p,
         "#!/bin/sh\ncase \"$*\" in *--generate-only*) touch rendered; exit 0;; esac\necho 'cargo check failed' >&2\nexit 1\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
     p
 }
 
