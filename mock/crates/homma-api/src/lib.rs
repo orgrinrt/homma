@@ -29,13 +29,11 @@ pub mod release;
 pub mod rule;
 pub mod session;
 pub mod skill;
-pub mod surfaces;
 pub mod version;
 
 pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
 pub use catalogue::{LeaseConfig, Office};
 pub use config::{
-    AskConfig,
     Identity,
     Paths,
     Role,
@@ -81,4 +79,3 @@ pub use release::{
 pub use rule::{MetaError, Parsed, RuleKind, RuleMeta};
 pub use session::{CLOUD_VAR, Place, ROLE_FILE, Session, SessionRole, UnknownWord};
 pub use skill::{SkillError, SkillMeta};
-pub use surfaces::{EffortGate, ModesConfig, PrinciplesConfig, SurfacesConfig};

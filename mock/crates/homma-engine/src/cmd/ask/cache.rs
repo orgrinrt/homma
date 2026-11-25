@@ -3,7 +3,6 @@
 //! that cannot be written is said and does not fail the ask.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
 
 use crate::cmd::summary::version_of;
 
@@ -40,58 +39,16 @@ impl Cache {
         Ok(Self::at(Path::new(&git).join("homma/ask")))
     }
 
-    /// The directory the two caches sit under.
-    #[must_use]
-    pub fn dir(&self) -> &Path {
-        &self.dir
-    }
-
     /// A chunk's partial, where one is kept for this rules version and model.
     #[must_use]
     pub fn partial(&self, key: &str) -> Option<String> {
-        read(&self.dir.join("partials").join(key))
+        std::fs::read_to_string(self.dir.join("partials").join(key)).ok()
     }
 
     /// The answer kept for `key`, where there is one.
     #[must_use]
     pub fn answer(&self, key: &str) -> Option<String> {
-        read(&self.dir.join("answers").join(key))
-    }
-
-    /// Take out every entry last read more than `expire` before `now`, then the
-    /// least recently read until the whole is at most `max_bytes`.
-    ///
-    /// Silent: an entry that cannot be read or removed is left where it is, and
-    /// the ask goes on.
-    pub fn sweep(&self, now: SystemTime, expire: Duration, max_bytes: u64) {
-        let mut kept: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
-        for sub in ["partials", "answers"] {
-            let Ok(entries) = std::fs::read_dir(self.dir.join(sub)) else {
-                continue;
-            };
-            for e in entries.flatten() {
-                let Ok(meta) = e.metadata() else { continue };
-                if !meta.is_file() {
-                    continue;
-                }
-                let Ok(read) = meta.modified() else { continue };
-                if now.duration_since(read).is_ok_and(|age| age > expire) {
-                    let _ = std::fs::remove_file(e.path());
-                } else {
-                    kept.push((read, meta.len(), e.path()));
-                }
-            }
-        }
-        let mut total: u64 = kept.iter().map(|k| k.1).sum();
-        kept.sort();
-        for (_, len, path) in kept {
-            if total <= max_bytes {
-                break;
-            }
-            if std::fs::remove_file(&path).is_ok() {
-                total -= len;
-            }
-        }
+        std::fs::read_to_string(self.dir.join("answers").join(key)).ok()
     }
 
     /// Keep a chunk's partial.
@@ -109,17 +66,6 @@ impl Cache {
     pub fn keep_answer(&self, key: &str, text: &str) -> Result<(), String> {
         write(&self.dir.join("answers"), key, text)
     }
-}
-
-/// A cache file's text, its modification time stamped now as the moment it was
-/// last read, which is what the sweep expires and orders by. A stamp that fails
-/// leaves the hit a hit.
-fn read(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    if let Ok(f) = std::fs::File::options().append(true).open(path) {
-        let _ = f.set_modified(SystemTime::now());
-    }
-    Some(text)
 }
 
 fn write(dir: &Path, key: &str, text: &str) -> Result<(), String> {

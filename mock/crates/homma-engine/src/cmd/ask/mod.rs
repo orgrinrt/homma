@@ -15,8 +15,7 @@
 use std::io::{IsTerminal, Read};
 use std::path::Path;
 
-use anyhow::{Context, Result};
-use homma_api::AskConfig;
+use anyhow::Result;
 use homma_core::Config;
 
 use crate::cmd::Outcome;
@@ -315,15 +314,6 @@ pub fn run(cfg: &Config, root: &Path, question: &[String]) -> Result<Outcome> {
         Ok(c) => c,
         Err(why) => return refuse(format!("no place for the cache: {why}")),
     };
-    let kept: AskConfig = match &cfg.ask {
-        Some(v) => v.clone().try_into().context("reading `[ask]`")?,
-        None => AskConfig::default(),
-    };
-    cache.sweep(
-        std::time::SystemTime::now(),
-        std::time::Duration::from_secs(kept.cache_expire_hours.saturating_mul(3600)),
-        kept.cache_max_bytes,
-    );
     let model = call::Command::from(&settings);
     let asker = Asker {
         command: &settings.command,

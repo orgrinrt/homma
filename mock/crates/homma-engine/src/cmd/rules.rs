@@ -19,7 +19,7 @@ use homma_core::Config;
 use homma_org::rules::{Corpus, Principles};
 use serde::Serialize;
 
-use crate::cli::{OutputFormat, SessionArgs};
+use crate::cli::{OutputFormat, PrinciplesArgs, SessionArgs};
 use crate::cmd::skills;
 use crate::output::{HumanRender, emit};
 
@@ -38,16 +38,16 @@ fn load(dir: &Path) -> Result<Corpus> {
 
 /// The rules and, where their directory is there, the principles: every card a
 /// session loads.
-fn load_cards(cfg: &Config) -> Result<Corpus> {
+fn load_cards(cfg: &Config, p: &PrinciplesArgs) -> Result<Corpus> {
     let mut corpus = load(&authored_dir(cfg))?;
-    let surfaces = skills::surfaces(cfg)?;
-    let p = &surfaces.principles;
-    let dir = cfg.workspace.path.join(p.dir.as_path());
-    if dir.is_dir() {
+    if let (Some(dir), Some(card_prefix), Some(title_prefix)) =
+        (&p.principles, &p.principle_prefix, &p.principle_title)
+    {
+        let dir = cfg.workspace.path.join(dir);
         corpus
             .load_principles(&dir, &Principles {
-                card_prefix:  &p.card_prefix,
-                title_prefix: &p.title_prefix,
+                card_prefix,
+                title_prefix,
             })
             .with_context(|| format!("reading the principles at {}", dir.display()))?;
     }
@@ -247,11 +247,16 @@ pub mod render {
         }
     }
 
-    pub fn run(cfg: &Config, args: &SessionArgs, format: OutputFormat) -> Result<()> {
+    pub fn run(
+        cfg: &Config,
+        args: &SessionArgs,
+        principles: &PrinciplesArgs,
+        format: OutputFormat,
+    ) -> Result<()> {
         let session = current_session(args)?;
         let src = authored_dir(cfg);
         let dst = cfg.workspace.path.join(GENERATED);
-        let corpus = load_cards(cfg)?;
+        let corpus = load_cards(cfg, principles)?;
         let written = corpus
             .render_cards(&dst, &session)
             .with_context(|| format!("generating cards into {}", dst.display()))?;
@@ -340,7 +345,7 @@ pub mod load {
     ///
     /// A card with a `paths:` scope is admitted but not loaded at the start of a
     /// session, so it is counted apart from the ones that are.
-    fn row(corpus: &Corpus, session: &Session, names: bool) -> Result<Row> {
+    pub(super) fn row(corpus: &Corpus, session: &Session, names: bool) -> Result<Row> {
         let mut loaded = Vec::new();
         let mut scoped_cards = 0;
         let mut scoped_bytes = 0;
@@ -375,8 +380,14 @@ pub mod load {
         })
     }
 
-    pub fn run(cfg: &Config, args: &SessionArgs, all: bool, format: OutputFormat) -> Result<()> {
-        let corpus = load_cards(cfg)?;
+    pub fn run(
+        cfg: &Config,
+        args: &SessionArgs,
+        principles: &PrinciplesArgs,
+        all: bool,
+        format: OutputFormat,
+    ) -> Result<()> {
+        let corpus = load_cards(cfg, principles)?;
         let rows = if all {
             let roles = [None, Some(SessionRole::Coordinator), Some(SessionRole::Helper)];
             let mut rows = Vec::new();
@@ -405,3 +416,7 @@ pub mod load {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "rules_tests.rs"]
+mod tests;

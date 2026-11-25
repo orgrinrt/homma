@@ -12,13 +12,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use homma_api::SurfacesConfig;
 use homma_core::Config;
 use homma_org::modes::Modes;
 use homma_org::skills::Skills;
 use serde::Serialize;
 
-use crate::cli::OutputFormat;
+use crate::cli::{ModesArgs, OutputFormat};
 use crate::output::{HumanRender, emit};
 
 /// Where the corpus is authored, relative to the workspace root.
@@ -87,26 +86,15 @@ pub mod list {
     }
 }
 
-/// The `[surfaces]` table, with its defaults where it is absent.
-pub fn surfaces(cfg: &Config) -> Result<SurfacesConfig> {
-    Ok(match &cfg.surfaces {
-        Some(v) => v.clone().try_into().context("reading `[surfaces]`")?,
-        None => SurfacesConfig::default(),
-    })
-}
-
-/// The modes the configuration names, none where their directory is absent.
-pub fn modes(cfg: &Config, surfaces: &SurfacesConfig) -> Result<Modes> {
-    let dir = cfg.workspace.path.join(surfaces.modes.dir.as_path());
-    if !dir.is_dir() {
+/// The modes the caller names, none where it names none.
+pub fn modes(cfg: &Config, args: &ModesArgs) -> Result<Modes> {
+    let (Some(dir), Some(prefix), Some(max)) = (&args.modes, &args.mode_prefix, args.mode_body_max)
+    else {
         return Ok(Modes::default());
-    }
-    Modes::load(
-        &dir,
-        &surfaces.modes.skill_prefix,
-        surfaces.modes.body_max_chars,
-    )
-    .with_context(|| format!("reading the modes at {}", dir.display()))
+    };
+    let dir = cfg.workspace.path.join(dir);
+    Modes::load(&dir, prefix, max)
+        .with_context(|| format!("reading the modes at {}", dir.display()))
 }
 
 pub mod render {
@@ -146,8 +134,7 @@ pub mod render {
             } else {
                 write!(
                     out,
-                    "\n\neffort keys taken out and no mode skill written: the gate is off for this \
-                     session's model"
+                    "\n\neffort keys taken out and no mode skill written, as --no-effort asked"
                 )?;
             }
             if !self.unclaimed.is_empty() {
@@ -164,14 +151,14 @@ pub mod render {
         }
     }
 
-    /// Render the skills, and the modes where the effort gate keeps them for
-    /// `model`.
-    pub fn run(cfg: &Config, model: Option<&str>, format: OutputFormat) -> Result<()> {
-        let surfaces = surfaces(cfg)?;
+    /// Render the skills, and the modes the caller names, keeping the effort
+    /// keys and the mode skills where `effort` is true and taking them out where
+    /// it is false.
+    pub fn run(cfg: &Config, args: &ModesArgs, effort: bool, format: OutputFormat) -> Result<()> {
         let src = authored_dir(cfg);
         let dst = cfg.workspace.path.join(GENERATED);
         let corpus = load(&src)?;
-        let modes = modes(cfg, &surfaces)?;
+        let modes = modes(cfg, args)?;
         if let Some(clash) = corpus.skills.iter().find(|s| modes.claims(&s.name)) {
             anyhow::bail!(
                 "the skill `{}` and a mode's skill have the same name, and both would be written to \
@@ -179,7 +166,6 @@ pub mod render {
                 clash.name
             );
         }
-        let effort = surfaces.effort.keeps(model, |v| std::env::var(v).ok());
         let mut written = corpus
             .render(&dst, effort)
             .with_context(|| format!("generating skills into {}", dst.display()))?;
@@ -211,3 +197,7 @@ pub mod render {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "skills_tests.rs"]
+mod tests;

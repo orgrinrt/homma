@@ -32,8 +32,6 @@ use doc::{Doc, Gap, Gathered, Kind, wanted};
 #[cfg(test)]
 mod accept_tests;
 #[cfg(test)]
-mod fixture;
-#[cfg(test)]
 mod mock_tests;
 #[cfg(test)]
 mod rank_tests;

@@ -3,19 +3,27 @@
   "flavour": "",
   "member": "homma-api",
   "green": {
-    "full": "3777c8a521eb4b7d590db55b8174b5fbde32181e8ac0536f7815708c25f3f716",
+    "full": "0737bdcb8f4173a8a6a3d982e35f3437d8e022b9c4d653f841cc9eab03660d4f",
     "own": {
-      "homma-api": "da91a85bc3dabba116b35d1594a0db7f2d64743c63b93bfb8b162b1e364c5239"
+      "homma-api": "ace901fdc082bbb95c46a1ae7691238710960f4b7eb0141ae19a146947902f39"
     }
   },
-  "tests": {},
+  "tests": {
+    "homma-api::compile_fail": {
+      "a_relative_path_cannot_reach_the_git_contract": {
+        "secs": 10.1,
+        "passed": true,
+        "passed_at": "2906cb44e51946441ecc75e8299f31e4820d71133d0a4047f2545a4c8b1d3b01"
+      }
+    }
+  },
   "bins": {
-    "homma-api": "86887049c0966f422efcad7cc8f54407392e2f89f46695b7fbae95efe2942957",
-    "homma-api::compile_fail": "3d9fdcb46822eb310d4e6fc88669c2484ab93e5035b2f176f29e8482118f703a",
-    "homma-api::frontmatter": "d2e41287db4c838c241cd88432ca0042ce8a0baa18447bdb556fd113a2862fc3",
-    "homma-api::rule_meta": "a26708778cdd371e9912cf68283bb0b1f6464ef52ee9bc496c27136db6011bb2",
-    "homma-api::session": "ab40ada6ba3d86a65ea45ae9797a68704320e980c4330392ca1124ed2d657717",
-    "homma-api::skill_meta": "47dc32541920a5ba06d2797541d14bba8708f7915525ee9e407d3bb585904e2f",
-    "homma-api::the_home_must_be_known": "f43e689acc68d0e39448983c7af7d12622267b676c36af00dd795a1e9c648ecc"
+    "homma-api": "db5c415e0c36f491ab70a5ed6ffd6c3875e6f4884e558ff7d425ea76d41c6d0d",
+    "homma-api::compile_fail": "2906cb44e51946441ecc75e8299f31e4820d71133d0a4047f2545a4c8b1d3b01",
+    "homma-api::frontmatter": "7ec844a75cae4f8f98b0ca1ae6048bf74340c22b0407a4484ef9d4bb1ff59304",
+    "homma-api::rule_meta": "d3172a5e76b3d1624aa691ab037a1e1fbee833fd720e9b5843fc6267fbede225",
+    "homma-api::session": "45783935f53a049eab836014d2fba51b96a7a07a0967c8530a0ce87f1f010297",
+    "homma-api::skill_meta": "6aedb5a2320b358725f9def2dbced831f7f837cd9d574d740f308ef7329a40b7",
+    "homma-api::the_home_must_be_known": "2d3f0bdfff1be546cbba84fd05007b738825d2ae3d0ca873bb0d2c73daaae2f9"
   }
 }
