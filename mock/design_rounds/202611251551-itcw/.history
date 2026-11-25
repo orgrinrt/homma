@@ -1,0 +1,50 @@
+a02524d chore: lock src changelist 202611251551-itcw
+812008c test: cut the ask and what source tests under the size limit
+0a7995d chore: lock doc changelist 202611251551-itcw
+56d1ca6 docs: open the round that cuts two test files under the limit
+d6110ac chore: close design round 202611251452-ojtm
+1335062 chore: lock src changelist 202611251452-ojtm
+503b5a0 test: plant the regen stub launcher through the one helper
+223a2d6 chore: lock doc changelist 202611251452-ojtm
+706583b docs: open the round on the regen launcher's planted script
+5cc400b chore: close design round 202611251443-nfvz
+974ff6a chore: lock src changelist 202611251443-nfvz
+0ab973e fix: plant every run script one way and pin the cache tests
+afedf04 chore: lock doc changelist 202611251443-nfvz
+e91527f docs: open the round on what the review of the fixtures found
+4f7568f chore: close design round 202611251422-cqgk
+5de4b92 chore: lock src changelist 202611251422-cqgk
+d9679e9 fix: plant invented names in tests and close five small gaps
+529eab8 docs: add the src changelist of 202611251422-cqgk
+433f9f6 chore: lock doc changelist 202611251422-cqgk
+df14bb3 docs: open the round on test fixtures and four small fixes
+4ba2183 feat: expire a cached answer by age and cap the ask cache
+413de63 feat: expire a cached answer by age and cap the ask cache
+96680aa feat: render the modes and principles kinds and pass effort through
+8a316de feat: render the modes and principles kinds and pass effort through
+49b88c8 test: plant the what acceptance set in a fixture
+c0553ee test: plant the what acceptance set in a fixture
+4815311 docs: render the design of the caller naming the kinds
+9c3e825 chore: close design round 202611251121-mtgb
+bf94985 chore: lock src changelist 202611251121-mtgb
+b5f4fe8 fix: let the caller name the kinds and the effort verdict
+68896b8 docs: list the source changes of the caller round
+8d3074c chore: lock doc changelist 202611251121-mtgb
+ea46351 docs: let the caller name the kinds and the effort verdict
+232f8c9 docs: open the round on the caller naming the kinds and the verdict
+e037f38 docs: render the design of the planted what acceptance
+04c4683 chore: close design round 202611251118-jvwb
+379dc8f chore: lock src changelist 202611251118-jvwb
+cd64f9b test: run the what acceptance over a planted workspace
+da6216b docs: list the source changes of the what tests round
+3b30e9d chore: lock doc changelist 202611251118-jvwb
+5bf41ea docs: design the what acceptance over a planted workspace
+462e48f docs: open the round on the what tests planting what they read
+bd73e01 docs: render the design of the ask cache's expiry and cap
+d7dafa2 chore: close design round 202611251112-x6lw
+0b576b7 chore: lock src changelist 202611251112-x6lw
+35cab1b feat: expire the ask cache by last read and cap it by size
+d1f53bc docs: list the source changes of the ask cache round
+bcf0242 chore: lock doc changelist 202611251112-x6lw
+4e8b077 docs: design the ask cache's expiry by last read and its cap
+7b3d426 docs: open the round on the ask cache's expiry and cap
