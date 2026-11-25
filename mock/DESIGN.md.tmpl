@@ -1091,25 +1091,23 @@ sit with a match, or the other skills and rules where the match is advice: those
 whose words are closest to its own, the cosine of the two bags of words (name,
 tags, place, summary and verb names, weighted the same way) being at least
 0.225, so a tool is named beside `disk-trim` for being about the same thing and
-not for sharing a tag every tool carries. The figure is set on a catalogue of pairs of the
-workspace that must be named together and pairs that must not, kept in the `calibration` test
-of the acceptance set: it lies above the nearest pair that must not be named together (0.216)
-and at or below the nearest that must (0.233), and the test fails when a pair crosses it. Up to three are named under each of the
+not for sharing a tag every tool carries. The figure was set on a catalogue of pairs of a
+workspace that must be named together and pairs that must not: it lies above the nearest pair
+that must not be named together (0.216) and at or below the nearest that must (0.233). Those
+pairs are that workspace's, and it keeps them in its own tests. Up to three are named under each of the
 first three answers, never one that is already an answer.
 
 The synonym table is a vocabulary of the tooling, a list of groups of words, and
 adding a group is a data change with a test beside it. It is not a list of
 tools, and no tool is named in it.
 
-The acceptance of the command is a set of queries run against the workspace's
-real tools and scripts, never against a fixture made to pass: each query is what
-a helper or the coordinator would type and names the thing that must come first,
-and one query must return nothing. The set lives with the command's tests and
-reads the workspace the repository sits in; where there is no workspace around
-the repository the set is refused, not skipped. It is run with every source, the mockspace listing among them, since
-that source can push a tool from first place. A query the matcher does not yet
-answer is kept as an ignored case that says what should come first, and the
-work's report says the requirement behind it is unmet.
+The acceptance of the command is a set of queries run against a small workspace
+the tests plant, with neutral names: tools with verbs, scripts with headers and
+verbs, a sourced library, a test and a fixture script, a skill and a rule. Each
+query checks a mechanism of the matcher, never one workspace's catalogue, and
+some queries must return nothing. The tests read nothing of the tree the
+repository happens to sit in. Which of a workspace's own tools comes first for the
+queries its people type is that workspace's to test, in its own tests.
 
 The instance's scope (`repos` under `[instance]` in `homma.local.toml`) is kept
 where it applies: the tools, scripts, skills and rules belong to the workspace
