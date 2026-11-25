@@ -23,6 +23,8 @@ pub struct Place {
     pub shut:  Option<String>,
     /// What was found wrong on the way to it that still left it askable.
     pub notes: Vec<String>,
+    /// The command that builds its index, with where it runs, where that is known.
+    pub build: Option<String>,
 }
 
 impl Place {
@@ -34,8 +36,23 @@ impl Place {
             index,
             shut: None,
             notes: Vec::new(),
+            build: None,
         }
     }
+
+    /// The same place, its index built by `build`.
+    #[must_use]
+    pub fn built_by(self, build: String) -> Self {
+        Self {
+            build: Some(build),
+            ..self
+        }
+    }
+}
+
+/// A build command said with where it runs.
+fn run_in(command: &str, dir: &Path) -> String {
+    format!("`{command}` in {}", dir.display())
 }
 
 /// The `[search]` table, with its defaults where it is absent, and the members asked as well where
@@ -67,8 +84,9 @@ pub fn places(
     let mut out = corpora(root, content, search)?;
     if search.members {
         for (name, dir) in members {
+            let build = run_in(&search.member_build, &dir);
             out.push(match member_index(&dir, search) {
-                Ok(index) => Place::at(name, index),
+                Ok(index) => Place::at(name, index).built_by(build),
                 Err(why) => {
                     Place {
                         shut: Some(why),
@@ -140,7 +158,10 @@ fn corpora(root: &Path, content: &str, search: &SearchConfig) -> Result<Vec<Plac
         };
         out.push(Place {
             notes,
-            ..place
+            ..place.built_by(run_in(
+                &search.corpus_build,
+                &root.join(dir).components().collect::<PathBuf>(),
+            ))
         });
     }
     Ok(out)

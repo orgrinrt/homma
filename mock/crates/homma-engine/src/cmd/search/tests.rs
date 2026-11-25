@@ -56,11 +56,16 @@ fn the_corpora_are_the_tracked_configs_each_at_the_index_it_names_or_the_default
     write(&root.join("stray/muisti.toml"), "muisti_branch = \"dev\"\n");
     let got = places(root, "content", &SearchConfig::default(), []).unwrap();
     assert_eq!(got, vec![
-        Place::at("content".to_string(), root.join(".muisti/index.sqlite")),
+        Place::at("content".to_string(), root.join(".muisti/index.sqlite"))
+            .built_by(format!("`muisti index` in {}", root.display())),
         Place::at(
             "content/notes".to_string(),
             root.join("notes/idx/notes.sqlite")
-        ),
+        )
+        .built_by(format!(
+            "`muisti index` in {}",
+            root.join("notes").display()
+        )),
     ]);
 }
 
@@ -156,6 +161,10 @@ fn a_member_asked_for_is_a_line_whether_its_index_is_built_or_its_clone_is_there
     assert_eq!(names, vec!["built", "bare", "absent"]);
     assert_eq!(got[1].index, bare.join(".git/mockspace/search.sqlite"));
     assert_eq!(got[1].shut, None);
+    assert_eq!(
+        got[1].build.as_deref(),
+        Some(format!("`cargo mock search --refresh` in {}", bare.display()).as_str())
+    );
     assert!(
         got[2]
             .shut

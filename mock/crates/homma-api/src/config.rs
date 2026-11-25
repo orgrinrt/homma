@@ -278,6 +278,12 @@ pub struct SearchConfig {
     pub corpus_index:  RelPath,
     /// A member's index, relative to the member's git directory.
     pub member_index:  RelPath,
+    /// The command that builds a corpus's index, run in the corpus's directory; an index not
+    /// built is named with it.
+    pub corpus_build:  String,
+    /// The command that builds a member's index, run in the member's clone; an index not built is
+    /// named with it.
+    pub member_build:  String,
 }
 
 impl Default for SearchConfig {
@@ -288,6 +294,8 @@ impl Default for SearchConfig {
             corpus_config: rel("muisti.toml"),
             corpus_index:  rel(".muisti/index.sqlite"),
             member_index:  rel("mockspace/search.sqlite"),
+            corpus_build:  "muisti index".to_string(),
+            member_build:  "cargo mock search --refresh".to_string(),
         }
     }
 }

@@ -5,9 +5,10 @@
 
 //! `homma search <words>`: one question across every index the workspace holds.
 //!
-//! A layer over the indexes and nothing more: each is opened read only through the index crate,
-//! asked by its own ranking, and the answers fused by rank there. What is homma's is which indexes
-//! exist and what each is called, in [`discover`], and the printing. No member's command is run and
+//! A layer over the indexes and nothing more: each is opened through the index crate, brought
+//! current by the crate's own refresh, which writes it, in [`current`], asked read only by its own
+//! ranking, and the answers fused by rank there. What is homma's is which indexes exist and what
+//! each is called, in [`discover`], and the printing. No member's command is run and
 //! no member knows of this.
 
 use std::io::Write;
@@ -25,12 +26,16 @@ use crate::cmd::Outcome;
 use crate::cmd::summary::{self, OneShot, Pass};
 use crate::output::{HumanRender, emit};
 
+pub mod current;
 pub mod discover;
 
+use current::Currency;
 use discover::Place;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_current;
 
 /// One hit, as printed.
 #[derive(Debug, Serialize)]
@@ -68,6 +73,9 @@ pub struct IndexOut {
     /// How long ago the file was last written.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub written:   Option<String>,
+    /// How current it was made before it was asked, where its file opened.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency:  Option<Currency>,
     /// Why it was not asked, or what it could not answer.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes:     Vec<String>,
@@ -205,6 +213,9 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         limit,
         today,
     };
+    // How each place was brought current, in the order given; filled as the question reaches it,
+    // so each index is refreshed, asked and dropped before the next is opened.
+    let mut currencies: Vec<(Option<Currency>, Vec<String>)> = Vec::with_capacity(places.len());
     let across: Across = layer::across(
         places.iter().map(|p| {
             let opened = match &p.shut {
@@ -212,6 +223,14 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                 Some(why) => Err(muisti::Error::Cache(why.clone())),
                 None => layer::open(&p.index),
             };
+            let opened = opened.map(|mut index| {
+                let (c, caveats) = current::bring(&mut index, &mut Words, p.build.as_deref());
+                currencies.push((Some(c), caveats));
+                index
+            });
+            if opened.is_err() {
+                currencies.push((None, Vec::new()));
+            }
             (p.name.clone(), opened)
         }),
         &q,
@@ -242,7 +261,8 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
         .members
         .into_iter()
         .zip(places)
-        .map(|(m, p)| {
+        .zip(currencies)
+        .map(|((m, p), (currency, caveats))| {
             // A file written while the question ran is newer than `now`, and was written just now.
             let shut = p.shut.is_some();
             let written = (!shut)
@@ -250,6 +270,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                 .flatten()
                 .map(|t| ago(now.duration_since(t).unwrap_or_default()));
             let mut notes = p.notes.clone();
+            notes.extend(caveats);
             match m.answered {
                 Ok(a) => {
                     notes.extend(a.caveats);
@@ -261,6 +282,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                         model: Some(a.model),
                         meaning: a.meaning,
                         written,
+                        currency,
                         notes,
                     }
                 },
@@ -268,6 +290,14 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                     // A place that is shut is said in its own words; the index crate's error for it is
                     // only the stand-in that keeps it a member of the question, and its prefix is not true.
                     notes.push(p.shut.clone().unwrap_or(why));
+                    // An index not there is built by its own command, never by the question.
+                    if let Some(build) = p
+                        .build
+                        .as_ref()
+                        .filter(|_| p.shut.is_none() && !p.index.exists())
+                    {
+                        notes.push(format!("built by {build}"));
+                    }
                     IndexOut {
                         name: m.name,
                         file: p.index.display().to_string(),
@@ -276,6 +306,7 @@ pub fn ask(places: &[Place], question: &str, limit: usize, now: SystemTime) -> S
                         model: None,
                         meaning: false,
                         written,
+                        currency,
                         notes,
                     }
                 },
@@ -331,11 +362,15 @@ impl HumanRender for SearchOut {
         writeln!(out, "INDEXES")?;
         let width = self.indexes.iter().map(|i| i.name.len()).max().unwrap_or(0);
         for i in &self.indexes {
-            let when = i
+            let mut when = i
                 .written
                 .as_deref()
                 .map(|w| format!(", written {w}"))
                 .unwrap_or_default();
+            if let Some(c) = &i.currency {
+                when.push_str(", ");
+                when.push_str(&c.said());
+            }
             if i.answered {
                 let by = if i.meaning { "words and meaning" } else { "words" };
                 write!(
