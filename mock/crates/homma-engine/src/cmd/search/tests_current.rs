@@ -118,7 +118,7 @@ fn an_index_of_another_model_is_asked_as_it_stands_and_said_behind() {
         out.indexes[0].currency
     );
     let text = line(&out);
-    assert!(text.contains("behind by 1 file"), "{text}");
+    assert!(text.contains("behind by 1 file,"), "{text}");
     assert!(text.contains("`other`"), "{text}");
 }
 
@@ -227,16 +227,13 @@ fn a_refresh_that_fails_gives_its_words_and_the_index_is_asked_as_it_stands() {
     let out = ask(&places, "saturation", 10, SystemTime::now());
     // THE CONTROL: what the index held still answers.
     assert_eq!(out.hits.len(), 1);
+    // With its root gone the measure cannot walk either, so how far behind is not known, and the
+    // line gives both the refresh's words and the measure's.
     let currency = out.indexes[0].currency.clone().unwrap();
-    assert!(
-        !matches!(currency, Currency::Refreshed { .. }),
-        "{currency:?}"
-    );
+    assert!(matches!(currency, Currency::Unknown { .. }), "{currency:?}");
     let text = line(&out);
-    assert!(
-        text.contains("not brought current") || text.contains("not known"),
-        "{text}"
-    );
+    assert!(text.contains("how far behind is not known"), "{text}");
+    assert!(text.contains("; and measuring it: "), "{text}");
     assert!(
         text.contains(&dir.display().to_string()),
         "the crate's words name the root: {text}"
@@ -301,4 +298,79 @@ fn what_a_refresh_skipped_is_a_note_on_the_line() {
         "{:?}",
         again.indexes[0].notes
     );
+}
+
+#[test]
+fn an_index_of_another_model_recording_no_definition_names_the_command_that_writes_one() {
+    // The crate refuses the refresh for its model first, and only the measure after finds the
+    // file records no definition; the command is named all the same.
+    let t = tempfile::tempdir().unwrap();
+    let file = t.path().join("old.sqlite");
+    let mut store = Store::open(&file, Header::new("other", std::num::NonZeroUsize::MIN)).unwrap();
+    store
+        .upsert(
+            &muisti::Source::new("one.md", "# One\n\nsaturation\n".as_bytes()),
+            &mut Other,
+        )
+        .unwrap();
+    drop(store);
+    let named =
+        Place::at("old".to_string(), file.clone()).built_by("`muisti index` in /c".to_string());
+    let out = ask(&[named], "saturation", 10, SystemTime::now());
+    let text = line(&out);
+    assert!(text.contains("`other`"), "{text}");
+    assert!(text.contains("`muisti index` in /c writes one"), "{text}");
+    // THE CONTROL: with no command known, none is named.
+    let bare = ask(
+        &[Place::at("old".to_string(), file)],
+        "saturation",
+        10,
+        SystemTime::now(),
+    );
+    assert!(!line(&bare).contains("writes one"), "{}", line(&bare));
+}
+
+#[test]
+fn every_count_on_the_line_is_said_in_its_number() {
+    let behind = |files, commits| {
+        Currency::Behind {
+            files,
+            commits,
+            why: "why".to_string(),
+        }
+        .said()
+    };
+    assert!(
+        behind(1, 0).starts_with("behind by 1 file,"),
+        "{}",
+        behind(1, 0)
+    );
+    assert!(
+        behind(2, 0).starts_with("behind by 2 files,"),
+        "{}",
+        behind(2, 0)
+    );
+    assert!(
+        behind(1, 1).starts_with("behind by 1 file and 1 commit,"),
+        "{}",
+        behind(1, 1)
+    );
+    assert!(
+        behind(2, 2).starts_with("behind by 2 files and 2 commits,"),
+        "{}",
+        behind(2, 2)
+    );
+    let read = |commits| {
+        Currency::Refreshed {
+            added: 1,
+            changed: 0,
+            removed: 0,
+            commits,
+        }
+        .said()
+    };
+    assert!(read(1).ends_with(", 1 commit read"), "{}", read(1));
+    assert!(read(2).ends_with(", 2 commits read"), "{}", read(2));
+    // THE CONTROL: nothing read, nothing said of commits.
+    assert!(!read(0).contains("commit"), "{}", read(0));
 }

@@ -53,8 +53,11 @@ impl Currency {
                 removed,
                 commits,
             } => {
-                let read =
-                    if *commits > 0 { format!(", {commits} commits read") } else { String::new() };
+                let read = if *commits > 0 {
+                    format!(", {} read", counted(*commits, "commit"))
+                } else {
+                    String::new()
+                };
                 format!(
                     "brought current: {added} added, {changed} changed, {removed} removed{read}"
                 )
@@ -64,11 +67,14 @@ impl Currency {
                 commits,
                 why,
             } => {
-                let s = if *files == 1 { "" } else { "s" };
                 let behind = if *commits > 0 {
-                    format!("{files} file{s} and {commits} commits")
+                    format!(
+                        "{} and {}",
+                        counted(*files, "file"),
+                        counted(*commits, "commit")
+                    )
                 } else {
-                    format!("{files} file{s}")
+                    counted(*files, "file")
                 };
                 format!("behind by {behind}, not brought current: {why}")
             },
@@ -77,6 +83,20 @@ impl Currency {
             } => format!("how far behind is not known: {why}"),
         }
     }
+}
+
+/// `n` of `what`, in its number.
+fn counted(n: usize, what: &str) -> String {
+    if n == 1 { format!("1 {what}") } else { format!("{n} {what}s") }
+}
+
+/// The crate's words for a file that records no definition, with the command that writes one where
+/// it is known.
+fn undefined(e: &Error, build: Option<&str>) -> String {
+    let writes = build
+        .map(|b| format!("; {b} writes one"))
+        .unwrap_or_default();
+    format!("{e}{writes}")
 }
 
 /// Bring `index` current with `embedder`; where that cannot be, measure how far behind it is and
@@ -111,12 +131,9 @@ pub fn bring<E: Embedder>(
             )
         },
         Err(e @ Error::Undefined(_)) => {
-            let writes = build
-                .map(|b| format!("; {b} writes one"))
-                .unwrap_or_default();
             return (
                 Currency::Unknown {
-                    why: format!("{e}{writes}"),
+                    why: undefined(&e, build),
                 },
                 Vec::new(),
             );
@@ -137,6 +154,11 @@ pub fn bring<E: Embedder>(
                 files: b.len(),
                 commits: b.commits,
                 why,
+            }
+        },
+        Err(e @ Error::Undefined(_)) => {
+            Currency::Unknown {
+                why: format!("{why}; and measuring it: {}", undefined(&e, build)),
             }
         },
         Err(e) => {
