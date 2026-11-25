@@ -227,8 +227,9 @@ principles directory: a rule's frontmatter and a card, nothing after it.
 `homma rules render` reads the principles directory as a second source of the
 corpus and writes each card as `<card prefix><name>.md` beside the rules' cards,
 through the same card renderer and the same session binding. An elaboration
-marker in a principle is refused, and so is a first heading other than
-`# <title prefix><name>`. A principle is kept apart from the rules in the corpus:
+marker in a principle is refused, and so is a first heading, of any level, other
+than `# <title prefix><name>`; so is a principle whose card name a rule already
+has, since both would be written to one card. A principle is kept apart from the rules in the corpus:
 `rules about` answers with rules only, and `rules load` counts a principle's card,
 since a session loads it.
 
@@ -985,7 +986,7 @@ tool.
 - A tool is a directory with a `tool.toml`, read the way `homma tools` reads it:
   the name, the summary, the tags, and each verb with its own summary. Its command
   is `homma <name>` where the tool is promoted and `homma tools run <name>` where
-  it is not, followed by the verb that matched best, and where none matched and the tool has verbs but none named for itself, followed by its verbs in angle brackets (`homma disk-trim <trim|auto|report>`), since a tool with no default verb is refused without one. These exist on unix only,
+  it is not, followed by the verb that matched best, and where none matched and the tool has verbs but none named for itself, followed by its verbs in angle brackets (`homma <tool> <check|apply>`), since a tool with no default verb is refused without one. These exist on unix only,
   since renki builds there only, and off unix the footer says so.
   The tool's `README.md`, beside the descriptor, is read too, for a tool whose forms are written there
   and not declared one by one (`msg`, whose channel is an argument and whose verbs follow it). A line in a
@@ -1090,7 +1091,7 @@ Related things are the other tools, scripts, verbs and mockspace commands that
 sit with a match, or the other skills and rules where the match is advice: those
 whose words are closest to its own, the cosine of the two bags of words (name,
 tags, place, summary and verb names, weighted the same way) being at least
-0.225, so a tool is named beside `disk-trim` for being about the same thing and
+0.225, so a tool is named beside another for being about the same thing and
 not for sharing a tag every tool carries. The figure was set on a catalogue of pairs of a
 workspace that must be named together and pairs that must not: it lies above the nearest pair
 that must not be named together (0.216) and at or below the nearest that must (0.233). Those
