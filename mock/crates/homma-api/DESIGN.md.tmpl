@@ -202,6 +202,10 @@ by default and run in the member's clone.
 `SummaryConfig`, the `[summary]` table, turns on the summarising pass and says
 what makes its call: `enabled`, false unless set, `command`, `claude`, and
 `model`, `haiku`.
+`AskConfig`, the `[ask]` table, bounds what `homma ask` keeps: `cache_expire_hours`,
+336, the hours after its last read an entry expires, and `cache_max_bytes`, 64 MiB,
+the size the cache is cut back under, least recently read first. It refuses a key
+it does not know.
 `LeaseConfig`, the `[lease]` table, names the remote and the branch the records
 live on and how many minutes a lease lasts before it lapses: `origin`, `main` and
 120 unless set.

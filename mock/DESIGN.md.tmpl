@@ -516,6 +516,13 @@ is unchanged. A cache file that
 cannot be read is a miss, and one that cannot be written is said on stderr and
 does not fail the ask.
 
+Nothing is kept forever. An entry, a partial or an answer alike, expires a set
+time after it was last read: a hit stamps it read now, and a written entry is read
+as it is written. The cache is also capped by size, and past the cap the least
+recently read entries go first until it is under. Both numbers are under `[ask]`.
+The sweep runs on every ask, before the question is answered, and prints nothing;
+an entry it cannot read or remove is left where it is and the ask goes on.
+
 There are two kinds of call, both the summarising pass's isolated call. The
 chunks with no partial go in as few calls as the request budget allows, each
 chunk numbered from its own first line and headed `=== chunk <i> ===`, under

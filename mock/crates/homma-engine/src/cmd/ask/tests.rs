@@ -370,3 +370,88 @@ fn a_terminal_on_stdin_is_refused_unread() {
         Some("alpha\n".to_string())
     );
 }
+
+/// Two entries, `old` read `age` ago and `new` just now, each of `len` bytes.
+fn aged(c: &Cache, age: std::time::Duration, len: usize) -> std::time::SystemTime {
+    let now = std::time::SystemTime::now();
+    c.keep_partial("old", &"o".repeat(len)).unwrap();
+    c.keep_answer("new", &"n".repeat(len)).unwrap();
+    stamp(c, "partials/old", now - age);
+    stamp(c, "answers/new", now);
+    now
+}
+
+/// Set an entry's last read to `at`, the way a read stamps it.
+fn stamp(c: &Cache, rel: &str, at: std::time::SystemTime) {
+    let path = c.dir().join(rel);
+    std::fs::File::options()
+        .append(true)
+        .open(path)
+        .unwrap()
+        .set_modified(at)
+        .unwrap();
+}
+
+const HOUR: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Failing control: with the age check taken out of `sweep` the old partial stays.
+#[test]
+fn an_entry_last_read_past_the_time_is_swept_and_one_within_it_stays() {
+    let (_t, c) = cache();
+    let now = aged(&c, 3 * HOUR, 4);
+    c.sweep(now, 2 * HOUR, u64::MAX);
+    assert!(!c.dir().join("partials/old").exists());
+    assert_eq!(c.answer("new").as_deref(), Some("nnnn"));
+}
+
+/// Failing control: with `read` not stamping, the read entry is swept.
+#[test]
+fn a_read_stamps_an_old_entry_so_the_sweep_keeps_it() {
+    let (_t, c) = cache();
+    let now = aged(&c, 3 * HOUR, 4);
+    assert_eq!(c.partial("old").as_deref(), Some("oooo"));
+    c.sweep(now + std::time::Duration::from_secs(1), 2 * HOUR, u64::MAX);
+    assert!(c.dir().join("partials/old").exists());
+}
+
+/// Failing control: ordering by name rather than by last read removes `new`.
+#[test]
+fn over_the_cap_the_least_recently_read_go_first() {
+    let (_t, c) = cache();
+    let now = aged(&c, HOUR, 10);
+    c.sweep(now, 100 * HOUR, 15);
+    assert!(!c.dir().join("partials/old").exists());
+    assert!(c.dir().join("answers/new").exists());
+    c.sweep(now, 100 * HOUR, 10);
+    assert!(
+        c.dir().join("answers/new").exists(),
+        "at the cap is under it"
+    );
+}
+
+/// Failing control: with the sweep taken out of `run`, the old partial is still there.
+#[test]
+fn an_ask_sweeps_its_cache_before_it_answers_even_a_refused_one() {
+    let ws = tempfile::tempdir().unwrap();
+    let git = std::process::Command::new("git")
+        .arg("-C")
+        .arg(ws.path())
+        .args(["init", "-q"])
+        .status()
+        .unwrap();
+    assert!(git.success());
+    let c = Cache::of_workspace(ws.path()).unwrap();
+    c.keep_partial("old", "o").unwrap();
+    stamp(&c, "partials/old", std::time::SystemTime::now() - 3 * HOUR);
+    let cfg = homma_core::Config::parse(&format!(
+        "content_repo = \"c\"\n[workspace]\nname = \"w\"\npath = {:?}\n[ask]\ncache_expire_hours = 2\n",
+        ws.path().display().to_string()
+    ))
+    .unwrap();
+    let out = super::run(&cfg, ws.path(), &["anything".to_string()]).unwrap();
+    assert!(
+        matches!(out, crate::cmd::Outcome::ReportedFailure),
+        "the pass is off by default, so the ask is refused"
+    );
+    assert!(!c.dir().join("partials/old").exists());
+}

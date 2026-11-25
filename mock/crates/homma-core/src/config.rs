@@ -74,6 +74,10 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<toml::Value>,
 
+    /// What `homma ask` keeps. Read as `homma_api::AskConfig`; same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<toml::Value>,
+
     /// Places homma may not write, beyond the ones it derives.
     ///
     /// Read here as well as by `homma_api::Workspace`, which parses the same
