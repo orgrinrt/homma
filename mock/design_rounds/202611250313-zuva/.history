@@ -1,0 +1,50 @@
+c4e73a5 chore: lock src changelist 202611250313-zuva
+1f3ea30 test: pin a refused refresh's line to its header, not its model
+a054551 docs: file the src changelist of 202611250313-zuva
+02a1a70 chore: lock doc changelist 202611250313-zuva
+94b0146 docs: file the doc changelist of 202611250313-zuva
+1314358 docs: file the topic of pinning a refused refresh to its path
+97bf724 chore: record the test history of the accept tests run
+7c4705f chore: close design round 202611250221-elcd
+0047bf5 chore: lock src changelist 202611250221-elcd
+accff79 test: pin a refused refresh, three lines at once and a commit read
+79e7328 docs: file the src changelist of 202611250221-elcd
+5492f0e chore: lock doc changelist 202611250221-elcd
+74d4e5c docs: file the doc changelist of 202611250221-elcd
+d4241a9 docs: file the topic of the search currency tests the review asked for
+42067a2 chore: close design round 202611250003-qpms
+788048b chore: lock src changelist 202611250003-qpms
+c44b95b fix: name the build command for every index with no definition
+bf0322f docs: file the src changelist of 202611250003-qpms
+4483297 chore: lock doc changelist 202611250003-qpms
+6a6c080 docs: say the engine's search brings each index current
+f988405 docs: file the doc changelist of 202611250003-qpms
+ed16fca docs: file the topic of an index of no definition naming its command
+69b8a2b docs: render the design of what a search's refresh writes and skips
+1133487 chore: close design round 202611242346-js3a
+ea18661 chore: lock src changelist 202611242346-js3a
+c5bd6f7 feat: note what a search's refresh skipped, test its other cases
+6c0270c docs: file the src changelist of 202611242346-js3a
+84e1f9e chore: lock doc changelist 202611242346-js3a
+b1a81ce docs: say the search writes each index and notes what it skipped
+859cf07 docs: file the doc changelist of 202611242346-js3a
+73f6d8b docs: file the topic of what a refresh writes and skips
+23e24c0 fix: move only muisti in the lock, as the changelist says
+f93ec4e chore: close design round 202611242203-jxpf
+53d8252 chore: lock src changelist 202611242203-jxpf
+2266ed7 test: keep a test corpus's index beside the corpus, not in it
+073df5f docs: render the design of search bringing each index current
+10583db feat: bring each index current before search asks it
+40fb7e6 docs: file the src changelist of 202611242203-jxpf
+a7832a2 chore: lock doc changelist 202611242203-jxpf
+cfa0655 docs: bring each index current before search asks it
+cc5049f docs: file the topic of search bringing each index current
+bfef9a8 feat: summarise long output and answer questions about piped text
+3b126ba feat: summarise long output and answer questions about piped text
+38f3ecb chore: close design round 202611241721-znwy
+ed0512b chore: lock src changelist 202611241721-znwy
+94ae813 fix: refuse a terminal on the ask's stdin and ignore a slow test
+ec279ac docs: write the src changelist of 202611241721-znwy
+c6c57b1 chore: lock doc changelist 202611241721-znwy
+3029c4f docs: say what the ask prints and refuse a terminal on stdin
+a3262c1 docs: open the round on the ask's last line and a terminal

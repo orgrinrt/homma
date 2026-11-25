@@ -2274,7 +2274,7 @@ dependencies = [
 [[package]]
 name = "muisti"
 version = "0.0.0"
-source = "git+ssh://git@github.com/orgrinrt/muisti?branch=dev#b8c04b8e7cf967b36fa85e3cf25ede8256de6c04"
+source = "git+ssh://git@github.com/orgrinrt/muisti?branch=dev#5bf54222bba582df681d8102c3c968500772e0d5"
 dependencies = [
  "blake3",
  "globset",
