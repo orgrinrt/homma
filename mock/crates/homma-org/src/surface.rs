@@ -10,7 +10,8 @@
 //! order, read each source, render its templates through a fresh environment,
 //! write each generated file ending in one newline, and name what sits in the
 //! generated place that no source claims. A kind says only how its sources sit and
-//! how one is read; everything else is here, once.
+//! how one is read; everything else is here, once. The rules, principles,
+//! skills and modes go through it; the personas' corpus does not yet.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

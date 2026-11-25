@@ -86,22 +86,22 @@ fn a_planted_scripts_verbs_and_place_are_read() {
     let s = g
         .docs
         .iter()
-        .find(|d| d.name == "sessions")
-        .expect("the sessions script is read");
-    for v in ["finished", "blocked"] {
+        .find(|d| d.name == "harvest")
+        .expect("the harvest script is read");
+    for v in ["ripe", "rotten"] {
         assert!(
             s.verbs.iter().any(|x| x.name == v),
             "no verb {v}: {:?}",
             s.verbs
         );
     }
-    assert_eq!(s.place, ["remote"]);
+    assert_eq!(s.place, ["chores"]);
 }
 
 #[test]
 fn tests_and_fixtures_are_not_scripts() {
     let g = scripts::gather(&workspace());
-    assert!(g.docs.iter().any(|d| d.name == "land-branch"));
+    assert!(g.docs.iter().any(|d| d.name == "water-plants"));
     assert!(
         g.docs
             .iter()
@@ -250,7 +250,7 @@ fn the_planted_skills_and_rules_are_read() {
     assert!(
         s.docs
             .iter()
-            .any(|d| d.name == "work-in-rounds" && !d.summary.is_empty())
+            .any(|d| d.name == "plan-a-season" && !d.summary.is_empty())
     );
     let r = corpora::rules(&ws);
     assert!(
@@ -267,18 +267,18 @@ fn the_planted_tools_carry_their_verbs_and_how_to_run_them() {
     let t = g
         .docs
         .iter()
-        .find(|d| d.name == "space-trim")
-        .expect("space-trim");
+        .find(|d| d.name == "plot-weed")
+        .expect("plot-weed");
     assert_eq!(
-        t.command, "homma space-trim <trim|report>",
+        t.command, "homma plot-weed <pull|tally>",
         "bare, it names the verbs it wants"
     );
     assert!(
         t.verbs
             .iter()
-            .any(|v| v.name == "trim" && v.command == "homma space-trim trim")
+            .any(|v| v.name == "pull" && v.command == "homma plot-weed pull")
     );
-    assert!(t.tags.iter().any(|x| x == "hygiene"));
+    assert!(t.tags.iter().any(|x| x == "garden"));
 }
 
 #[test]

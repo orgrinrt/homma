@@ -170,7 +170,25 @@ impl Corpus {
         dir: &Path,
         kind: &Principles<'_>,
     ) -> Result<(), CorpusError> {
-        self.principles = surface::load(kind, dir)?;
+        let principles: Vec<Rule> = surface::load(kind, dir)?;
+        // A rule already named as a principle's card would be written to the
+        // same file, the last one winning without a word.
+        if let Some(p) = principles
+            .iter()
+            .find(|p| self.rules.iter().any(|r| r.name == p.name))
+        {
+            return Err(CorpusError::Principle {
+                path:   dir.join(format!(
+                    "{}{RULE_SUFFIX}",
+                    &p.name[kind.card_prefix.len() ..]
+                )),
+                reason: format!(
+                    "its card is `{}.md`, which the rule `{}` already writes",
+                    p.name, p.name
+                ),
+            });
+        }
+        self.principles = principles;
         Ok(())
     }
 
@@ -239,7 +257,7 @@ impl Corpus {
                 continue;
             }
             let body = self.card_text(r)?;
-            fs::write(&path, body).map_err(|cause| {
+            surface::write(&path, &body).map_err(|cause| {
                 CorpusError::Write {
                     path: path.clone(),
                     cause,
@@ -396,7 +414,7 @@ impl Kind for Principles<'_> {
             ));
         }
         let want = format!("# {}{name}", self.title_prefix);
-        let title = r.card.lines().find(|l| l.starts_with("# ")).unwrap_or("");
+        let title = r.card.lines().find(|l| l.starts_with('#')).unwrap_or("");
         if title.trim_end() != want {
             return Err(refuse(format!(
                 "its first heading is `{title}`, and a principle's is `{want}`"

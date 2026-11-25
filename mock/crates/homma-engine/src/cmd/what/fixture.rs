@@ -62,80 +62,74 @@ fn tool(root: &Path, name: &str, summary: &str, tags: &[&str], commands: &[(&str
 fn plant(root: &Path) {
     tool(
         root,
-        "space-trim",
-        "give the disk back: stale build output and spent work trees, dry run by default",
-        &["hygiene", "disk"],
+        "plot-weed",
+        "clear the beds of weeds and dead stalks, dry run by default",
+        &["garden", "beds"],
         &[
-            ("trim", "print what would be freed; --apply frees it"),
-            ("report", "what the last automatic run freed, once"),
+            ("pull", "print what would be pulled; --apply pulls it"),
+            ("tally", "what the last weeding pulled, once"),
         ],
     );
     tool(
         root,
-        "stale-targets",
-        "give back the disk space held by stale build targets nothing links",
-        &["hygiene", "disk"],
-        &[(
-            "sweep",
-            "remove the stale build targets; dry run by default",
-        )],
+        "plot-mulch",
+        "cover the beds with mulch where weeds and dead stalks were cleared",
+        &["garden", "beds"],
+        &[("spread", "spread the mulch; dry run by default")],
     );
     tool(
         root,
-        "lost-runs",
-        "find the build and test processes a session lost track of, and end the ones named",
-        &["hygiene", "processes"],
+        "pest-watch",
+        "find the pests that got into a bed, and catch the ones named",
+        &["garden", "pests"],
         &[
+            ("list", "one line per pest seen in the beds"),
             (
-                "list",
-                "one line per build or test process found in the workspace",
-            ),
-            (
-                "end",
-                "end the named processes, refusing any outside the workspace",
+                "catch",
+                "catch the named pests, refusing any outside the fence",
             ),
         ],
     );
     file(
         root,
-        ".shared/scripts/remote/land-branch",
-        "#!/bin/sh\n# land-branch - land a branch onto the trunk once its gate is green\n",
+        ".shared/scripts/chores/water-plants",
+        "#!/bin/sh\n# water-plants - water the plants in a bed once its soil is dry\n",
         true,
     );
     file(
         root,
-        ".shared/scripts/remote/sessions",
-        "#!/bin/sh\n# ====\n# sessions - which helper sessions are finished or stuck\n# ====\n#   sessions finished <arc>   ids of idle helpers whose channel says done\n#   sessions blocked <arc>    ids of helpers stopped on a question\n",
+        ".shared/scripts/chores/harvest",
+        "#!/bin/sh\n# ====\n# harvest - which crops are ripe or rotting\n# ====\n#   harvest ripe <bed>     crops ready to pick\n#   harvest rotten <bed>   crops past saving\n",
         true,
     );
     file(
         root,
-        ".shared/scripts/remote/landing-paths.sh",
-        "#!/bin/sh\n# Sourced by the landing scripts: where a branch lands and how it is named.\n",
+        ".shared/scripts/chores/bed-names.sh",
+        "#!/bin/sh\n# Sourced by the chore scripts: what each bed is called and where it lies.\n",
         true,
     );
     file(
         root,
-        ".shared/scripts/remote/land-branch_test.sh",
-        "#!/bin/sh\n# The tests of land-branch.\n",
+        ".shared/scripts/chores/water-plants_test.sh",
+        "#!/bin/sh\n# The tests of water-plants.\n",
         true,
     );
     file(
         root,
-        ".shared/scripts/remote/land-branch_fixture.sh",
-        "#!/bin/sh\n# A trunk for the tests of land-branch.\n",
+        ".shared/scripts/chores/water-plants_fixture.sh",
+        "#!/bin/sh\n# A dry bed for the tests of water-plants.\n",
         true,
     );
     file(
         root,
-        ".shared/skills/work-in-rounds/SKILL.md.tmpl",
-        "---\nname: work-in-rounds\ndescription: Use when working a design round: topic, changelists, locks and close.\n---\n\n# work-in-rounds\n\nThe flow of a round.\n",
+        ".shared/skills/plan-a-season/SKILL.md.tmpl",
+        "---\nname: plan-a-season\ndescription: Use when planning a season: beds, seeds, rotations and frost.\n---\n\n# plan-a-season\n\nThe order of a season.\n",
         false,
     );
     file(
         root,
-        ".shared/rules/tests-first.md.tmpl",
-        "---\ntopics: [tests, controls]\nfires: \"before writing a test\"\nkind: reflex\n---\n\n# tests-first\n\nEach test is shown failing first.\n",
+        ".shared/rules/seeds-first.md.tmpl",
+        "---\ntopics: [seeds, sowing]\nfires: \"before sowing a bed\"\nkind: reflex\n---\n\n# seeds-first\n\nEach seed is checked before it is sown.\n",
         false,
     );
 }

@@ -123,3 +123,31 @@ fn a_principle_whose_first_heading_is_not_its_title_is_refused() {
         other => panic!("wrong refusal: {other}"),
     }
 }
+
+/// Failing control: without the heading-of-any-level check, `## Reuse` before
+/// the title passes as no title at all being found first.
+#[test]
+fn a_principle_whose_first_heading_is_of_another_level_is_refused() {
+    let d = tree();
+    principle(
+        &d.path().join("principles"),
+        "reuse",
+        "## Reuse\n\n# Principle: reuse\n\nCard.\n",
+    );
+    assert!(matches!(load(d.path()), Err(CorpusError::Principle { .. })));
+}
+
+/// Failing control: without the clash check both load and the rule's card is
+/// overwritten by the principle's.
+#[test]
+fn a_principle_whose_card_a_rule_already_writes_is_refused() {
+    let d = tree();
+    rule(&d.path().join("rules"), "principle-reuse");
+    match load(d.path()).unwrap_err() {
+        CorpusError::Principle {
+            reason,
+            ..
+        } => assert!(reason.contains("`principle-reuse.md`"), "{reason}"),
+        other => panic!("wrong refusal: {other}"),
+    }
+}

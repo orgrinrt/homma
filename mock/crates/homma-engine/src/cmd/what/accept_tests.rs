@@ -52,32 +52,32 @@ fn must_come_first(q: &str, kind: Kind, name: &str) {
 
 #[test]
 fn a_script_is_found_by_its_summary() {
-    must_come_first("land a branch", Kind::Script, "land-branch");
+    must_come_first("water the plants", Kind::Script, "water-plants");
 }
 
 #[test]
 fn a_scripts_verb_that_matched_is_its_command() {
-    must_come_first("which helpers are finished", Kind::Script, "sessions");
+    must_come_first("which crops are ripe", Kind::Script, "harvest");
     assert_eq!(
-        first("which helpers are finished").2,
-        ".shared/scripts/remote/sessions finished"
+        first("which crops are ripe").2,
+        ".shared/scripts/chores/harvest ripe"
     );
 }
 
 #[test]
 fn a_tools_verb_that_matched_is_its_command() {
-    must_come_first("end a lost build process", Kind::Tool, "lost-runs");
-    assert_eq!(first("end a lost build process").2, "homma lost-runs end");
+    must_come_first("catch a pest", Kind::Tool, "pest-watch");
+    assert_eq!(first("catch a pest").2, "homma pest-watch catch");
 }
 
 #[test]
 fn a_misspelt_long_word_is_found_by_its_edit() {
-    must_come_first("lnad a brach", Kind::Script, "land-branch");
+    must_come_first("wtaer the palnts", Kind::Script, "water-plants");
 }
 
 #[test]
 fn a_misspelt_query_finds_the_same_tool() {
-    must_come_first("give the dsik bakc", Kind::Tool, "space-trim");
+    must_come_first("cacth a pset", Kind::Tool, "pest-watch");
 }
 
 /// Failing control: the library is planted executable with a header, so only its `Sourced` line
@@ -86,7 +86,7 @@ fn a_misspelt_query_finds_the_same_tool() {
 fn a_sourced_library_is_never_an_answer() {
     let (docs, _) = everything();
     assert!(
-        !docs.iter().any(|d| d.command.contains("landing-paths")),
+        !docs.iter().any(|d| d.command.contains("bed-names")),
         "a script whose header says it is sourced was offered as a command"
     );
 }
@@ -99,7 +99,7 @@ fn what_a_kind_filter_leaves_out_is_said_in_the_footer() {
         true,
         &homma_core::scope::Scope::everything(),
     );
-    let a = answer(&g.docs, g.gaps, "give the disk back", 5);
+    let a = answer(&g.docs, g.gaps, "water the plants", 5);
     assert!(
         a.gaps
             .iter()
@@ -111,8 +111,8 @@ fn what_a_kind_filter_leaves_out_is_said_in_the_footer() {
 
 #[test]
 fn the_filler_around_a_query_changes_nothing() {
-    let plain = ask("land a branch");
-    let said = ask("homma what to use to land a branch");
+    let plain = ask("water the plants");
+    let said = ask("homma what to use to water the plants");
     let name = |a: &Answer| a.hits.first().map(|h| h.name.clone());
     assert_eq!(name(&plain), name(&said));
     assert!(name(&plain).is_some());
@@ -147,18 +147,18 @@ fn a_query_of_only_filler_returns_nothing_and_says_why() {
 
 #[test]
 fn every_answer_says_where_each_word_was_found() {
-    let a = ask("land a branch");
+    let a = ask("water the plants");
     let m = &a.hits[0].matched;
-    assert!(m.iter().any(|m| m.word == "land" && m.how == "="), "{m:?}");
+    assert!(m.iter().any(|m| m.word == "water" && m.how == "="), "{m:?}");
     assert!(
-        m.iter().any(|m| m.word == "branch" && m.how == "="),
+        m.iter().any(|m| m.word == "plants" && m.how == "="),
         "{m:?}"
     );
 }
 
 #[test]
 fn the_json_carries_the_query_the_terms_the_hits_and_the_gaps() {
-    let v = serde_json::to_value(ask("give the disk back")).unwrap();
+    let v = serde_json::to_value(ask("clear the beds of weeds")).unwrap();
     for key in ["query", "terms", "read", "hits", "gaps"] {
         assert!(v.get(key).is_some(), "no `{key}` in {v}");
     }
@@ -170,7 +170,7 @@ fn the_json_carries_the_query_the_terms_the_hits_and_the_gaps() {
 }
 
 /// Failing control: the planted tools have verbs and neither a verb of its own name, so a bare
-/// `homma space-trim` would be listed.
+/// `homma plot-weed` would be listed.
 #[test]
 fn a_tool_with_verbs_and_no_default_one_never_prints_a_command_the_dispatcher_refuses() {
     let (docs, _) = everything();
@@ -188,12 +188,24 @@ fn a_tool_with_verbs_and_no_default_one_never_prints_a_command_the_dispatcher_re
         .map(|d| d.command.as_str())
         .collect();
     assert!(bare.is_empty(), "bare commands that want a verb: {bare:?}");
+    let a = ask("garden");
+    assert!(
+        a.hits.iter().any(|h| h.kind == Kind::Tool),
+        "the query finds the tools"
+    );
+    assert!(
+        a.hits.iter().all(|h| {
+            h.kind != Kind::Tool || h.command.contains('<') || h.command.matches(' ').count() >= 2
+        }),
+        "a tool hit printed bare: {:?}",
+        a.hits.iter().map(|h| &h.command).collect::<Vec<_>>()
+    );
 }
 
 #[test]
 fn the_best_answers_name_what_sits_beside_them() {
-    let a = ask("spent trees");
-    assert_eq!(a.hits[0].name, "space-trim");
+    let a = ask("the last weeding");
+    assert_eq!(a.hits[0].name, "plot-weed");
     let related: Vec<&str> = a.hits[0].related.iter().map(|r| r.name.as_str()).collect();
-    assert!(related.contains(&"stale-targets"), "{related:?}");
+    assert!(related.contains(&"plot-mulch"), "{related:?}");
 }
