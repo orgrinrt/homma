@@ -15,7 +15,8 @@
 use std::io::{IsTerminal, Read};
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use homma_api::AskConfig;
 use homma_core::Config;
 
 use crate::cmd::Outcome;
@@ -297,6 +298,19 @@ pub fn run(cfg: &Config, root: &Path, question: &[String]) -> Result<Outcome> {
         eprintln!("ask: {why}; no answer");
         Ok(Outcome::ReportedFailure)
     };
+    // Swept on every ask, a refused one too, before anything is answered.
+    let kept: AskConfig = match &cfg.ask {
+        Some(v) => v.clone().try_into().context("reading `[ask]`")?,
+        None => AskConfig::default(),
+    };
+    let cache = Cache::of_workspace(root);
+    if let Ok(c) = &cache {
+        c.sweep(
+            std::time::SystemTime::now(),
+            std::time::Duration::from_secs(kept.cache_expire_hours.saturating_mul(3600)),
+            kept.cache_max_bytes,
+        );
+    }
     if !settings.enabled {
         return refuse(
             "the summarising pass is off; `enabled = true` under `[summary]` in homma.toml turns it on"
@@ -310,7 +324,7 @@ pub fn run(cfg: &Config, root: &Path, question: &[String]) -> Result<Outcome> {
                 .to_string(),
         );
     };
-    let cache = match Cache::of_workspace(root) {
+    let cache = match cache {
         Ok(c) => c,
         Err(why) => return refuse(format!("no place for the cache: {why}")),
     };

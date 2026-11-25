@@ -17,13 +17,5 @@
       }
     }
   },
-  "bins": {
-    "homma-api": "db5c415e0c36f491ab70a5ed6ffd6c3875e6f4884e558ff7d425ea76d41c6d0d",
-    "homma-api::compile_fail": "2906cb44e51946441ecc75e8299f31e4820d71133d0a4047f2545a4c8b1d3b01",
-    "homma-api::frontmatter": "7ec844a75cae4f8f98b0ca1ae6048bf74340c22b0407a4484ef9d4bb1ff59304",
-    "homma-api::rule_meta": "d3172a5e76b3d1624aa691ab037a1e1fbee833fd720e9b5843fc6267fbede225",
-    "homma-api::session": "45783935f53a049eab836014d2fba51b96a7a07a0967c8530a0ce87f1f010297",
-    "homma-api::skill_meta": "6aedb5a2320b358725f9def2dbced831f7f837cd9d574d740f308ef7329a40b7",
-    "homma-api::the_home_must_be_known": "2d3f0bdfff1be546cbba84fd05007b738825d2ae3d0ca873bb0d2c73daaae2f9"
-  }
+  "bins": {}
 }
