@@ -26,6 +26,8 @@ pub mod cache;
 pub mod chunks;
 
 #[cfg(test)]
+mod cache_tests;
+#[cfg(test)]
 mod tests;
 
 use cache::{Asker, Cache};
