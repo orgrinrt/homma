@@ -1,0 +1,50 @@
+0b576b7 chore: lock src changelist 202611251112-x6lw
+35cab1b feat: expire the ask cache by last read and cap it by size
+d1f53bc docs: list the source changes of the ask cache round
+bcf0242 chore: lock doc changelist 202611251112-x6lw
+4e8b077 docs: design the ask cache's expiry by last read and its cap
+7b3d426 docs: open the round on the ask cache's expiry and cap
+95afd37 feat: list what changed in the last days across the indexes
+20ce30a feat: list what changed in the last days across the indexes
+06c355c docs: render the design of a listing's line, json and days
+e75bf11 chore: close design round 202611250846-mzpu
+27de9a9 chore: lock src changelist 202611250846-mzpu
+da7d170 fix: take a listing's days as non-zero and mark what waits on the layer
+76e7d85 docs: file the src changelist of 202611250846-mzpu
+390e09e chore: lock doc changelist 202611250846-mzpu
+dcc3e94 docs: say a listing's line, its json and its days
+4b5b4e7 docs: file the topic of a listing's line and json as they are
+65dbb92 chore: close design round 202611250648-ylo2
+5f0280d chore: lock src changelist 202611250648-ylo2
+805ebfd fix: choose a listing's pass in one tested place and say its line
+c94f3aa docs: render the design of search listing what changed lately
+cad9be5 feat: list what changed in the last days with search --fresh
+aac663b docs: file the src changelist of 202611250648-ylo2
+3394fd4 chore: lock doc changelist 202611250648-ylo2
+028efac docs: say the search lists what changed in the last days
+ee0e9d3 docs: file the topic of listing what changed in the last days
+0afca6c feat: say how far a member index is behind and bring it current
+dc6407c feat: say how far a member index is behind and bring it current
+0f430f1 chore: close design round 202611250313-zuva
+c4e73a5 chore: lock src changelist 202611250313-zuva
+1f3ea30 test: pin a refused refresh's line to its header, not its model
+a054551 docs: file the src changelist of 202611250313-zuva
+02a1a70 chore: lock doc changelist 202611250313-zuva
+94b0146 docs: file the doc changelist of 202611250313-zuva
+1314358 docs: file the topic of pinning a refused refresh to its path
+97bf724 chore: record the test history of the accept tests run
+7c4705f chore: close design round 202611250221-elcd
+0047bf5 chore: lock src changelist 202611250221-elcd
+accff79 test: pin a refused refresh, three lines at once and a commit read
+79e7328 docs: file the src changelist of 202611250221-elcd
+5492f0e chore: lock doc changelist 202611250221-elcd
+74d4e5c docs: file the doc changelist of 202611250221-elcd
+d4241a9 docs: file the topic of the search currency tests the review asked for
+42067a2 chore: close design round 202611250003-qpms
+788048b chore: lock src changelist 202611250003-qpms
+c44b95b fix: name the build command for every index with no definition
+bf0322f docs: file the src changelist of 202611250003-qpms
+4483297 chore: lock doc changelist 202611250003-qpms
+6a6c080 docs: say the engine's search brings each index current
+f988405 docs: file the doc changelist of 202611250003-qpms
+ed16fca docs: file the topic of an index of no definition naming its command
