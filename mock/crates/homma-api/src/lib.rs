@@ -32,6 +32,7 @@ pub mod version;
 pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
 pub use catalogue::{LeaseConfig, Office};
 pub use config::{
+    AskConfig,
     Identity,
     Paths,
     Role,
