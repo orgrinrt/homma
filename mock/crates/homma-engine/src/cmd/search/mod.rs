@@ -12,6 +12,7 @@
 //! no member knows of this.
 
 use std::io::Write;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -39,6 +40,8 @@ mod tests;
 mod tests_current;
 #[cfg(test)]
 mod tests_fresh;
+#[cfg(test)]
+mod tests_fresh_edges;
 
 /// One hit, as printed.
 #[derive(Debug, Serialize)]
@@ -95,7 +98,7 @@ pub struct SearchOut {
     pub question:     String,
     /// The days a listing of what changed covers, present only for a listing.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub window:       Option<u32>,
+    pub window:       Option<NonZeroU32>,
     pub hits:         Vec<HitOut>,
     pub indexes:      Vec<IndexOut>,
     /// The hits summarised, printed in their place, where `--summarise` asked and there is one.
@@ -218,7 +221,7 @@ pub enum Asked {
     /// A question, its words as given.
     Words(Vec<String>),
     /// Everything that changed in the last so many days, counting today.
-    Fresh(u32),
+    Fresh(NonZeroU32),
 }
 
 /// How many hits a question gives where `--limit` is not given.
@@ -244,8 +247,8 @@ pub fn pass_for(
 }
 
 /// `n` days, in its number.
-fn days(n: u32) -> String {
-    if n == 1 { "1 day".to_string() } else { format!("{n} days") }
+fn days(n: NonZeroU32) -> String {
+    if n.get() == 1 { "1 day".to_string() } else { format!("{n} days") }
 }
 
 /// [`ask`], and where `summarise` is given, its hits through the pass with that table and model.

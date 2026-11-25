@@ -360,14 +360,16 @@ pub enum Command {
         words:     Vec<String>,
         /// List everything that changed in the last so many days counting today, three where no
         /// number is given, in place of a question.
+        // FIXME(muisti_s_layer_lists_what_a_filter_keeps_across_indexes_newe): words beside
+        // `--fresh` are refused until the index crate's layer narrows a fused question by a filter.
         #[arg(
             long,
             num_args = 0..=1,
             default_missing_value = "3",
             conflicts_with = "words",
-            value_parser = clap::value_parser!(u32).range(1..)
+            value_parser = clap::value_parser!(std::num::NonZeroU32)
         )]
-        fresh:     Option<u32>,
+        fresh:     Option<std::num::NonZeroU32>,
         /// Ask only the index of this name. Repeatable.
         #[arg(long = "in")]
         only:      Vec<String>,

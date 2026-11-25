@@ -1,6 +1,7 @@
 //! A listing of what changed in the last days, over planted repositories with dated commits.
 
 use std::cell::Cell;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -14,22 +15,48 @@ use super::discover::Place;
 use super::fresh::{self, NO_DAYS, age};
 use super::*;
 
-fn write(path: &Path, text: &str) {
+pub(super) fn write(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
 }
 
 /// The moment `at` names, an RFC 3339 instant.
-fn at(when: &str) -> SystemTime {
+pub(super) fn at(when: &str) -> SystemTime {
     let t: jiff::Timestamp = when.parse().unwrap();
     SystemTime::UNIX_EPOCH + Duration::from_secs(u64::try_from(t.as_second()).unwrap())
 }
 
 /// The day the listings below are made on.
-const NOW: &str = "2026-11-22T12:00:00Z";
+pub(super) const NOW: &str = "2026-11-22T12:00:00Z";
+
+/// A window of `n` days, at least one.
+pub(super) fn window(n: u32) -> NonZeroU32 {
+    NonZeroU32::new(n).unwrap()
+}
+
+/// [`fresh::list`] over a window of `days`.
+pub(super) fn list(
+    places: &[Place],
+    days: u32,
+    limit: Option<usize>,
+    now: SystemTime,
+) -> SearchOut {
+    fresh::list(places, window(days), limit, now)
+}
+
+/// [`fresh::answer`] over a window of `days`.
+pub(super) fn answer_fresh<M: crate::cmd::summary::OneShot>(
+    places: &[Place],
+    days: u32,
+    limit: Option<usize>,
+    summarise: Option<(&SummaryConfig, &M)>,
+    now: SystemTime,
+) -> SearchOut {
+    fresh::answer(places, window(days), limit, summarise, now)
+}
 
 /// Commit everything under `dir` with `message`, authored and committed at `when`.
-fn commit(dir: &Path, message: &str, when: &str) {
+pub(super) fn commit(dir: &Path, message: &str, when: &str) {
     for args in [&["add", "."][..], &["commit", "-q", "-m", message][..]] {
         let ok = std::process::Command::new("git")
             .arg("-C")
@@ -47,7 +74,7 @@ fn commit(dir: &Path, message: &str, when: &str) {
 }
 
 /// A repository at `dir` with `files` committed one commit each, at the instant beside each.
-fn repository(dir: &Path, files: &[(&str, &str, &str)]) {
+pub(super) fn repository(dir: &Path, files: &[(&str, &str, &str)]) {
     std::fs::create_dir_all(dir).unwrap();
     let ok = std::process::Command::new("git")
         .arg("-C")
@@ -64,7 +91,7 @@ fn repository(dir: &Path, files: &[(&str, &str, &str)]) {
 }
 
 /// The repository index of `dir`, built with its history read, beside it.
-fn built(dir: &Path) -> PathBuf {
+pub(super) fn built(dir: &Path) -> PathBuf {
     let file = dir.with_extension("index").join("search.sqlite");
     let mut index = RepoIndex::open(&file).unwrap();
     index
@@ -74,7 +101,7 @@ fn built(dir: &Path) -> PathBuf {
 }
 
 /// A repository with a file from three weeks back and one from yesterday, indexed.
-fn planted(t: &Path, name: &str) -> Place {
+pub(super) fn planted(t: &Path, name: &str) -> Place {
     let dir = t.join(name);
     repository(&dir, &[
         (
@@ -91,7 +118,7 @@ fn planted(t: &Path, name: &str) -> Place {
     Place::at(name.to_string(), built(&dir))
 }
 
-fn paths(out: &SearchOut) -> Vec<&str> {
+pub(super) fn paths(out: &SearchOut) -> Vec<&str> {
     out.hits.iter().map(|h| h.path.as_str()).collect()
 }
 
@@ -99,7 +126,7 @@ fn paths(out: &SearchOut) -> Vec<&str> {
 fn a_listing_holds_what_changed_in_the_window_and_the_commits_of_it() {
     let t = tempfile::tempdir().unwrap();
     let places = vec![planted(t.path(), "r")];
-    let out = fresh::list(&places, 3, None, at(NOW));
+    let out = list(&places, 3, None, at(NOW));
     let got = paths(&out);
     assert!(got.contains(&"new.md"), "{got:?}");
     let commits: Vec<&HitOut> = out
@@ -110,11 +137,11 @@ fn a_listing_holds_what_changed_in_the_window_and_the_commits_of_it() {
     assert_eq!(commits.len(), 1, "{got:?}");
     assert_eq!(commits[0].excerpt, "add new.md");
     assert_eq!(commits[0].date.as_deref(), Some("2026-11-21"));
-    assert_eq!(out.window, Some(3));
+    assert_eq!(out.window, Some(window(3)));
     // THE CONTROL: what changed three weeks back is not in a window of three days.
     assert!(!got.contains(&"old.md"), "{got:?}");
     // and it is in one of thirty, with its commit.
-    let wide = fresh::list(&places, 30, None, at(NOW));
+    let wide = list(&places, 30, None, at(NOW));
     assert!(paths(&wide).contains(&"old.md"), "{:?}", paths(&wide));
     assert_eq!(
         wide.hits
@@ -130,9 +157,9 @@ fn a_window_counts_today_as_its_first_day() {
     let t = tempfile::tempdir().unwrap();
     let places = vec![planted(t.path(), "r")];
     // Yesterday is the second day of a window of two.
-    assert!(paths(&fresh::list(&places, 2, None, at(NOW))).contains(&"new.md"));
+    assert!(paths(&list(&places, 2, None, at(NOW))).contains(&"new.md"));
     // THE CONTROL: a window one day short of it holds only today, and nothing changed today.
-    let one = fresh::list(&places, 1, None, at(NOW));
+    let one = list(&places, 1, None, at(NOW));
     assert!(one.hits.is_empty(), "{:?}", paths(&one));
     assert!(
         render(&one).contains("nothing in any index changed in the last 1 day\n"),
@@ -155,7 +182,7 @@ fn the_newest_comes_first_across_places_and_a_day_keeps_the_place_order() {
         Place::at("b".to_string(), built(&b)),
         Place::at("c".to_string(), built(&c)),
     ];
-    let out = fresh::list(&places, 5, None, at(NOW));
+    let out = list(&places, 5, None, at(NOW));
     let files: Vec<(&str, &str)> = out
         .hits
         .iter()
@@ -166,7 +193,7 @@ fn the_newest_comes_first_across_places_and_a_day_keeps_the_place_order() {
     assert_eq!(files, vec![("b", "b.md"), ("a", "a.md"), ("c", "c.md")]);
     // THE CONTROL: a and c changed the same day, and keep the order the places came in.
     let reversed = vec![places[2].clone(), places[1].clone(), places[0].clone()];
-    let out = fresh::list(&reversed, 5, None, at(NOW));
+    let out = list(&reversed, 5, None, at(NOW));
     let files: Vec<&str> = out
         .hits
         .iter()
@@ -189,7 +216,7 @@ fn a_corpus_keeps_no_days_and_its_line_says_so() {
         .unwrap();
     drop(store);
     let places = vec![Place::at("corpus".to_string(), file), planted(t.path(), "r")];
-    let out = fresh::list(&places, 3, None, at(NOW));
+    let out = list(&places, 3, None, at(NOW));
     assert!(!out.indexes[0].answered);
     assert!(
         out.indexes[0].notes.iter().any(|n| n == NO_DAYS),
@@ -209,7 +236,7 @@ fn an_index_is_brought_current_before_it_is_listed() {
     let dir = t.path().join("r");
     write(&dir.join("later.md"), "# Later\n\nwritten today\n");
     commit(&dir, "add later.md", "2026-11-22T08:00:00Z");
-    let out = fresh::list(std::slice::from_ref(&place), 3, None, at(NOW));
+    let out = list(std::slice::from_ref(&place), 3, None, at(NOW));
     assert!(
         matches!(
             out.indexes[0].currency,
@@ -229,7 +256,7 @@ fn an_index_is_brought_current_before_it_is_listed() {
     );
     assert!(paths(&out).contains(&"later.md"), "{:?}", paths(&out));
     // THE CONTROL: listed again with nothing committed, no commit is read and the same is listed.
-    let again = fresh::list(std::slice::from_ref(&place), 3, None, at(NOW));
+    let again = list(std::slice::from_ref(&place), 3, None, at(NOW));
     assert!(matches!(
         again.indexes[0].currency,
         Some(Currency::Refreshed {
@@ -244,10 +271,10 @@ fn an_index_is_brought_current_before_it_is_listed() {
 fn the_limit_bounds_a_listing_and_none_lists_everything() {
     let t = tempfile::tempdir().unwrap();
     let places = vec![planted(t.path(), "r")];
-    let all = fresh::list(&places, 30, None, at(NOW));
+    let all = list(&places, 30, None, at(NOW));
     // THE CONTROL: with no limit every file and commit of the window is there.
     assert_eq!(all.hits.len(), 4, "{:?}", paths(&all));
-    let one = fresh::list(&places, 30, Some(1), at(NOW));
+    let one = list(&places, 30, Some(1), at(NOW));
     assert_eq!(paths(&one), paths(&all)[.. 1].to_vec());
 }
 
@@ -257,7 +284,7 @@ fn an_age_is_said_in_days_before_today() {
     assert_eq!(age(1), "1 day ago");
     assert_eq!(age(5), "5 days ago");
     let t = tempfile::tempdir().unwrap();
-    let out = fresh::list(&[planted(t.path(), "r")], 3, None, at(NOW));
+    let out = list(&[planted(t.path(), "r")], 3, None, at(NOW));
     let new = out.hits.iter().find(|h| h.path == "new.md").unwrap();
     assert_eq!(new.age.as_deref(), Some("1 day ago"));
     assert!(render(&out).contains("1 day ago"), "{}", render(&out));
@@ -287,7 +314,7 @@ fn a_listing_goes_through_the_pass_with_its_own_brief() {
         ..SummaryConfig::default()
     };
     let model = Counted(Cell::new(0), std::cell::RefCell::default());
-    let out = fresh::answer(&places, 3, None, Some((&on, &model)), at(NOW));
+    let out = answer_fresh(&places, 3, None, Some((&on, &model)), at(NOW));
     assert_eq!(model.0.get(), 1);
     assert!(out.summary.is_some());
     assert!(
@@ -299,7 +326,7 @@ fn a_listing_goes_through_the_pass_with_its_own_brief() {
         model.1.borrow()
     );
     // THE CONTROL: with no pass given the listing is whole and says nothing of a summary.
-    let whole = fresh::answer::<Counted>(&places, 3, None, None, at(NOW));
+    let whole = answer_fresh::<Counted>(&places, 3, None, None, at(NOW));
     assert_eq!(model.0.get(), 1);
     assert!(whole.summary.is_none() && whole.summary_note.is_none());
     assert!(render(&whole).contains("new.md"), "{}", render(&whole));
@@ -319,17 +346,17 @@ fn fresh_parses_bare_with_a_number_and_refuses_words() {
     assert!(matches!(
         parse(&["--fresh"]).unwrap().command,
         crate::cli::Command::Search {
-            fresh: Some(3),
+            fresh: Some(n),
             limit: None,
             ..
-        }
+        } if n.get() == 3
     ));
     assert!(matches!(
         parse(&["--fresh", "7"]).unwrap().command,
         crate::cli::Command::Search {
-            fresh: Some(7),
+            fresh: Some(n),
             ..
-        }
+        } if n.get() == 7
     ));
     assert!(parse(&["--fresh", "0"]).is_err());
     // THE CONTROL: words alone are a question, and with `--fresh` they are refused.
@@ -356,7 +383,7 @@ fn a_listing_takes_the_pass_wherever_it_is_on_and_a_question_only_when_asked() {
             })
         }
     };
-    let listing = Asked::Fresh(3);
+    let listing = Asked::Fresh(window(3));
     let question = Asked::Words(vec!["word".to_string()]);
     // A listing goes through the pass where it is on, without `--summarise`.
     assert!(pass_for(&listing, false, table(true)).unwrap().is_some());
@@ -383,7 +410,7 @@ fn a_listing_takes_the_pass_wherever_it_is_on_and_a_question_only_when_asked() {
 fn a_listing_says_its_days_in_their_number_and_is_listed_not_asked() {
     let t = tempfile::tempdir().unwrap();
     let places = vec![planted(t.path(), "r")];
-    let one = fresh::list(&places, 1, None, at(NOW));
+    let one = list(&places, 1, None, at(NOW));
     assert!(
         one.brief().contains("in the last 1 day across"),
         "{}",
@@ -410,7 +437,7 @@ fn a_listing_says_its_days_in_their_number_and_is_listed_not_asked() {
     );
 }
 
-fn render(out: &SearchOut) -> String {
+pub(super) fn render(out: &SearchOut) -> String {
     let mut text = Vec::new();
     out.render_human(&mut text).unwrap();
     String::from_utf8(text).unwrap()

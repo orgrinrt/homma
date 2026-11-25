@@ -12,6 +12,7 @@
 //! homma's is the merge of the lists by day, which the crate's layer does not yet do across
 //! indexes, and the printing.
 
+use std::num::NonZeroU32;
 use std::time::SystemTime;
 
 use homma_api::SummaryConfig;
@@ -29,7 +30,7 @@ pub const NO_DAYS: &str = "keeps no days, so what changed in it cannot be listed
 /// [`list`], and where `summarise` is given, its hits through the pass.
 pub fn answer<M: OneShot>(
     places: &[Place],
-    days: u32,
+    days: NonZeroU32,
     limit: Option<usize>,
     summarise: Option<(&SummaryConfig, &M)>,
     now: SystemTime,
@@ -39,9 +40,14 @@ pub fn answer<M: OneShot>(
 
 /// Everything the indexes of `places` hold that changed in the last `days` days counting the day
 /// of `now`, newest first, at most `limit` where one is given; and a line per place.
-pub fn list(places: &[Place], days: u32, limit: Option<usize>, now: SystemTime) -> SearchOut {
+pub fn list(
+    places: &[Place],
+    days: NonZeroU32,
+    limit: Option<usize>,
+    now: SystemTime,
+) -> SearchOut {
     let today = today(now);
-    let since = today - i64::from(days.max(1)) + 1;
+    let since = today - i64::from(days.get()) + 1;
     // Each listing keeps its place's order and its own, so a sort that is stable on the day alone
     // leaves ties in place order and then the index's.
     let mut listed: Vec<(i64, HitOut)> = Vec::new();
@@ -76,6 +82,8 @@ pub fn list(places: &[Place], days: u32, limit: Option<usize>, now: SystemTime) 
         };
         indexes.push(index_out(m, p, how, now));
     }
+    // FIXME(muisti_s_layer_lists_what_a_filter_keeps_across_indexes_newe): the lists are merged by
+    // day here until the index crate's layer lists what a filter keeps across indexes.
     listed.sort_by(|a, b| b.0.cmp(&a.0));
     let mut hits: Vec<HitOut> = listed.into_iter().map(|(_, h)| h).collect();
     if let Some(n) = limit {
