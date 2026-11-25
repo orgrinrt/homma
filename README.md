@@ -50,7 +50,7 @@ Where a credential lives somewhere other than an environment variable, a forge c
 | `homma forge show` | reads a repo's metadata off its forge |
 | `homma migrate` | mirror-clones a repo to another forge and pushes it |
 | `homma archive` | archives the source, as a step of its own after a migration |
-| `homma search` | brings each index of this repository and, when asked, of its members current, and asks them as one list |
+| `homma search` | brings each index of this repository and, when asked, of its members current, and asks them as one list; with `--fresh [<days>]`, lists instead what changed in them in the last days, newest first |
 | `homma summarise` | has a small model read a long text and hands back a summary that points at its places, when `[summary]` turns it on |
 | `homma ask` | answers a question over a command's output piped to it, through that same small model, so you never read the output itself |
 | `homma capture` | copies what a person said to an agent session into the capture store |
