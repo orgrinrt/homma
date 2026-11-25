@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-use super::accept_tests::workspace;
 use super::doc::Kind;
+use super::fixture::workspace;
 use super::sources::{corpora, scripts, verbs};
 
 #[test]
@@ -81,27 +81,27 @@ fn only_the_leading_block_is_the_header() {
 }
 
 #[test]
-fn the_real_sessions_script_has_its_verbs() {
+fn a_planted_scripts_verbs_and_place_are_read() {
     let g = scripts::gather(&workspace());
     let s = g
         .docs
         .iter()
-        .find(|d| d.name == "sessions")
-        .expect("the sessions script is read");
-    for v in ["finished", "blocked", "live", "due"] {
+        .find(|d| d.name == "harvest")
+        .expect("the harvest script is read");
+    for v in ["ripe", "rotten"] {
         assert!(
             s.verbs.iter().any(|x| x.name == v),
             "no verb {v}: {:?}",
             s.verbs
         );
     }
-    assert_eq!(s.place, ["remote"]);
+    assert_eq!(s.place, ["chores"]);
 }
 
 #[test]
 fn tests_and_fixtures_are_not_scripts() {
     let g = scripts::gather(&workspace());
-    assert!(!g.docs.is_empty());
+    assert!(g.docs.iter().any(|d| d.name == "water-plants"));
     assert!(
         g.docs
             .iter()
@@ -244,13 +244,13 @@ fn homma_verbs_are_read_from_the_command_line_itself() {
     assert!(g.docs.iter().all(|d| d.name != "help"));
 }
 #[test]
-fn the_real_skills_and_rules_are_read() {
+fn the_planted_skills_and_rules_are_read() {
     let ws = workspace();
     let s = corpora::skills(&ws);
     assert!(
         s.docs
             .iter()
-            .any(|d| d.name == "work-in-mockspace" && !d.summary.is_empty())
+            .any(|d| d.name == "plan-a-season" && !d.summary.is_empty())
     );
     let r = corpora::rules(&ws);
     assert!(
@@ -262,23 +262,23 @@ fn the_real_skills_and_rules_are_read() {
 
 #[cfg(unix)]
 #[test]
-fn the_real_tools_carry_their_verbs_and_how_to_run_them() {
+fn the_planted_tools_carry_their_verbs_and_how_to_run_them() {
     let g = super::sources::tools::gather(&workspace());
     let t = g
         .docs
         .iter()
-        .find(|d| d.name == "disk-trim")
-        .expect("disk-trim");
+        .find(|d| d.name == "plot-weed")
+        .expect("plot-weed");
     assert_eq!(
-        t.command, "homma disk-trim <trim|auto|report>",
+        t.command, "homma plot-weed <pull|tally>",
         "bare, it names the verbs it wants"
     );
     assert!(
         t.verbs
             .iter()
-            .any(|v| v.name == "trim" && v.command == "homma disk-trim trim")
+            .any(|v| v.name == "pull" && v.command == "homma plot-weed pull")
     );
-    assert!(t.tags.iter().any(|x| x == "hygiene"));
+    assert!(t.tags.iter().any(|x| x == "garden"));
 }
 
 #[test]
