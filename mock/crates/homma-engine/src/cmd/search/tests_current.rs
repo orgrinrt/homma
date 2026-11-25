@@ -374,3 +374,164 @@ fn every_count_on_the_line_is_said_in_its_number() {
     // THE CONTROL: nothing read, nothing said of commits.
     assert!(!read(0).contains("commit"), "{}", read(0));
 }
+
+/// The words embedder's model at a dimension the words embedder does not bring, so a writer of
+/// the verb's embedder is refused the file for its header and not for its model.
+struct WideWords;
+
+impl Embedder for WideWords {
+    fn model(&self) -> &str {
+        Words.model()
+    }
+
+    fn dimension(&self) -> usize {
+        2
+    }
+
+    fn embed(&mut self, _: &str, out: &mut [f32]) -> Result<(), muisti::Error> {
+        out.fill(0.0);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_refresh_refused_while_the_measure_reads_is_said_behind_with_its_words() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("c");
+    write(&dir.join("a.md"), "# A\n\nsaturation alpha\n");
+    let file = built(&dir, &mut WideWords);
+    write(&dir.join("b.md"), "# B\n\nsaturation beta\n");
+    let out = ask(
+        &[Place::at("c".to_string(), file)],
+        "saturation",
+        10,
+        SystemTime::now(),
+    );
+    // THE CONTROL: what the index held answers, and the file written after it does not.
+    let paths: Vec<&str> = out.hits.iter().map(|h| h.path.as_str()).collect();
+    assert_eq!(paths, vec!["a.md"]);
+    assert!(
+        matches!(
+            &out.indexes[0].currency,
+            Some(Currency::Behind {
+                files: 1,
+                ..
+            })
+        ),
+        "{:?}",
+        out.indexes[0].currency
+    );
+    let text = line(&out);
+    assert!(
+        text.contains("behind by 1 file, not brought current: "),
+        "{text}"
+    );
+    assert!(
+        text.contains("dimension"),
+        "the crate's words on the header: {text}"
+    );
+}
+
+#[test]
+fn three_places_asked_together_each_carry_their_own_line() {
+    let t = tempfile::tempdir().unwrap();
+    let fresh = t.path().join("fresh");
+    write(&fresh.join("a.md"), "# A\n\nalpha\n");
+    let fresh_file = built(&fresh, &mut Words);
+    write(&fresh.join("b.md"), "# B\n\nsaturation\n");
+    let other = t.path().join("other");
+    write(&other.join("a.md"), "# A\n\nsaturation\n");
+    let other_file = built(&other, &mut Other);
+    write(&other.join("b.md"), "# B\n\nbeta\n");
+    let places = vec![
+        Place::at("fresh".to_string(), fresh_file),
+        Place::at("gone".to_string(), t.path().join("gone.sqlite"))
+            .built_by("`muisti index` in /gone".to_string()),
+        Place::at("other".to_string(), other_file),
+    ];
+    let out = ask(&places, "saturation", 10, SystemTime::now());
+    let names: Vec<&str> = out.indexes.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names, vec!["fresh", "gone", "other"]);
+    assert!(
+        matches!(
+            out.indexes[0].currency,
+            Some(Currency::Refreshed {
+                added: 1,
+                ..
+            })
+        ),
+        "fresh: {:?}",
+        out.indexes[0].currency
+    );
+    assert_eq!(out.indexes[1].currency, None, "gone");
+    assert!(
+        out.indexes[1].notes.iter().any(|n| n.contains("/gone")),
+        "gone: {:?}",
+        out.indexes[1].notes
+    );
+    assert!(
+        matches!(
+            out.indexes[2].currency,
+            Some(Currency::Behind {
+                files: 1,
+                ..
+            })
+        ),
+        "other: {:?}",
+        out.indexes[2].currency
+    );
+    // THE CONTROL: each outcome sits only on its own line.
+    assert!(
+        !out.indexes[0].notes.iter().any(|n| n.contains("/gone")),
+        "{:?}",
+        out.indexes[0].notes
+    );
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .output()
+        .unwrap()
+        .status
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+#[test]
+fn a_repository_index_reads_a_commit_made_after_its_build() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("r");
+    write(&dir.join("one.md"), "# One\n\nalpha\n");
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "first"]);
+    let file = t.path().join("r.index/search.sqlite");
+    let roots = [muisti::repo::Root::walked(&dir, "", muisti::repo::DocClass::Research)];
+    let mut index = muisti::repo::RepoIndex::open(&file).unwrap();
+    index.refresh(&roots, Some(&dir)).unwrap();
+    drop(index);
+    write(&dir.join("two.md"), "# Two\n\nsaturation\n");
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-q", "-m", "second"]);
+    let places = vec![Place::at("r".to_string(), file)];
+    let out = ask(&places, "saturation", 10, SystemTime::now());
+    assert!(
+        matches!(
+            out.indexes[0].currency,
+            Some(Currency::Refreshed {
+                commits: 1 ..,
+                ..
+            })
+        ),
+        "{:?}",
+        out.indexes[0].currency
+    );
+    assert!(line(&out).contains("1 commit read"), "{}", line(&out));
+    // THE CONTROL: asked again with nothing committed, no commit is read.
+    let again = ask(&places, "saturation", 10, SystemTime::now());
+    assert!(!line(&again).contains("read"), "{}", line(&again));
+}
