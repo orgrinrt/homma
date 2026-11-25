@@ -135,7 +135,7 @@ fn a_window_counts_today_as_its_first_day() {
     let one = fresh::list(&places, 1, None, at(NOW));
     assert!(one.hits.is_empty(), "{:?}", paths(&one));
     assert!(
-        render(&one).contains("nothing in any index changed in the last 1 days"),
+        render(&one).contains("nothing in any index changed in the last 1 day\n"),
         "{}",
         render(&one)
     );
@@ -341,7 +341,73 @@ fn fresh_parses_bare_with_a_number_and_refuses_words() {
         }
     ));
     assert!(parse(&["word", "--fresh"]).is_err());
+    assert!(parse(&["--fresh", "word"]).is_err());
+    assert!(parse(&["--fresh", "3", "word"]).is_err());
     assert!(parse(&[]).is_err());
+}
+
+#[test]
+fn a_listing_takes_the_pass_wherever_it_is_on_and_a_question_only_when_asked() {
+    let table = |enabled: bool| {
+        move || {
+            Ok(SummaryConfig {
+                enabled,
+                ..SummaryConfig::default()
+            })
+        }
+    };
+    let listing = Asked::Fresh(3);
+    let question = Asked::Words(vec!["word".to_string()]);
+    // A listing goes through the pass where it is on, without `--summarise`.
+    assert!(pass_for(&listing, false, table(true)).unwrap().is_some());
+    // THE CONTROL: where it is off the listing is whole and nothing is said of the pass.
+    assert!(pass_for(&listing, false, table(false)).unwrap().is_none());
+    // Asked for, the pass is given even where off, so it says why.
+    assert!(
+        pass_for(&listing, true, table(false))
+            .unwrap()
+            .is_some_and(|s| !s.enabled)
+    );
+    // A question takes it only when asked, and the table is not read otherwise.
+    assert!(
+        pass_for(&question, false, || -> anyhow::Result<SummaryConfig> {
+            panic!("read")
+        })
+        .unwrap()
+        .is_none()
+    );
+    assert!(pass_for(&question, true, table(true)).unwrap().is_some());
+}
+
+#[test]
+fn a_listing_says_its_days_in_their_number_and_is_listed_not_asked() {
+    let t = tempfile::tempdir().unwrap();
+    let places = vec![planted(t.path(), "r")];
+    let one = fresh::list(&places, 1, None, at(NOW));
+    assert!(
+        one.brief().contains("in the last 1 day across"),
+        "{}",
+        one.brief()
+    );
+    let text = render(&one);
+    assert!(text.contains("listed by the days they changed"), "{text}");
+    // THE CONTROL: a question's line says it was asked, and a listing's JSON carries no question.
+    let asked = ask(&places, "note", 10, at(NOW));
+    assert!(
+        render(&asked).contains("asked by words"),
+        "{}",
+        render(&asked)
+    );
+    let json = serde_json::to_value(&one).unwrap();
+    assert!(
+        json.get("question").is_none() && json.get("window").is_some(),
+        "{json}"
+    );
+    let json = serde_json::to_value(&asked).unwrap();
+    assert!(
+        json.get("question").is_some() && json.get("window").is_none(),
+        "{json}"
+    );
 }
 
 fn render(out: &SearchOut) -> String {

@@ -459,16 +459,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             summarise,
         } => {
             let cfg = load_config(&cli)?;
-            // A listing is large by design, so it takes the pass wherever it is on; asked for, the
-            // pass says why where it is off.
-            let summary = (*summarise || fresh.is_some())
-                .then(|| summary::settings(&cfg))
-                .transpose()?
-                .filter(|s| *summarise || s.enabled);
             let asked = match fresh {
                 Some(days) => search::Asked::Fresh(*days),
                 None => search::Asked::Words(words.clone()),
             };
+            let summary = search::pass_for(&asked, *summarise, || summary::settings(&cfg))?;
             let root = tools::root(&config_path(&cli));
             let settings = search::discover::search_config(&cfg, *members)?;
             let content = search::discover::content_name(cfg.content_repo.as_deref(), &root);

@@ -90,6 +90,8 @@ pub struct IndexOut {
 /// The answer.
 #[derive(Debug, Serialize)]
 pub struct SearchOut {
+    /// The question's words; empty, and absent from the JSON, for a listing.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub question:     String,
     /// The days a listing of what changed covers, present only for a listing.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,10 +111,11 @@ impl SearchOut {
     #[must_use]
     pub fn brief(&self) -> String {
         match self.window {
-            Some(days) => {
+            Some(n) => {
                 format!(
-                    "everything that changed in the last {days} days across the workspace's \
-                     indexes: what changed where, newest first"
+                    "everything that changed in the last {} across the workspace's indexes: what \
+                     changed where, newest first",
+                    days(n)
                 )
             },
             None => {
@@ -142,8 +145,8 @@ impl SearchOut {
     fn render_hits(&self, out: &mut dyn Write) -> std::io::Result<()> {
         if self.hits.is_empty() {
             match self.window {
-                Some(days) => {
-                    writeln!(out, "nothing in any index changed in the last {days} days")?;
+                Some(n) => {
+                    writeln!(out, "nothing in any index changed in the last {}", days(n))?;
                 },
                 None => writeln!(out, "nothing in any index answers `{}`", self.question)?,
             }
@@ -220,6 +223,30 @@ pub enum Asked {
 
 /// How many hits a question gives where `--limit` is not given.
 pub const QUESTION_LIMIT: usize = 10;
+
+/// The pass a search goes through: the `[summary]` table `settings` reads where `--summarise`
+/// asked for it, whatever it says, so it says why where it is off; and for a listing, which is
+/// large by design, wherever the table has it on. `settings` is read only where one of the two may
+/// want it.
+///
+/// # Errors
+/// What `settings` gives.
+pub fn pass_for(
+    asked: &Asked,
+    summarise: bool,
+    settings: impl FnOnce() -> Result<SummaryConfig>,
+) -> Result<Option<SummaryConfig>> {
+    let listing = matches!(asked, Asked::Fresh(_));
+    if !summarise && !listing {
+        return Ok(None);
+    }
+    Ok(Some(settings()?).filter(|s| summarise || s.enabled))
+}
+
+/// `n` days, in its number.
+fn days(n: u32) -> String {
+    if n == 1 { "1 day".to_string() } else { format!("{n} days") }
+}
 
 /// [`ask`], and where `summarise` is given, its hits through the pass with that table and model.
 pub fn answer<M: OneShot>(
@@ -447,10 +474,14 @@ impl HumanRender for SearchOut {
                 when.push_str(&c.said());
             }
             if i.answered {
-                let by = if i.meaning { "words and meaning" } else { "words" };
+                let by = match (self.window, i.meaning) {
+                    (Some(_), _) => "listed by the days they changed",
+                    (None, true) => "asked by words and meaning",
+                    (None, false) => "asked by words",
+                };
                 write!(
                     out,
-                    "  {:width$}  {} documents, `{}` vectors, asked by {by}{when}",
+                    "  {:width$}  {} documents, `{}` vectors, {by}{when}",
                     i.name,
                     i.documents.unwrap_or(0),
                     i.model.as_deref().unwrap_or("")
