@@ -675,7 +675,16 @@ pub enum SkillsOp {
     /// copied with its mode, since a skill's scripts are not prose. Each
     /// skill's generated directory is rewritten whole, so editing one by hand
     /// loses the edit on the next run.
-    Render {},
+    ///
+    /// The modes are written as skills, and each skill keeps its `effort`
+    /// key, only where the effort gate keeps them for the session's model;
+    /// without `--model` every effort key is taken out and no mode skill is
+    /// left.
+    Render {
+        /// The session's model id, which the effort gate is asked about.
+        #[arg(long)]
+        model: Option<String>,
+    },
 }
 
 /// `agents` subcommands.

@@ -186,3 +186,19 @@ fn an_empty_required_scalar_is_refused() {
         Err(FrontmatterError::BadValue { .. })
     ));
 }
+
+#[test]
+fn without_key_takes_the_key_out_of_the_block_and_leaves_the_body() {
+    let text = "---\nname: x\neffort: high\n---\n\neffort: high is prose here\n";
+    assert_eq!(
+        frontmatter::without_key(text, "effort"),
+        "---\nname: x\n---\n\neffort: high is prose here\n"
+    );
+}
+
+#[test]
+fn without_key_leaves_a_text_with_no_block_or_an_open_one_as_it_was() {
+    for text in ["effort: high\n", "---\neffort: high\n", ""] {
+        assert_eq!(frontmatter::without_key(text, "effort"), text);
+    }
+}

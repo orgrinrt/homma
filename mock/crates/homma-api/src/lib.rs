@@ -15,10 +15,12 @@ pub mod config;
 pub mod contained;
 pub mod denied;
 pub mod deny_entry;
+pub mod effort;
 pub mod frontmatter;
 pub mod git;
 pub mod hooks;
 pub mod layers;
+pub mod mode;
 pub mod path;
 pub mod poster;
 pub mod record;
@@ -27,6 +29,7 @@ pub mod release;
 pub mod rule;
 pub mod session;
 pub mod skill;
+pub mod surfaces;
 pub mod version;
 
 pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
@@ -45,10 +48,12 @@ pub use config::{
 pub use contained::{ContainedPath, Escapes, Root};
 pub use denied::{Denied, Forbidden, NoHome, Standing};
 pub use deny_entry::DenyEntry;
+pub use effort::{Effort, NotAnEffort};
 pub use frontmatter::{Block, FrontmatterError};
 pub use git::{CommitIdentity, EmptyPart, Git, Part};
 pub use hooks::{HookEntry, Hooks, InvalidHooks};
 pub use layers::{DEFAULT_LAYER, InvalidLayers, Layers};
+pub use mode::{ModeMeta, ParsedMode};
 pub use path::{AbsPath, NotAbsolute};
 pub use poster::{NotAGiveUp, POSTER_GAVE_UP_KIND, PosterGaveUp};
 pub use record::{Attr, AttrType, Invalid, Kind, Mutability, Record};
@@ -75,3 +80,4 @@ pub use release::{
 pub use rule::{MetaError, Parsed, RuleKind, RuleMeta};
 pub use session::{CLOUD_VAR, Place, ROLE_FILE, Session, SessionRole, UnknownWord};
 pub use skill::{SkillError, SkillMeta};
+pub use surfaces::{EffortGate, ModesConfig, PrinciplesConfig, SurfacesConfig};

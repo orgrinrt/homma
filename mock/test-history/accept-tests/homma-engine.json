@@ -6,14 +6,34 @@
   "tests": {
     "homma-engine::bin/homma-engine": {
       "cmd::what::accept_tests::a_misspelt_long_word_is_found_by_its_edit": {
-        "secs": 8.6,
+        "secs": 45.2,
         "passed": true,
-        "passed_at": "3696fd1fd63c47c11095565a9897956abc65c55b6ab3effc8da97ac51d9b8c48"
+        "passed_at": "5f24725c4d55b77c520449f7c9bf87f65f9174be5c94718ffd07fa3b2a160ba3"
       },
       "cmd::what::accept_tests::a_misspelt_query_finds_the_same_tool": {
-        "secs": 7.3,
+        "secs": 43.3,
         "passed": true,
-        "passed_at": "3696fd1fd63c47c11095565a9897956abc65c55b6ab3effc8da97ac51d9b8c48"
+        "passed_at": "5f24725c4d55b77c520449f7c9bf87f65f9174be5c94718ffd07fa3b2a160ba3"
+      },
+      "cmd::what::accept_tests::a_query_about_nothing_the_tooling_does_returns_nothing": {
+        "secs": 47.8,
+        "passed": true,
+        "passed_at": "5f24725c4d55b77c520449f7c9bf87f65f9174be5c94718ffd07fa3b2a160ba3"
+      },
+      "cmd::what::accept_tests::a_query_of_only_filler_returns_nothing_and_says_why": {
+        "secs": 60.1,
+        "passed": true,
+        "passed_at": "5f24725c4d55b77c520449f7c9bf87f65f9174be5c94718ffd07fa3b2a160ba3"
+      },
+      "cmd::what::accept_tests::a_sourced_library_is_never_an_answer": {
+        "secs": 60.1,
+        "passed": true,
+        "passed_at": "5f24725c4d55b77c520449f7c9bf87f65f9174be5c94718ffd07fa3b2a160ba3"
+      },
+      "cmd::what::accept_tests::a_tool_with_verbs_and_no_default_one_never_prints_a_command_the_dispatcher_refuses": {
+        "secs": 35.7,
+        "passed": true,
+        "passed_at": "5f24725c4d55b77c520449f7c9bf87f65f9174be5c94718ffd07fa3b2a160ba3"
       }
     }
   },

@@ -514,9 +514,11 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     skills::list::run(&cfg, cli.output)?;
                     Ok(Outcome::Ok)
                 },
-                SkillsOp::Render {} => {
+                SkillsOp::Render {
+                    model,
+                } => {
                     let cfg = load_config(&cli)?;
-                    skills::render::run(&cfg, cli.output)?;
+                    skills::render::run(&cfg, model.as_deref(), cli.output)?;
                     Ok(Outcome::Ok)
                 },
             }

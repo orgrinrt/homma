@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use homma_api::session::{CLOUD_VAR, Place, ROLE_FILE, Session, SessionRole};
 use homma_core::Config;
-use homma_org::rules::Corpus;
+use homma_org::rules::{Corpus, Principles};
 use serde::Serialize;
 
 use crate::cli::{OutputFormat, SessionArgs};
@@ -34,6 +34,24 @@ fn authored_dir(cfg: &Config) -> PathBuf {
 
 fn load(dir: &Path) -> Result<Corpus> {
     Corpus::load(dir).with_context(|| format!("reading the rule corpus at {}", dir.display()))
+}
+
+/// The rules and, where their directory is there, the principles: every card a
+/// session loads.
+fn load_cards(cfg: &Config) -> Result<Corpus> {
+    let mut corpus = load(&authored_dir(cfg))?;
+    let surfaces = skills::surfaces(cfg)?;
+    let p = &surfaces.principles;
+    let dir = cfg.workspace.path.join(p.dir.as_path());
+    if dir.is_dir() {
+        corpus
+            .load_principles(&dir, &Principles {
+                card_prefix:  &p.card_prefix,
+                title_prefix: &p.title_prefix,
+            })
+            .with_context(|| format!("reading the principles at {}", dir.display()))?;
+    }
+    Ok(corpus)
 }
 
 /// The session the options and the machine describe.
@@ -233,7 +251,7 @@ pub mod render {
         let session = current_session(args)?;
         let src = authored_dir(cfg);
         let dst = cfg.workspace.path.join(GENERATED);
-        let corpus = load(&src)?;
+        let corpus = load_cards(cfg)?;
         let written = corpus
             .render_cards(&dst, &session)
             .with_context(|| format!("generating cards into {}", dst.display()))?;
@@ -326,7 +344,12 @@ pub mod load {
         let mut loaded = Vec::new();
         let mut scoped_cards = 0;
         let mut scoped_bytes = 0;
-        for r in corpus.rules.iter().filter(|r| session.admits(&r.meta)) {
+        for r in corpus
+            .rules
+            .iter()
+            .chain(&corpus.principles)
+            .filter(|r| session.admits(&r.meta))
+        {
             let bytes = corpus.card_bytes(r)?;
             if r.meta.paths.is_empty() {
                 loaded.push(CardSize {
@@ -353,7 +376,7 @@ pub mod load {
     }
 
     pub fn run(cfg: &Config, args: &SessionArgs, all: bool, format: OutputFormat) -> Result<()> {
-        let corpus = load(&authored_dir(cfg))?;
+        let corpus = load_cards(cfg)?;
         let rows = if all {
             let roles = [None, Some(SessionRole::Coordinator), Some(SessionRole::Helper)];
             let mut rows = Vec::new();
