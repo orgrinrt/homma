@@ -21,13 +21,14 @@
 //! skill whose command-line tool arrives unexecutable fails at the moment it is
 //! reached for, which is the worst time to find out.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use homma_api::frontmatter;
 use homma_api::skill::{self, SkillError, SkillMeta};
-use mockspace_template::template::TemplateEnv;
 use serde::Serialize;
+
+use crate::surface::{self, Kind, Shape};
 
 /// Suffix of an authored template, anywhere inside a skill.
 const TMPL_SUFFIX: &str = ".tmpl";
@@ -143,71 +144,56 @@ struct Ctx<'a> {
     description: &'a str,
 }
 
-impl Skills {
-    /// Read every skill under `dir`.
-    pub fn load(dir: &Path) -> Result<Self, SkillsError> {
-        let entries = fs::read_dir(dir).map_err(|cause| {
-            SkillsError::Unreadable {
-                path: dir.to_path_buf(),
+/// The skills as a kind: a directory per skill, declared in its manifest.
+struct SkillDirs;
+
+impl Kind for SkillDirs {
+    type Error = SkillsError;
+    type Item = Skill;
+
+    const SHAPE: Shape = Shape::Dir;
+
+    fn unreadable(path: PathBuf, cause: io::Error) -> SkillsError {
+        SkillsError::Unreadable {
+            path,
+            cause,
+        }
+    }
+
+    fn read(&self, name: &str, path: &Path) -> Result<Skill, SkillsError> {
+        let manifest = path.join(MANIFEST);
+        if !manifest.is_file() {
+            return Err(SkillsError::NoManifest {
+                path: path.to_path_buf(),
+            });
+        }
+        let source = surface::read_text::<Self>(&manifest)?;
+        let parsed = skill::parse(&source).map_err(|cause| {
+            SkillsError::Meta {
+                path: manifest.clone(),
                 cause,
             }
         })?;
-
-        // Sorted by name, so the order the corpus is walked in does not depend
-        // on the order the filesystem happens to list it in.
-        let mut dirs: BTreeMap<String, PathBuf> = BTreeMap::new();
-        for entry in entries {
-            let entry = entry.map_err(|cause| {
-                SkillsError::Unreadable {
-                    path: dir.to_path_buf(),
-                    cause,
-                }
-            })?;
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let Some(name) = path.file_name().and_then(|f| f.to_str()) else {
-                continue;
-            };
-            dirs.insert(name.to_string(), path);
-        }
-
-        let mut skills = Vec::with_capacity(dirs.len());
-        for (name, path) in dirs {
-            let manifest = path.join(MANIFEST);
-            if !manifest.is_file() {
-                return Err(SkillsError::NoManifest {
-                    path,
-                });
-            }
-            let source = fs::read_to_string(&manifest).map_err(|cause| {
-                SkillsError::Unreadable {
-                    path: manifest.clone(),
-                    cause,
-                }
-            })?;
-            let parsed = skill::parse(&source).map_err(|cause| {
-                SkillsError::Meta {
-                    path: manifest.clone(),
-                    cause,
-                }
-            })?;
-            if !skill::name_matches_dir(&parsed.meta, &name) {
-                return Err(SkillsError::NameMismatch {
-                    path:     manifest,
-                    declared: parsed.meta.name,
-                    dir:      name,
-                });
-            }
-            skills.push(Skill {
-                name,
-                meta: parsed.meta,
-                dir: path,
+        if !skill::name_matches_dir(&parsed.meta, name) {
+            return Err(SkillsError::NameMismatch {
+                path:     manifest,
+                declared: parsed.meta.name,
+                dir:      name.to_string(),
             });
         }
+        Ok(Skill {
+            name: name.to_string(),
+            meta: parsed.meta,
+            dir:  path.to_path_buf(),
+        })
+    }
+}
+
+impl Skills {
+    /// Read every skill under `dir`, in name order.
+    pub fn load(dir: &Path) -> Result<Self, SkillsError> {
         Ok(Self {
-            skills,
+            skills: surface::load(&SkillDirs, dir)?,
         })
     }
 
@@ -218,7 +204,11 @@ impl Skills {
     /// directory in `dst` that no authored skill claims is left alone and
     /// reported by [`Self::unclaimed`], since deleting what this pass did not
     /// write is a decision for whoever put it there.
-    pub fn render(&self, dst: &Path) -> Result<Vec<PathBuf>, SkillsError> {
+    ///
+    /// Where `keep_effort` is false, the `effort` key is taken out of each
+    /// rendered manifest's frontmatter: the effort gate decided a change of
+    /// effort would empty the host's prompt cache.
+    pub fn render(&self, dst: &Path, keep_effort: bool) -> Result<Vec<PathBuf>, SkillsError> {
         fs::create_dir_all(dst).map_err(|cause| {
             SkillsError::Write {
                 path: dst.to_path_buf(),
@@ -237,7 +227,7 @@ impl Skills {
                     }
                 })?;
             }
-            self.render_tree(s, &s.dir, &out, &mut written)?;
+            self.render_tree(s, &s.dir, &out, keep_effort, &mut written)?;
         }
         Ok(written)
     }
@@ -248,6 +238,7 @@ impl Skills {
         s: &Skill,
         src: &Path,
         dst: &Path,
+        keep_effort: bool,
         written: &mut Vec<PathBuf>,
     ) -> Result<(), SkillsError> {
         fs::create_dir_all(dst).map_err(|cause| {
@@ -301,7 +292,7 @@ impl Skills {
                 continue;
             }
             if kind.is_dir() {
-                self.render_tree(s, &path, &dst.join(file), written)?;
+                self.render_tree(s, &path, &dst.join(file), keep_effort, written)?;
                 continue;
             }
             match file.strip_suffix(TMPL_SUFFIX) {
@@ -312,11 +303,12 @@ impl Skills {
                             cause,
                         }
                     })?;
-                    let out = self.render_one(s, &source, &path)?;
+                    let mut out = self.render_one(s, &source, &path)?;
+                    if !keep_effort && file == MANIFEST {
+                        out = frontmatter::without_key(&out, "effort");
+                    }
                     let target = dst.join(rendered_name);
-                    // A trailing newline, because a file without one
-                    // concatenates with whatever follows it.
-                    fs::write(&target, format!("{}\n", out.trim_end())).map_err(|cause| {
+                    surface::write(&target, &out).map_err(|cause| {
                         SkillsError::Write {
                             path: target.clone(),
                             cause,
@@ -342,18 +334,14 @@ impl Skills {
 
     /// Render one template against its skill's own meta.
     fn render_one(&self, s: &Skill, source: &str, path: &Path) -> Result<String, SkillsError> {
-        // A fresh environment per render rather than one shared: strict
-        // undefined handling is the point, and a shared registry would let a
-        // template resolve a name some other skill happened to define.
-        let env = TemplateEnv::new();
         let ctx = Ctx {
             name:        &s.name,
             description: &s.meta.description,
         };
-        env.render_str(source, &ctx).map_err(|e| {
+        surface::render(source, &ctx).map_err(|reason| {
             SkillsError::Render {
-                path:   path.to_path_buf(),
-                reason: e.to_string(),
+                path: path.to_path_buf(),
+                reason,
             }
         })
     }
@@ -364,36 +352,10 @@ impl Skills {
     /// moved to the authored side yet or something else entirely, and this pass
     /// cannot tell which.
     pub fn unclaimed(&self, dst: &Path) -> Result<Vec<String>, SkillsError> {
-        if !dst.is_dir() {
-            return Ok(Vec::new());
-        }
-        let entries = fs::read_dir(dst).map_err(|cause| {
-            SkillsError::Unreadable {
-                path: dst.to_path_buf(),
-                cause,
-            }
-        })?;
-        let mut stray = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|cause| {
-                SkillsError::Unreadable {
-                    path: dst.to_path_buf(),
-                    cause,
-                }
-            })?;
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let Some(name) = path.file_name().and_then(|f| f.to_str()) else {
-                continue;
-            };
-            if !self.skills.iter().any(|s| s.name == name) {
-                stray.push(name.to_string());
-            }
-        }
-        stray.sort();
-        Ok(stray)
+        surface::unclaimed(dst, Shape::Dir, |name| {
+            self.skills.iter().any(|s| s.name == name)
+        })
+        .map_err(|cause| SkillDirs::unreadable(dst.to_path_buf(), cause))
     }
 
     /// The skills that cite a rule by name, in the two forms a citation takes.

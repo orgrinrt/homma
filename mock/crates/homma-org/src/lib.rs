@@ -15,10 +15,12 @@ pub mod character;
 pub mod configs;
 pub mod generate;
 pub mod lease;
+pub mod modes;
 pub mod provision;
 pub mod remote;
 pub mod rules;
 pub mod skills;
+pub mod surface;
 pub mod workspace;
 mod yaml;
 

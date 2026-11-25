@@ -35,6 +35,7 @@ const KNOWN: &[&str] = &[
     "model",
     "license",
     "disable-model-invocation",
+    "effort",
 ];
 
 /// What a skill declares about itself.
@@ -94,6 +95,17 @@ pub fn parse(source: &str) -> Result<Parsed, SkillError> {
             other => other,
         }
     })?;
+
+    // Kept as written like every host key, and read here only so a word the host
+    // does not know is refused where it was written.
+    if let Some(word) = block.optional("effort") {
+        word.parse::<crate::Effort>().map_err(|e| {
+            SkillError::BadValue {
+                key:    "effort".into(),
+                reason: e.to_string(),
+            }
+        })?;
+    }
 
     let extra = KNOWN
         .iter()

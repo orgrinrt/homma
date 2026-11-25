@@ -1,0 +1,50 @@
+fba6ac1 chore: lock src changelist 202611251044-dnk6
+3935e3d fix: refuse a principle's clash and plant invented names
+e54307f docs: list the source changes of the review round
+da5f4a8 chore: lock doc changelist 202611251044-dnk6
+55ac3a2 docs: refuse a principle's clash and name no workspace tool
+a734360 docs: open the round on the review of the kinds
+a029247 chore: close design round 202611251034-l741
+bd7e085 chore: lock src changelist 202611251034-l741
+a64f1d4 test: run the what acceptance over a planted workspace
+144a543 docs: list the source changes of the what tests round
+78fce6b chore: lock doc changelist 202611251034-l741
+0e056eb docs: design the what acceptance over a planted workspace
+04319b5 docs: open the round on the what tests planting what they read
+12b70eb chore: close design round 202611251031-ky2j
+b1e30ee chore: lock src changelist 202611251031-ky2j
+e9c504d feat: expire the ask cache by last read and cap it by size
+5bc9c6d docs: list the source changes of the ask cache round
+e02e225 chore: lock doc changelist 202611251031-ky2j
+a87ed16 docs: design the ask cache's expiry by last read and its cap
+b6adfdd docs: open the round on the ask cache's expiry and cap
+23cc4bc chore: close design round 202611251020-u09e
+969d375 chore: lock src changelist 202611251020-u09e
+444956b feat: render effort, modes and principles through one path
+45c4b32 docs: list the source changes of the kinds round
+47378a4 chore: lock doc changelist 202611251020-u09e
+0f9ac36 docs: design effort, the mode and principle kinds and one path
+6a94535 docs: open the round on effort, modes and principles
+95afd37 feat: list what changed in the last days across the indexes
+20ce30a feat: list what changed in the last days across the indexes
+06c355c docs: render the design of a listing's line, json and days
+e75bf11 chore: close design round 202611250846-mzpu
+27de9a9 chore: lock src changelist 202611250846-mzpu
+da7d170 fix: take a listing's days as non-zero and mark what waits on the layer
+76e7d85 docs: file the src changelist of 202611250846-mzpu
+390e09e chore: lock doc changelist 202611250846-mzpu
+dcc3e94 docs: say a listing's line, its json and its days
+4b5b4e7 docs: file the topic of a listing's line and json as they are
+65dbb92 chore: close design round 202611250648-ylo2
+5f0280d chore: lock src changelist 202611250648-ylo2
+805ebfd fix: choose a listing's pass in one tested place and say its line
+c94f3aa docs: render the design of search listing what changed lately
+cad9be5 feat: list what changed in the last days with search --fresh
+aac663b docs: file the src changelist of 202611250648-ylo2
+3394fd4 chore: lock doc changelist 202611250648-ylo2
+028efac docs: say the search lists what changed in the last days
+ee0e9d3 docs: file the topic of listing what changed in the last days
+0afca6c feat: say how far a member index is behind and bring it current
+dc6407c feat: say how far a member index is behind and bring it current
+0f430f1 chore: close design round 202611250313-zuva
+c4e73a5 chore: lock src changelist 202611250313-zuva

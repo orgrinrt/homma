@@ -412,17 +412,19 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 },
                 RulesOp::Render {
                     session,
+                    principles,
                 } => {
                     let cfg = load_config(&cli)?;
-                    rules::render::run(&cfg, session, cli.output)?;
+                    rules::render::run(&cfg, session, principles, cli.output)?;
                     Ok(Outcome::Ok)
                 },
                 RulesOp::Load {
                     session,
+                    principles,
                     all,
                 } => {
                     let cfg = load_config(&cli)?;
-                    rules::load::run(&cfg, session, *all, cli.output)?;
+                    rules::load::run(&cfg, session, principles, *all, cli.output)?;
                     Ok(Outcome::Ok)
                 },
             }
@@ -514,9 +516,12 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                     skills::list::run(&cfg, cli.output)?;
                     Ok(Outcome::Ok)
                 },
-                SkillsOp::Render {} => {
+                SkillsOp::Render {
+                    modes,
+                    no_effort,
+                } => {
                     let cfg = load_config(&cli)?;
-                    skills::render::run(&cfg, cli.output)?;
+                    skills::render::run(&cfg, modes, !*no_effort, cli.output)?;
                     Ok(Outcome::Ok)
                 },
             }

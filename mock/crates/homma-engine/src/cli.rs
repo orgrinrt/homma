@@ -633,6 +633,9 @@ pub enum RulesOp {
     Render {
         #[command(flatten)]
         session: SessionArgs,
+
+        #[command(flatten)]
+        principles: PrinciplesArgs,
     },
 
     /// The cards a session loads, with their sizes.
@@ -641,6 +644,9 @@ pub enum RulesOp {
     Load {
         #[command(flatten)]
         session: SessionArgs,
+
+        #[command(flatten)]
+        principles: PrinciplesArgs,
 
         /// Every role and place, one line each, rather than one session.
         #[arg(long, conflicts_with_all = ["role", "place"])]
@@ -663,6 +669,38 @@ pub struct SessionArgs {
     pub place: Option<Place>,
 }
 
+/// Where the principles are and how their cards are named, all three or none.
+#[derive(Debug, Args)]
+pub struct PrinciplesArgs {
+    /// The directory the principles are authored in.
+    #[arg(long, requires_all = ["principle_prefix", "principle_title"])]
+    pub principles: Option<std::path::PathBuf>,
+
+    /// What a principle's card is named: this, then the principle's name.
+    #[arg(long, requires = "principles")]
+    pub principle_prefix: Option<String>,
+
+    /// What a principle's first heading opens with, before its name.
+    #[arg(long, requires = "principles")]
+    pub principle_title: Option<String>,
+}
+
+/// Where the modes are and how their skills are named and bounded, all three or none.
+#[derive(Debug, Args)]
+pub struct ModesArgs {
+    /// The directory the modes are authored in.
+    #[arg(long, requires_all = ["mode_prefix", "mode_body_max"])]
+    pub modes: Option<std::path::PathBuf>,
+
+    /// What a mode's skill is named: this, then the mode's type.
+    #[arg(long, requires = "modes")]
+    pub mode_prefix: Option<String>,
+
+    /// The most characters a mode's body may hold.
+    #[arg(long, requires = "modes")]
+    pub mode_body_max: Option<usize>,
+}
+
 /// `skills` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum SkillsOp {
@@ -675,7 +713,19 @@ pub enum SkillsOp {
     /// copied with its mode, since a skill's scripts are not prose. Each
     /// skill's generated directory is rewritten whole, so editing one by hand
     /// loses the edit on the next run.
-    Render {},
+    ///
+    /// The modes the caller names are written as skills. Each skill keeps
+    /// its `effort` key as written, unless `--no-effort` says a change of
+    /// effort would not keep the cache: then every effort key is taken out and
+    /// no mode skill is left.
+    Render {
+        #[command(flatten)]
+        modes: ModesArgs,
+
+        /// Take every `effort` key out and leave no mode skill.
+        #[arg(long)]
+        no_effort: bool,
+    },
 }
 
 /// `agents` subcommands.

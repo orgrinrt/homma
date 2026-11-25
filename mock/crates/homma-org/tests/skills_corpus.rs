@@ -184,7 +184,7 @@ fn a_template_loses_its_suffix_and_is_rendered() {
     let dir = fixture();
     let corpus = load(&dir);
     let out = dir.join("out");
-    corpus.render(&out).unwrap();
+    corpus.render(&out, true).unwrap();
 
     let flow = out.join("pr-review/reference/the-flow.md");
     assert!(flow.is_file(), "the suffix comes off");
@@ -201,7 +201,7 @@ fn a_script_is_copied_untouched_braces_and_all() {
     let dir = fixture();
     let corpus = load(&dir);
     let out = dir.join("out");
-    corpus.render(&out).unwrap();
+    corpus.render(&out, true).unwrap();
 
     let src = fs::read_to_string(dir.join("skills/pr-review/scripts/scan.sh")).unwrap();
     let dst = fs::read_to_string(out.join("pr-review/scripts/scan.sh")).unwrap();
@@ -222,7 +222,7 @@ fn the_executable_bit_survives_the_copy() {
 
     let corpus = load(&dir);
     let out = dir.join("out");
-    corpus.render(&out).unwrap();
+    corpus.render(&out, true).unwrap();
 
     let mode = fs::metadata(out.join("pr-review/scripts/scan.sh"))
         .unwrap()
@@ -254,7 +254,7 @@ fn a_symlink_is_recreated_and_never_walked_through() {
 
     let corpus = load(&dir);
     let out = dir.join("out");
-    corpus.render(&out).unwrap();
+    corpus.render(&out, true).unwrap();
 
     let link = out.join("pr-review/lib/vendored");
     assert!(
@@ -282,11 +282,11 @@ fn a_symlink_is_recreated_and_never_walked_through() {
 fn a_file_dropped_from_the_authored_side_does_not_survive_regeneration() {
     let dir = fixture();
     let out = dir.join("out");
-    load(&dir).render(&out).unwrap();
+    load(&dir).render(&out, true).unwrap();
     assert!(out.join("pr-review/reference/the-flow.md").is_file());
 
     fs::remove_file(dir.join("skills/pr-review/reference/the-flow.md.tmpl")).unwrap();
-    load(&dir).render(&out).unwrap();
+    load(&dir).render(&out, true).unwrap();
     assert!(
         !out.join("pr-review/reference/the-flow.md").exists(),
         "the generated directory is rewritten whole, so a dropped file goes"
@@ -298,7 +298,7 @@ fn a_generated_directory_nothing_authors_is_reported_and_left_alone() {
     let dir = fixture();
     let corpus = load(&dir);
     let out = dir.join("out");
-    corpus.render(&out).unwrap();
+    corpus.render(&out, true).unwrap();
     fs::create_dir_all(out.join("came-from-somewhere-else")).unwrap();
 
     let stray = corpus.unclaimed(&out).unwrap();
@@ -319,7 +319,7 @@ fn a_template_naming_something_the_meta_does_not_have_is_refused() {
     .unwrap();
     let corpus = load(&dir);
     let err = corpus
-        .render(&dir.join("out"))
+        .render(&dir.join("out"), true)
         .expect_err("strict undefined handling is the point");
     assert!(matches!(err, SkillsError::Render { .. }), "{err}");
 }
@@ -354,4 +354,38 @@ fn a_missing_corpus_is_refused_rather_than_read_as_empty() {
     let dir = fixture();
     let err = Skills::load(&dir.join("nothing-here")).expect_err("a missing directory is refused");
     assert!(matches!(err, SkillsError::Unreadable { .. }), "{err}");
+}
+
+fn effort_skill(dir: &Path) {
+    let d = dir.join("skills/deep");
+    fs::create_dir_all(&d).unwrap();
+    fs::write(
+        d.join("SKILL.md.tmpl"),
+        "---\nname: deep\ndescription: Use when it is hard.\neffort: xhigh\n---\n\n# deep\n\neffort: is prose here.\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_skill_keeps_its_effort_where_the_gate_keeps_it() {
+    let dir = fixture();
+    effort_skill(&dir);
+    let out = dir.join("out");
+    load(&dir).render(&out, true).unwrap();
+    let text = fs::read_to_string(out.join("deep/SKILL.md")).unwrap();
+    assert!(text.contains("\neffort: xhigh\n---\n"), "{text}");
+}
+
+/// Failing control: with the gate ignored, the `effort: xhigh` line stays.
+#[test]
+fn a_skill_loses_its_effort_line_and_only_it_where_the_gate_strips() {
+    let dir = fixture();
+    effort_skill(&dir);
+    let out = dir.join("out");
+    load(&dir).render(&out, false).unwrap();
+    let text = fs::read_to_string(out.join("deep/SKILL.md")).unwrap();
+    assert_eq!(
+        text,
+        "---\nname: deep\ndescription: Use when it is hard.\n---\n\n# deep\n\neffort: is prose here.\n"
+    );
 }
