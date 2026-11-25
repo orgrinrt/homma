@@ -430,6 +430,10 @@ fn a_refresh_refused_while_the_measure_reads_is_said_behind_with_its_words() {
         text.contains("dimension"),
         "the crate's words on the header: {text}"
     );
+    assert!(
+        !text.contains("its vectors are"),
+        "refused for its header, not its model: {text}"
+    );
 }
 
 #[test]
