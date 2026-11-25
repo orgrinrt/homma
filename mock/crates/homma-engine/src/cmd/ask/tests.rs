@@ -429,25 +429,45 @@ fn over_the_cap_the_least_recently_read_go_first() {
     );
 }
 
-/// Failing control: a write in flight swept with the entries is gone.
+/// Failing controls: counting dot files toward the cap removes `new`; skipping them before the age
+/// check keeps the old one; removing them regardless of age takes the fresh one.
 #[test]
-fn a_write_in_flight_is_neither_counted_nor_swept() {
+fn a_write_in_flight_is_neither_counted_nor_swept_and_one_left_behind_expires() {
     let (_t, c) = cache();
     let now = aged(&c, 3 * HOUR, 4);
-    let tmp = c.dir().join("partials/.old.4242");
-    std::fs::write(&tmp, "x".repeat(64)).unwrap();
-    stamp(&c, "partials/.old.4242", now - 3 * HOUR);
+    let fresh = c.dir().join("partials/.fresh.4242");
+    std::fs::write(&fresh, "x".repeat(64)).unwrap();
+    stamp(&c, "partials/.fresh.4242", now);
+    let left = c.dir().join("answers/.left.4243");
+    std::fs::write(&left, "x").unwrap();
+    stamp(&c, "answers/.left.4243", now - 3 * HOUR);
     c.sweep(now, 2 * HOUR, 8);
     assert!(!c.dir().join("partials/old").exists());
-    assert!(tmp.exists(), "another ask's write is left alone");
+    assert!(fresh.exists(), "another ask's write is left alone");
     assert!(
         c.dir().join("answers/new").exists(),
-        "the dot file does not count toward the cap"
+        "a write in flight does not count toward the cap"
+    );
+    assert!(
+        !left.exists(),
+        "a write left behind goes once past the expiry"
     );
 }
 
-/// Failing control: with `GIT_DIR` exported at another repository and not removed in
-/// `of_workspace`, the cache is that repository's and not under the planted root.
+/// Failing control: with the removal taken out of `git_dir_query`, the variables are inherited.
+#[test]
+fn the_git_directory_is_asked_without_the_callers_git_variables() {
+    let q = super::cache::git_dir_query(std::path::Path::new("/nowhere"));
+    for var in ["GIT_DIR", "GIT_WORK_TREE"] {
+        assert!(
+            q.get_envs()
+                .any(|(k, v)| k == std::ffi::OsStr::new(var) && v.is_none()),
+            "{var} is not removed"
+        );
+    }
+}
+
+/// Failing control: with the sweep taken out of `run`, the old partial is still there.
 #[test]
 fn an_ask_sweeps_its_cache_before_it_answers_even_a_refused_one() {
     let ws = tempfile::tempdir().unwrap();

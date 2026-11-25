@@ -150,17 +150,17 @@ fn surfaces_only(skip_surfaces: bool) -> Opts {
 /// that file a script of `body`.
 #[cfg(unix)]
 fn workspace_with_renderer(ws: &std::path::Path, body: Option<&str>) -> homma_core::Config {
-    use std::os::unix::fs::PermissionsExt;
     let mut text = format!(
         "content_repo = \"c\"\n[workspace]\nname = \"w\"\npath = {:?}\n",
         ws.display().to_string()
     );
     if let Some(body) = body {
         text.push_str("[paths]\nagent_surfaces = \"bin/render\"\n");
-        let p = ws.join("bin/render");
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::cmd::planted::script(
+            &ws.join("bin/render"),
+            &format!("#!/bin/sh\n{body}\n"),
+            0o755,
+        );
     }
     homma_core::Config::parse(&text).unwrap()
 }

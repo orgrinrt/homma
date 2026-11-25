@@ -701,7 +701,6 @@ fn gate_e2e_non_git_command_is_silent_allow() {
 /// `None` leaves `homma` off the PATH entirely, which is the case where
 /// the gate cannot ask at all.
 fn a_path_with_homma(dir: &Path, homma_body: Option<&str>) -> String {
-    use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
 
     let bin = dir.join("bin-with-homma");
@@ -736,8 +735,11 @@ done
 cat "$HOMMA_STUB_DIR/status-$repo.json" && exit 0
 exit 3 ;;
 esac"#;
-        fs::write(&at, format!("#!/usr/bin/env bash\n{preamble}\n{body}\n")).unwrap();
-        fs::set_permissions(&at, fs::Permissions::from_mode(0o755)).unwrap();
+        crate::cmd::planted::script(
+            &at,
+            &format!("#!/usr/bin/env bash\n{preamble}\n{body}\n"),
+            0o755,
+        );
     }
     let path = bin.to_string_lossy().into_owned();
     // That the stub is reachable, or absent, as the case intends. Assuming

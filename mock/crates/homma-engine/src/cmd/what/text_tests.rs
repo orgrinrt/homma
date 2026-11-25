@@ -101,6 +101,7 @@ fn a_word_outside_every_group_is_not_a_synonym() {
 fn a_prefix_of_four_letters_matches_and_a_shorter_one_does_not() {
     assert_eq!(grade("cultiv", "cultivator"), Some(Grade::Prefix));
     assert_eq!(grade("cultivator", "cultiv"), Some(Grade::Prefix));
+    assert_eq!(grade("cult", "cultivator"), Some(Grade::Prefix));
     assert_eq!(grade("pro", "promote"), None);
 }
 

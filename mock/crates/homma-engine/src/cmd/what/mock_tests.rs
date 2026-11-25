@@ -11,19 +11,11 @@ use homma_core::scope::Scope;
 
 use super::sources::mock;
 
-/// A script standing in for cargo, written by a child `sh` so this process never holds a
-/// descriptor open for writing on it: a test thread that forks meanwhile would carry such a
-/// descriptor into its child until that child's exec, and running the script then fails as busy.
+/// A script standing in for cargo, planted the one way a test plants a script it runs.
 #[cfg(unix)]
 fn fake_cargo(dir: &std::path::Path, body: &str) -> String {
     let p = dir.join("fake-cargo");
-    let planted = Command::new("sh")
-        .args(["-c", "printf '%s\\n' \"$1\" > \"$2\" && chmod 755 \"$2\"", "sh"])
-        .arg(format!("#!/bin/sh\n{body}"))
-        .arg(&p)
-        .status()
-        .unwrap();
-    assert!(planted.success());
+    crate::cmd::planted::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
     p.to_string_lossy().into_owned()
 }
 

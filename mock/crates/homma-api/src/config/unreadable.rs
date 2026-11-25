@@ -111,10 +111,12 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
     /// so a map keyed on anything else has no representation and `try_from`
     /// refuses it. Nothing about the entry can then be walked.
     ///
-    /// Declared here rather than reached through `Identity` because no field
+    /// Declared here rather than reached through [`Identity`] because no field
     /// of `Identity` can fail: every optional one is skipped when absent, and
     /// an absent option is not a serialisation failure. That is the whole
     /// reason [`control_character_fields`] is generic.
+    ///
+    /// [`Identity`]: super::super::identity::Identity
     #[derive(serde::Serialize)]
     struct WillNotSerialise {
         keyed_on_a_number: std::collections::BTreeMap<u8, String>,
