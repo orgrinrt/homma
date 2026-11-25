@@ -196,6 +196,16 @@ fn without_key_takes_the_key_out_of_the_block_and_leaves_the_body() {
     );
 }
 
+/// Failing control: matching on the trimmed line takes the nested `effort` too.
+#[test]
+fn without_key_takes_an_unindented_key_only() {
+    let text = "---\nname: x\neffort: high\nhooks:\n  effort: low\n---\n";
+    assert_eq!(
+        frontmatter::without_key(text, "effort"),
+        "---\nname: x\nhooks:\n  effort: low\n---\n"
+    );
+}
+
 #[test]
 fn without_key_leaves_a_text_with_no_block_or_an_open_one_as_it_was() {
     for text in ["effort: high\n", "---\neffort: high\n", ""] {

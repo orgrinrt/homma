@@ -7,82 +7,19 @@ use super::doc::Kind;
 use super::fixture::workspace;
 use super::sources::{corpora, scripts, verbs};
 
+/// Failing control: with the planted directory kept in a static, its root outlives the test.
 #[test]
-fn a_banner_header_is_a_name_a_summary_and_usage_lines() {
-    let text = "#!/usr/bin/env nutshell\n# ====\n# sessions - which helper sessions are finished\n# ====\n#   sessions finished <arc> <listing>   ids of idle helpers whose channel says done\n#   sessions blocked  <arc>             ids of helpers stopped\n#\n# More prose that explains.\n";
-    let d =
-        scripts::parse("sessions", ".shared/scripts/remote/sessions", text).expect("a descriptor");
-    assert_eq!(d.summary, "which helper sessions are finished");
-    let verbs: Vec<(&str, &str)> = d
-        .verbs
-        .iter()
-        .map(|v| (v.name.as_str(), v.summary.as_str()))
-        .collect();
-    assert_eq!(verbs, [
-        ("finished", "ids of idle helpers whose channel says done"),
-        ("blocked", "ids of helpers stopped")
-    ]);
-    assert_eq!(
-        d.verbs[0].command,
-        ".shared/scripts/remote/sessions finished"
-    );
-    assert_eq!(d.body, "More prose that explains.");
-}
-
-#[test]
-fn a_plain_first_sentence_is_the_summary() {
-    let text = "#!/usr/bin/env bash\n# Restore paths from a ref, after copying what they hold aside.\n#\n#   git-restore-safely.sh <ref> <path>...\n";
-    let d = scripts::parse("git-restore-safely.sh", "p/git-restore-safely.sh", text)
-        .expect("a descriptor");
-    assert_eq!(d.name, "git-restore-safely");
-    assert_eq!(
-        d.summary,
-        "Restore paths from a ref, after copying what they hold aside."
-    );
-    assert!(d.verbs.is_empty(), "`<ref>` is an argument and not a verb");
-}
-
-#[test]
-fn a_python_docstring_is_read_with_its_dash() {
-    let text = "#!/usr/bin/env python3\n\"\"\"agenda \u{2014} everything outstanding, in one place.\n\n    agenda   the whole picture\n\"\"\"\nimport sys\n";
-    let d = scripts::parse("agenda", "p/agenda", text).expect("a descriptor");
-    assert_eq!(d.summary, "everything outstanding, in one place.");
-}
-
-#[test]
-fn a_block_comment_is_read() {
-    let text = "#!/usr/bin/env -S deno run\n/** memory: whether the corpus and its index agree.\n *\n * Memory is a directory.\n */\nconst x = 1;\n";
-    let d = scripts::parse("memory.ts", "p/memory.ts", text).expect("a descriptor");
-    assert_eq!(d.summary, "whether the corpus and its index agree.");
-    assert_eq!(d.body, "Memory is a directory.");
-}
-
-#[test]
-fn a_tags_line_adds_tags() {
-    let text = "#!/bin/sh\n# does a thing\n# tags: hygiene, disk\n";
-    let d = scripts::parse("thing", "p/thing", text).expect("a descriptor");
-    assert_eq!(d.tags, ["hygiene", "disk"]);
-}
-
-#[test]
-fn no_header_is_no_descriptor() {
-    assert!(scripts::parse("x", "p/x", "#!/bin/sh\nset -e\necho hi\n").is_none());
-    assert!(
-        scripts::parse("x", "p/x", "#!/bin/sh\n# ====\n# ====\nset -e\n").is_none(),
-        "rules are not prose"
-    );
-    assert!(scripts::parse("x", "p/x", "").is_none());
-}
-
-#[test]
-fn only_the_leading_block_is_the_header() {
-    let text = "#!/bin/sh\nset -e\n# a comment lower down\n";
-    assert!(scripts::parse("x", "p/x", text).is_none());
+fn a_planted_workspace_is_gone_once_its_holder_drops_it() {
+    let ws = workspace();
+    let root = ws.path().to_path_buf();
+    assert!(root.join(".shared/scripts/chores/harvest").is_file());
+    drop(ws);
+    assert!(!root.exists(), "{} is left behind", root.display());
 }
 
 #[test]
 fn a_planted_scripts_verbs_and_place_are_read() {
-    let g = scripts::gather(&workspace());
+    let g = scripts::gather(workspace().path());
     let s = g
         .docs
         .iter()
@@ -100,7 +37,7 @@ fn a_planted_scripts_verbs_and_place_are_read() {
 
 #[test]
 fn tests_and_fixtures_are_not_scripts() {
-    let g = scripts::gather(&workspace());
+    let g = scripts::gather(workspace().path());
     assert!(g.docs.iter().any(|d| d.name == "water-plants"));
     assert!(
         g.docs
@@ -246,13 +183,13 @@ fn homma_verbs_are_read_from_the_command_line_itself() {
 #[test]
 fn the_planted_skills_and_rules_are_read() {
     let ws = workspace();
-    let s = corpora::skills(&ws);
+    let s = corpora::skills(ws.path());
     assert!(
         s.docs
             .iter()
             .any(|d| d.name == "plan-a-season" && !d.summary.is_empty())
     );
-    let r = corpora::rules(&ws);
+    let r = corpora::rules(ws.path());
     assert!(
         r.docs
             .iter()
@@ -263,7 +200,7 @@ fn the_planted_skills_and_rules_are_read() {
 #[cfg(unix)]
 #[test]
 fn the_planted_tools_carry_their_verbs_and_how_to_run_them() {
-    let g = super::sources::tools::gather(&workspace());
+    let g = super::sources::tools::gather(workspace().path());
     let t = g
         .docs
         .iter()
@@ -279,36 +216,6 @@ fn the_planted_tools_carry_their_verbs_and_how_to_run_them() {
             .any(|v| v.name == "pull" && v.command == "homma plot-weed pull")
     );
     assert!(t.tags.iter().any(|x| x == "garden"));
-}
-
-#[test]
-fn the_first_line_of_prose_is_the_summary_even_when_it_starts_with_the_name() {
-    let d = scripts::parse(
-        "merge-dev",
-        ".shared/scripts/merge-dev",
-        "#!/bin/sh\n# merge-dev merges dev into the branch\n#   merge-dev check  see what would conflict\n",
-    )
-    .unwrap();
-    assert_eq!(d.summary, "merge-dev merges dev into the branch");
-    assert_eq!(
-        d.verbs.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
-        ["check"]
-    );
-}
-
-#[test]
-fn a_column_of_description_after_the_name_is_not_a_verb() {
-    let d = scripts::parse(
-        "storage.py",
-        "python3 .shared/scripts/watch/storage.py",
-        "#!/usr/bin/env python3\n# storage.py - the catalogue, scored\n#   storage.py      every storage purpose, its candidates\n#   storage.py show  one purpose\n",
-    )
-    .unwrap();
-    assert_eq!(
-        d.verbs.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
-        ["show"],
-        "`every` follows a column gap and is description"
-    );
 }
 
 #[test]
@@ -468,41 +375,6 @@ fn a_file_another_script_sources_is_a_library_and_one_nobody_sources_is_not() {
 }
 
 #[test]
-fn a_shellcheck_line_is_not_the_summary() {
-    let d = scripts::parse(
-        "x",
-        "x",
-        "#!/bin/sh\n# shellcheck source=lib.sh\n# x - does the thing\n",
-    )
-    .unwrap();
-    assert_eq!(d.summary, "does the thing");
-}
-
-#[test]
-fn a_slash_comment_block_is_a_header() {
-    let d = scripts::parse(
-        "run.ts",
-        "run.ts",
-        "#!/usr/bin/env -S deno run\n// run.ts - runs the thing\n// more about it\nconsole.log(1)\n",
-    )
-    .unwrap();
-    assert_eq!(d.summary, "runs the thing");
-}
-
-#[test]
-fn an_env_shebang_gives_the_interpreter_without_its_flags() {
-    assert_eq!(
-        scripts::interpreter("#!/usr/bin/env -S deno run").as_deref(),
-        Some("deno run")
-    );
-    assert_eq!(
-        scripts::interpreter("#!/usr/bin/env python3").as_deref(),
-        Some("python3")
-    );
-    assert_eq!(scripts::interpreter("#!/bin/bash").as_deref(), Some("bash"));
-}
-
-#[test]
 fn the_directories_that_hold_no_tools_are_not_read() {
     let dir = tempfile::tempdir().unwrap();
     plant(dir.path(), "a/one", "#!/bin/sh\n# one - does one\n", true);
@@ -519,17 +391,6 @@ fn the_directories_that_hold_no_tools_are_not_read() {
         g.docs.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
         ["one"]
     );
-}
-
-#[test]
-fn a_header_line_that_is_only_the_name_is_not_the_summary() {
-    let d = scripts::parse(
-        "word-frequency.sh",
-        "word-frequency.sh",
-        "#!/bin/sh\n# word-frequency.sh\n# Counts the words of a text.\n",
-    )
-    .unwrap();
-    assert_eq!(d.summary, "Counts the words of a text.");
 }
 
 #[test]

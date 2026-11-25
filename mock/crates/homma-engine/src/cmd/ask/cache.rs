@@ -27,10 +27,7 @@ impl Cache {
     /// # Errors
     /// Git's words where `root` is not in a repository.
     pub fn of_workspace(root: &Path) -> Result<Self, String> {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["rev-parse", "--absolute-git-dir"])
+        let out = git_dir_query(root)
             .output()
             .map_err(|e| format!("git did not start: {e}"))?;
         if !out.status.success() {
@@ -63,7 +60,8 @@ impl Cache {
     /// least recently read until the whole is at most `max_bytes`.
     ///
     /// Silent: an entry that cannot be read or removed is left where it is, and
-    /// the ask goes on.
+    /// the ask goes on. A dot file is a write, in flight or left behind by an ask
+    /// that stopped: never counted, and removed only once past the expiry.
     pub fn sweep(&self, now: SystemTime, expire: Duration, max_bytes: u64) {
         let mut kept: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
         for sub in ["partials", "answers"] {
@@ -76,9 +74,10 @@ impl Cache {
                     continue;
                 }
                 let Ok(read) = meta.modified() else { continue };
+                let written = e.file_name().as_encoded_bytes().starts_with(b".");
                 if now.duration_since(read).is_ok_and(|age| age > expire) {
                     let _ = std::fs::remove_file(e.path());
-                } else {
+                } else if !written {
                     kept.push((read, meta.len(), e.path()));
                 }
             }
@@ -110,6 +109,18 @@ impl Cache {
     pub fn keep_answer(&self, key: &str, text: &str) -> Result<(), String> {
         write(&self.dir.join("answers"), key, text)
     }
+}
+
+/// The question for the git directory of `root`, asked with `GIT_DIR` and
+/// `GIT_WORK_TREE` removed: a caller's would answer for another repository.
+pub(super) fn git_dir_query(root: &Path) -> std::process::Command {
+    let mut git = std::process::Command::new("git");
+    git.env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir"]);
+    git
 }
 
 /// A cache file's text, its modification time stamped now as the moment it was

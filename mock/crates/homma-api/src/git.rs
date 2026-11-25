@@ -28,7 +28,7 @@ use crate::path::AbsPath;
 
 /// What a clone is configured to commit as.
 ///
-/// Named `CommitIdentity` rather than `Identity` because `config::Identity` is
+/// Named `CommitIdentity` rather than `Identity` because `config::identity::Identity` is
 /// the registry entry and these are different things: one is who a participant
 /// is, the other is what a particular clone will stamp on a commit.
 /// **The four parts are private and every one of them is non-empty.** An empty

@@ -3,23 +3,17 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-//! The small workspace the tests of `homma what` read: planted once per test
-//! binary, with neutral names, so no test reads the tree the repository happens
-//! to sit in.
+//! The small workspace the tests of `homma what` read: planted by each test
+//! that wants it, with neutral names, so no test reads the tree the repository
+//! happens to sit in.
 
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::path::Path;
 
-/// The planted workspace's root.
-pub(super) fn workspace() -> PathBuf {
-    static ROOT: OnceLock<tempfile::TempDir> = OnceLock::new();
-    ROOT.get_or_init(|| {
-        let d = tempfile::tempdir().expect("a temporary directory");
-        plant(d.path());
-        d
-    })
-    .path()
-    .to_path_buf()
+/// A planted workspace, removed when the holder drops it.
+pub(super) fn workspace() -> tempfile::TempDir {
+    let d = tempfile::tempdir().expect("a temporary directory");
+    plant(d.path());
+    d
 }
 
 fn file(root: &Path, rel: &str, text: &str, exec: bool) {

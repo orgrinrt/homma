@@ -12,9 +12,9 @@ use super::doc::Kind;
 use super::sources::tools;
 use super::{Answer, answer};
 
-const MSG_TOML: &str = "[tool]\nname=\"msg\"\nsummary=\"the messenger over channel branches\"\ntags=[\"mail\"]\nbackend=\"local\"\npromote=true\n[tool.source]\npath={path=\"tools/msg\"}\n[[tool.commands]]\nname=\"msg\"\nsummary=\"msg <channel> [verb]: read, post, show\"\nrun=\"msg\"\n";
+const PIGEON_TOML: &str = "[tool]\nname=\"pigeon\"\nsummary=\"carries notes between lofts\"\ntags=[\"mail\"]\nbackend=\"local\"\npromote=true\n[tool.source]\npath={path=\"tools/pigeon\"}\n[[tool.commands]]\nname=\"pigeon\"\nsummary=\"pigeon <loft> [verb]: read, send, show\"\nrun=\"pigeon\"\n";
 
-const MSG_README: &str = "# msg\n\nThe messenger. Prose that says msg kaski show is not a usage line.\n\n```\nmsg kaski                              what is new for me, marked read\nmsg kaski show 3f9a1c                  one message whole, read or not\nmsg kaski show --from work-gui [-n 2]  the newest from one name, whole\ncargo build                            not this tool's line\n```\n\nAfter the block, msg kaski wait is prose again.\n";
+const PIGEON_README: &str = "# pigeon\n\nThe messenger. Prose that says pigeon loft show is not a usage line.\n\n```\npigeon loft                              what is new for me, marked read\npigeon loft show 3f9a1c                  one message whole, read or not\npigeon loft show --from wren [-n 2]  the newest from one name, whole\ncargo build                            not this tool's line\n```\n\nAfter the block, pigeon loft wait is prose again.\n";
 
 fn plant(root: &Path, name: &str, toml: &str, readme: Option<&str>) {
     let d = root.join("tools").join(name);
@@ -34,34 +34,34 @@ fn ask(root: &Path, q: &str) -> Answer {
 #[test]
 fn a_usage_line_in_a_fenced_block_is_a_verb_with_its_summary_and_its_dispatched_command() {
     let ws = tempfile::tempdir().unwrap();
-    plant(ws.path(), "msg", MSG_TOML, Some(MSG_README));
+    plant(ws.path(), "pigeon", PIGEON_TOML, Some(PIGEON_README));
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").expect("msg");
+    let d = g.docs.iter().find(|d| d.name == "pigeon").expect("pigeon");
     let show = d
         .verbs
         .iter()
-        .find(|v| v.name == "kaski show 3f9a1c")
+        .find(|v| v.name == "loft show 3f9a1c")
         .expect("the show line is a verb");
     assert_eq!(show.summary, "one message whole, read or not");
-    assert_eq!(show.command, "homma msg kaski show 3f9a1c");
+    assert_eq!(show.command, "homma pigeon loft show 3f9a1c");
     let from = d
         .verbs
         .iter()
-        .find(|v| v.name == "kaski show --from work-gui [-n 2]")
+        .find(|v| v.name == "loft show --from wren [-n 2]")
         .expect("a line with an option in it is a verb");
-    assert_eq!(from.command, "homma msg kaski show --from work-gui [-n 2]");
+    assert_eq!(from.command, "homma pigeon loft show --from wren [-n 2]");
 }
 
 #[cfg(unix)]
 #[test]
 fn a_line_that_is_prose_or_another_programs_is_not_a_usage_line() {
     let ws = tempfile::tempdir().unwrap();
-    plant(ws.path(), "msg", MSG_TOML, Some(MSG_README));
+    plant(ws.path(), "pigeon", PIGEON_TOML, Some(PIGEON_README));
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     assert!(
         !d.verbs.iter().any(|v| v.name.contains("build")),
-        "cargo build is not msg's"
+        "cargo build is not pigeon's"
     );
     assert!(
         !d.verbs.iter().any(|v| v.name.contains("wait")),
@@ -77,20 +77,20 @@ fn a_line_that_is_prose_or_another_programs_is_not_a_usage_line() {
 #[test]
 fn a_question_about_reading_an_earlier_message_finds_the_form_that_does_it() {
     let ws = tempfile::tempdir().unwrap();
-    plant(ws.path(), "msg", MSG_TOML, Some(MSG_README));
-    let a = ask(ws.path(), "read an earlier message on a msg channel");
+    plant(ws.path(), "pigeon", PIGEON_TOML, Some(PIGEON_README));
+    let a = ask(ws.path(), "read an earlier message from a pigeon loft");
     let h = a.hits.first().expect("the question is answered");
-    assert_eq!((h.kind, h.name.as_str()), (Kind::Tool, "msg"));
-    assert_eq!(h.command, "homma msg kaski show 3f9a1c");
+    assert_eq!((h.kind, h.name.as_str()), (Kind::Tool, "pigeon"));
+    assert_eq!(h.command, "homma pigeon loft show 3f9a1c");
 }
 
 #[cfg(unix)]
 #[test]
 fn without_a_readme_the_tool_is_read_by_its_descriptor_alone_and_nothing_is_said() {
     let ws = tempfile::tempdir().unwrap();
-    plant(ws.path(), "msg", MSG_TOML, None);
+    plant(ws.path(), "pigeon", PIGEON_TOML, None);
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     assert_eq!(d.verbs.len(), 1, "the one declared command");
     assert!(g.gaps.is_empty(), "a readme is not required");
 }
@@ -98,30 +98,30 @@ fn without_a_readme_the_tool_is_read_by_its_descriptor_alone_and_nothing_is_said
 #[cfg(unix)]
 #[test]
 fn a_command_the_descriptor_declares_is_not_read_twice_from_the_readme() {
-    // The descriptor declares `show`, so `homma msg show` is its command; the readme's line `msg show  x`
+    // The descriptor declares `show`, so `homma pigeon show` is its command; the readme's line `pigeon show  x`
     // dispatches to the same one. A line with a command of its own is the control.
     let toml = format!(
-        "{MSG_TOML}[[tool.commands]]\nname=\"show\"\nsummary=\"read one\"\nrun=\"msg show\"\n"
+        "{PIGEON_TOML}[[tool.commands]]\nname=\"show\"\nsummary=\"read one\"\nrun=\"pigeon show\"\n"
     );
     let ws = tempfile::tempdir().unwrap();
     plant(
         ws.path(),
-        "msg",
+        "pigeon",
         &toml,
-        Some("```\nmsg show  x\nmsg wait  y\n```\n"),
+        Some("```\npigeon show  x\npigeon wait  y\n```\n"),
     );
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     let shown = d
         .verbs
         .iter()
-        .filter(|v| v.command == "homma msg show")
+        .filter(|v| v.command == "homma pigeon show")
         .count();
     assert_eq!(shown, 1, "{:?}", d.verbs);
     assert!(
         d.verbs
             .iter()
-            .any(|v| v.command == "homma msg wait" && v.example),
+            .any(|v| v.command == "homma pigeon wait" && v.example),
         "a readme line the descriptor does not declare is still a verb"
     );
 }
@@ -132,12 +132,12 @@ fn the_prose_of_the_readme_is_what_a_question_about_the_tool_can_match() {
     let ws = tempfile::tempdir().unwrap();
     plant(
         ws.path(),
-        "msg",
-        MSG_TOML,
-        Some("# msg\n\nA retired member is taken off the branch whole.\n"),
+        "pigeon",
+        PIGEON_TOML,
+        Some("# pigeon\n\nA retired bird is taken off the roster whole.\n"),
     );
-    let a = ask(ws.path(), "retired member");
-    assert_eq!(a.hits.first().map(|h| h.name.as_str()), Some("msg"));
+    let a = ask(ws.path(), "retired bird");
+    assert_eq!(a.hits.first().map(|h| h.name.as_str()), Some("pigeon"));
 }
 
 #[cfg(unix)]
@@ -146,25 +146,25 @@ fn an_unclosed_fence_reads_to_the_end_and_a_fence_with_a_language_opens_one() {
     let ws = tempfile::tempdir().unwrap();
     plant(
         ws.path(),
-        "msg",
-        MSG_TOML,
-        Some("```sh\nmsg kaski show 1   one by id\n"),
+        "pigeon",
+        PIGEON_TOML,
+        Some("```sh\npigeon loft show 1   one by id\n"),
     );
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
-    assert!(d.verbs.iter().any(|v| v.name == "kaski show 1"));
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
+    assert!(d.verbs.iter().any(|v| v.name == "loft show 1"));
 }
 
 #[cfg(unix)]
 #[test]
 fn a_readme_that_is_a_link_is_not_followed() {
     let ws = tempfile::tempdir().unwrap();
-    plant(ws.path(), "msg", MSG_TOML, None);
+    plant(ws.path(), "pigeon", PIGEON_TOML, None);
     let elsewhere = ws.path().join("elsewhere.md");
-    std::fs::write(&elsewhere, MSG_README).unwrap();
-    std::os::unix::fs::symlink(&elsewhere, ws.path().join("tools/msg/README.md")).unwrap();
+    std::fs::write(&elsewhere, PIGEON_README).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, ws.path().join("tools/pigeon/README.md")).unwrap();
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     assert_eq!(
         d.verbs.len(),
         1,
@@ -176,15 +176,15 @@ fn a_readme_that_is_a_link_is_not_followed() {
 #[test]
 fn a_usage_line_is_marked_an_example_and_a_declared_command_is_not() {
     let ws = tempfile::tempdir().unwrap();
-    plant(ws.path(), "msg", MSG_TOML, Some(MSG_README));
+    plant(ws.path(), "pigeon", PIGEON_TOML, Some(PIGEON_README));
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     assert!(
         d.verbs.iter().filter(|v| v.example).count() >= 2,
         "the readme's lines"
     );
     assert!(
-        d.verbs.iter().any(|v| !v.example && v.name == "msg"),
+        d.verbs.iter().any(|v| !v.example && v.name == "pigeon"),
         "the declared command"
     );
 }
@@ -204,7 +204,7 @@ fn the_words_of_a_usage_line_weigh_as_a_summary_and_not_as_a_verb_name() {
     let mut declared = Doc::new(Kind::Tool, "declared", "x", "other words");
     declared.verbs = vec![verb("zap", false)];
     let mut example = Doc::new(Kind::Tool, "example", "x", "other words");
-    example.verbs = vec![verb("kaski zap", true)];
+    example.verbs = vec![verb("loft zap", true)];
     let docs = vec![example, declared];
     let hits = rank(&docs, &["zap".to_string()]);
     assert_eq!(
@@ -224,22 +224,27 @@ fn the_prose_of_a_readme_stops_at_its_limit_inside_a_line() {
     let long = "ä".repeat(100_000);
     plant(
         ws.path(),
-        "msg",
-        MSG_TOML,
-        Some(&format!("# msg\n\n{long}\n")),
+        "pigeon",
+        PIGEON_TOML,
+        Some(&format!("# pigeon\n\n{long}\n")),
     );
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     let kept = d.body.chars().count();
     assert!(
         (23_900 ..= 24_000).contains(&kept),
         "{kept} characters kept"
     );
     // The control: prose under the limit is kept whole.
-    plant(ws.path(), "msg", MSG_TOML, Some("# msg\n\nshort prose\n"));
+    plant(
+        ws.path(),
+        "pigeon",
+        PIGEON_TOML,
+        Some("# pigeon\n\nshort prose\n"),
+    );
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
-    assert_eq!(d.body, "# msg  short prose");
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
+    assert_eq!(d.body, "# pigeon  short prose");
 }
 
 #[cfg(unix)]
@@ -248,15 +253,15 @@ fn a_readme_keeps_at_most_eighty_usage_lines() {
     let ws = tempfile::tempdir().unwrap();
     let mut text = String::from("```\n");
     for i in 0 .. 200 {
-        text.push_str(&format!("msg kaski verb{i}   summary {i}\n"));
+        text.push_str(&format!("pigeon loft verb{i}   summary {i}\n"));
     }
     text.push_str("```\n");
-    plant(ws.path(), "msg", MSG_TOML, Some(&text));
+    plant(ws.path(), "pigeon", PIGEON_TOML, Some(&text));
     let g = tools::gather(ws.path());
-    let d = g.docs.iter().find(|d| d.name == "msg").unwrap();
+    let d = g.docs.iter().find(|d| d.name == "pigeon").unwrap();
     let examples = d.verbs.iter().filter(|v| v.example).count();
     assert_eq!(examples, 80);
     // The first 80 are the ones kept.
-    assert!(d.verbs.iter().any(|v| v.name == "kaski verb79"));
-    assert!(!d.verbs.iter().any(|v| v.name == "kaski verb80"));
+    assert!(d.verbs.iter().any(|v| v.name == "loft verb79"));
+    assert!(!d.verbs.iter().any(|v| v.name == "loft verb80"));
 }

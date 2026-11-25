@@ -5,7 +5,6 @@
 //! The history scan: a manifest naming it or not, and a flagged history, a
 //! clean one and a scan that could not run, each read as the run reads them.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -43,8 +42,7 @@ fn history(dir: &Path, message: &str) -> PathBuf {
 /// it is given, never its working directory, as the real one does.
 fn scanner(dir: &Path, body: &str) -> PathBuf {
     let at = dir.join("scan");
-    std::fs::write(&at, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&at, std::fs::Permissions::from_mode(0o755)).unwrap();
+    crate::cmd::planted::script(&at, &format!("#!/bin/sh\n{body}\n"), 0o755);
     at
 }
 

@@ -34,6 +34,8 @@ mod accept_tests;
 #[cfg(test)]
 mod fixture;
 #[cfg(test)]
+mod header_tests;
+#[cfg(test)]
 mod mock_tests;
 #[cfg(test)]
 mod rank_tests;

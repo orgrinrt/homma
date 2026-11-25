@@ -16,7 +16,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::config::Role;
+use crate::config::identity::Role;
 
 /// Which namespace a reference addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

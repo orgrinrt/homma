@@ -24,8 +24,7 @@ fn golden() -> PathBuf {
 
 fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let p = dir.join(name);
-    fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    crate::cmd::planted::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
     p
 }
 

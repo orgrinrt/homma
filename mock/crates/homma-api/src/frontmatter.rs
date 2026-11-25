@@ -238,8 +238,9 @@ pub fn split(source: &str, known: &[&str]) -> Result<Block, FrontmatterError> {
     })
 }
 
-/// `text` with the lines declaring `key` taken out of its leading frontmatter
-/// block, and nothing outside the block touched.
+/// `text` with the unindented lines declaring `key` taken out of its leading
+/// frontmatter block, and nothing outside the block touched: an indented line
+/// is a nested key's, and stays.
 ///
 /// For a generated file whose frontmatter was rendered from a template rather
 /// than built: the block is found by its fences, not parsed, so a text with no
@@ -260,10 +261,10 @@ pub fn without_key(text: &str, key: &str) -> String {
             if line.trim_end() == FENCE {
                 open = false;
                 closed = true;
-            } else if line
-                .trim_start()
-                .split_once(':')
-                .is_some_and(|(k, _)| k.trim() == key)
+            } else if !line.starts_with([' ', '\t'])
+                && line
+                    .split_once(':')
+                    .is_some_and(|(k, _)| k.trim_end() == key)
             {
                 continue;
             }

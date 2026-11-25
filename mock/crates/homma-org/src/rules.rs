@@ -36,6 +36,8 @@ pub struct Rule {
     pub card:        String,
     /// The elaboration's template source, empty for a rule that is all card.
     pub elaboration: String,
+    /// The template it was read from, which a render error names.
+    pub source:      PathBuf,
 }
 
 /// Everything under one `.shared/rules/` directory, and the principles beside it.
@@ -332,7 +334,7 @@ impl Corpus {
         };
         surface::render(source, &ctx).map_err(|reason| {
             CorpusError::Render {
-                path: PathBuf::from(format!("{}{RULE_SUFFIX}", r.name)),
+                path: r.source.clone(),
                 reason,
             }
         })
@@ -375,6 +377,7 @@ impl Kind for Rules {
             meta:        parsed.meta.clone(),
             card:        parsed.card().to_string(),
             elaboration: parsed.elaboration().to_string(),
+            source:      path.to_path_buf(),
         })
     }
 }

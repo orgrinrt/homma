@@ -11,13 +11,35 @@ use homma_core::scope::Scope;
 
 use super::sources::mock;
 
+/// A script standing in for cargo, planted the one way a test plants a script it runs.
 #[cfg(unix)]
 fn fake_cargo(dir: &std::path::Path, body: &str) -> String {
-    use std::os::unix::fs::PermissionsExt;
     let p = dir.join("fake-cargo");
-    std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    crate::cmd::planted::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
     p.to_string_lossy().into_owned()
+}
+
+/// The failure `fake_cargo` avoids, made deterministic: a handle open for writing on a script
+/// makes running it busy. A script `fake_cargo` planted runs.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_script_with_a_write_handle_open_on_it_is_busy_and_a_planted_one_is_not() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let held = dir.path().join("held");
+    let mut f = std::fs::File::create(&held).unwrap();
+    f.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let busy = Command::new(&held).status().unwrap_err();
+    assert_eq!(
+        busy.kind(),
+        std::io::ErrorKind::ExecutableFileBusy,
+        "{busy}"
+    );
+    drop(f);
+    let prog = fake_cargo(dir.path(), "exit 0");
+    assert!(Command::new(prog).status().unwrap().success());
 }
 
 #[cfg(unix)]

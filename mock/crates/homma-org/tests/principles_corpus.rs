@@ -151,3 +151,26 @@ fn a_principle_whose_card_a_rule_already_writes_is_refused() {
         other => panic!("wrong refusal: {other}"),
     }
 }
+
+/// Failing control: with the error built from the card's name it names
+/// `principle-reuse.md.tmpl`, which does not exist.
+#[test]
+fn a_principle_that_does_not_render_is_refused_naming_its_template() {
+    let d = tree();
+    principle(
+        &d.path().join("principles"),
+        "reuse",
+        "# Principle: reuse\n\n{{ nonexistent_field }}\n",
+    );
+    let c = load(d.path()).unwrap();
+    match c.render_cards(&d.path().join("cards"), &Session::every(Place::Local)) {
+        Err(CorpusError::Render {
+            path,
+            ..
+        }) => {
+            assert_eq!(path, d.path().join("principles/reuse.md.tmpl"));
+            assert!(path.is_file(), "the named template exists");
+        },
+        other => panic!("expected a render refusal, got {other:?}"),
+    }
+}
