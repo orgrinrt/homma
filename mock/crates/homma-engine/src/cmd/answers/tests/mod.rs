@@ -254,7 +254,7 @@ fn an_object_key_names_its_own_row() {
 }
 
 #[test]
-fn a_registry_question_names_a_question_row_and_an_agenda_one_names_none() {
+fn a_registry_question_names_a_question_row_and_any_other_kind_names_none() {
     let reg = docs::parse(
         Collection::Answers,
         &answer("q", json!("q9"), "registry", "2026-10-28T09:10:00Z"),
@@ -263,7 +263,7 @@ fn a_registry_question_names_a_question_row_and_an_agenda_one_names_none() {
     assert_eq!(attach::target(&reg).unwrap().spelled(), "question::q9");
     let ag = docs::parse(
         Collection::Answers,
-        &answer("q", json!("q9"), "agenda", "2026-10-28T09:10:00Z"),
+        &answer("q", json!("q9"), "docket", "2026-10-28T09:10:00Z"),
     )
     .unwrap();
     assert!(attach::target(&ag).is_none());

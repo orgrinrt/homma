@@ -17,8 +17,7 @@ use homma_core::release::publish;
 /// below already reads the edges out of each manifest; what is left is the
 /// ordering over them, the way `publish::crate_order` orders the crates of
 /// one workspace. Until then `run_cmd` refuses a workspace-wide run that has
-/// such an edge in it. The gap is a red test below, tracked in the workspace
-/// agenda as `homma-release-orders-repos-by-dependency`.
+/// such an edge in it. The gap is a red test below.
 pub(super) fn release_order(cfg: &Config) -> Vec<String> {
     cfg.repos.keys().cloned().collect()
 }

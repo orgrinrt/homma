@@ -35,8 +35,8 @@ fn capture(source: Option<&str>, through: Option<&str>) -> String {
 #[test]
 fn the_transcript_directory_is_the_path_with_every_other_character_a_dash() {
     assert_eq!(
-        escaped(Path::new("/Users/me/Dev/clause-work/patchwork")),
-        "-Users-me-Dev-clause-work-patchwork"
+        escaped(Path::new("/Users/me/Dev/glade-depot/patchwork")),
+        "-Users-me-Dev-glade-depot-patchwork"
     );
     // Read off the harness's own directories: a dot and an underscore go too.
     assert_eq!(

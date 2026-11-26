@@ -149,7 +149,7 @@ fn pike(ws: &std::path::Path) -> Identity {
     let mut id = Identity::new(Role::Hand, "pike");
     id.staffed = true;
     id.workspace = Some(ws.to_string_lossy().into_owned());
-    id.git_name = Some("Vaino Pikenen".into());
+    id.git_name = Some("Vale Pikenen".into());
     id.git_email = Some("vale.pine@example.invalid".into());
     id
 }
@@ -197,7 +197,7 @@ fn one_identity_commits_throughout(tier: Tier) {
     for format in ["--format=%an", "--format=%cn"] {
         assert_eq!(
             run(&["log", "-1", format], &ws, &hostile, tier),
-            "Vaino Pikenen"
+            "Vale Pikenen"
         );
     }
     for format in ["--format=%ae", "--format=%ce"] {

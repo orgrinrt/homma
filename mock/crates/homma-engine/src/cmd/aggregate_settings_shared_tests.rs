@@ -55,7 +55,7 @@ fn a_local_file_that_parses_lets_the_same_shared_file_be_swept() {
 
 #[test]
 fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
-    // `kelp` is declared and not visited, `muisti` is not even declared, which
+    // `kelp` is declared and not visited, `mosaic` is not even declared, which
     // is a clone that never held it; the shared file holds both anyway, and the
     // gate and a declared hook beside them.
     let dir = tempfile::tempdir().unwrap();
@@ -64,7 +64,7 @@ fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
         workspace,
         r#"{"hooks":{"PreToolUse":[
             {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kelp--gate.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/muisti--no-yagni-guard.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/mosaic--no-sprawl-guard.sh"}]},
             {"matcher":"*","hooks":[{"type":"command","command":".claude/hooks/_workspace--mockspace-gate.sh"}]},
             {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/_declared--PreToolUse--_shared_scripts_guard.sh"}]},
             {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/mine.sh"}]}
@@ -142,12 +142,12 @@ fn a_file_under_hommas_shape_that_homma_did_not_write_keeps_its_shared_registrat
     let workspace = dir.path();
     fs::create_dir_all(workspace.join(".claude/hooks")).unwrap();
     fs::write(
-        workspace.join(".claude/hooks/muisti--mine.sh"),
+        workspace.join(".claude/hooks/mosaic--mine.sh"),
         "#!/bin/sh\n",
     )
     .unwrap();
     let body = r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/muisti--mine.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/mosaic--mine.sh"}]},
             {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/--odd.sh"}]},
             {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/odd--"}]}
         ]}}"#;

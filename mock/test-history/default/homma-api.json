@@ -3,19 +3,27 @@
   "flavour": "",
   "member": "homma-api",
   "green": {
-    "full": "78c35b6fe7f051e200be7f8f0471b7771dd97af2dafb417e22bc655757a2ce63",
+    "full": "272ac4e22ca08e8084f55cf2ceb1240e64fa674d877ec948b544b995f82beec6",
     "own": {
-      "homma-api": "c910baed87204f1691f3a9ac2979e836ed3135c8891930297ed9fd1a793d6511"
+      "homma-api": "b9ad38afb7051dbb5691fdaaff1cadff8efd4d54f8e966ab58c8b3cd48e6c637"
     }
   },
-  "tests": {},
+  "tests": {
+    "homma-api::compile_fail": {
+      "a_relative_path_cannot_reach_the_git_contract": {
+        "secs": 12.7,
+        "passed": true,
+        "passed_at": "f1843d221a8aef03935d030498ed52f1dd03108d1a560e869d3c2741a0728aca"
+      }
+    }
+  },
   "bins": {
-    "homma-api": "398e68091ca8ce70c9ffdab94e2cfffa3aa7cc9556c66efa8451ffd0a862c7c5",
-    "homma-api::compile_fail": "1b897304dc9b8d91e4c206b52dbad12e001fca3fd9949b5ed386d7203cfa575b",
-    "homma-api::frontmatter": "8192f7dfd6aeb6f253f72f7a20b08d5ea35958381ff3704151df2244aa2e0e11",
-    "homma-api::rule_meta": "ff4bb0d5af8d9ca51f28ec63c3a45bb0010ddaf520f11221a1d2aa74f5855753",
-    "homma-api::session": "8026abc9717bb90fcc64e0fcb9e70545023ea40842395197ac8a2add36e7bbde",
-    "homma-api::skill_meta": "15082faf58bf1bc6b603dc7535b800f2d25caf8006ba60aacb182b25d043098b",
-    "homma-api::the_home_must_be_known": "cd6ce98a30031eee722e55d09023f44aa199cb823876bd4ce10f33804123c193"
+    "homma-api": "4060d0946d23c12a23f79134b57f54d87ad15fafdcd434d03df42c1f88e102c2",
+    "homma-api::compile_fail": "f1843d221a8aef03935d030498ed52f1dd03108d1a560e869d3c2741a0728aca",
+    "homma-api::frontmatter": "7d9139ca9a6da43c857da63496224b6e34ec29b64fba28da573cb88e6dfbc56d",
+    "homma-api::rule_meta": "f53e02f892b59b05a12735e93d0537c34c7c5d344915554f5990e5bc0afcdf9c",
+    "homma-api::session": "0f782ef3e755442d81105aaa2e9388f83fadb95143c5d0e3b262f9cfbd1b4898",
+    "homma-api::skill_meta": "cb1dcd50439cc7824a4bca74cbfe76a4d390e73c93c5e6705b5a8f0357129277",
+    "homma-api::the_home_must_be_known": "1968b1ff9d61c977934bccf599372fd228fdaac1c0ed24aa571fd96ecf6f8ff0"
   }
 }

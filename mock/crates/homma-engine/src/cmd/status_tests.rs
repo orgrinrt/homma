@@ -261,10 +261,10 @@ fn a_blank_line_inside_a_block_stays_blank() {
 fn a_failed_block_says_so_on_the_heading() {
     // On the heading rather than under it, so a block with nothing in it
     // does not read as a tool that had nothing to say.
-    let text = rendered(&report(vec![block("agenda", "", Some("agenda exited 1"))]));
-    assert!(text.contains("agenda: agenda exited 1\n"), "{text}");
+    let text = rendered(&report(vec![block("docket", "", Some("docket exited 1"))]));
+    assert!(text.contains("docket: docket exited 1\n"), "{text}");
     assert!(
-        !text.contains("agenda:\n"),
+        !text.contains("docket:\n"),
         "the empty-body shape must not appear: {text}"
     );
 }
@@ -302,12 +302,12 @@ fn a_tool_with_nothing_to_say_prints_no_heading() {
     let text = rendered(&report(vec![
         block("dashboard", "", None),
         block("blank", " \n", None),
-        block("agenda", "", Some("exited 1")),
+        block("docket", "", Some("exited 1")),
         block("context", "45%", None),
     ]));
     assert!(!text.contains("dashboard"), "{text}");
     assert!(!text.contains("blank"), "{text}");
-    assert!(text.contains("agenda: exited 1"), "{text}");
+    assert!(text.contains("docket: exited 1"), "{text}");
     assert!(text.contains("context:\n  45%"), "{text}");
 }
 
@@ -327,7 +327,7 @@ fn the_blocks_reach_the_json_document_too() {
 
 #[test]
 fn a_failed_block_carries_its_reason_into_the_json_too() {
-    let doc = serde_json::to_value(report(vec![block("agenda", "", Some("exited 1"))]))
+    let doc = serde_json::to_value(report(vec![block("docket", "", Some("exited 1"))]))
         .expect("the report serialises");
     assert_eq!(doc["injected"][0]["failed"], "exited 1");
 }

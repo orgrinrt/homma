@@ -25,7 +25,7 @@ fn ask<'a>(bears_on: &'a [String]) -> Ask<'a> {
         since: None,
         bears_on,
         into: None,
-        store: Path::new(".data/op-responses"),
+        store: Path::new(".data/oz-responses"),
         running: None,
     }
 }
@@ -172,13 +172,13 @@ fn what_it_bears_on_is_what_was_named_then_what_was_mentioned() {
         "see GOAL.md and named.md and missing.md",
     )]))
     .unwrap();
-    let named = ["muisti".to_string(), "named.md".to_string()];
+    let named = ["mosaic".to_string(), "named.md".to_string()];
     let m = make(root, &t, "s", None, &ask(&named), &TimeZone::UTC)
         .unwrap()
         .expect("made");
     assert!(
         m.body
-            .contains("bears_on:\n  - muisti\n  - named.md\n  - GOAL.md\ntags"),
+            .contains("bears_on:\n  - mosaic\n  - named.md\n  - GOAL.md\ntags"),
         "{}",
         m.body
     );

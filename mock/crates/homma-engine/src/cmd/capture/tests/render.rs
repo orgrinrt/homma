@@ -326,11 +326,11 @@ fn two_of_the_persons_quotes_never_run_together() {
 #[test]
 fn the_front_matter_carries_the_session_and_the_last_line_read() {
     let text = lines(&[typed("a", T0, "one"), typed("b", T1, "two")]);
-    let out = made(&events(&text), &["muisti".into(), "example/x.md".into()]);
+    let out = made(&events(&text), &["mosaic".into(), "example/x.md".into()]);
     assert!(
         out.starts_with(
             "---\nwhen: 2026-09-24 17:00\nkind: unprompted\nsource: sess\n\
-         through: last-uuid\nbears_on:\n  - muisti\n  - example/x.md\n\
+         through: last-uuid\nbears_on:\n  - mosaic\n  - example/x.md\n\
          tags: [chat]\n---\n\n# A title\n\n"
         ),
         "{out}"

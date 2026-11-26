@@ -156,7 +156,7 @@ fn a_launcher_repo_has_no_cargo_alias_and_is_not_asked_for_one() {
 fn a_repo_with_no_agent_templates_of_its_own_is_not_partial() {
     // The builtin rules ship inside mockspace and are written into
     // every consumer, so `mock/agent/` holds only what a repo adds.
-    // homma and muisti have none and are fully rendered.
+    // homma and mosaic have none and are fully rendered.
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("r");
     fs::create_dir_all(&repo).unwrap();

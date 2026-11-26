@@ -30,7 +30,7 @@ impl Target {
 }
 
 /// The row a document answers: `{"ticket": "<id>"}` names `ticket::<id>`, and a bare id on a
-/// `registry` question names the `question` row of that id. An agenda question and a note answer
+/// `registry` question names the `question` row of that id. A question of any other kind and a note answer
 /// no row.
 pub fn target(d: &Document) -> Option<Target> {
     if d.collection != Collection::Answers {

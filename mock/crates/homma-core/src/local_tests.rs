@@ -39,7 +39,7 @@ fn every_instance_key_is_read() {
         title = "the tile machine"
         repos = ["knoll", "homma"]
         state = ".shared/state/knoll.md"
-        goal = ".data/op-responses/goal.md"
+        goal = ".data/oz-responses/goal.md"
         "#,
     )
     .unwrap();
@@ -51,7 +51,7 @@ fn every_instance_key_is_read() {
     );
     assert_eq!(
         l.instance.goal,
-        Some(PathBuf::from(".data/op-responses/goal.md"))
+        Some(PathBuf::from(".data/oz-responses/goal.md"))
     );
 }
 
