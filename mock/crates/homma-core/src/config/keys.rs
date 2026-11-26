@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use homma_api::{AskConfig, Keys, SearchConfig, SummaryConfig, Workspace, keys_of};
+use homma_api::{AskConfig, Keys, SearchConfig, SummaryConfig, WhatConfig, Workspace, keys_of};
 
 use super::Config;
 
@@ -27,6 +27,7 @@ pub fn keys() -> Result<Keys, KeysUnread> {
     keys.graft("search", probe::<SearchConfig>()?);
     keys.graft("summary", probe::<SummaryConfig>()?);
     keys.graft("ask", probe::<AskConfig>()?);
+    keys.graft("what", probe::<WhatConfig>()?);
     Ok(keys)
 }
 

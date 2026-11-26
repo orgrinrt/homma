@@ -10,6 +10,7 @@ use std::path::Path;
 
 use super::doc::Kind;
 use super::sources::tools;
+use super::vocab::Vocabulary;
 use super::{Answer, answer};
 
 const PIGEON_TOML: &str = "[tool]\nname=\"pigeon\"\nsummary=\"carries notes between lofts\"\ntags=[\"mail\"]\nbackend=\"local\"\npromote=true\n[tool.source]\npath={path=\"tools/pigeon\"}\n[[tool.commands]]\nname=\"pigeon\"\nsummary=\"pigeon <loft> [verb]: read, send, show\"\nrun=\"pigeon\"\n";
@@ -27,7 +28,7 @@ fn plant(root: &Path, name: &str, toml: &str, readme: Option<&str>) {
 
 fn ask(root: &Path, q: &str) -> Answer {
     let g = tools::gather(root);
-    answer(&g.docs, g.gaps, q, 5)
+    answer(&g.docs, g.gaps, q, 5, Vocabulary::compiled())
 }
 
 #[cfg(unix)]
@@ -206,7 +207,7 @@ fn the_words_of_a_usage_line_weigh_as_a_summary_and_not_as_a_verb_name() {
     let mut example = Doc::new(Kind::Tool, "example", "x", "other words");
     example.verbs = vec![verb("loft zap", true)];
     let docs = vec![example, declared];
-    let hits = rank(&docs, &["zap".to_string()]);
+    let hits = rank(&docs, &["zap".to_string()], Vocabulary::compiled());
     assert_eq!(
         docs[hits[0].doc].name, "declared",
         "a name outweighs a word of an example"

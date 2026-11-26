@@ -3,7 +3,13 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 
-use super::text::{Grade, edit_distance, grade, is_filler, pairs, stem, words};
+use super::text::{Grade, edit_distance, is_filler, pairs, stem, words};
+use super::vocab::Vocabulary;
+
+/// A grade in the compiled table alone.
+fn grade(q: &str, t: &str) -> Option<Grade> {
+    super::text::grade(q, t, Vocabulary::compiled())
+}
 
 #[test]
 fn a_word_and_its_inflections_are_one_stem() {

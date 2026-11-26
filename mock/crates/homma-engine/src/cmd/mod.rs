@@ -449,7 +449,15 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             no_mock,
         } => {
             let root = tools::root(&config_path(&cli));
-            what::run(&root, words, *limit as usize, kinds, *no_mock, cli.output)
+            what::run(
+                &root,
+                &config_path(&cli),
+                words,
+                *limit as usize,
+                kinds,
+                *no_mock,
+                cli.output,
+            )
         },
         #[cfg(feature = "search")]
         Command::Search {

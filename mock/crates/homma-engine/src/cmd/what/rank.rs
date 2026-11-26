@@ -14,6 +14,7 @@ use serde::Serialize;
 
 use super::doc::{Doc, Kind};
 use super::text::{self, Grade};
+use super::vocab::Vocabulary;
 
 /// The places a term is looked for, and what a match there is worth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -136,11 +137,11 @@ fn tokens(d: &Doc) -> Tokens {
 }
 
 /// The best way `term` matches in `t`, if it does.
-fn best(term: &str, t: &Tokens) -> Option<Match> {
+fn best(term: &str, t: &Tokens, vocabulary: &Vocabulary) -> Option<Match> {
     let mut found: Option<Match> = None;
     let mut per_verb: Vec<(usize, f64)> = Vec::new();
     let mut offer = |field: Field, token: &str, verb: Option<usize>| {
-        if let Some(g) = text::grade(term, token) {
+        if let Some(g) = text::grade(term, token, vocabulary) {
             let value = field.weight() * g.worth();
             if let Some(v) = verb.filter(|v| !t.bare[*v]) {
                 match per_verb.iter_mut().find(|(i, _)| *i == v) {
@@ -192,14 +193,14 @@ pub const fn required(n: usize) -> usize {
 }
 
 /// The things that answer `terms`, best first. Ties break on kind, then name.
-pub fn rank(docs: &[Doc], terms: &[String]) -> Vec<Hit> {
+pub fn rank(docs: &[Doc], terms: &[String], vocabulary: &Vocabulary) -> Vec<Hit> {
     if terms.is_empty() {
         return Vec::new();
     }
     let all: Vec<Tokens> = docs.iter().map(tokens).collect();
     let per_doc: Vec<Vec<Option<Match>>> = all
         .iter()
-        .map(|t| terms.iter().map(|term| best(term, t)).collect())
+        .map(|t| terms.iter().map(|term| best(term, t, vocabulary)).collect())
         .collect();
     let n = docs.len() as f64;
     let idf: Vec<f64> = (0 .. terms.len())
