@@ -1,0 +1,50 @@
+866a76b chore: lock src changelist 202611261919
+1bf6d36 fix: pin the index crate to its trunk so search reads today's indexes
+c21a675 chore: lock doc changelist 202611261916
+8065470 docs: build search against the index crate trunk
+6ed4d6f feat: read the role file, speaker, cloud mark and prefix from config
+fab155d feat: read the role file, speaker, cloud mark and prefix from config
+7bf33f7 Merge remote-tracking branch 'origin/dev' into work/homma-live
+40c0674 docs: regenerate the rendered design with the status key list
+c611804 chore: close design round 202611261807
+ccb98d5 chore: lock src changelist 202611261834
+66ad2c2 feat: read the live defaults from the manifest without moving them
+6c50112 chore: lock doc changelist 202611261807
+d4ff188 docs: design the status list of keys an older engine refuses
+23623a4 test: plant scripts through one fixture crate every binary reaches
+8694a9f test: plant scripts through one fixture crate every binary reaches
+119c111 Merge branch 'live-job1-fix' into work/homma-live
+2b2bed3 chore: close design round 202611261812
+cc5235c chore: lock src changelist 202611261815
+6767d30 test: install the shook hook in a child and read the libtest summary
+207aad3 chore: lock doc changelist 202611261812
+a910661 docs: file the round for a hook the install writes
+2405aa9 docs: regenerate the rendered design for the live defaults
+30f092f chore: lock doc changelist 202611261807
+da344f0 doc: design the live defaults as configuration in three landings
+abdb09c docs: regenerate the rendered design with the fixture crate
+94f7c62 chore: close design round 202611261744
+cbb2287 chore: lock src changelist 202611261748
+46a91fd test: plant scripts through one fixture crate every test binary reaches
+e14a4c0 chore: lock doc changelist 202611261744
+de6351b doc: design a fixture crate every test binary reaches
+efed0fc test: plant test scripts through a child and name no real tree
+7a8f895 test: plant test scripts through a child and name no real tree
+a02887d docs: regenerate the rendered design
+2c1d46b chore: close design round 202611261716
+abaa5ab chore: lock src changelist 202611261717
+d2505ef test: replace the samples the sweep left with invented names
+1dd50f6 chore: lock doc changelist 202611261716
+a4c7180 docs: regenerate the rendered api design
+cff5c0f chore: close design round 202611261626
+63377f7 chore: lock src changelist 202611261626
+9a48728 fix: point the git-shook install message at the tool again
+8585e7d chore: lock doc changelist 202611261626
+99d2cdb docs: name the planted handle in the address sample
+80caccb docs: open the round that puts a live link back
+aad24cd docs: name an invented repository in the readme examples
+f1b2f4d docs: regenerate the rendered design
+fa5792c chore: close design round 202611261602
+0f78155 chore: lock src changelist 202611261604
+474ac2b test: name invented trees, handles and owners in every test
+954e764 test: plant every script a test runs through a child
