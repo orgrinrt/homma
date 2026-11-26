@@ -1152,6 +1152,64 @@ and are read whole, and the mockspace commands are read only for the repositorie
 the scope names. A listing that takes longer than a minute is given up on and
 named in the footer.
 
+### A brief of what bears on a unit of work
+
+`homma what --brief <file>` takes the text of a unit of work, a brief or a
+ticket, from the file or from stdin where the file is `-`, in place of the
+words, and answers with what bears on it: the rules with the lines of each that
+apply, the skills worth loading and the tools worth using, each with one line on
+why. It is the same question as a query, asked with a whole work's text, so it
+reads the same sources and ranks by the same matcher; `--limit` bounds the
+candidates, twelve where it is not given, and `--kind` keeps the kinds named.
+The mockspace commands are not read, since a line of a listing has nothing to
+quote.
+
+The candidates are ranked as a query's answers are, with one difference. A
+query of a few words must have a share of its words matched; a work's text has
+hundreds of words and one thing answers a few of them, so for a brief the share
+is replaced by two words, and the floor of a fifth of the best score stays. A
+word the text repeats is one word.
+
+Each candidate's text is what it is: a rule's card and its elaboration as
+authored, a skill's manifest as authored, and for a tool, a script or a verb its
+summary, each verb with its command and summary, and the rest it says about
+itself. The candidates go to the summarising pass as one content, each opened by
+a line `=== <kind> <name>: <command> ===` and its text after it, under the brief
+`the rules, skills and tools that bear on this work, each named once at the line
+of its === heading with one sentence on why it applies, then each line of it
+that applies with its words copied exactly in double quotes; nothing that does
+not bear on the work. The work:` and the work's text. A work's text that takes
+the brief over the pass's budget for its rules is cut at its last line that
+fits, and the answer says so.
+
+Every quoted span is checked against the content. A line of the answer whose
+place is `line <n>` or `lines <a>-<b>`, and which quotes, keeps only where each
+span in double quotes, its whitespace folded, is in those lines of the content
+with theirs folded; any other quoting line is dropped, and the answer's last
+line says how many were. A line placed at a heading is the thing that heading
+opens; any other line belongs to the thing whose text holds its place. The brief
+is then printed by thing, in the order the answer first names each: the kind,
+the name and the command, the line on why, and the quoted lines under it. A
+thing the answer named with no quote stays, and one it did not name is not
+printed. A line of the answer with no place in the content, or one that names a
+place past its end, is dropped and counted with the rest.
+
+Where the pass is off, or its call fails, there is no extract, and the brief is
+the candidates as a query would print them, with one line saying why there is
+none, so the work still learns what to open and no call is paid. The verb
+exits 0 with a brief and 1 where no candidate was found.
+
+A brief is kept as the ask keeps its answers, by the same cache, under
+`homma/brief/` in the workspace's git directory, expiring and capped by the
+numbers under `[ask]`. Its key is the work's text, the pass's rules, the brief's
+own, the command and the model under `[summary]`, and each candidate's name and
+the digest of its text, so a changed rule or a new candidate asks again. A
+brief printed from the cache says so on its last line. Each brief made, from the
+cache or not, is a line of `homma/brief.log` beside it: the time, the digest of
+the work's text, each thing it named, and how many quoted lines it dropped, so
+what it surfaced can be set later beside what the work turned out to need. Both
+are the clone's and neither is tracked.
+
 ## The agent hooks
 
 An agent session opened at the workspace root loads the workspace's own
@@ -1332,6 +1390,27 @@ any other event refuses the manifest. `ttl` is whole seconds, minutes or hours,
 stop waits for its answer and how long a taken answer lets the call pass. A key
 the row does not know refuses the manifest, as every other table does.
 
+The text a row's `matches` reads is the call's: the command of a shell call, the
+input of any other tool written as JSON, and for an event with no tool, such as
+`UserPromptSubmit`, the payload's `prompt`.
+
+`brief = true` makes an `inform` row say, after its `says`, the brief of that
+text, as `homma what --brief` gives it under its name. Such a row is due once
+for each text in a session, and again for the same text once `ttl` has passed,
+since a brief is of the work it was asked for and a new work is a new brief. A
+text that is empty once trimmed is not briefed, and a brief with nothing in it
+says nothing, so the row is silent for a prompt nothing bears on. `brief` on a
+row of any other strength refuses the manifest.
+
+```toml
+[[agent.nudges]]
+name     = "brief"
+event    = "UserPromptSubmit"
+says     = "What bears on this work:"
+strength = "inform"
+brief    = true
+```
+
 A `once` row without `answer` is answered by the same call made again within
 `ttl`. With one, the agent answers with a shell call whose command carries the
 marker followed by its reason, `: searched-first the search found no symbol of
@@ -1368,8 +1447,8 @@ line, the call going on as if there were no record.
 
 The record is per session, by the payload's `session_id`, one file at
 `homma/nudges/<session>.json` under the workspace's git directory, holding per
-row when its text was last said, the call it stopped and when, and the answer
-taken and when. The log is `homma/nudges.log` beside it, one JSON line per stop,
+row when its text was last said, for a brief row the digest of the text it was
+said for, the call it stopped and when, and the answer taken and when. The log is `homma/nudges.log` beside it, one JSON line per stop,
 answer, refusal, refused evidence and failed predicate, with the time, session,
 row, call text and reason, so a row's taken answers list where whatever its
 marker stands for fell short. Both are the clone's and neither is tracked.
