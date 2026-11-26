@@ -641,11 +641,6 @@ impl AuthConfig {
     }
 }
 
-/// The manifest keys this engine reads that an engine before them refuses,
-/// each as `<table>.<key>`. A manifest sets one only once every engine reading
-/// it lists it here, which `homma status` shows.
-pub const READS: &[&str] = &["session.cloud_var", "auth.service_prefix"];
-
 /// Hosting service type. Drives client selection in [crate::forge].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -722,4 +717,9 @@ impl std::error::Error for ConfigError {
 }
 
 #[cfg(test)]
+mod keys_tests;
+#[cfg(test)]
 mod tests;
+
+mod keys;
+pub use keys::keys;

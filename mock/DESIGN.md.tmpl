@@ -1294,13 +1294,18 @@ levels down and does not enter a build directory it found, `.git` or
 where there is something in it, and the document carries the list always, empty
 where there is nothing. Nothing is deleted.
 
-The workspace line of the document carries `reads`, the manifest keys this
-engine reads that an engine before them refuses, each as `<table>.<key>`, and
-the human output names them under the workspace line. A manifest sets such a key
-only once every engine that reads it lists the key, so an older engine in a
-clone or a container is seen by the key missing from its list, or by the list
-missing altogether, before the manifest changes. A key leaves the list once no
-engine in use predates it.
+The workspace line of the document carries `reads`, every manifest key this
+engine reads, as a dotted path with a map's keys written `*`, and the human
+output says under the workspace line how many there are and that the document
+lists them. A manifest sets a new key only once every engine that reads it
+lists the key, so an older engine in a clone or a container is seen by the key
+missing from its list, or by the list missing altogether, before the manifest
+changes. The list is derived, never kept: it is `homma_core::config::keys`, the
+probe of `Config` with each table `Config` holds as a raw value replaced by the
+probe of the api type that reads that table. A key whose value the probe cannot
+see, one read as any value, stays in the list without what is under it, and
+those keys are a named set a test holds fixed, so a new raw table fails it until
+the type that reads it is grafted in.
 
 The workspace line also names each key under `[paths]` this engine does not
 read, as `  not read under [paths]: <key> ...`, printed only where there is one;
