@@ -727,4 +727,4 @@ mod keys_tests;
 mod tests;
 
 mod keys;
-pub use keys::keys;
+pub use keys::{KeysUnread, keys};

@@ -6,7 +6,12 @@
 use crate::config::{Config, keys};
 
 fn listed() -> Vec<String> {
-    keys().read().iter().cloned().collect()
+    keys()
+        .expect("every manifest type reads the probe")
+        .read()
+        .iter()
+        .cloned()
+        .collect()
 }
 
 #[test]
@@ -46,7 +51,7 @@ fn the_keys_left_opaque_are_the_named_values_of_two_spellings() {
     // type that reads any value, joins this set and fails here until the type that reads it is
     // grafted in or it is named here. Failing control: take one graft out of `keys` and its
     // table's name is here.
-    let keys = keys();
+    let keys = keys().expect("every manifest type reads the probe");
     let opaque: Vec<&str> = keys.opaque().iter().map(String::as_str).collect();
     assert_eq!(opaque, ["deny", "status.inject.tool"]);
 }
