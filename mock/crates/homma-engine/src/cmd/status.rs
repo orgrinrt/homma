@@ -83,8 +83,8 @@ pub struct WorkspaceLine {
     pub path:                   String,
     pub default_public_branch:  String,
     pub default_working_branch: String,
-    /// The manifest keys this engine reads that an engine before them
-    /// refuses, as `<table>.<key>`.
+    /// Every manifest key this engine reads, as a dotted path with a map's
+    /// keys `*`, derived from the types that read the manifest.
     pub reads:                  Vec<String>,
 }
 
@@ -215,10 +215,7 @@ fn build_report(
         path:                   cfg.workspace.path.display().to_string(),
         default_public_branch:  cfg.defaults.public_branch.clone(),
         default_working_branch: cfg.defaults.working_branch.clone(),
-        reads:                  homma_core::config::READS
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
+        reads:                  homma_core::config::keys().read().iter().cloned().collect(),
     };
     let forges = cfg
         .forges
@@ -315,7 +312,11 @@ impl StatusReport {
             self.workspace.default_public_branch, self.workspace.default_working_branch
         )?;
         if !self.workspace.reads.is_empty() {
-            writeln!(out, "  reads: {}", self.workspace.reads.join(" "))?;
+            writeln!(
+                out,
+                "  reads: {} keys, listed in the json output",
+                self.workspace.reads.len()
+            )?;
         }
         if let Some(i) = &self.instance {
             match &i.title {
