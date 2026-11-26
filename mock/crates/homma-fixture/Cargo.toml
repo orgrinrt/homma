@@ -1,0 +1,12 @@
+[package]
+name = "homma-fixture"
+version = "0.0.0"
+description = "What a test needs to stage the world outside the code under test"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
