@@ -364,7 +364,7 @@ pub fn open_current(p: &Place) -> (Result<layer::Index, muisti::Error>, Opened) 
             (Ok(index), (Some(c), caveats))
         },
         Err(e) => {
-            let moves = current::other_chunker(&e, p.build.as_deref());
+            let moves = current::other_format(&e, p.build.as_deref());
             (Err(e), (None, moves.into_iter().collect()))
         },
     }
