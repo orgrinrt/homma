@@ -6,13 +6,12 @@
 //! groups from `[what] synonyms`, groups that share a word once stemmed being one group.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::OnceLock;
 
+use anyhow::{Context, Result};
 use homma_api::WhatConfig;
-use serde::Deserialize;
+use homma_core::Config;
 
-use super::doc::Gap;
 use super::text::{SYNONYMS, stem};
 
 /// Which group each stem belongs to.
@@ -71,35 +70,16 @@ impl Vocabulary {
         self.group.get(stem_word).copied()
     }
 
-    /// The vocabulary of the workspace whose manifest is `manifest`: the compiled table joined with
-    /// its `[what] synonyms`. With no manifest, or no `[what]`, the compiled table and no gap; with
-    /// a `[what]` that does not read, the compiled table and a gap saying why.
-    pub fn of_manifest(manifest: &Path) -> (Vocabulary, Option<Gap>) {
-        let Ok(text) = std::fs::read_to_string(manifest) else {
-            return (Vocabulary::compiled().clone(), None);
+    /// The vocabulary of a workspace whose configuration is `cfg`: the compiled table joined with
+    /// its `[what] synonyms`. With no configuration, or no `[what]`, the compiled table.
+    ///
+    /// # Errors
+    /// A `[what]` table that does not read as one, a key it does not know among them.
+    pub fn of(cfg: Option<&Config>) -> Result<Vocabulary> {
+        let Some(what) = cfg.and_then(|c| c.what.as_ref()) else {
+            return Ok(Vocabulary::compiled().clone());
         };
-        let read = toml::from_str::<toml::Table>(&text)
-            .map_err(|e| e.to_string())
-            .and_then(|t| {
-                t.get("what")
-                    .map(|w| WhatConfig::deserialize(w.clone()).map_err(|e| e.to_string()))
-                    .transpose()
-            });
-        match read {
-            Ok(Some(what)) => (Vocabulary::with(&what.synonyms), None),
-            Ok(None) => (Vocabulary::compiled().clone(), None),
-            Err(why) => {
-                (
-                    Vocabulary::compiled().clone(),
-                    Some(Gap {
-                        source: "what",
-                        count:  1,
-                        what:   format!(
-                            "the workspace's own synonym groups, since its [what] does not read: {why}"
-                        ),
-                    }),
-                )
-            },
-        }
+        let read: WhatConfig = what.clone().try_into().context("reading `[what]`")?;
+        Ok(Vocabulary::with(&read.synonyms))
     }
 }
