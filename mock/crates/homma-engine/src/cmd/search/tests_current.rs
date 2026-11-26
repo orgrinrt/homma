@@ -27,6 +27,10 @@ impl Embedder for Other {
         1
     }
 
+    fn fingerprint(&self) -> &str {
+        self.model()
+    }
+
     fn embed(&mut self, _: &str, out: &mut [f32]) -> Result<(), muisti::Error> {
         out.fill(1.0);
         Ok(())
@@ -388,6 +392,10 @@ impl Embedder for WideWords {
         2
     }
 
+    fn fingerprint(&self) -> &str {
+        self.model()
+    }
+
     fn embed(&mut self, _: &str, out: &mut [f32]) -> Result<(), muisti::Error> {
         out.fill(0.0);
         Ok(())
@@ -538,4 +546,29 @@ fn a_repository_index_reads_a_commit_made_after_its_build() {
     // THE CONTROL: asked again with nothing committed, no commit is read.
     let again = ask(&places, "saturation", 10, SystemTime::now());
     assert!(!line(&again).contains("read"), "{}", line(&again));
+}
+
+#[test]
+fn an_index_in_the_format_a_current_build_of_the_crate_writes_answers() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("c");
+    write(&dir.join("a.md"), "# A\n\nsaturation of the air\n");
+    let file = dir.with_extension("index").join("index.sqlite");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let dimension = std::num::NonZeroUsize::new(Words.dimension()).unwrap();
+    let mut header = Header::new(Words.model(), dimension);
+    // The chunker a current build of the crate cuts with, written as a number so the test states
+    // today's format and does not move with the pin.
+    header.chunker = 2;
+    let mut store = Store::open(&file, header).unwrap();
+    muisti::index(&mut store, &Corpus::new(&dir), &mut Words, |_| {}).unwrap();
+    drop(store);
+    let out = ask(
+        &[Place::at("c".to_string(), file)],
+        "saturation",
+        10,
+        SystemTime::now(),
+    );
+    let paths: Vec<&str> = out.hits.iter().map(|h| h.path.as_str()).collect();
+    assert_eq!(paths, vec!["a.md"], "{}", line(&out));
 }
