@@ -91,6 +91,15 @@ impl Default for AskConfig {
     }
 }
 
+/// A workspace's own words for `homma what`, the `[what]` table: groups of
+/// words that mean the same in that workspace, joined to the compiled table.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WhatConfig {
+    /// Each group a list of words; empty unless set.
+    pub synonyms: Vec<Vec<String>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +111,14 @@ mod tests {
         assert_eq!(a.cache_expire_hours, 1);
         assert_eq!(a.cache_max_bytes, AskConfig::default().cache_max_bytes);
         assert!(toml::from_str::<AskConfig>("cache_expiry_hours = 1\n").is_err());
+    }
+
+    /// Failing control: without `deny_unknown_fields` the misspelt key reads.
+    #[test]
+    fn the_what_table_reads_groups_of_words_and_refuses_an_unknown_key() {
+        let w: WhatConfig = toml::from_str("synonyms = [[\"a\", \"b\"], [\"c\"]]\n").unwrap();
+        assert_eq!(w.synonyms, [vec!["a", "b"], vec!["c"]]);
+        assert!(WhatConfig::default().synonyms.is_empty());
+        assert!(toml::from_str::<WhatConfig>("synonym = [[\"a\"]]\n").is_err());
     }
 }

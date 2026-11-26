@@ -1,0 +1,50 @@
+d1ce9da chore: lock src changelist 202611262018
+8b24da8 fix: graft the what table into the key list again
+4278ed7 chore: lock doc changelist 202611262017
+f8e2ae8 docs: open the round that grafts the what table into the key list
+1880790 Merge remote-tracking branch 'origin/dev' into work/homma-tail-1
+66c3a37 chore: close design round 202611261956
+daeaefc chore: lock src changelist 202611261957
+ecf4353 feat: join a workspace's own synonym groups to the what table
+b654f4e feat: name the paths keys the engine does not read in status
+233e26e feat: name the paths keys the engine does not read in status
+8a03555 chore: close design round 202611261948
+9da8556 chore: lock src changelist 202611261959
+a0cf596 feat: name the paths keys an engine does not read in status
+aa085f1 Merge remote-tracking branch 'origin/dev' into work/homma-tail-2
+f48806d docs: regenerate the rendered design with the workspace synonym groups
+424b377 chore: open src changelist 202611261956
+a676b57 chore: lock doc changelist 202611261956
+dd4cd47 docs: read a workspace's own synonym groups from its manifest
+9274be0 docs: regenerate the rendered design with the unread paths keys
+6da232a chore: lock doc changelist 202611261948
+378bad2 feat: derive the keys status says the engine reads from the config
+c0cbc69 docs: report the paths keys an engine does not read before refusing
+7deee18 feat: derive the keys status says the engine reads from the config
+3bd162c chore: record the test history of the merged tree
+a2db5c2 Merge remote-tracking branch 'origin/dev' into work/homma-tail-3
+50d0a7f chore: close design round 202611261903
+39cccd9 chore: lock src changelist 202611261905
+8418043 feat: derive the status key list from the configuration types
+b844730 fix: pin the index crate to a trunk whose indexes search reads
+86d6ea1 fix: pin the index crate to a trunk whose indexes search reads
+f0ada85 chore: close design round 202611261916
+866a76b chore: lock src changelist 202611261919
+1bf6d36 fix: pin the index crate to its trunk so search reads today's indexes
+c21a675 chore: lock doc changelist 202611261916
+8065470 docs: build search against the index crate trunk
+b5c4fc5 feat: list every key a type reads with no manifest
+a1bede7 chore: lock doc changelist 202611261903
+9fcc0ba docs: derive the status key list from the configuration types
+6ed4d6f feat: read the role file, speaker, cloud mark and prefix from config
+fab155d feat: read the role file, speaker, cloud mark and prefix from config
+7bf33f7 Merge remote-tracking branch 'origin/dev' into work/homma-live
+40c0674 docs: regenerate the rendered design with the status key list
+c611804 chore: close design round 202611261807
+ccb98d5 chore: lock src changelist 202611261834
+66ad2c2 feat: read the live defaults from the manifest without moving them
+6c50112 chore: lock doc changelist 202611261807
+d4ff188 docs: design the status list of keys an older engine refuses
+23623a4 test: plant scripts through one fixture crate every binary reaches
+8694a9f test: plant scripts through one fixture crate every binary reaches
+119c111 Merge branch 'live-job1-fix' into work/homma-live
