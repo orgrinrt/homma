@@ -365,11 +365,14 @@ fn every_hit_names_its_index_and_an_index_not_built_is_a_line_under_the_answer()
         Place::at("second".to_string(), b),
     ];
     let out = ask(&places, "saturation", 10, SystemTime::now());
-    let named: Vec<(&str, &str)> = out
+    // Which hit ranks first is the index crate's ranking, not homma's; what is homma's is that each
+    // hit names the index it came from.
+    let mut named: Vec<(&str, &str)> = out
         .hits
         .iter()
         .map(|h| (h.index.as_str(), h.path.as_str()))
         .collect();
+    named.sort_unstable();
     assert_eq!(named, vec![("first", "one.md"), ("second", "two.md")]);
     let answered: Vec<(&str, bool)> = out
         .indexes
