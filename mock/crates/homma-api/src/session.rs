@@ -16,19 +16,46 @@
 //! caller owns the two reads.
 
 use std::fmt;
+use std::path::PathBuf;
 use std::str::FromStr;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::rule::RuleMeta;
+use crate::workspace_name::WorkspaceName;
 
-/// Where the role file is, relative to the home directory.
+/// Where a workspace's role file is, relative to the home directory:
+/// `.config/<workspace name>/role`.
 ///
-/// The file the setup script and the bootstrap write: one word, the role.
-pub const ROLE_FILE: &str = ".config/clause-dev/role";
+/// The file the workspace's own setup writes: one word, the role.
+pub fn role_file(workspace: &WorkspaceName) -> PathBuf {
+    PathBuf::from(".config")
+        .join(workspace.as_str())
+        .join("role")
+}
 
-/// The variable marking a session as one in a cloud container.
-pub const CLOUD_VAR: &str = "CLAUSE_CLOUD";
+/// The variable a cloud session is marked by until a manifest names its own.
+///
+/// FIXME(homma_live_defaults_still_name_its_workspace_maintainer_and): the
+/// value homma has always read, kept until every manifest that relies on it sets
+/// `[session] cloud_var`; then it becomes neutral.
+const DEFAULT_CLOUD_VAR: &str = "CLAUSE_CLOUD";
+
+/// `[session]`: how a session is told apart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SessionConfig {
+    /// The environment variable that is `1` in a cloud session.
+    pub cloud_var: String,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            cloud_var: DEFAULT_CLOUD_VAR.to_string(),
+        }
+    }
+}
 
 /// What a session does in the workspace's runs of helpers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -179,8 +206,8 @@ impl Session {
 
     /// The session the machine's two facts describe.
     ///
-    /// `role_file` is the content of [`ROLE_FILE`] when there is one, and `cloud`
-    /// is the value of [`CLOUD_VAR`] when it is set. **A file that is there and
+    /// `role_file` is the content of the workspace's [`role_file`] when there is
+    /// one, and `cloud` is the value of [`SessionConfig::cloud_var`] when it is set. **A file that is there and
     /// holds anything but a role is refused**: reading it as no role would load
     /// every card for a session whose file was merely misspelt.
     pub fn from_parts(role_file: Option<&str>, cloud: Option<&str>) -> Result<Self, UnknownWord> {

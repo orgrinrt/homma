@@ -23,6 +23,7 @@ fn a_keychain_program_that_is_not_there_is_a_reason_on_each_line_not_a_crash() {
     let store = Keychain {
         program: "/nonexistent/security".into(),
         account: "publish".into(),
+        prefix:  "homma-test-release".into(),
     };
     struct Quiet;
     impl Probe for Quiet {
@@ -69,7 +70,7 @@ mod keychain_round_trip {
     const KEY: &str = "selftest-auth-suite";
 
     fn kc() -> Keychain {
-        Keychain::new()
+        Keychain::new("homma-test-release")
     }
 
     struct Clean;
@@ -150,5 +151,9 @@ fn only_the_environment_store_says_up_front_that_it_cannot_write() {
             .to_string()
             .contains("[registries.jsr]")
     );
-    assert!(Keychain::new().writable("crates-io").is_ok());
+    assert!(
+        Keychain::new("homma-test-release")
+            .writable("crates-io")
+            .is_ok()
+    );
 }

@@ -6,7 +6,7 @@
 //! `homma rules render` and `load`, chosen by the session's role and place.
 //!
 //! The binary runs on a scratch workspace with its own home directory, so the
-//! role file and `CLAUSE_CLOUD` are the ones the test sets and never the
+//! role file and the cloud variable are the ones the test sets and never the
 //! machine's.
 
 mod support;
@@ -14,6 +14,14 @@ mod support;
 use std::path::Path;
 
 use predicates::prelude::*;
+
+/// The cloud variable the planted manifest names under `[session]`.
+const CLOUD: &str = "GLADE_CLOUD";
+
+/// The role file of the planted manifest's workspace, relative to the home.
+fn role_path() -> std::path::PathBuf {
+    homma_api::role_file(&homma_api::WorkspaceName::new("test-ws").unwrap())
+}
 
 /// One authored rule with the given extra meta lines.
 fn rule(ws: &Path, name: &str, extra: &str) {
@@ -33,7 +41,14 @@ fn rule(ws: &Path, name: &str, extra: &str) {
 /// and a home directory beside it.
 fn workspace() -> tempfile::TempDir {
     let ws = tempfile::tempdir().unwrap();
-    std::fs::write(ws.path().join("homma.toml"), support::minimal_config_toml()).unwrap();
+    std::fs::write(
+        ws.path().join("homma.toml"),
+        format!(
+            "{}\n[session]\ncloud_var = \"{CLOUD}\"\n",
+            support::minimal_config_toml()
+        ),
+    )
+    .unwrap();
     rule(ws.path(), "for-all", "");
     rule(ws.path(), "for-coordinator", "roles: [coordinator]");
     rule(ws.path(), "for-helper", "roles: [helper]");
@@ -46,7 +61,7 @@ fn workspace() -> tempfile::TempDir {
 
 /// Put the role file in the workspace's home.
 fn role_file(ws: &Path, text: &str) {
-    let path = ws.join("home").join(homma_api::session::ROLE_FILE);
+    let path = ws.join("home").join(role_path());
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
 }
@@ -57,8 +72,8 @@ fn homma(ws: &Path, cloud: Option<&str>, args: &[&str]) -> assert_cmd::Command {
     c.arg("--dir").arg(ws).arg("rules").args(args);
     c.env("HOME", ws.join("home"));
     match cloud {
-        Some(v) => c.env(homma_api::session::CLOUD_VAR, v),
-        None => c.env_remove(homma_api::session::CLOUD_VAR),
+        Some(v) => c.env(CLOUD, v),
+        None => c.env_remove(CLOUD),
     };
     c
 }
@@ -195,7 +210,7 @@ fn load_all_counts_what_each_kind_of_session_loads_and_matches_what_render_write
             .args(["--output", "json", "rules"])
             .args(args)
             .env("HOME", ws.path().join("home"))
-            .env_remove(homma_api::session::CLOUD_VAR)
+            .env_remove(CLOUD)
             .output()
             .unwrap();
         assert!(o.status.success(), "{o:?}");
@@ -273,7 +288,7 @@ fn a_gated_card_is_counted_apart_from_the_loaded_ones() {
         .arg(ws.path())
         .args(["--output", "json", "rules", "load", "--all"])
         .env("HOME", ws.path().join("home"))
-        .env_remove(homma_api::session::CLOUD_VAR)
+        .env_remove(CLOUD)
         .output()
         .unwrap();
     let doc: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
@@ -288,7 +303,7 @@ fn a_gated_card_is_counted_apart_from_the_loaded_ones() {
         .arg(ws.path())
         .args(["--output", "json", "rules", "load", "--all"])
         .env("HOME", ws.path().join("home"))
-        .env_remove(homma_api::session::CLOUD_VAR)
+        .env_remove(CLOUD)
         .output()
         .unwrap();
     let doc: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
@@ -325,7 +340,47 @@ fn a_role_option_is_given_the_say_over_a_misspelt_role_file() {
 #[test]
 fn a_role_file_that_cannot_be_read_is_refused() {
     let ws = workspace();
-    let path = ws.path().join("home").join(homma_api::session::ROLE_FILE);
+    let path = ws.path().join("home").join(role_path());
     std::fs::create_dir_all(&path).unwrap();
     homma(ws.path(), Some("1"), &["render"]).assert().failure();
+}
+
+/// The role file a workspace's own setup writes, before homma exists, is the
+/// one homma reads for that workspace's name. Needs `HOMMA_TEST_MANIFEST`, a
+/// manifest whose `[workspace] name` is taken, and `HOMMA_TEST_ROLE_FILE`, the
+/// path under the home directory that its setup writes; without them the test
+/// says so and returns. Neither is compiled in: the name is planted into this
+/// workspace's manifest as configuration.
+///
+/// Failing control: with the role file derived from anything but the name, the
+/// role written at the setup's path is not read and every role's card renders.
+#[test]
+fn the_role_file_a_workspaces_setup_writes_is_the_one_read_for_its_name() {
+    let (Some(manifest), Some(written)) = (
+        std::env::var_os("HOMMA_TEST_MANIFEST"),
+        std::env::var_os("HOMMA_TEST_ROLE_FILE"),
+    ) else {
+        eprintln!("skipped: HOMMA_TEST_MANIFEST and HOMMA_TEST_ROLE_FILE are not both set");
+        return;
+    };
+    let given: toml::Value = toml::from_str(&std::fs::read_to_string(manifest).unwrap()).unwrap();
+    let name = given["workspace"]["name"].as_str().unwrap().to_string();
+    let ws = workspace();
+    let planted = std::fs::read_to_string(ws.path().join("homma.toml"))
+        .unwrap()
+        .replace("name = \"test-ws\"", &format!("name = {name:?}"));
+    assert!(
+        planted.contains(&format!("name = {name:?}")),
+        "the name was planted"
+    );
+    std::fs::write(ws.path().join("homma.toml"), planted).unwrap();
+    let path = ws.path().join("home").join(written);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "coordinator\n").unwrap();
+    homma(ws.path(), Some("1"), &["render"]).assert().success();
+    assert_eq!(generated(ws.path()), [
+        "for-all",
+        "for-coordinator",
+        "gated"
+    ]);
 }

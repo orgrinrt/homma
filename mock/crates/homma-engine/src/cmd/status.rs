@@ -83,6 +83,9 @@ pub struct WorkspaceLine {
     pub path:                   String,
     pub default_public_branch:  String,
     pub default_working_branch: String,
+    /// The manifest keys this engine reads that an engine before them
+    /// refuses, as `<table>.<key>`.
+    pub reads:                  Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -208,10 +211,14 @@ fn build_report(
     worktrees: Vec<WorktreeLine>,
 ) -> StatusReport {
     let workspace = WorkspaceLine {
-        name:                   cfg.workspace.name.clone(),
+        name:                   cfg.workspace.name.to_string(),
         path:                   cfg.workspace.path.display().to_string(),
         default_public_branch:  cfg.defaults.public_branch.clone(),
         default_working_branch: cfg.defaults.working_branch.clone(),
+        reads:                  homma_core::config::READS
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
     };
     let forges = cfg
         .forges
@@ -307,6 +314,9 @@ impl StatusReport {
             "  default public={}  working={}",
             self.workspace.default_public_branch, self.workspace.default_working_branch
         )?;
+        if !self.workspace.reads.is_empty() {
+            writeln!(out, "  reads: {}", self.workspace.reads.join(" "))?;
+        }
         if let Some(i) = &self.instance {
             match &i.title {
                 Some(title) => writeln!(out, "  this clone is for {} ({title})", i.work)?,

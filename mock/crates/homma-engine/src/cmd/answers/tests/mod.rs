@@ -187,7 +187,10 @@ fn golden_docs() -> Vec<docs::Document> {
 #[test]
 fn the_title_is_the_drains() {
     assert_eq!(
-        render::title(&golden_docs(), &Source::Dir(Path::new("fixture"))),
+        render::title(&golden_docs(), &Source::Dir {
+            dir:    Path::new("fixture"),
+            person: Some("oz"),
+        }),
         TITLE.trim_end()
     );
 }
@@ -195,7 +198,10 @@ fn the_title_is_the_drains() {
 #[test]
 fn the_capture_is_the_drains_byte_for_byte() {
     let d = golden_docs();
-    let source = Source::Dir(Path::new("fixture"));
+    let source = Source::Dir {
+        dir:    Path::new("fixture"),
+        person: Some("oz"),
+    };
     let title = render::title(&d, &source);
     let got = render::text(&d, "2026-10-28 09:40", &source, &title);
     assert_eq!(got, CAPTURE);
@@ -207,7 +213,15 @@ fn a_fence_inside_the_question_gets_a_longer_fence() {
         serde_json::from_str(&answer("q", json!("q"), "registry", "2026-10-28T09:10:00Z")).unwrap();
     v["asks"] = json!("run ```x``` now");
     let d = docs::parse(Collection::Answers, &v.to_string()).unwrap();
-    let got = render::text(&[d], "w", &Source::Dir(Path::new("s")), "t");
+    let got = render::text(
+        &[d],
+        "w",
+        &Source::Dir {
+            dir:    Path::new("s"),
+            person: Some("oz"),
+        },
+        "t",
+    );
     assert!(got.contains("  ````text\n"), "{got}");
 }
 
@@ -330,11 +344,29 @@ fn a_take_writes_one_capture_attaches_and_a_second_take_does_nothing() {
             skipped: vec![],
         }
     };
-    let first = take_documents(&run, read(), &Source::Dir(tmp.path()), None).unwrap();
+    let first = take_documents(
+        &run,
+        read(),
+        &Source::Dir {
+            dir:    tmp.path(),
+            person: Some("oz"),
+        },
+        None,
+    )
+    .unwrap();
     assert_eq!(first.answers, 1);
     assert_eq!(first.attached, vec!["ticket::tk_one".to_string()]);
     assert_eq!(fs::read_dir(&run.store).unwrap().count(), 1);
-    let second = take_documents(&run, read(), &Source::Dir(tmp.path()), None).unwrap();
+    let second = take_documents(
+        &run,
+        read(),
+        &Source::Dir {
+            dir:    tmp.path(),
+            person: Some("oz"),
+        },
+        None,
+    )
+    .unwrap();
     assert!(second.written.is_none());
     assert_eq!(fs::read_dir(&run.store).unwrap().count(), 1);
     assert_eq!(fs::read_to_string(log).unwrap().lines().count(), 1);
@@ -636,7 +668,10 @@ fn a_capture_says_where_its_words_were_left_and_who_left_them() {
         r#"{"text":"t","at":"2026-10-28T09:41:00Z"}"#,
     )
     .unwrap();
-    let from_the_page = Source::Dir(Path::new("fixture"));
+    let from_the_page = Source::Dir {
+        dir:    Path::new("fixture"),
+        person: Some("oz"),
+    };
     let from_the_channel = Source::Channel {
         channel: "kiosk",
         from:    "chair",
@@ -655,7 +690,7 @@ fn a_capture_says_where_its_words_were_left_and_who_left_them() {
     assert!(text.contains("# someone answers ticket::t1"), "{text}");
     assert!(!text.contains("dashboard"), "{text}");
 
-    // The controls: the page keeps its tag, its lead and `op`, and a note says where it was left.
+    // The controls: the page keeps its tag, its lead and its person, and a note says where it was left.
     let text = render::text(
         &docs,
         "w",
@@ -665,13 +700,43 @@ fn a_capture_says_where_its_words_were_left_and_who_left_them() {
     assert!(
         text.contains("tags: [dashboard, answers]") && text.contains("Left on the dashboard page")
     );
-    assert!(text.contains("# op answers ticket::t1"), "{text}");
+    assert!(text.contains("# oz answers ticket::t1"), "{text}");
     assert_eq!(
         render::title(&[note.clone()], &from_the_page),
-        "op leaves a note on the page"
+        "oz leaves a note on the page"
     );
     assert_eq!(
         render::title(&[note], &from_the_channel),
         "chair leaves a note on the channel"
     );
+}
+
+#[test]
+fn a_page_of_a_catalogue_with_no_king_is_said_to_be_someones() {
+    // Failing control: with a handle compiled in for the page, the title names it.
+    let note = docs::parse(
+        Collection::Notes,
+        r#"{"text":"t","at":"2026-10-28T09:41:00Z"}"#,
+    )
+    .unwrap();
+    let nobodys = Source::Dir {
+        dir:    Path::new("fixture"),
+        person: None,
+    };
+    assert_eq!(
+        render::title(&[note], &nobodys),
+        "someone leaves a note on the page"
+    );
+}
+
+#[test]
+fn the_king_is_the_catalogue_entry_whose_role_is_king() {
+    let ws = homma_api::Workspace::parse(
+        "[org.pike]\nrole = \"hand\"\nhandle = \"pike\"\n[org.oz]\nrole = \"king\"\nhandle = \"oz\"\n",
+    )
+    .unwrap();
+    assert_eq!(ws.king(), Some("oz"));
+    let none =
+        homma_api::Workspace::parse("[org.pike]\nrole = \"hand\"\nhandle = \"pike\"\n").unwrap();
+    assert_eq!(none.king(), None);
 }

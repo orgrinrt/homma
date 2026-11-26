@@ -658,13 +658,13 @@ pub enum RulesOp {
 #[derive(Debug, Args)]
 pub struct SessionArgs {
     /// The session role, `coordinator` or `helper`. Without it the role file
-    /// `~/.config/clause-dev/role` says, and a session with none takes every
-    /// role.
+    /// `~/.config/<workspace name>/role` says, and a session with none takes
+    /// every role.
     #[arg(long)]
     pub role: Option<SessionRole>,
 
-    /// Where the session runs, `cloud` or `local`. Without it `CLAUSE_CLOUD`
-    /// being `1` says cloud, and anything else local.
+    /// Where the session runs, `cloud` or `local`. Without it the variable
+    /// `[session] cloud_var` names being `1` says cloud, and anything else local.
     #[arg(long)]
     pub place: Option<Place>,
 }
@@ -1611,9 +1611,10 @@ pub enum AnswersOp {
         /// A channel, read through the workspace's `msg` tool.
         #[arg(long)]
         channel: Option<String>,
-        /// Whose messages on the channel are taken.
-        #[arg(long, default_value = "op")]
-        from:    String,
+        /// Whose messages on the channel are taken. Without it, the catalogue's
+        /// king's.
+        #[arg(long)]
+        from:    Option<String>,
         /// The store to write into for this run. Defaults to `captures` under `[paths]`.
         #[arg(long)]
         into:    Option<PathBuf>,

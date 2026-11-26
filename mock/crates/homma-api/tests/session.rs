@@ -123,3 +123,21 @@ fn every_cell_of_roles_by_place_is_what_the_table_says() {
         }
     }
 }
+
+#[test]
+fn the_role_file_is_under_a_directory_named_for_the_workspace() {
+    let name = homma_api::WorkspaceName::new("glade-root").unwrap();
+    assert_eq!(
+        homma_api::role_file(&name),
+        std::path::PathBuf::from(".config/glade-root/role")
+    );
+}
+
+#[test]
+fn a_session_table_names_its_cloud_variable_and_refuses_any_other_key() {
+    let set: homma_api::SessionConfig = toml::from_str("cloud_var = \"GLADE_CLOUD\"\n").unwrap();
+    assert_eq!(set.cloud_var, "GLADE_CLOUD");
+    let unset: homma_api::SessionConfig = toml::from_str("").unwrap();
+    assert_eq!(unset, homma_api::SessionConfig::default());
+    assert!(toml::from_str::<homma_api::SessionConfig>("cloud = \"X\"\n").is_err());
+}
