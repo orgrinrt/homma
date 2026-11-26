@@ -9,7 +9,6 @@
 //! The launcher mockspace is run through is a stand-in that records its arguments, so the row
 //! write is checked at the one place it leaves this command.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
@@ -36,12 +35,11 @@ fn setup(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
     .unwrap();
     let args = dir.join("args");
     let mock = dir.join("mock");
-    std::fs::write(
+    homma_fixture::script(
         &mock,
-        format!("#!/bin/sh\necho \"$@\" >> '{}'\n", args.display()),
-    )
-    .unwrap();
-    std::fs::set_permissions(&mock, std::fs::Permissions::from_mode(0o755)).unwrap();
+        &format!("#!/bin/sh\necho \"$@\" >> '{}'\n", args.display()),
+        0o755,
+    );
     (root, page, mock)
 }
 
@@ -141,16 +139,15 @@ fn a_hook_whose_row_cannot_be_written_exits_one_leaves_no_capture_and_can_be_ret
     // A launcher that refuses until the row "exists", which is the file `ready`.
     let ready = dir.path().join("ready");
     let mock = dir.path().join("refusing-mock");
-    std::fs::write(
+    homma_fixture::script(
         &mock,
-        format!(
+        &format!(
             "#!/bin/sh\n[ -e '{}' ] || {{ echo 'no such row' >&2; exit 2; }}\necho \"$@\" >> '{}'\n",
             ready.display(),
             dir.path().join("args").display()
         ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&mock, std::fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
     answers(&root, &mock, &["hook"]).success();
     let hook = root.join(".mockspace/hooks/registry-append");
     let run = || {

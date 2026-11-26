@@ -1698,6 +1698,7 @@ version = "0.0.0"
 dependencies = [
  "gix",
  "homma-api",
+ "homma-fixture",
  "mockspace-config",
  "mockspace-template",
  "rustls-native-certs",
@@ -1720,6 +1721,7 @@ dependencies = [
  "homma",
  "homma-api",
  "homma-core",
+ "homma-fixture",
  "homma-org",
  "homma-store",
  "jiff",
@@ -1736,6 +1738,13 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "homma-fixture"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]

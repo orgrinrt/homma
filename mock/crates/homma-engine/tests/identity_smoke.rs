@@ -9,7 +9,6 @@
 mod support;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use predicates::prelude::*;
@@ -36,8 +35,7 @@ fn run(cfg: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
 /// A program standing in for `claude` that writes what it was given to `out`.
 fn stub(dir: &Path, script: &str) -> std::path::PathBuf {
     let stub = dir.join("claude-stub");
-    fs::write(&stub, format!("#!/bin/sh\n{script}\n")).unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    homma_fixture::script(&stub, &format!("#!/bin/sh\n{script}\n"), 0o755);
     stub
 }
 

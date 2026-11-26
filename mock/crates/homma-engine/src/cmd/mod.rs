@@ -52,8 +52,6 @@ pub mod local;
 pub mod migrate;
 pub mod milestone;
 pub mod org;
-#[cfg(test)]
-pub mod planted;
 pub mod registry;
 pub mod release;
 pub mod repo;

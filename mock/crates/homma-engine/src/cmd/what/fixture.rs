@@ -18,7 +18,7 @@ pub(super) fn workspace() -> tempfile::TempDir {
 
 fn file(root: &Path, rel: &str, text: &str, exec: bool) {
     let mode = if exec { 0o755 } else { 0o644 };
-    crate::cmd::planted::script(&root.join(rel), text, mode);
+    homma_fixture::script(&root.join(rel), text, mode);
 }
 
 /// A tool with its commands, each a script under `commands/`.

@@ -11,22 +11,19 @@ use predicates::prelude::*;
 #[cfg(unix)]
 #[test]
 fn the_verb_answers_from_a_stand_in_model_and_again_from_the_cache_and_refuses_when_off() {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     support::git_in(root, &["init", "-q"]);
     let model = root.join("model");
     let calls = root.join("calls");
-    fs::write(
+    homma_fixture::script(
         &model,
-        format!(
+        &format!(
             "#!/bin/sh\nin=$(cat)\necho call >> {}\ncase \"$in\" in\n  *'=== chunk 1 ==='*) printf '%s\\n' '{{\"is_error\":false,\"result\":\"=== chunk 1 ===\\n- line 1: alpha\"}}' ;;\n  *) printf '%s\\n' '{{\"is_error\":false,\"result\":\"- line 1: alpha\\nAnswer: alpha, line 1\"}}' ;;\nesac\n",
             calls.display()
         ),
-    )
-    .unwrap();
-    fs::set_permissions(&model, fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
     let on = root.join("homma.toml");
     fs::write(
         &on,

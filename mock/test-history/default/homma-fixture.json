@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "flavour": "",
+  "member": "homma-fixture",
+  "green": {
+    "full": "dbac7691c1635f58d83b01876fce9d2430c516a4648cc4a8bd2fe98c0591b08d",
+    "own": {
+      "homma-fixture": "6d4cfd620056d0402f8b57fb94827acd79564228c048bb89f00ec9f436cda451"
+    }
+  },
+  "tests": {},
+  "bins": {
+    "homma-fixture": "c85b3ec1d1b2e81cca206a8bc1c05043b12ce537b2d7277d3b2f732f9bd8fa1d",
+    "homma-fixture::alone_at_the_root": "ede5fb58f3b44afe5fd5fd340bffa453c0f36c933fffddf861db44f245ad6326"
+  }
+}

@@ -16,7 +16,7 @@ use super::*;
 
 /// Rewrite the planted hook to record the directory it runs in.
 fn records_its_directory(ws: &Path, rel: &str, marker: &Path) {
-    crate::cmd::planted::script(
+    homma_fixture::script(
         &ws.join(rel).join(".claude/hooks/foo.sh"),
         &format!(
             "#!/usr/bin/env bash\ncat > /dev/null\npwd -P > '{}'\n",

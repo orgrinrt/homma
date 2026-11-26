@@ -17,18 +17,14 @@ const GH013: &str =
 /// The origin refuses every push to the named branches, as a ruleset does.
 pub(super) fn refuse_pushes_to(f: &Fixture, branches: &[&str]) {
     let refs: Vec<String> = branches.iter().map(|b| format!("refs/heads/{b}")).collect();
-    std::fs::create_dir_all(f.origin().join("hooks")).unwrap();
-    let hook = f.origin().join("hooks/pre-receive");
-    std::fs::write(
-        &hook,
-        format!(
+    homma_fixture::script(
+        &f.origin().join("hooks/pre-receive"),
+        &format!(
             "#!/bin/sh\nwhile read -r old new ref; do\n  case \" {} \" in *\" $ref \"*) echo \"error: {GH013}\" >&2; exit 1 ;; esac\ndone\nexit 0\n",
             refs.join(" ")
         ),
-    )
-    .unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
 }
 
 pub(super) fn bare(origin: &Path, args: &[&str]) -> Result<String, String> {

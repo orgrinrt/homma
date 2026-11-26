@@ -114,7 +114,7 @@ fn the_cargo_mock_command_carries_generate_only() {
 #[cfg(unix)]
 fn stub_launcher(dir: &std::path::Path) -> std::path::PathBuf {
     let p = dir.join("stub-cargo");
-    crate::cmd::planted::script(
+    homma_fixture::script(
         &p,
         "#!/bin/sh\ncase \"$*\" in *--generate-only*) touch rendered; exit 0;; esac\necho 'cargo check failed' >&2\nexit 1\n",
         0o755,
@@ -154,7 +154,7 @@ fn workspace_with_renderer(ws: &std::path::Path, body: Option<&str>) -> homma_co
     );
     if let Some(body) = body {
         text.push_str("[paths]\nagent_surfaces = \"bin/render\"\n");
-        crate::cmd::planted::script(
+        homma_fixture::script(
             &ws.join("bin/render"),
             &format!("#!/bin/sh\n{body}\n"),
             0o755,

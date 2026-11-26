@@ -24,7 +24,7 @@ fn golden() -> PathBuf {
 
 fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
     let p = dir.join(name);
-    crate::cmd::planted::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
+    homma_fixture::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
     p
 }
 
@@ -549,13 +549,41 @@ fn two_appends_at_one_time_with_different_words_are_two_captures_and_the_same_wo
     assert!(said.iter().any(|c| c.contains("> no")));
 }
 
+/// Set only in the child the test below starts: the workspace and the engine to place the hook
+/// for, joined by a newline.
+const PLACE_IN_CHILD: &str = "HOMMA_TEST_PLACE_IN_CHILD";
+
+/// Places the hook in a child of this test binary that runs only the test below, so the file
+/// is written and moded by a process this one never forks from, and this one then runs it as
+/// mockspace does.
+fn placed_in_a_child(ws: &Path, engine: &Path) -> PathBuf {
+    let out = homma_fixture::alone(
+        module_path!(),
+        "the_placed_hook_declines_when_its_engine_is_gone_and_runs_it_when_it_is_there",
+    )
+    .env(
+        PLACE_IN_CHILD,
+        format!("{}\n{}", ws.display(), engine.display()),
+    )
+    .output()
+    .unwrap();
+    homma_fixture::passed(&out);
+    hook::path(ws)
+}
+
 #[test]
 fn the_placed_hook_declines_when_its_engine_is_gone_and_runs_it_when_it_is_there() {
+    if let Some(given) = std::env::var_os(PLACE_IN_CHILD) {
+        let given = given.into_string().unwrap();
+        let (ws, engine) = given.split_once('\n').unwrap();
+        hook::place(Path::new(ws), Path::new(engine)).unwrap();
+        return;
+    }
     let tmp = tempfile::tempdir().unwrap();
     let ws = tmp.path().join("ws");
     let engine = tmp.path().join("homma-engine");
     // Gone: the placed file exits 3, which leaves the write to mockspace.
-    let file = hook::place(&ws, &engine).unwrap();
+    let file = placed_in_a_child(&ws, &engine);
     let gone = std::process::Command::new(&file)
         .args(["ticket::t", "answers", "x"])
         .status()
@@ -568,7 +596,7 @@ fn the_placed_hook_declines_when_its_engine_is_gone_and_runs_it_when_it_is_there
         "homma-engine",
         &format!("echo \"$@\" > '{}'; exit 0", log.display()),
     );
-    let file = hook::place(&ws, &engine).unwrap();
+    let file = placed_in_a_child(&ws, &engine);
     let ran = std::process::Command::new(&file)
         .args(["ticket::t", "answers", "x"])
         .status()

@@ -8,8 +8,6 @@
 
 mod support;
 
-use std::os::unix::fs::PermissionsExt;
-
 use predicates::prelude::*;
 use support::{bin, committed_crate, git_in, minimal_config_toml};
 
@@ -17,13 +15,12 @@ use support::{bin, committed_crate, git_in, minimal_config_toml};
 /// scanner: exit 1 where the history carries a trailer naming an agent.
 fn workspace_with_a_scan(dir: &std::path::Path) -> std::path::PathBuf {
     let scan = dir.join("scan");
-    std::fs::write(
+    homma_fixture::script(
         &scan,
         "#!/bin/sh\nif git -C \"$1\" log --all --format=%B | grep -q '^Co-Authored-By: Claude'; then \
          echo \"trailer: Co-Authored-By: Claude\"; exit 1; fi; exit 0\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&scan, std::fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
     let cfg = dir.join("homma.toml");
     std::fs::write(
         &cfg,

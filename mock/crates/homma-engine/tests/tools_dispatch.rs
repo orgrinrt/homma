@@ -11,7 +11,6 @@
 
 mod support;
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use predicates::prelude::*;
@@ -28,10 +27,7 @@ fn tool(ws: &Path, name: &str, promote: bool, verbs: &[(&str, &str)]) {
         text.push_str(&format!(
             "[[tool.commands]]\nname=\"{verb}\"\nsummary=\"s\"\nrun=\"{run}\"\n"
         ));
-        let p = d.join(&run);
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        homma_fixture::script(&d.join(&run), &format!("#!/bin/sh\n{body}\n"), 0o755);
     }
     std::fs::write(d.join("tool.toml"), text).unwrap();
 }
@@ -224,9 +220,7 @@ fn raw_tool(ws: &Path, name: &str, descriptor: &str, files: &[(&str, &str)]) {
 }
 
 fn executable(p: &Path, body: &str) {
-    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(p, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    homma_fixture::script(p, &format!("#!/bin/sh\n{body}\n"), 0o755);
 }
 
 fn local_descriptor(name: &str, source: &str, run: &str) -> String {

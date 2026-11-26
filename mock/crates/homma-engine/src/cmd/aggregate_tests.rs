@@ -127,7 +127,7 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         "---\npaths:\n  - \"crates/**/*.rs\"\n---\nBody.\n",
     )
     .unwrap();
-    crate::cmd::planted::script(
+    homma_fixture::script(
         &repo_abs.join(".claude/hooks/no-alloc.sh"),
         "#!/usr/bin/env bash\n# @matchers: Write, Edit\necho hi\n",
         0o755,
