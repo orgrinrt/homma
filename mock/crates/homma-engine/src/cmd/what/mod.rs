@@ -305,21 +305,20 @@ fn scope(root: &Path) -> (Scope, Option<Gap>) {
 ///
 /// # Errors
 ///
-/// When the answer cannot be written.
+/// A `[what]` table that does not read, and an answer that cannot be written.
 pub fn run(
     root: &Path,
-    manifest: &Path,
+    cfg: Option<&homma_core::Config>,
     words: &[String],
     limit: usize,
     kinds: &[Kind],
     no_mock: bool,
     format: OutputFormat,
 ) -> Result<Outcome> {
+    let vocabulary = vocab::Vocabulary::of(cfg)?;
     let (repos, bad) = scope(root);
     let mut g = gather(root, kinds, no_mock, &repos);
     g.gaps.extend(bad);
-    let (vocabulary, unread) = vocab::Vocabulary::of_manifest(manifest);
-    g.gaps.extend(unread);
     let a = answer(&g.docs, g.gaps, &words.join(" "), limit, &vocabulary);
     emit(&a, format)?;
     Ok(if a.hits.is_empty() { Outcome::ReportedFailure } else { Outcome::Ok })
