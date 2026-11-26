@@ -22,6 +22,8 @@ use crate::cli::OutputFormat;
 use crate::cmd::Outcome;
 use crate::output::{HumanRender, emit};
 
+pub mod brief;
+mod brief_render;
 pub mod doc;
 pub mod rank;
 pub mod sources;
@@ -32,6 +34,8 @@ use doc::{Doc, Gap, Gathered, Kind, wanted};
 
 #[cfg(test)]
 mod accept_tests;
+#[cfg(test)]
+mod brief_tests;
 #[cfg(test)]
 mod fixture;
 #[cfg(test)]
