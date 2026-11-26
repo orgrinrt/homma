@@ -169,3 +169,40 @@ pub fn bring<E: Embedder>(
     };
     (measured, Vec::new())
 }
+
+/// For a file the crate refused as of another format than this build reads, its chunker or its
+/// extraction, which way it is out and what moves it, read from the version the file holds and the
+/// one the refusal says homma brought: an older one is written again by its own `build`, a newer
+/// one is read by a build of homma against the crate's trunk. The question never writes it itself.
+/// A version that does not read as a number gives no direction and no note.
+pub fn other_format(e: &Error, build: Option<&str>) -> Option<String> {
+    let Error::Header {
+        field: field @ ("chunker" | "extraction"),
+        stored,
+        brought,
+    } = e
+    else {
+        return None;
+    };
+    let (stored, reads): (u32, u32) = (stored.parse().ok()?, brought.parse().ok()?);
+    match stored.cmp(&reads) {
+        std::cmp::Ordering::Less => {
+            Some(match build {
+                Some(b) => {
+                    format!(
+                        "written again by {b}; homma reads {field} {reads}, so a build of the \
+                         index crate older than that writes it to be refused again"
+                    )
+                },
+                None => format!("of an older {field}; homma reads {field} {reads}"),
+            })
+        },
+        std::cmp::Ordering::Greater => {
+            Some(format!(
+                "this build of homma reads {field} {reads}; a build of homma against the index \
+                 crate's trunk reads it, and the file is left as it is"
+            ))
+        },
+        std::cmp::Ordering::Equal => None,
+    }
+}
