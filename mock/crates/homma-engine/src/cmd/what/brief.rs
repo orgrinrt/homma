@@ -7,7 +7,7 @@
 //!
 //! The candidates are `what`'s ranking over the work's words with a floor of two words matched. Their
 //! own text goes to the summarising pass, each opened by a heading line, and the answer is kept only
-//! where every quoted span is in the content line its place names. Where the pass is off or fails,
+//! where every quoted span is a whole line its place names, and printed within a byte cap. Where the pass is off or fails,
 //! the brief is the candidates themselves and the reason there is no extract.
 
 use std::fmt::Write as _;
@@ -15,6 +15,7 @@ use std::fmt::Write as _;
 use homma_api::SummaryConfig;
 use serde::Serialize;
 
+use super::brief_render::fit;
 use super::doc::{Doc, Kind};
 use super::vocab::Vocabulary;
 use super::{rank, text};
@@ -27,6 +28,12 @@ pub const LIMIT: usize = 12;
 /// The words a candidate must match of a work's text.
 const NEED: usize = 2;
 
+/// The most a printed brief is, in bytes.
+pub const BYTES: usize = 3000;
+
+/// The most quotes one thing keeps.
+pub const QUOTES: usize = 3;
+
 /// The brief the pass reads the candidates under, before the work's text.
 pub const BRIEF: &str = "the rules, skills and tools that bear on this work, each named once at the \
 line of its === heading with one sentence on why it applies, then each line of it that applies \
@@ -38,9 +45,10 @@ pub struct Thing {
     pub kind:    Kind,
     pub name:    String,
     pub command: String,
-    /// Why it applies, as the answer says it, or the thing's summary where there is no extract.
-    pub why:     Vec<String>,
-    /// Its lines that apply, each checked to be in its text.
+    /// Why it applies, as the answer says it at the thing's heading, or the thing's summary where
+    /// there is no extract.
+    pub why:     Option<String>,
+    /// Its lines that apply, each checked to be a whole line of its text, three at most.
     pub quotes:  Vec<String>,
 }
 
@@ -48,8 +56,12 @@ pub struct Thing {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Brief {
     pub things:  Vec<Thing>,
-    /// Lines of the answer left out: a quote its source does not hold, or no place in the content.
+    /// Lines of the answer left out: a quote that is not a whole line of its source, a line under
+    /// a heading with no quote, a reason after the first, a quote past a thing's three, or no
+    /// place in the content.
     pub dropped: usize,
+    /// Things left out to keep the printed brief within [`BYTES`].
+    pub left:    usize,
     /// Why there is no extract, where there is none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note:    Option<String>,
@@ -143,6 +155,23 @@ fn fold(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A line as a quote of it is compared: its whitespace folded, its leading list, heading and quote
+/// marks and its emphasis marks set aside.
+fn bare(s: &str) -> String {
+    let lead = s.trim_start_matches(|c: char| {
+        matches!(c, '#' | '-' | '*' | '+' | '>') || c.is_whitespace()
+    });
+    fold(&lead.replace("**", "").replace("__", ""))
+}
+
+/// Whether `span` is a whole line of `lines`, or the whole of them.
+fn whole(span: &str, lines: &[String]) -> bool {
+    let s = bare(span);
+    !s.is_empty()
+        && (lines.iter().any(|l| bare(l) == s)
+            || bare(&lines.iter().map(|l| bare(l)).collect::<Vec<_>>().join(" ")) == s)
+}
+
 /// The place an answer's line starts with, `line <n>`, `line <a>-<b>` or `lines <a>-<b>`, and the
 /// rest after it.
 fn place(line: &str) -> Option<((usize, usize), &str)> {
@@ -187,11 +216,13 @@ fn checked(docs: &[Doc], c: &Content, answer: &str) -> Brief {
             continue;
         };
         let spans = quoted(rest);
-        let held = fold(&c.lines[first - 1 .. last].join(" "));
-        if spans
-            .iter()
-            .any(|s| fold(s).is_empty() || !held.contains(&fold(s)))
-        {
+        let named = &c.lines[first - 1 .. last];
+        if spans.iter().any(|s| !whole(s, named)) {
+            b.dropped += 1;
+            continue;
+        }
+        // a line off the heading counts only for what it quotes
+        if spans.is_empty() && first != head {
             b.dropped += 1;
             continue;
         }
@@ -207,7 +238,7 @@ fn checked(docs: &[Doc], c: &Content, answer: &str) -> Brief {
                     kind:    d.kind,
                     name:    d.name.clone(),
                     command: d.command.clone(),
-                    why:     Vec::new(),
+                    why:     None,
                     quotes:  Vec::new(),
                 });
                 b.things.len() - 1
@@ -215,17 +246,21 @@ fn checked(docs: &[Doc], c: &Content, answer: &str) -> Brief {
         };
         let thing = &mut b.things[at];
         if spans.is_empty() {
-            let why = if first == head {
-                // the heading's own words, `<kind> <name>:`, are the thing and not why
-                rest.split_once(": ").map_or(rest, |(_, w)| w)
-            } else {
-                rest
-            };
-            if !why.is_empty() {
-                thing.why.push(why.to_string());
+            // the heading's own words, `<kind> <name>:`, are the thing and not why
+            let why = rest.split_once(": ").map_or(rest, |(_, w)| w).trim();
+            if thing.why.is_some() {
+                b.dropped += 1;
+            } else if !why.is_empty() {
+                thing.why = Some(why.to_string());
             }
         } else {
-            thing.quotes.extend(spans.iter().map(|s| (*s).to_string()));
+            for s in spans {
+                if thing.quotes.len() < QUOTES {
+                    thing.quotes.push(s.to_string());
+                } else {
+                    b.dropped += 1;
+                }
+            }
         }
     }
     b
@@ -241,7 +276,7 @@ fn listed(docs: &[Doc], cands: &[usize], note: String) -> Brief {
                     kind:    docs[i].kind,
                     name:    docs[i].name.clone(),
                     command: docs[i].command.clone(),
-                    why:     vec![docs[i].summary.clone()],
+                    why:     Some(docs[i].summary.clone()),
                     quotes:  Vec::new(),
                 }
             })
@@ -291,11 +326,11 @@ pub fn brief<M: OneShot>(
     let k = key(settings, docs, cands, &work);
     if settings.enabled {
         if let Some(kept) = cache.and_then(|ch| ch.answer(&k)) {
-            return Brief {
+            return fit(Brief {
                 cut,
                 cached: true,
                 ..checked(docs, &c, &kept)
-            };
+            });
         }
     }
     let pass = summary::pass_with(settings, model, &format!("{BRIEF}\n{work}"), &c.text);
@@ -303,70 +338,20 @@ pub fn brief<M: OneShot>(
         let note = pass
             .note
             .unwrap_or_else(|| "summary: no summary".to_string());
-        return Brief {
+        return fit(Brief {
             cut,
             ..listed(docs, cands, note)
-        };
+        });
     };
     if let Some(ch) = cache {
         if let Err(why) = ch.keep_answer(&k, &answer) {
             eprintln!("what: the brief was not kept: {why}");
         }
     }
-    Brief {
+    fit(Brief {
         cut,
         ..checked(docs, &c, &answer)
-    }
-}
-
-impl Brief {
-    /// The brief as a reader reads it: each thing with its command, why, and its quoted lines, then
-    /// a line for each thing left out, cut or given from the cache.
-    #[must_use]
-    pub fn render(&self) -> String {
-        let mut out = String::new();
-        for t in &self.things {
-            let _ = writeln!(out, "{} {}: {}", t.kind.label(), t.name, t.command);
-            for w in &t.why {
-                let _ = writeln!(out, "  {w}");
-            }
-            for q in &t.quotes {
-                let _ = writeln!(out, "  \"{q}\"");
-            }
-        }
-        if self.dropped > 0 {
-            let _ = writeln!(
-                out,
-                "{} quoted line(s) of the answer were not in their source, or named no place in it, and were left out",
-                self.dropped
-            );
-        }
-        if let Some(n) = self.cut {
-            let _ = writeln!(
-                out,
-                "the work's text was cut after its line {n} to fit the pass"
-            );
-        }
-        if let Some(n) = &self.note {
-            let _ = writeln!(out, "no extract: {n}");
-        }
-        if self.cached {
-            let _ = writeln!(out, "the brief came from the cache");
-        }
-        out.trim_end().to_string()
-    }
-}
-
-impl crate::output::HumanRender for Brief {
-    fn render_human(&self, out: &mut dyn std::io::Write) -> std::io::Result<()> {
-        if self.things.is_empty() {
-            return write!(
-                out,
-                "nothing the workspace holds bears on this work by its words"
-            );
-        }
-        write!(out, "{}", self.render())
-    }
+    })
 }
 
 /// The kinds a brief reads: those asked for, never the mockspace commands, which have nothing to

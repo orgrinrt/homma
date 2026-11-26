@@ -41,9 +41,6 @@ pub(crate) struct RowState {
     pub stopped:  Option<Stopped>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answered: Option<Answered>,
-    /// For a brief row, the digest of the text it was last said for.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub briefed:  Option<String>,
 }
 
 /// What every row remembers of one session, by row name.

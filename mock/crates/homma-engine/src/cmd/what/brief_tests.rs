@@ -118,15 +118,100 @@ fn a_quote_its_source_does_not_hold_is_dropped_and_counted() {
 #[test]
 fn a_quote_is_checked_with_its_whitespace_folded_and_in_the_lines_it_names() {
     let fake = Fake::new(
-        "- line 1: rule tests: it applies\n- lines 3-4: \"before it passes. A  tautology\"\n- line \
-         2: \"A tautology is no test.\"",
+        "- line 1: rule tests: it applies\n- lines 3-4: \"Every test is seen failing before it \
+         passes.  A tautology is no test.\"\n- line 2: \"A tautology is no test.\"",
     );
     let b = made(&fake, &docs());
-    assert_eq!(b.things[0].quotes, ["before it passes. A  tautology"]);
+    assert_eq!(b.things[0].quotes, [
+        "Every test is seen failing before it passes.  A tautology is no test."
+    ]);
     assert_eq!(
         b.dropped, 1,
         "a span on another line than the one named is not taken"
     );
+}
+
+#[test]
+fn a_fragment_of_a_line_is_dropped_and_the_whole_line_without_its_marks_is_taken() {
+    let fake = Fake::new(
+        "- line 1: rule tests: it applies\n- line 3: \"seen failing before it passes.\"\n- lines \
+         3-4: \"before it passes. A tautology\"\n- line 2: \"Tests fail first\"",
+    );
+    let b = made(&fake, &docs());
+    assert_eq!(b.things[0].quotes, ["Tests fail first"]);
+    assert_eq!(b.dropped, 2, "a fragment is dropped however long");
+}
+
+#[test]
+fn the_one_why_is_the_heading_lines_and_a_body_line_without_a_quote_is_dropped() {
+    let fake = Fake::new(
+        "- line 3: tests must fail first, so do that\n- line 1: rule tests: the work writes a \
+         test\n- line 1: rule tests: and a second reason",
+    );
+    let b = made(&fake, &docs());
+    assert_eq!(b.things.len(), 1);
+    assert_eq!(b.things[0].why.as_deref(), Some("the work writes a test"));
+    assert!(b.things[0].quotes.is_empty());
+    assert_eq!(b.dropped, 2, "the body paraphrase and the second reason");
+}
+
+#[test]
+fn a_thing_keeps_three_quotes_and_the_fourth_is_dropped() {
+    let d = vec![rule(
+        "many",
+        "Fires on many.",
+        "one line\ntwo line\nthree line\nfour line",
+    )];
+    let fake = Fake::new(
+        "- line 1: rule many: it applies\n- line 2: \"one line\"\n- line 3: \"two line\"\n- line \
+         4: \"three line\"\n- line 5: \"four line\"",
+    );
+    let b = brief(&fake, &on(), None, &d, &[0], "a work");
+    assert_eq!(b.things[0].quotes, ["one line", "two line", "three line"]);
+    assert_eq!(b.dropped, 1);
+}
+
+#[test]
+fn a_brief_over_the_cap_keeps_the_best_things_under_it_and_says_how_many_were_left() {
+    let long = "a long summary of what this rule is about. ".repeat(10);
+    let d: Vec<Doc> = (0 .. 12)
+        .map(|i| rule(&format!("rule{i}"), &long, "a line"))
+        .collect();
+    let cands: Vec<usize> = (0 .. 12).collect();
+    let b = brief(
+        &Fake::new(""),
+        &SummaryConfig::default(),
+        None,
+        &d,
+        &cands,
+        "a work",
+    );
+    let text = b.render();
+    assert!(text.len() <= BYTES, "{} bytes", text.len());
+    assert!(b.left > 0 && b.things.len() + b.left == 12, "{b:?}");
+    assert_eq!(b.things[0].name, "rule0", "the best are kept");
+    assert!(text.contains("homma what <words>"), "{text}");
+    // under the cap nothing is left out, which is the control
+    assert_eq!(
+        made(&Fake::new("- line 1: rule tests: it applies"), &docs()).left,
+        0
+    );
+}
+
+#[test]
+fn one_thing_over_the_cap_alone_is_cut_to_fit() {
+    let huge = "x".repeat(BYTES * 2);
+    let d = vec![rule("big", &huge, "a line")];
+    let b = brief(
+        &Fake::new(""),
+        &SummaryConfig::default(),
+        None,
+        &d,
+        &[0],
+        "a work",
+    );
+    assert_eq!(b.things.len(), 1, "a brief keeps its best thing");
+    assert!(b.render().len() <= BYTES, "{} bytes", b.render().len());
 }
 
 #[test]
@@ -142,7 +227,10 @@ fn each_line_is_given_back_to_the_thing_its_place_belongs_to() {
         ["prose", "tests"],
         "in the order the answer first names each"
     );
-    assert_eq!(b.things[0].why, ["the work writes a doc comment"]);
+    assert_eq!(
+        b.things[0].why.as_deref(),
+        Some("the work writes a doc comment")
+    );
     assert_eq!(b.things[0].quotes, ["No em-dashes in any prose."]);
     assert_eq!(b.things[0].command, "homma rules show prose");
     assert!(b.things[1].quotes.is_empty());
@@ -183,7 +271,10 @@ fn with_the_pass_off_the_brief_is_the_candidates_and_why_there_is_no_extract() {
     );
     assert_eq!(fake.calls.get(), 0);
     assert_eq!(b.things.len(), 2);
-    assert_eq!(b.things[0].why, ["Fires when writing tests."]);
+    assert_eq!(
+        b.things[0].why.as_deref(),
+        Some("Fires when writing tests.")
+    );
     assert!(
         b.note.as_deref().is_some_and(|n| n.contains("off")),
         "{:?}",
@@ -286,5 +377,5 @@ fn the_printed_brief_names_each_thing_its_command_why_and_quotes() {
         text.contains("  \"Every test is seen failing before it passes.\""),
         "{text}"
     );
-    assert!(text.contains("1 quoted line"), "{text}");
+    assert!(text.contains("1 line(s) of the answer"), "{text}");
 }

@@ -9,6 +9,7 @@
 //! the call, and added context where a reminder is due. It never fails the
 //! call: what it cannot read or keep is a line of the log.
 
+mod brief;
 pub(crate) mod record;
 mod wrapper;
 
@@ -277,7 +278,7 @@ fn decide(
         }
     }
 
-    let mut informs: Vec<(&Nudge, String, Option<String>)> = Vec::new();
+    let mut informs: Vec<(&Nudge, String)> = Vec::new();
     for row in rows {
         if !row.takes_tool(&call.tool) || !row.takes_text(&bare) {
             continue;
@@ -289,28 +290,20 @@ fn decide(
                 if row.brief() && work.is_empty() {
                     continue;
                 }
-                let digest = row
-                    .brief()
-                    .then(|| crate::cmd::summary::version_of(&[work]));
-                let new_work = digest.is_some() && state.briefed != digest;
-                if !new_work && state.said.is_some_and(|at| within(at, ctx.now, row)) {
+                if state.said.is_some_and(|at| within(at, ctx.now, row)) {
                     continue;
                 }
                 if applies(ctx, row, call).is_none() {
                     continue;
                 }
                 if !row.brief() {
-                    informs.push((row, row.says().to_string(), None));
+                    informs.push((row, row.says().to_string()));
                     continue;
                 }
-                match (ctx.brief)(work) {
-                    Some(b) => informs.push((row, format!("{}\n{b}", row.says()), digest)),
-                    None => {
-                        // nothing bears on the work: silent, and not asked again for it
-                        let state = record.rows.entry(row.name().to_string()).or_default();
-                        state.said = Some(ctx.now);
-                        state.briefed = digest;
-                    },
+                // nothing bearing on the work says nothing and is not said, so a later prompt
+                // something bears on is still briefed
+                if let Some(b) = (ctx.brief)(work) {
+                    informs.push((row, format!("{}\n{b}", row.says())));
                 }
             },
             Strength::Once => {
@@ -365,12 +358,9 @@ fn decide(
         return None;
     }
     let mut text = Vec::new();
-    for (row, said, digest) in informs {
+    for (row, said) in informs {
         let state = record.rows.entry(row.name().to_string()).or_default();
         state.said = Some(ctx.now);
-        if digest.is_some() {
-            state.briefed = digest;
-        }
         text.push(said);
     }
     Some(context(event, &text.join("\n")))
@@ -484,12 +474,8 @@ pub(crate) fn run(cfg: Result<homma_core::Config, String>, event: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let brief = |work: &str| {
-        use crate::cmd::what::brief;
-        match brief::of_workspace(&root, Some(&cfg), work, brief::LIMIT, &[]) {
-            Ok(b) if !b.things.is_empty() => Some(b.render()),
-            Ok(_) => None,
-            Err(why) => Some(format!("The brief was not made: {why:#}")),
-        }
+        use crate::cmd::what::brief as made;
+        brief::said_of(made::of_workspace(&root, Some(&cfg), work, made::LIMIT, &[]))
     };
     let ctx = Ctx {
         root: &root,

@@ -23,6 +23,7 @@ use crate::cmd::Outcome;
 use crate::output::{HumanRender, emit};
 
 pub mod brief;
+mod brief_render;
 pub mod doc;
 pub mod rank;
 pub mod sources;

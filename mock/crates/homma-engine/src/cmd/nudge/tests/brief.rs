@@ -28,17 +28,15 @@ fn a_prompt_is_briefed_after_the_rows_says() {
 }
 
 #[test]
-fn the_same_prompt_is_briefed_once_until_the_ttl_passes() {
+fn a_prompt_inside_the_ttl_is_not_briefed_whatever_its_text() {
     let ws = Ws::new(BRIEF);
     context(&ws.prompt(0, "s1", "one work"));
     assert_eq!(ws.prompt(10, "s1", "one work"), None);
-    // another prompt is another work, and is briefed
-    context(&ws.prompt(20, "s1", "another work"));
-    // the first again, now not the last briefed, is briefed again
-    context(&ws.prompt(30, "s1", "one work"));
-    // and the same text once the ttl has passed
-    context(&ws.prompt(4000, "s1", "one work"));
-    assert_eq!(ws.briefed.borrow().len(), 4);
+    // another prompt inside the ttl is not briefed either
+    assert_eq!(ws.prompt(20, "s1", "another work"), None);
+    // once the ttl has passed, the prompt is briefed, which is the control
+    context(&ws.prompt(4000, "s1", "another work"));
+    assert_eq!(*ws.briefed.borrow(), ["one work", "another work"]);
 }
 
 #[test]
@@ -59,6 +57,25 @@ fn an_empty_prompt_or_an_empty_brief_says_nothing() {
     );
     assert_eq!(ws.prompt(1, "s1", "about nothing"), None);
     assert_eq!(ws.briefed.borrow().len(), 1);
+    // neither counted as said, so the first prompt something bears on is briefed
+    assert_eq!(
+        context(&ws.prompt(2, "s1", "real work")),
+        "What bears on this work:\nrule r: brief of real work"
+    );
+}
+
+#[test]
+fn a_brief_that_cannot_be_made_says_why_and_the_command_that_makes_it() {
+    let said = crate::cmd::nudge::brief::said_of(Err(anyhow::anyhow!("no index here"))).unwrap();
+    assert!(
+        said.starts_with("The brief was not made: no index here"),
+        "{said}"
+    );
+    assert!(said.contains("homma what --brief -"), "{said}");
+    assert_eq!(
+        crate::cmd::nudge::brief::said_of(Ok(crate::cmd::what::brief::Brief::default())),
+        None
+    );
 }
 
 #[test]
