@@ -409,7 +409,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let md = entry("vibecheck check {paths}", &["*.md"]);
+        let md = entry("vibraharp check {paths}", &["*.md"]);
         assert!(md.runs_for(&touched));
         assert_eq!(md.matching(&touched), vec![
             "README.md",
@@ -419,7 +419,7 @@ mod tests {
         let git_args: Vec<String> = vec!["origin".into(), "git@x:y.git".into()];
         assert_eq!(
             md.command(&md.matching(&touched), &git_args),
-            "vibecheck check 'README.md' 'docs/a.md' 'it'\\''s.md'",
+            "vibraharp check 'README.md' 'docs/a.md' 'it'\\''s.md'",
             "git's arguments reach an entry only through their placeholder"
         );
         let rs = entry("cargo fmt --check", &["*.toml"]);
@@ -438,7 +438,7 @@ mod tests {
             "everything, for its placeholder"
         );
         // a placeholder with nothing matched expands to nothing
-        assert_eq!(md.command(&[], &[]), "vibecheck check ");
+        assert_eq!(md.command(&[], &[]), "vibraharp check ");
         // and git's arguments, quoted, where an entry asks for them
         let msg = entry("lint-message {args}", &[]);
         assert_eq!(

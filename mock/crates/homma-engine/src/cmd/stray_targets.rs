@@ -163,21 +163,21 @@ mod tests {
     #[test]
     fn a_clone_out_of_scope_is_not_entered_and_a_stray_in_scope_is_found() {
         let d = tempfile::tempdir().unwrap();
-        for clone in ["kaski", "arvo"] {
+        for clone in ["kiosk", "acre"] {
             plant(d.path(), &format!("{clone}/.git"));
             plant(d.path(), &format!("{clone}/target/debug"));
         }
         plant(d.path(), "tools/target/debug");
         let mut listed = Vec::new();
-        let found = collect_visiting(d.path(), &Scope::named(["kaski"]), &mut |p| {
+        let found = collect_visiting(d.path(), &Scope::named(["kiosk"]), &mut |p| {
             listed.push(p.to_path_buf());
         });
         assert!(
-            listed.iter().any(|p| p.starts_with(d.path().join("kaski"))),
+            listed.iter().any(|p| p.starts_with(d.path().join("kiosk"))),
             "{listed:?}"
         );
         assert!(
-            !listed.iter().any(|p| p.starts_with(d.path().join("arvo"))),
+            !listed.iter().any(|p| p.starts_with(d.path().join("acre"))),
             "an out-of-scope clone was listed: {listed:?}"
         );
         // the control: with no scope the same fixture does list it
@@ -186,17 +186,17 @@ mod tests {
             all.push(p.to_path_buf())
         });
         assert!(
-            all.iter().any(|p| p.starts_with(d.path().join("arvo"))),
+            all.iter().any(|p| p.starts_with(d.path().join("acre"))),
             "{all:?}"
         );
         let paths: Vec<_> = found.iter().map(|s| s.path.clone()).collect();
         let at = |p: &str| d.path().join(p).display().to_string();
-        assert!(paths.contains(&at("kaski/target")), "{paths:?}");
+        assert!(paths.contains(&at("kiosk/target")), "{paths:?}");
         assert!(
             paths.contains(&at("tools/target")),
             "a directory that is no clone is not a repository: {paths:?}"
         );
-        assert!(!paths.contains(&at("arvo/target")), "{paths:?}");
+        assert!(!paths.contains(&at("acre/target")), "{paths:?}");
     }
 
     #[test]

@@ -298,9 +298,9 @@ mod tests {
     use homma_api::{Identity, Paths, Role};
 
     fn hand() -> Identity {
-        let mut i = Identity::new(Role::Hand, "paja");
-        i.git_name = Some("paja".into());
-        i.git_email = Some("paja@example.invalid".into());
+        let mut i = Identity::new(Role::Hand, "pike");
+        i.git_name = Some("pike".into());
+        i.git_email = Some("pike@example.invalid".into());
         i
     }
 
@@ -321,7 +321,7 @@ mod tests {
             Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
         )
         .unwrap();
-        assert!(l.home(&hand()).unwrap().as_path().ends_with("hands/paja"));
+        assert!(l.home(&hand()).unwrap().as_path().ends_with("hands/pike"));
         assert!(
             l.home(&expert())
                 .unwrap()
@@ -343,7 +343,7 @@ mod tests {
             l.harness_memory(&hand())
                 .unwrap()
                 .as_path()
-                .ends_with(".claude/agent-memory/paja")
+                .ends_with(".claude/agent-memory/pike")
         );
     }
 
@@ -367,7 +367,7 @@ mod tests {
             target.is_relative(),
             "an absolute target is a path on one machine, and this link is committed"
         );
-        assert_eq!(target, Path::new("../../.shared/hands/paja/memory"));
+        assert_eq!(target, Path::new("../../.shared/hands/pike/memory"));
 
         // Writing through the harness's path must land in the layout's directory.
         fs::write(
@@ -475,15 +475,15 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let root_dir = d.path().join("root");
         let outside = d.path().join("outside");
-        std::fs::create_dir_all(root_dir.join(".shared/hands/paja/memory")).unwrap();
+        std::fs::create_dir_all(root_dir.join(".shared/hands/pike/memory")).unwrap();
         std::fs::create_dir_all(outside.join("agent-memory")).unwrap();
 
         // The parent chain leaves the root.
         std::os::unix::fs::symlink("../outside", root_dir.join(".claude")).unwrap();
         // And the final component comes back in, so the link alone looks fine.
         std::os::unix::fs::symlink(
-            root_dir.join(".shared/hands/paja/memory"),
-            outside.join("agent-memory").join("paja"),
+            root_dir.join(".shared/hands/pike/memory"),
+            outside.join("agent-memory").join("pike"),
         )
         .unwrap();
 
@@ -504,11 +504,11 @@ mod tests {
         // And nothing outside was touched on the way to the refusal. Read the
         // link rather than following it: following it lands back inside, which
         // is the whole reason this shape hid.
-        let planted = outside.join("agent-memory").join("paja");
+        let planted = outside.join("agent-memory").join("pike");
         let body = fs::read_link(&planted).expect("the link we planted is still a link");
         assert_eq!(
             body,
-            root_dir.join(".shared/hands/paja/memory"),
+            root_dir.join(".shared/hands/pike/memory"),
             "homma must not have replaced a link outside the root"
         );
     }
@@ -529,16 +529,16 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let root_dir = d.path().join("root");
         let outside = d.path().join("outside");
-        std::fs::create_dir_all(root_dir.join(".shared/hands/paja")).unwrap();
+        std::fs::create_dir_all(root_dir.join(".shared/hands/pike")).unwrap();
         std::fs::create_dir_all(outside.join("agents")).unwrap();
 
         // Only the agents chain leaves. `.claude` is untouched, so the memory
         // link is created normally and this guard is the one under test.
         std::os::unix::fs::symlink("../outside", root_dir.join("elsewhere")).unwrap();
         // And the files under it point back in, so each alone looks contained.
-        for leaf in ["paja.md", "paja-twin.md"] {
+        for leaf in ["pike.md", "pike-twin.md"] {
             std::os::unix::fs::symlink(
-                root_dir.join(".shared/hands/paja").join(leaf),
+                root_dir.join(".shared/hands/pike").join(leaf),
                 outside.join("agents").join(leaf),
             )
             .unwrap();

@@ -205,12 +205,12 @@ mod tests {
     use crate::workspace::Layout;
 
     fn hand() -> Identity {
-        let mut i = Identity::new(Role::Hand, "paja");
-        i.nickname = Some("Paja".into());
-        i.full_name = Some("Urho \"Paja\" Alasinen".into());
+        let mut i = Identity::new(Role::Hand, "pike");
+        i.nickname = Some("Pike".into());
+        i.full_name = Some("Urho \"Pike\" Alasinen".into());
         i.domain = Some("tooling".into());
-        i.git_name = Some("paja".into());
-        i.git_email = Some("paja@example.invalid".into());
+        i.git_name = Some("pike".into());
+        i.git_email = Some("pike@example.invalid".into());
         i
     }
 
@@ -235,12 +235,12 @@ mod tests {
         assert!(
             definition(&id, Form::Prime, DISCIPLINE, "")
                 .frontmatter
-                .contains("name: paja\n")
+                .contains("name: pike\n")
         );
         assert!(
             definition(&id, Form::Twin, DISCIPLINE, "")
                 .frontmatter
-                .contains("name: paja-twin\n")
+                .contains("name: pike-twin\n")
         );
     }
 
@@ -315,7 +315,7 @@ mod tests {
         crate::workspace::prepare(&l, &id).unwrap();
         std::fs::write(
             l.character(&id).unwrap(),
-            "---\nname: paja\nrole: a role\n---\n\nVoice.\n",
+            "---\nname: pike\nrole: a role\n---\n\nVoice.\n",
         )
         .unwrap();
 
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn a_description_with_a_colon_is_written_quoted_in_the_definition() {
-        let id = Identity::new(Role::Hand, "coord");
+        let id = Identity::new(Role::Hand, "chair");
         let out = definition_described(
             &id,
             Form::Authored,
@@ -349,9 +349,9 @@ mod tests {
 
     #[test]
     fn an_authored_form_has_memory_and_is_told_nothing_about_a_twin() {
-        let id = Identity::new(Role::Hand, "coord");
+        let id = Identity::new(Role::Hand, "chair");
         let out =
-            definition_described(&id, Form::Authored, "a role", DISCIPLINE, "# coord\n").render();
+            definition_described(&id, Form::Authored, "a role", DISCIPLINE, "# chair\n").render();
         assert!(out.contains("memory: project\n"), "{out}");
         assert!(out.contains("You keep your own memory."), "{out}");
         assert!(!out.contains("twin"), "{out}");
@@ -393,7 +393,7 @@ mod tests {
         // commits were correct; the Hand's belief about itself was not.
         let id = hand();
         let body = definition(&id, Form::Prime, DISCIPLINE, "").body;
-        assert!(body.contains("paja@example.invalid"));
+        assert!(body.contains("pike@example.invalid"));
         assert!(
             body.contains("belongs"),
             "and that the global one is not its own"
@@ -422,7 +422,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let root_dir = d.path().join("root");
         let outside = d.path().join("outside");
-        std::fs::create_dir_all(root_dir.join(".shared/hands/paja")).unwrap();
+        std::fs::create_dir_all(root_dir.join(".shared/hands/pike")).unwrap();
         std::fs::create_dir_all(outside.join("agents")).unwrap();
 
         // Only the agents chain leaves, so `prepare` succeeds and this function
@@ -430,9 +430,9 @@ mod tests {
         // link there and the memory-link guard refuses first, and the test then
         // passes with the guard it names deleted.
         std::os::unix::fs::symlink("../outside", root_dir.join("elsewhere")).unwrap();
-        for leaf in ["paja.md", "paja-twin.md"] {
+        for leaf in ["pike.md", "pike-twin.md"] {
             std::os::unix::fs::symlink(
-                root_dir.join(".shared/hands/paja").join(leaf),
+                root_dir.join(".shared/hands/pike").join(leaf),
                 outside.join("agents").join(leaf),
             )
             .unwrap();
@@ -485,7 +485,7 @@ mod tests {
         // If this drifts, the definition and homma disagree about who someone is.
         let id = hand();
         let out = definition(&id, Form::Prime, DISCIPLINE, "").render();
-        assert!(out.contains("Urho \"Paja\" Alasinen"));
+        assert!(out.contains("Urho \"Pike\" Alasinen"));
         assert!(out.contains("tooling"));
     }
 }

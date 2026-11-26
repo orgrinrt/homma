@@ -164,7 +164,7 @@ pub(crate) fn aggregate_repo(
     let repo_rel = repo_abs_path
         .strip_prefix(root.as_abs())
         .unwrap_or(repo_abs_path);
-    // Through `relative_str`, so a manifest writing `./arvo` does not put a
+    // Through `relative_str`, so a manifest writing `./acre` does not put a
     // `.` in the middle of the path the wrapper compares against.
     let repo_rel = crate::cmd::util::relative_str(repo_rel);
 

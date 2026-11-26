@@ -65,11 +65,11 @@ fn a_401_is_a_rejection_of_the_token_we_hold() {
 #[test]
 fn a_200_names_the_holder() {
     let st = npm_with(
-        (200, Some(serde_json::json!({"username": "orgrinrt"}))),
+        (200, Some(serde_json::json!({"username": "woodland"}))),
         true,
     );
     assert_eq!(st.state, State::Ok);
-    assert!(st.detail.contains("orgrinrt"), "{}", st.detail);
+    assert!(st.detail.contains("woodland"), "{}", st.detail);
 }
 
 #[test]
@@ -142,10 +142,10 @@ fn a_403_is_a_scoped_token_and_must_not_be_rejected() {
 fn a_200_names_the_crates_io_user() {
     let st = crates_with((
         200,
-        Some(serde_json::json!({"user": {"login": "orgrinrt"}})),
+        Some(serde_json::json!({"user": {"login": "woodland"}})),
     ));
     assert_eq!(st.state, State::Ok);
-    assert!(st.detail.contains("orgrinrt"));
+    assert!(st.detail.contains("woodland"));
 }
 
 #[test]

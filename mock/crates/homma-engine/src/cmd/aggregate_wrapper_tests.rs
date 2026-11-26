@@ -76,10 +76,10 @@ pub(super) fn planted(ws: &Path, rel: &str) -> (PathBuf, PathBuf) {
         ),
         0o755,
     );
-    let wrapper = hooks.join("arvo--foo.sh");
+    let wrapper = hooks.join("acre--foo.sh");
     planted::script(
         &wrapper,
-        &wrapper_script("arvo", rel, ".claude/hooks/foo.sh", ""),
+        &wrapper_script("acre", rel, ".claude/hooks/foo.sh", ""),
         0o755,
     );
     (wrapper, marker)
@@ -104,13 +104,13 @@ fn shell_call_fires(wrapper: &Path, marker: &Path, cwd: &Path, command: &str) ->
 
 #[test]
 fn a_wrapper_carries_no_absolute_path_and_finds_its_workspace_from_its_own_location() {
-    let s = wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh", "");
+    let s = wrapper_script("acre", "acre", ".claude/hooks/foo.sh", "");
     assert!(s.starts_with("#!/usr/bin/env bash"));
-    assert!(s.contains("REPO_REL='arvo'"));
+    assert!(s.contains("REPO_REL='acre'"));
     assert!(s.contains("ORIG_HOOK=\"$REPO_ROOT\"'/.claude/hooks/foo.sh'"));
     assert!(s.contains("BASH_SOURCE[0]"));
     assert!(s.contains("$ORIG_HOOK"));
-    assert!(s.contains("Aggregated from `arvo`"));
+    assert!(s.contains("Aggregated from `acre`"));
 
     // The whole point, and the assertion the old shape could not have
     // passed: nothing in the emitted script names a machine. A path
@@ -128,9 +128,9 @@ fn a_wrapper_carries_no_absolute_path_and_finds_its_workspace_from_its_own_locat
 #[test]
 fn a_wrapper_matches_a_path_under_its_repo_and_declines_one_outside() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let (wrapper, marker) = planted(ws.path(), "acre");
 
-    run_wrapper(&wrapper, &ws.path().join("arvo/src/lib.rs"));
+    run_wrapper(&wrapper, &ws.path().join("acre/src/lib.rs"));
     assert!(
         marker.exists(),
         "the wrapper did not hand off for a path inside the repo"
@@ -140,7 +140,7 @@ fn a_wrapper_matches_a_path_under_its_repo_and_declines_one_outside() {
     // would pass the assertion above and be exactly the guard-shaped thing
     // that guards nothing.
     fs::remove_file(&marker).unwrap();
-    run_wrapper(&wrapper, &ws.path().join("kolli/src/lib.rs"));
+    run_wrapper(&wrapper, &ws.path().join("krill/src/lib.rs"));
     assert!(
         !marker.exists(),
         "the wrapper handed off for a path outside the repo"
@@ -158,27 +158,27 @@ fn a_wrapper_without_jq_hands_off_rather_than_guessing_from_the_directory() {
     let ws = tempfile::tempdir().unwrap();
     let hooks = ws.path().join(".claude/hooks");
     fs::create_dir_all(&hooks).unwrap();
-    fs::create_dir_all(ws.path().join("arvo/.claude/hooks")).unwrap();
+    fs::create_dir_all(ws.path().join("acre/.claude/hooks")).unwrap();
 
     // Builtins only, because this runs under a PATH holding one program.
     let marker = ws.path().join("fired");
-    let real = ws.path().join("arvo/.claude/hooks/foo.sh");
+    let real = ws.path().join("acre/.claude/hooks/foo.sh");
     planted::script(
         &real,
         &format!("#!/usr/bin/env bash\nprintf '' > '{}'\n", marker.display()),
         0o755,
     );
 
-    let wrapper = hooks.join("arvo--foo.sh");
+    let wrapper = hooks.join("acre--foo.sh");
     planted::script(
         &wrapper,
-        &wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh", ""),
+        &wrapper_script("acre", "acre", ".claude/hooks/foo.sh", ""),
         0o755,
     );
 
     let bare = crate::cmd::gates::tests::a_path_without_jq(ws.path());
 
-    let inside = ws.path().join("arvo/src/lib.rs");
+    let inside = ws.path().join("acre/src/lib.rs");
     run_wrapper_on_path(&wrapper, &inside, Some(&bare));
     assert!(
         marker.exists(),
@@ -188,7 +188,7 @@ fn a_wrapper_without_jq_hands_off_rather_than_guessing_from_the_directory() {
     // The control: with jq present a path outside is declined, so the
     // assertion above is about the missing tool.
     fs::remove_file(&marker).unwrap();
-    run_wrapper(&wrapper, &ws.path().join("kolli/src/lib.rs"));
+    run_wrapper(&wrapper, &ws.path().join("krill/src/lib.rs"));
     assert!(
         !marker.exists(),
         "control: with jq present a path outside the repo is still declined"
@@ -205,14 +205,14 @@ fn a_wrapper_declines_when_the_repo_is_not_cloned_here() {
     fs::create_dir_all(&hooks).unwrap();
 
     for runner in ["", "bash"] {
-        let wrapper = hooks.join("arvo--foo.sh");
+        let wrapper = hooks.join("acre--foo.sh");
         planted::script(
             &wrapper,
-            &wrapper_script("arvo", "arvo", ".claude/hooks/foo.sh", runner),
+            &wrapper_script("acre", "acre", ".claude/hooks/foo.sh", runner),
             0o755,
         );
 
-        let out = run_wrapper_output(&wrapper, &ws.path().join("arvo/src/lib.rs"));
+        let out = run_wrapper_output(&wrapper, &ws.path().join("acre/src/lib.rs"));
         assert!(
             out.status.success(),
             "runner `{runner}`: a wrapper with nothing to run failed instead of declining: {}",
@@ -230,25 +230,25 @@ fn a_wrapper_declines_when_the_repo_is_not_cloned_here() {
 #[test]
 fn a_shell_call_at_the_root_reaches_the_hook_of_every_repo_it_names_by_path() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let (wrapper, marker) = planted(ws.path(), "acre");
     let root = ws.path();
-    let abs = ws.path().join("arvo/mock/Cargo.toml");
+    let abs = ws.path().join("acre/mock/Cargo.toml");
 
     for command in [
-        "cargo test --manifest-path arvo/mock/Cargo.toml",
-        "cargo test --manifest-path=arvo/mock/Cargo.toml",
-        "git -C arvo commit -m x",
-        "cd arvo && cargo build",
-        "cd 'arvo' && cargo build",
-        "(cd arvo; cargo bench)",
-        "MOCK_ROOT=arvo/mock cargo mock lock",
-        "cargo build > arvo/log.txt",
-        "ls ./arvo/src",
-        "ls ../ws/arvo",
+        "cargo test --manifest-path acre/mock/Cargo.toml",
+        "cargo test --manifest-path=acre/mock/Cargo.toml",
+        "git -C acre commit -m x",
+        "cd acre && cargo build",
+        "cd 'acre' && cargo build",
+        "(cd acre; cargo bench)",
+        "MOCK_ROOT=acre/mock cargo mock lock",
+        "cargo build > acre/log.txt",
+        "ls ./acre/src",
+        "ls ../ws/acre",
     ] {
         assert!(
             shell_call_fires(&wrapper, &marker, root, command),
-            "`{command}` at the root did not reach arvo's hook"
+            "`{command}` at the root did not reach acre's hook"
         );
     }
     let absolute = format!("cargo test --manifest-path {}", abs.display());
@@ -260,16 +260,16 @@ fn a_shell_call_at_the_root_reaches_the_hook_of_every_repo_it_names_by_path() {
     // The controls, from the same directory: a call naming no path in the
     // repository, and ones naming a neighbour whose name only starts the same.
     for command in [
-        "cargo test -p kolli",
-        "git -C kolli commit -m x",
-        "cat arvo-notes.md",
-        "ls arvo2/src",
+        "cargo test -p krill",
+        "git -C krill commit -m x",
+        "cat acre-notes.md",
+        "ls acre2/src",
         "git status",
         "",
     ] {
         assert!(
             !shell_call_fires(&wrapper, &marker, root, command),
-            "`{command}` at the root reached arvo's hook"
+            "`{command}` at the root reached acre's hook"
         );
     }
 }
@@ -277,15 +277,15 @@ fn a_shell_call_at_the_root_reaches_the_hook_of_every_repo_it_names_by_path() {
 #[test]
 fn a_shell_call_inside_the_repo_reaches_it_whatever_its_command_names() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
-    let inside = ws.path().join("arvo/src");
+    let (wrapper, marker) = planted(ws.path(), "acre");
+    let inside = ws.path().join("acre/src");
     assert!(shell_call_fires(&wrapper, &marker, &inside, "cargo test"));
     assert!(shell_call_fires(&wrapper, &marker, &inside, "ls /tmp"));
     // The control: the same call elsewhere does not.
     assert!(!shell_call_fires(
         &wrapper,
         &marker,
-        &ws.path().join("kolli"),
+        &ws.path().join("krill"),
         "cargo test"
     ));
 }
@@ -293,23 +293,23 @@ fn a_shell_call_inside_the_repo_reaches_it_whatever_its_command_names() {
 #[test]
 fn a_climb_out_of_the_directory_lands_everywhere() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
-    let kolli = ws.path().join("kolli");
+    let (wrapper, marker) = planted(ws.path(), "acre");
+    let krill = ws.path().join("krill");
     assert!(shell_call_fires(
         &wrapper,
         &marker,
-        &kolli,
+        &krill,
         "cargo test --manifest-path ../x/Cargo.toml"
     ));
-    assert!(shell_call_fires(&wrapper, &marker, &kolli, "cd .. && ls"));
+    assert!(shell_call_fires(&wrapper, &marker, &krill, "cd .. && ls"));
     // The control: dots that are not a climb.
-    assert!(!shell_call_fires(&wrapper, &marker, &kolli, "cat a..b ..x"));
+    assert!(!shell_call_fires(&wrapper, &marker, &krill, "cat a..b ..x"));
 }
 
 #[test]
 fn a_path_under_home_is_read_off_its_tilde() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let (wrapper, marker) = planted(ws.path(), "acre");
     let home = ws.path().to_str().unwrap();
     let call = |command: &str| {
         let _ = fs::remove_file(&marker);
@@ -321,8 +321,8 @@ fn a_path_under_home_is_read_off_its_tilde() {
         run_payload(&wrapper, &payload, &[("HOME", Some(home))]);
         marker.exists()
     };
-    assert!(call("cargo build --manifest-path ~/arvo/Cargo.toml"));
-    assert!(!call("cargo build --manifest-path ~/kolli/Cargo.toml"));
+    assert!(call("cargo build --manifest-path ~/acre/Cargo.toml"));
+    assert!(!call("cargo build --manifest-path ~/krill/Cargo.toml"));
 }
 
 #[test]
@@ -364,33 +364,33 @@ fn a_relative_path_with_a_space_in_it_is_the_stated_blind_spot() {
 #[test]
 fn a_file_tool_is_narrowed_by_its_file_and_a_relative_one_is_read_from_the_directory() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let (wrapper, marker) = planted(ws.path(), "acre");
     let call = |cwd: &Path, file: &str| {
         let _ = fs::remove_file(&marker);
         let payload = serde_json::json!({
             "cwd": cwd.display().to_string(),
-            "tool_input": { "file_path": file, "command": "arvo" },
+            "tool_input": { "file_path": file, "command": "acre" },
         })
         .to_string();
         run_payload(&wrapper, &payload, &[]);
         marker.exists()
     };
-    assert!(call(ws.path(), "arvo/src/lib.rs"));
+    assert!(call(ws.path(), "acre/src/lib.rs"));
     // The file decides, whatever the session's directory and whatever else
     // the payload carries.
-    let outside = ws.path().join("kolli/x.rs");
-    assert!(!call(&ws.path().join("arvo"), outside.to_str().unwrap()));
+    let outside = ws.path().join("krill/x.rs");
+    assert!(!call(&ws.path().join("acre"), outside.to_str().unwrap()));
 }
 
 #[test]
 fn a_hook_run_through_a_program_is_run_through_it() {
     let ws = tempfile::tempdir().unwrap();
     fs::create_dir_all(ws.path().join(".claude/hooks")).unwrap();
-    fs::create_dir_all(ws.path().join("arvo/.claude/hooks")).unwrap();
+    fs::create_dir_all(ws.path().join("acre/.claude/hooks")).unwrap();
     let marker = ws.path().join("fired");
     // Not executable, and a shape only bash runs, so whether it ran through
     // the program is what the marker says.
-    let real = ws.path().join("arvo/.claude/hooks/check.sh");
+    let real = ws.path().join("acre/.claude/hooks/check.sh");
     planted::script(
         &real,
         &format!(
@@ -399,16 +399,16 @@ fn a_hook_run_through_a_program_is_run_through_it() {
         ),
         0o644,
     );
-    let wrapper = ws.path().join(".claude/hooks/arvo--check.sh");
+    let wrapper = ws.path().join(".claude/hooks/acre--check.sh");
     planted::script(
         &wrapper,
-        &wrapper_script("arvo", "arvo", ".claude/hooks/check.sh", "bash"),
+        &wrapper_script("acre", "acre", ".claude/hooks/check.sh", "bash"),
         0o755,
     );
 
     let payload = format!(
         r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
-        ws.path().join("arvo/x").display()
+        ws.path().join("acre/x").display()
     );
     use std::io::Write;
     let mut child = std::process::Command::new("bash")
@@ -437,7 +437,7 @@ fn a_hook_run_through_a_program_is_run_through_it() {
     fs::remove_file(&marker).unwrap();
     planted::script(
         &wrapper,
-        &wrapper_script("arvo", "arvo", ".claude/hooks/check.sh", ""),
+        &wrapper_script("acre", "acre", ".claude/hooks/check.sh", ""),
         0o755,
     );
     let out = run_payload(&wrapper, &payload, &[]);
@@ -464,11 +464,11 @@ pub(in crate::cmd) fn plant_dedup(ws: &Path, seen: &Path) {
 #[test]
 fn a_wrapper_runs_its_hook_through_the_dedup_tool_when_the_workspace_has_it() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let (wrapper, marker) = planted(ws.path(), "acre");
     let seen = ws.path().join("dedup-seen");
 
     // The control: without the tool the hook runs and nothing went through it.
-    run_wrapper(&wrapper, &ws.path().join("arvo/src/lib.rs"));
+    run_wrapper(&wrapper, &ws.path().join("acre/src/lib.rs"));
     assert!(marker.exists(), "the hook did not run without the tool");
     assert!(
         !seen.exists(),
@@ -477,7 +477,7 @@ fn a_wrapper_runs_its_hook_through_the_dedup_tool_when_the_workspace_has_it() {
     fs::remove_file(&marker).unwrap();
 
     plant_dedup(ws.path(), &seen);
-    run_wrapper(&wrapper, &ws.path().join("arvo/src/lib.rs"));
+    run_wrapper(&wrapper, &ws.path().join("acre/src/lib.rs"));
     assert!(marker.exists(), "the hook did not run through the tool");
     assert_eq!(
         fs::read_to_string(&seen).unwrap(),

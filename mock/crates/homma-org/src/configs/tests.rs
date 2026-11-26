@@ -101,7 +101,7 @@ fn a_repo_missing_a_config_gets_it_and_the_bytes_are_the_templates() {
     // that reported placement and wrote nothing, which is the exact shape of a
     // fail-open. The file is read back.
     let f = Fixture::new(&[("rust_required", "deny.toml", DENY)]);
-    let repo = f.repo("arvo", true);
+    let repo = f.repo("acre", true);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
         ConfigFinding::Placed("deny.toml".into())
     ]);
@@ -114,8 +114,8 @@ fn a_repo_missing_a_config_gets_it_and_the_bytes_are_the_templates() {
 #[test]
 fn a_repo_whose_copy_matches_is_reported_and_not_rewritten() {
     let f = Fixture::new(&[("rust_required", "deny.toml", DENY)]);
-    let repo = f.repo("arvo", true);
-    f.put("arvo", "deny.toml", DENY);
+    let repo = f.repo("acre", true);
+    f.put("acre", "deny.toml", DENY);
     let before = std::fs::metadata(repo.as_path().join("deny.toml"))
         .unwrap()
         .modified()
@@ -139,9 +139,9 @@ fn a_repo_whose_copy_differs_keeps_its_own_and_is_only_reported() {
     // changes nothing; a stage that "fixed" it would silently undo somebody's
     // exception.
     let f = Fixture::new(&[("rust_required", "deny.toml", DENY)]);
-    let repo = f.repo("arvo", true);
+    let repo = f.repo("acre", true);
     f.put(
-        "arvo",
+        "acre",
         "deny.toml",
         "[bans]\nmultiple-versions = \"warn\"\n",
     );
@@ -180,7 +180,7 @@ fn a_repo_that_is_not_in_the_set_does_not_get_the_template() {
         ("rust_required", "deny.toml", "x\n"),
         ("any_required", "editorconfig", "y\n"),
     ]);
-    let repo = f.repo("viola-grammar-ts", false);
+    let repo = f.repo("vireo-grammar-ts", false);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
         ConfigFinding::Placed("editorconfig".into())
     ]);
@@ -209,9 +209,9 @@ fn a_config_under_mock_satisfies_the_template() {
     // anything. Placing a second copy at the root would leave two pins that can
     // disagree, resolved by whichever is nearest the working directory.
     let f = Fixture::new(&[("rust_required", "rust-toolchain.toml", NIGHTLY)]);
-    let repo = f.repo("vehje", false);
-    f.put("vehje", "mock/Cargo.toml", "[workspace]\n");
-    f.put("vehje", "mock/rust-toolchain.toml", NIGHTLY);
+    let repo = f.repo("vetch", false);
+    f.put("vetch", "mock/Cargo.toml", "[workspace]\n");
+    f.put("vetch", "mock/rust-toolchain.toml", NIGHTLY);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
         ConfigFinding::Matches("rust-toolchain.toml".into())
     ]);
@@ -221,7 +221,7 @@ fn a_config_under_mock_satisfies_the_template() {
     );
 
     // The control, so the pass above is not a check that always says satisfied.
-    let bare = f.repo("tassu", true);
+    let bare = f.repo("thorn", true);
     assert_eq!(ensure(&f.root, &bare, &f.templates()), vec![
         ConfigFinding::Placed("rust-toolchain.toml".into())
     ]);
@@ -232,10 +232,10 @@ fn a_differing_copy_under_mock_is_read_from_there() {
     // The other half of satisfying paths: the comparison has to read the copy
     // it found, not the one at the root that is not there.
     let f = Fixture::new(&[("rust_required", "rust-toolchain.toml", NIGHTLY)]);
-    let repo = f.repo("vehje", false);
-    f.put("vehje", "mock/Cargo.toml", "[workspace]\n");
+    let repo = f.repo("vetch", false);
+    f.put("vetch", "mock/Cargo.toml", "[workspace]\n");
     f.put(
-        "vehje",
+        "vetch",
         "mock/rust-toolchain.toml",
         "[toolchain]\nchannel = \"nightly\"\n",
     );
@@ -247,7 +247,7 @@ fn a_differing_copy_under_mock_is_read_from_there() {
 #[test]
 fn a_template_nobody_has_placed_is_reported_rather_than_spread_everywhere() {
     let f = Fixture::new(&[("", "mystery.toml", "?\n")]);
-    let repo = f.repo("arvo", true);
+    let repo = f.repo("acre", true);
     let found = ensure(&f.root, &repo, &f.templates());
     assert_eq!(found, vec![ConfigFinding::CannotInfer(
         "mystery.toml".into()
@@ -271,8 +271,8 @@ fn an_unknown_template_the_repo_already_has_is_not_reported() {
     // The control on the case above: this asks for a decision it does not have,
     // and once the repo has the file there is no decision left.
     let f = Fixture::new(&[("", "mystery.toml", "?\n")]);
-    let repo = f.repo("arvo", true);
-    f.put("arvo", "mystery.toml", "anything\n");
+    let repo = f.repo("acre", true);
+    f.put("acre", "mystery.toml", "anything\n");
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![]);
 }
 
@@ -297,7 +297,7 @@ fn a_tag_directory_decides_who_wants_the_template() {
     assert_eq!(by_name("editorconfig").tags[0].ecosystem, Ecosystem::Any);
 
     // And the repo only gets the one it is in the set for.
-    let rust = f.repo("arvo", true);
+    let rust = f.repo("acre", true);
     let placed: Vec<_> = ensure(&f.root, &rust, &f.templates())
         .into_iter()
         .map(|x| x.file_name().to_string())
@@ -312,7 +312,7 @@ fn a_tag_directory_decides_who_wants_the_template() {
 fn a_severity_suffix_is_optional_and_required_is_the_default() {
     let f = Fixture::new(&[("rust", "deny.toml", "a\n")]);
     assert_eq!(f.templates()[0].tags[0].severity, Severity::Required);
-    let repo = f.repo("arvo", true);
+    let repo = f.repo("acre", true);
     assert!(inspect(repo.as_path(), &f.templates())[0].blocks());
 }
 
@@ -321,7 +321,7 @@ fn a_suggested_config_is_reported_and_does_not_block() {
     // What lets a new config reach every repo before it starts refusing
     // anything.
     let f = Fixture::new(&[("rust_suggested", "clippy.toml", "a\n")]);
-    let repo = f.repo("arvo", true);
+    let repo = f.repo("acre", true);
     let found = inspect(repo.as_path(), &f.templates());
     assert_eq!(found, vec![ConfigFinding::Missing(
         "clippy.toml".into(),
@@ -330,7 +330,7 @@ fn a_suggested_config_is_reported_and_does_not_block() {
     assert!(!found[0].blocks(), "a suggested config stopped a commit");
     // The control on the same shape at the other severity.
     let g = Fixture::new(&[("rust_required", "clippy.toml", "a\n")]);
-    let repo = g.repo("arvo", true);
+    let repo = g.repo("acre", true);
     assert!(inspect(repo.as_path(), &g.templates())[0].blocks());
 }
 
@@ -362,9 +362,9 @@ fn several_templates_are_each_answered_and_the_order_is_stable() {
         ("rust_required", "deny.toml", "b\n"),
         ("any_required", "editorconfig", "c\n"),
     ]);
-    let repo = f.repo("arvo", true);
-    f.put("arvo", "deny.toml", "b\n");
-    f.put("arvo", "editorconfig", "different\n");
+    let repo = f.repo("acre", true);
+    f.put("acre", "deny.toml", "b\n");
+    f.put("acre", "editorconfig", "different\n");
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![
         ConfigFinding::Placed("clippy.toml".into()),
         ConfigFinding::Matches("deny.toml".into()),
@@ -383,7 +383,7 @@ fn a_rust_repo_on_stable_is_told_no_variant_fits_rather_than_given_the_wrong_one
         "rustfmt.toml",
         "wrap_comments = true\n",
     )]);
-    let repo = f.repo("tassu", true);
+    let repo = f.repo("thorn", true);
     let found = ensure(&f.root, &repo, &f.templates());
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].file_name(), "rustfmt.toml");
@@ -412,7 +412,7 @@ fn a_repo_outside_the_wider_set_is_not_told_about_the_variant() {
         "rustfmt.toml",
         "wrap_comments = true\n",
     )]);
-    let repo = f.repo("viola-grammar-ts", false);
+    let repo = f.repo("vireo-grammar-ts", false);
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![]);
 }
 
@@ -423,8 +423,8 @@ fn a_stable_repo_that_already_has_its_own_is_left_alone_and_not_reported() {
         "rustfmt.toml",
         "wrap_comments = true\n",
     )]);
-    let repo = f.repo("tassu", true);
-    f.put("tassu", "rustfmt.toml", "max_width = 100\n");
+    let repo = f.repo("thorn", true);
+    f.put("thorn", "rustfmt.toml", "max_width = 100\n");
     assert_eq!(ensure(&f.root, &repo, &f.templates()), vec![]);
     assert_eq!(
         std::fs::read_to_string(repo.as_path().join("rustfmt.toml")).unwrap(),
@@ -440,14 +440,14 @@ fn a_pin_under_mock_counts_the_same_as_one_at_the_root() {
         "rustfmt.toml",
         "wrap_comments = true\n",
     )]);
-    let repo = f.repo("hilavitkutin", false);
-    f.put("hilavitkutin", "mock/Cargo.toml", "[workspace]\n");
+    let repo = f.repo("hollowbridge", false);
+    f.put("hollowbridge", "mock/Cargo.toml", "[workspace]\n");
     assert!(matches!(
         ensure(&f.root, &repo, &f.templates())[0],
         ConfigFinding::NoVariantFits(..)
     ));
     f.put(
-        "hilavitkutin",
+        "hollowbridge",
         "mock/rust-toolchain.toml",
         "[toolchain]\nchannel = \"nightly\"\n",
     );
@@ -510,10 +510,10 @@ fn inspect_writes_nothing() {
     // Without this, read-only is a comment. The case chosen is the one that
     // would be placed, because that is the only one with anything to write.
     let f = Fixture::new(&[("rust_required", "deny.toml", DENY), ("", "mystery.toml", "?\n")]);
-    let repo = f.repo("arvo", true);
-    let before = f.listing("arvo");
+    let repo = f.repo("acre", true);
+    let before = f.listing("acre");
     let found = inspect(repo.as_path(), &f.templates());
-    assert_eq!(f.listing("arvo"), before, "inspect wrote into the repo");
+    assert_eq!(f.listing("acre"), before, "inspect wrote into the repo");
     assert!(
         found
             .iter()
@@ -526,7 +526,7 @@ fn inspect_writes_nothing() {
     // ever write to.
     ensure(&f.root, &repo, &f.templates());
     assert_ne!(
-        f.listing("arvo"),
+        f.listing("acre"),
         before,
         "ensure wrote nothing either, so the read-only claim proves nothing"
     );
@@ -541,8 +541,8 @@ fn ensure_and_inspect_agree_on_what_is_missing() {
         ("", "mystery.toml", "?\n"),
         ("rust_nightly_required", "rustfmt.toml", "b\n"),
     ]);
-    let repo = f.repo("arvo", true);
-    f.put("arvo", "editorconfig", "different\n");
+    let repo = f.repo("acre", true);
+    f.put("acre", "editorconfig", "different\n");
     let seen = inspect(repo.as_path(), &f.templates());
     let missing: Vec<_> = seen
         .iter()

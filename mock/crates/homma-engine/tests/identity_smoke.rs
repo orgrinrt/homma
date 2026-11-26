@@ -14,15 +14,15 @@ use std::path::Path;
 
 use predicates::prelude::*;
 
-const COORD: &str = "---\nname: coord\nrole: the kaski coordinator\nmemories: [.shared/hands/coord/memory]\n---\n\n# coord\n\n## Personality\n\nPlain and short.\n";
+const CHAIR: &str = "---\nname: chair\nrole: the kiosk coordinator\nmemories: [.shared/hands/chair/memory]\n---\n\n# chair\n\n## Personality\n\nPlain and short.\n";
 
 fn workspace() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("homma.toml");
     fs::write(&cfg, support::minimal_config_toml()).unwrap();
-    let hands = dir.path().join(".shared/hands/coord");
+    let hands = dir.path().join(".shared/hands/chair");
     fs::create_dir_all(&hands).unwrap();
-    fs::write(hands.join("character.md"), COORD).unwrap();
+    fs::write(hands.join("character.md"), CHAIR).unwrap();
     (dir, cfg)
 }
 
@@ -46,40 +46,40 @@ fn render_writes_the_definition_and_links_the_memory() {
     let (dir, cfg) = workspace();
     run(&cfg, &["render"])
         .success()
-        .stdout(predicate::str::contains("coord"));
-    let def = fs::read_to_string(dir.path().join(".claude/agents/coord.md")).unwrap();
+        .stdout(predicate::str::contains("chair"));
+    let def = fs::read_to_string(dir.path().join(".claude/agents/chair.md")).unwrap();
     assert!(
-        def.contains("name: coord\n") && def.contains("Plain and short."),
+        def.contains("name: chair\n") && def.contains("Plain and short."),
         "{def}"
     );
     assert_eq!(
-        fs::canonicalize(dir.path().join(".claude/agent-memory/coord")).unwrap(),
-        fs::canonicalize(dir.path().join(".shared/hands/coord/memory")).unwrap()
+        fs::canonicalize(dir.path().join(".claude/agent-memory/chair")).unwrap(),
+        fs::canonicalize(dir.path().join(".shared/hands/chair/memory")).unwrap()
     );
 }
 
 #[test]
 fn render_refuses_a_memory_that_leaves_shared_and_writes_nothing() {
     let (dir, cfg) = workspace();
-    let bad = COORD.replace(".shared/hands/coord/memory", "../outside");
-    fs::write(dir.path().join(".shared/hands/coord/character.md"), bad).unwrap();
-    run(&cfg, &["render", "coord"])
+    let bad = CHAIR.replace(".shared/hands/chair/memory", "../outside");
+    fs::write(dir.path().join(".shared/hands/chair/character.md"), bad).unwrap();
+    run(&cfg, &["render", "chair"])
         .failure()
         .stderr(predicate::str::contains(
             "a relative path to a directory below `.shared`",
         ));
-    assert!(!dir.path().join(".claude/agents/coord.md").exists());
+    assert!(!dir.path().join(".claude/agents/chair.md").exists());
 }
 
 #[test]
 fn render_refuses_shared_itself_as_a_memory() {
     let (dir, cfg) = workspace();
-    let bad = COORD.replace(".shared/hands/coord/memory", ".shared");
-    fs::write(dir.path().join(".shared/hands/coord/character.md"), bad).unwrap();
-    run(&cfg, &["render", "coord"])
+    let bad = CHAIR.replace(".shared/hands/chair/memory", ".shared");
+    fs::write(dir.path().join(".shared/hands/chair/character.md"), bad).unwrap();
+    run(&cfg, &["render", "chair"])
         .failure()
         .stderr(predicate::str::contains("below `.shared`"));
-    assert!(!dir.path().join(".claude/agent-memory/coord").exists());
+    assert!(!dir.path().join(".claude/agent-memory/chair").exists());
 }
 
 #[test]
@@ -88,19 +88,19 @@ fn render_refuses_two_identities_that_keep_one_memory_and_writes_neither() {
     let twin = dir.path().join(".shared/hands/second");
     fs::create_dir_all(&twin).unwrap();
     // A memory outside the hands directory, which nobody keeps by default.
-    let common = COORD.replace(".shared/hands/coord/memory", ".shared/common-mem");
-    fs::write(dir.path().join(".shared/hands/coord/character.md"), &common).unwrap();
+    let common = CHAIR.replace(".shared/hands/chair/memory", ".shared/common-mem");
+    fs::write(dir.path().join(".shared/hands/chair/character.md"), &common).unwrap();
     fs::write(
         twin.join("character.md"),
         common
-            .replace("name: coord", "name: second")
-            .replace("# coord", "# second"),
+            .replace("name: chair", "name: second")
+            .replace("# chair", "# second"),
     )
     .unwrap();
     run(&cfg, &["render"])
         .failure()
         .stderr(predicate::str::contains("a memory has one owner"));
-    assert!(!dir.path().join(".claude/agents/coord.md").exists());
+    assert!(!dir.path().join(".claude/agents/chair.md").exists());
     assert!(!dir.path().join(".claude/agents/second.md").exists());
 }
 
@@ -116,7 +116,7 @@ fn render_does_not_write_through_a_link_that_leaves_the_root() {
     .unwrap();
     run(&cfg, &["render"]).failure();
     assert!(
-        !outside.path().join("deep/.claude/agents/coord.md").exists(),
+        !outside.path().join("deep/.claude/agents/chair.md").exists(),
         "nothing is written outside the workspace"
     );
 }
@@ -139,7 +139,7 @@ fn render_reports_a_character_file_it_cannot_read() {
         .failure()
         .stderr(predicate::str::contains("broken/character.md"));
     assert!(
-        !dir.path().join(".claude/agents/coord.md").exists(),
+        !dir.path().join(".claude/agents/chair.md").exists(),
         "one that cannot be read stops the pass before anything is written"
     );
 }
@@ -148,12 +148,12 @@ fn render_reports_a_character_file_it_cannot_read() {
 fn a_regular_file_where_the_memory_link_goes_is_refused_by_what_it_is() {
     let (dir, cfg) = workspace();
     fs::create_dir_all(dir.path().join(".claude/agent-memory")).unwrap();
-    fs::write(dir.path().join(".claude/agent-memory/coord"), "kept").unwrap();
+    fs::write(dir.path().join(".claude/agent-memory/chair"), "kept").unwrap();
     run(&cfg, &["render"])
         .failure()
         .stderr(predicate::str::contains("is not a link"));
     assert_eq!(
-        fs::read_to_string(dir.path().join(".claude/agent-memory/coord")).unwrap(),
+        fs::read_to_string(dir.path().join(".claude/agent-memory/chair")).unwrap(),
         "kept"
     );
 }
@@ -164,8 +164,8 @@ fn a_persona_of_an_identitys_name_is_refused() {
     let personas = dir.path().join(".shared/agents");
     fs::create_dir_all(&personas).unwrap();
     fs::write(
-        personas.join("coord.md.tmpl"),
-        "---\nname: coord\ndescription: A persona.\n---\n\nBody.\n",
+        personas.join("chair.md.tmpl"),
+        "---\nname: chair\ndescription: A persona.\n---\n\nBody.\n",
     )
     .unwrap();
     run(&cfg, &["render"])
@@ -258,18 +258,18 @@ fn launch_starts_the_session_as_the_agent_in_the_workspace() {
 
     support::bin()
         .env("HOMMA_CLAUDE", &stub)
-        .args(["--config", cfg.to_str().unwrap(), "identity", "launch", "coord", "--resume"])
+        .args(["--config", cfg.to_str().unwrap(), "identity", "launch", "chair", "--resume"])
         .assert()
         .success();
     let seen = fs::read_to_string(out).unwrap();
     let (args, cwd) = seen.trim_end().split_once('|').unwrap();
-    assert_eq!(args, "--agent coord --resume");
+    assert_eq!(args, "--agent chair --resume");
     assert_eq!(
         fs::canonicalize(cwd).unwrap(),
         fs::canonicalize(dir.path()).unwrap()
     );
     assert!(
-        dir.path().join(".claude/agents/coord.md").exists(),
+        dir.path().join(".claude/agents/chair.md").exists(),
         "the definition is rendered before the session starts"
     );
 }
@@ -297,13 +297,13 @@ fn launch_under_a_configured_agents_place_refuses_and_starts_nothing() {
     let stub = stub(dir.path(), &format!("echo ran > '{}'", out.display()));
     support::bin()
         .env("HOMMA_CLAUDE", &stub)
-        .args(["--config", cfg.to_str().unwrap(), "identity", "launch", "coord"])
+        .args(["--config", cfg.to_str().unwrap(), "identity", "launch", "chair"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("elsewhere/agents"));
     assert!(!out.exists(), "no session was started");
     assert!(
-        !dir.path().join("elsewhere/agents/coord.md").exists(),
+        !dir.path().join("elsewhere/agents/chair.md").exists(),
         "and nothing was rendered for it"
     );
 }

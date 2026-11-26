@@ -229,7 +229,7 @@ mod workspace_path_tests {
         // from any other workspace resolved into that one, and the configs
         // stage would have written files into it.
         let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("kamu-canon");
+        let ws = dir.path().join("kelp-canon");
         std::fs::create_dir_all(&ws).unwrap();
         let at = ws.join("homma.toml");
         std::fs::write(&at, "[workspace]\nname = \"w\"\n").unwrap();
@@ -249,7 +249,7 @@ mod workspace_path_tests {
         // it asserts. Every path in the program hangs off this one, and a
         // relative result is what made the aggregated hooks inert.
         let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("kamu-canon");
+        let ws = dir.path().join("kelp-canon");
         std::fs::create_dir_all(&ws).unwrap();
         std::fs::write(ws.join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
 

@@ -854,7 +854,7 @@ mod tests {
         assert!(
             Denied::under_home(&home)
                 .check(
-                    &abs(d.path().join("Dev").join("crew").join("paja")),
+                    &abs(d.path().join("Dev").join("crew").join("pike")),
                     "workspace"
                 )
                 .is_ok()
@@ -868,21 +868,21 @@ mod tests {
     const TWO_STAFFED: &str = r#"
 content_repo = "git@example.invalid:someone/content.git"
 
-[org.paja]
+[org.pike]
 role = "hand"
 staffed = true
-handle = "paja"
-git_name = "paja"
-git_email = "paja@example.invalid"
-workspace = "/srv/paja"
+handle = "pike"
+git_name = "pike"
+git_email = "pike@example.invalid"
+workspace = "/srv/pike"
 
-[org.vouti]
+[org.vesta]
 role = "hand"
 staffed = true
-handle = "vouti"
-git_name = "vouti"
-git_email = "vouti@example.invalid"
-workspace = "/srv/vouti"
+handle = "vesta"
+git_name = "vesta"
+git_email = "vesta@example.invalid"
+workspace = "/srv/vesta"
 "#;
 
     fn standing(standee: &str) -> Standing {
@@ -896,15 +896,15 @@ workspace = "/srv/vouti"
         // production path: no fixture in the tree built a registry with two
         // staffed participants, so deleting the derivation left everything
         // green.
-        let s = standing("paja");
+        let s = standing("pike");
         assert!(
             s.for_the_workspace
-                .check(&abs("/srv/vouti/inside"), "workspace")
+                .check(&abs("/srv/vesta/inside"), "workspace")
                 .is_err()
         );
         assert!(
             s.under_root
-                .check(&abs("/srv/vouti/inside"), "workspace root")
+                .check(&abs("/srv/vesta/inside"), "workspace root")
                 .is_err()
         );
     }
@@ -914,16 +914,16 @@ workspace = "/srv/vouti"
         // The two questions, and why one list cannot answer both. A root inside
         // any workspace is backwards, this participant's own included; the
         // workspace checked against a list carrying itself would deny itself.
-        let s = standing("paja");
+        let s = standing("pike");
         assert!(
             s.under_root
-                .check(&abs("/srv/paja/root"), "workspace root")
+                .check(&abs("/srv/pike/root"), "workspace root")
                 .is_err(),
             "a root inside the standee's own workspace is still a root inside a workspace"
         );
         assert!(
             s.for_the_workspace
-                .check(&abs("/srv/paja"), "workspace")
+                .check(&abs("/srv/pike"), "workspace")
                 .is_ok(),
             "the workspace must not deny itself"
         );
@@ -935,13 +935,13 @@ workspace = "/srv/vouti"
             r#"
 content_repo = "git@example.invalid:someone/content.git"
 
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
+handle = "oz"
 "#,
         )
         .unwrap();
-        let s = Denied::for_standing_up(&ws, "paja", &abs("/srv")).unwrap();
+        let s = Denied::for_standing_up(&ws, "pike", &abs("/srv")).unwrap();
         assert!(s.under_root.check(&abs("/srv/anywhere"), "root").is_ok());
     }
 

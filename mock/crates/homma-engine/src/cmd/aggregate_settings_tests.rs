@@ -50,12 +50,12 @@ fn the_shared_file_is_not_written_when_nothing_in_it_is_hommas() {
     let body = "{ \"env\": {\"A\": \"1\"},\n  \"hooks\": {\"PreToolUse\": [{\"matcher\": \"Bash\", \"hooks\": [{\"type\": \"command\", \"command\": \".claude/hooks/mine.sh\"}]}]} }";
     seed_shared(workspace, body);
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
 
     assert_eq!(fs::read_to_string(workspace.join(SHARED)).unwrap(), body);
     assert_eq!(commands(&read(workspace)), vec![
-        ".claude/hooks/arvo--new.sh"
+        ".claude/hooks/acre--new.sh"
     ]);
 }
 
@@ -66,8 +66,8 @@ fn a_shared_file_with_no_hooks_is_not_given_any() {
     let body = "{\"env\":{\"A\":\"1\"}}";
     seed_shared(workspace, body);
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
 
     assert_eq!(fs::read_to_string(workspace.join(SHARED)).unwrap(), body);
 }
@@ -77,12 +77,12 @@ fn an_absent_shared_file_stays_absent() {
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
 
     assert!(!workspace.join(SHARED).exists());
     assert_eq!(commands(&read(workspace)), vec![
-        ".claude/hooks/arvo--new.sh"
+        ".claude/hooks/acre--new.sh"
     ]);
 }
 
@@ -96,15 +96,15 @@ fn hommas_registrations_in_the_shared_file_are_swept_and_everything_else_kept() 
         workspace,
         r#"{"env":{"A":"1"},"hooks":{
             "PreToolUse":[
-                {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/arvo--old.sh"}]},
+                {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/acre--old.sh"}]},
                 {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/mine.sh"}]}
             ],
-            "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/arvo--stop.sh"}]}]
+            "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/acre--stop.sh"}]}]
         }}"#,
     );
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -116,7 +116,7 @@ fn hommas_registrations_in_the_shared_file_are_swept_and_everything_else_kept() 
     );
     // The new registration went to the clone's file and not to the shared one.
     assert_eq!(commands(&read(workspace)), vec![
-        ".claude/hooks/arvo--new.sh"
+        ".claude/hooks/acre--new.sh"
     ]);
 }
 
@@ -130,13 +130,13 @@ fn the_local_files_other_keys_are_kept() {
         r#"{"permissions":{"allow":["Artifact"]},"outputStyle":"Concise"}"#,
     );
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
 
     let v = read(workspace);
     assert_eq!(v["permissions"]["allow"][0], "Artifact");
     assert_eq!(v["outputStyle"], "Concise");
-    assert_eq!(commands(&v), vec![".claude/hooks/arvo--new.sh"]);
+    assert_eq!(commands(&v), vec![".claude/hooks/acre--new.sh"]);
 }
 
 #[test]
@@ -145,13 +145,13 @@ fn a_second_regen_writes_the_same_local_file() {
     let workspace = dir.path();
     seed(workspace, r#"{"outputStyle":"Concise"}"#);
     let entries = vec![
-        entry("Edit", ".claude/hooks/arvo--a.sh"),
-        entry("Write", ".claude/hooks/arvo--b.sh"),
+        entry("Edit", ".claude/hooks/acre--a.sh"),
+        entry("Write", ".claude/hooks/acre--b.sh"),
     ];
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
     let first = fs::read_to_string(workspace.join(LOCAL)).unwrap();
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
     let second = fs::read_to_string(workspace.join(LOCAL)).unwrap();
 
     assert_eq!(first, second);
@@ -164,8 +164,8 @@ fn a_shared_file_that_does_not_parse_is_an_error_and_the_local_one_is_not_writte
     let workspace = dir.path();
     seed_shared(workspace, "{ not json");
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    let r = merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None);
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    let r = merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None);
 
     assert!(r.is_err());
     assert!(!workspace.join(LOCAL).exists());
@@ -195,8 +195,8 @@ fn merge_settings_preserves_hand_authored_entries() {
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}]}}"#,
     );
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--no-alloc.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--no-alloc.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(arr.len(), 2);
@@ -206,7 +206,7 @@ fn merge_settings_preserves_hand_authored_entries() {
     );
     assert!(
         arr.iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--no-alloc.sh")
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/acre--no-alloc.sh")
     );
 }
 
@@ -217,19 +217,19 @@ fn merge_settings_replaces_previously_aggregated() {
     seed(
         workspace,
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/arvo--old.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/acre--old.sh"}]},
             {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}
         ]}}"#,
     );
 
-    let entries = vec![entry("Write", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Write", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(arr.len(), 2);
     assert!(
         !arr.iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--old.sh")
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/acre--old.sh")
     );
     assert!(
         arr.iter()
@@ -237,7 +237,7 @@ fn merge_settings_replaces_previously_aggregated() {
     );
     assert!(
         arr.iter()
-            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/arvo--new.sh")
+            .any(|e| e["hooks"][0]["command"] == ".claude/hooks/acre--new.sh")
     );
 }
 
@@ -253,19 +253,19 @@ fn merge_settings_preserves_mixed_hook_entries() {
         workspace,
         r#"{"hooks":{"PreToolUse":[
             {"matcher":"Edit","hooks":[
-                {"type":"command","command":".claude/hooks/arvo--old.sh"},
+                {"type":"command","command":".claude/hooks/acre--old.sh"},
                 {"type":"command","command":".claude/hooks/workspace-handauthored.sh"}
             ]}
         ]}}"#,
     );
 
-    let entries = vec![entry("Write", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Write", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-    // Original Edit entry preserved, with `arvo--old.sh` stripped
+    // Original Edit entry preserved, with `acre--old.sh` stripped
     // and `workspace-handauthored.sh` surviving. Plus the freshly
-    // pushed `arvo--new.sh`.
+    // pushed `acre--new.sh`.
     assert_eq!(arr.len(), 2);
     let edit = arr.iter().find(|e| e["matcher"] == "Edit").unwrap();
     let edit_hooks = edit["hooks"].as_array().unwrap();
@@ -279,7 +279,7 @@ fn merge_settings_preserves_mixed_hook_entries() {
         ".claude/hooks/workspace-handauthored.sh"
     );
     let write = arr.iter().find(|e| e["matcher"] == "Write").unwrap();
-    assert_eq!(write["hooks"][0]["command"], ".claude/hooks/arvo--new.sh");
+    assert_eq!(write["hooks"][0]["command"], ".claude/hooks/acre--new.sh");
 }
 
 #[test]
@@ -293,20 +293,20 @@ fn merge_settings_keeps_entries_for_a_known_repo_this_run_did_not_visit() {
     seed(
         workspace,
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kolli--guard.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":"/elsewhere/.claude/hooks/kolli--stale.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--old.sh"}]}
+            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/krill--guard.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":"/elsewhere/.claude/hooks/krill--stale.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--old.sh"}]}
         ]}}"#,
     );
 
     let entries = vec![entry(
         "Edit",
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--new.sh",
+        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--new.sh",
     )];
     merge_settings(
         &test_root(workspace),
-        &["arvo", "kolli"],
-        &["arvo"],
+        &["acre", "krill"],
+        &["acre"],
         &entries,
         None,
     )
@@ -322,20 +322,20 @@ fn merge_settings_keeps_entries_for_a_known_repo_this_run_did_not_visit() {
         .collect();
 
     assert!(
-        cmds.iter().any(|c| c.ends_with("kolli--guard.sh")),
+        cmds.iter().any(|c| c.ends_with("krill--guard.sh")),
         "an unvisited repo's registration was swept: {cmds:?}"
     );
     // The control on the same run: the repo that WAS visited is rewritten,
     // so preservation is not the whole predicate.
     assert!(
-        !cmds.iter().any(|c| c.ends_with("arvo--old.sh")),
+        !cmds.iter().any(|c| c.ends_with("acre--old.sh")),
         "a visited repo's stale registration survived: {cmds:?}"
     );
-    assert!(cmds.iter().any(|c| c.ends_with("arvo--new.sh")));
+    assert!(cmds.iter().any(|c| c.ends_with("acre--new.sh")));
     // And the unvisited repo's *absolute* entry goes, because no clone can
     // resolve it. Preservation is about the placeholder form only.
     assert!(
-        !cmds.iter().any(|c| c.ends_with("kolli--stale.sh")),
+        !cmds.iter().any(|c| c.ends_with("krill--stale.sh")),
         "a retired absolute entry survived on an unvisited repo: {cmds:?}"
     );
 }
@@ -350,15 +350,15 @@ fn merge_settings_sweeps_the_legacy_shape_for_any_known_repo_visited_or_not() {
     seed(
         workspace,
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/imports/kolli/guard.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/imports/krill/guard.sh"}]},
             {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/mine.sh"}]}
         ]}}"#,
     );
 
     merge_settings(
         &test_root(workspace),
-        &["arvo", "kolli"],
-        &["arvo"],
+        &["acre", "krill"],
+        &["acre"],
         &[],
         None,
     )
@@ -366,7 +366,7 @@ fn merge_settings_sweeps_the_legacy_shape_for_any_known_repo_visited_or_not() {
 
     let body = fs::read_to_string(workspace.join(LOCAL)).unwrap();
     assert!(
-        !body.contains("imports/kolli"),
+        !body.contains("imports/krill"),
         "legacy entry survived: {body}"
     );
     // The control: a hand-authored entry is not swept alongside it.
@@ -386,14 +386,14 @@ fn merge_settings_drops_entry_when_all_hooks_aggregated() {
         workspace,
         r#"{"hooks":{"PreToolUse":[
             {"matcher":"Edit","hooks":[
-                {"type":"command","command":".claude/hooks/arvo--old1.sh"},
-                {"type":"command","command":".claude/hooks/arvo--old2.sh"}
+                {"type":"command","command":".claude/hooks/acre--old1.sh"},
+                {"type":"command","command":".claude/hooks/acre--old2.sh"}
             ]},
             {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/workspace-byline.sh"}]}
         ]}}"#,
     );
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &[], None).unwrap();
     let v = read(workspace);
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
     // Edit entry collapsed (all hooks were aggregated); Bash entry
@@ -412,19 +412,19 @@ fn a_registration_whose_managed_file_is_gone_is_swept_and_one_whose_file_is_some
     seed(
         workspace,
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/arvo--gone.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/arvo--theirs.sh"}]}
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/acre--gone.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/acre--theirs.sh"}]}
         ]}}"#,
     );
     fs::create_dir_all(workspace.join(".claude/hooks")).unwrap();
     fs::write(
-        workspace.join(".claude/hooks/arvo--theirs.sh"),
+        workspace.join(".claude/hooks/acre--theirs.sh"),
         "#!/bin/sh\n",
     )
     .unwrap();
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &[], None).unwrap();
     let body = fs::read_to_string(workspace.join(LOCAL)).unwrap();
-    assert!(!body.contains("arvo--gone.sh"), "{body}");
-    assert!(body.contains("arvo--theirs.sh"), "{body}");
+    assert!(!body.contains("acre--gone.sh"), "{body}");
+    assert!(body.contains("acre--theirs.sh"), "{body}");
 }

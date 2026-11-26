@@ -18,7 +18,7 @@ use homma_org::character::{CharacterError, Rendered, render};
 
 pub const DISCIPLINE: &str = "## Standing\n\nRead the rules first.";
 
-pub const COORD: &str = "---\nname: coord\nrole: the kaski coordinator, who dispatches helpers\nmemories: [.shared/hands/coord/memory]\n---\n\n# coord\n\n## Who they are\n\n- The persistent coordinator.\n\n## Personality\n\nPlain and short.\n";
+pub const CHAIR: &str = "---\nname: chair\nrole: the kiosk coordinator, who dispatches helpers\nmemories: [.shared/hands/chair/memory]\n---\n\n# chair\n\n## Who they are\n\n- The persistent coordinator.\n\n## Personality\n\nPlain and short.\n";
 
 /// A workspace root unique per call, since the tests in one binary share a process id.
 pub fn root() -> PathBuf {
@@ -67,5 +67,5 @@ pub fn generated(root: &Path, name: &str) -> String {
 }
 
 pub fn with_memories(list: &str) -> String {
-    COORD.replace("[.shared/hands/coord/memory]", list)
+    CHAIR.replace("[.shared/hands/chair/memory]", list)
 }

@@ -11,7 +11,7 @@ use super::*;
 
 /// A shared file holding one of homma's registrations, so a sweep of it is
 /// due and would rewrite it.
-const SHARED_WITH_ONE_OF_HOMMAS: &str = r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/arvo--old.sh"}]}]}}"#;
+const SHARED_WITH_ONE_OF_HOMMAS: &str = r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/acre--old.sh"}]}]}}"#;
 
 /// Every way the local file can refuse, each of which used to arrive after the
 /// shared file had already been swept and written.
@@ -23,8 +23,8 @@ fn a_local_file_that_refuses_leaves_the_shared_one_as_it_was() {
         seed_shared(workspace, SHARED_WITH_ONE_OF_HOMMAS);
         seed(workspace, local);
 
-        let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-        let r = merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None);
+        let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+        let r = merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None);
 
         assert!(r.is_err(), "a local file of {local} is refused");
         assert_eq!(
@@ -45,8 +45,8 @@ fn a_local_file_that_parses_lets_the_same_shared_file_be_swept() {
     seed_shared(workspace, SHARED_WITH_ONE_OF_HOMMAS);
     seed(workspace, "{}");
 
-    let entries = vec![entry("Edit", ".claude/hooks/arvo--new.sh")];
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &entries, None).unwrap();
+    let entries = vec![entry("Edit", ".claude/hooks/acre--new.sh")];
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &entries, None).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -55,7 +55,7 @@ fn a_local_file_that_parses_lets_the_same_shared_file_be_swept() {
 
 #[test]
 fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
-    // `kamu` is declared and not visited, `muisti` is not even declared, which
+    // `kelp` is declared and not visited, `muisti` is not even declared, which
     // is a clone that never held it; the shared file holds both anyway, and the
     // gate and a declared hook beside them.
     let dir = tempfile::tempdir().unwrap();
@@ -63,7 +63,7 @@ fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
     seed_shared(
         workspace,
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kamu--gate.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/kelp--gate.sh"}]},
             {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/muisti--no-yagni-guard.sh"}]},
             {"matcher":"*","hooks":[{"type":"command","command":".claude/hooks/_workspace--mockspace-gate.sh"}]},
             {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/_declared--PreToolUse--_shared_scripts_guard.sh"}]},
@@ -73,8 +73,8 @@ fn the_shared_file_is_swept_of_every_repos_registrations_visited_or_not() {
 
     merge_settings(
         &test_root(workspace),
-        &["arvo", "kamu"],
-        &["arvo"],
+        &["acre", "kelp"],
+        &["acre"],
         &[],
         None,
     )
@@ -90,14 +90,14 @@ fn an_unvisited_repos_registration_is_kept_in_the_local_file_and_swept_from_the_
     // One command, one run, both files: the two predicates side by side.
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
-    let body = r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/kamu--gate.sh"}]}]}}"#;
+    let body = r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/kelp--gate.sh"}]}]}}"#;
     seed_shared(workspace, body);
     seed(workspace, body);
 
     merge_settings(
         &test_root(workspace),
-        &["arvo", "kamu"],
-        &["arvo"],
+        &["acre", "kelp"],
+        &["acre"],
         &[],
         None,
     )
@@ -107,7 +107,7 @@ fn an_unvisited_repos_registration_is_kept_in_the_local_file_and_swept_from_the_
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
     assert!(commands(&shared).is_empty(), "{shared}");
     assert_eq!(commands(&read(workspace)), vec![
-        ".claude/hooks/kamu--gate.sh"
+        ".claude/hooks/kelp--gate.sh"
     ]);
 }
 
@@ -127,7 +127,7 @@ fn a_hand_written_name_in_hommas_shape_with_no_file_is_swept_as_homma_s() {
         ]}}"#,
     );
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &[], None).unwrap();
 
     let shared: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(workspace.join(SHARED)).unwrap()).unwrap();
@@ -153,7 +153,7 @@ fn a_file_under_hommas_shape_that_homma_did_not_write_keeps_its_shared_registrat
         ]}}"#;
     seed_shared(workspace, body);
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &[], None).unwrap();
 
     // Nothing in it was homma's, so it was not even rewritten.
     assert_eq!(fs::read_to_string(workspace.join(SHARED)).unwrap(), body);

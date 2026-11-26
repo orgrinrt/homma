@@ -11,15 +11,15 @@ use homma_core::swap::{Swapped, swap_file};
 use super::*;
 
 const CATALOGUE: &str = r#"
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
+handle = "oz"
 
-[org.ikku]
+[org.inge]
 role = "journeyman"
-handle = "ikku"
+handle = "inge"
 aliases = ["iida"]
-git_email = "ikku@example.invalid"
+git_email = "inge@example.invalid"
 "#;
 
 /// A bare remote holding `main`, and two workspace clones of it, as two
@@ -91,7 +91,7 @@ fn take<'a>(session: &'a str, replaces: Option<&'a str>) -> Ask<'a> {
 fn a_take_from_one_clone_is_seen_and_refused_from_the_other() {
     let t = two();
     let now = at("2026-11-23T12:00:00Z");
-    let Done::Held(l) = run(&t.a, &t.ws, "ikku", take("s1", None), None, now).unwrap() else {
+    let Done::Held(l) = run(&t.a, &t.ws, "inge", take("s1", None), None, now).unwrap() else {
         panic!("a free identity is taken");
     };
     assert_eq!(
@@ -101,10 +101,10 @@ fn a_take_from_one_clone_is_seen_and_refused_from_the_other() {
     );
     let err = format!(
         "{:#}",
-        run(&t.b, &t.ws, "ikku", take("s2", None), None, now).unwrap_err()
+        run(&t.b, &t.ws, "inge", take("s2", None), None, now).unwrap_err()
     );
     assert!(err.contains("held by session `s1`"), "{err}");
-    let (seen, _) = read(&t.b, &t.ws, "ikku").unwrap();
+    let (seen, _) = read(&t.b, &t.ws, "inge").unwrap();
     assert_eq!(seen.unwrap().session, "s1");
     assert_eq!(
         git(&t.a, &["status", "--porcelain"]),
@@ -117,8 +117,8 @@ fn a_take_from_one_clone_is_seen_and_refused_from_the_other() {
 fn a_named_takeover_lands_and_the_ledger_keeps_both_holders() {
     let t = two();
     let now = at("2026-11-23T12:00:00Z");
-    run(&t.a, &t.ws, "ikku", take("s1", None), Some(60), now).unwrap();
-    let Done::Held(l) = run(&t.b, &t.ws, "ikku", take("s2", Some("s1")), None, now).unwrap() else {
+    run(&t.a, &t.ws, "inge", take("s1", None), Some(60), now).unwrap();
+    let Done::Held(l) = run(&t.b, &t.ws, "inge", take("s2", Some("s1")), None, now).unwrap() else {
         panic!("a named takeover writes");
     };
     assert_eq!(l.replaces.as_deref(), Some("s1"));
@@ -127,11 +127,11 @@ fn a_named_takeover_lands_and_the_ledger_keeps_both_holders() {
         "--format=%s",
         "origin/main",
         "--",
-        &record_path(&t.ws, "ikku"),
+        &record_path(&t.ws, "inge"),
     ]);
     assert_eq!(
         log,
-        "lease: ikku taken over from s1 for identity-lane\nlease: ikku held for identity-lane"
+        "lease: inge taken over from s1 for identity-lane\nlease: inge held for identity-lane"
     );
 }
 
@@ -139,12 +139,12 @@ fn a_named_takeover_lands_and_the_ledger_keeps_both_holders() {
 fn a_release_frees_the_identity_for_the_next_session() {
     let t = two();
     let now = at("2026-11-23T12:00:00Z");
-    run(&t.a, &t.ws, "ikku", take("s1", None), None, now).unwrap();
+    run(&t.a, &t.ws, "inge", take("s1", None), None, now).unwrap();
     assert_eq!(
         run(
             &t.a,
             &t.ws,
-            "ikku",
+            "inge",
             Ask::Release {
                 session: "s1",
             },
@@ -154,10 +154,10 @@ fn a_release_frees_the_identity_for_the_next_session() {
         .unwrap(),
         Done::Free
     );
-    let (seen, _) = read(&t.b, &t.ws, "ikku").unwrap();
+    let (seen, _) = read(&t.b, &t.ws, "inge").unwrap();
     assert_eq!(seen, None);
     assert!(matches!(
-        run(&t.b, &t.ws, "ikku", take("s2", None), None, now).unwrap(),
+        run(&t.b, &t.ws, "inge", take("s2", None), None, now).unwrap(),
         Done::Held(_)
     ));
 }
@@ -169,23 +169,23 @@ fn a_take_after_another_landed_is_refused_never_overwritten() {
     let t = two();
     let now = at("2026-11-23T12:00:00Z");
     git::fetch_branch(&t.b, "origin", "main").unwrap();
-    run(&t.a, &t.ws, "ikku", take("s1", None), None, now).unwrap();
-    assert!(run(&t.b, &t.ws, "ikku", take("s2", None), None, now).is_err());
+    run(&t.a, &t.ws, "inge", take("s1", None), None, now).unwrap();
+    assert!(run(&t.b, &t.ws, "inge", take("s2", None), None, now).is_err());
 }
 
 #[test]
 fn the_king_and_a_stranger_hold_no_lease() {
     let t = two();
     let now = at("2026-11-23T12:00:00Z");
-    assert!(run(&t.a, &t.ws, "op", take("s1", None), None, now).is_err());
+    assert!(run(&t.a, &t.ws, "oz", take("s1", None), None, now).is_err());
     assert!(run(&t.a, &t.ws, "nobody", take("s1", None), None, now).is_err());
 }
 
 #[test]
 fn a_line_says_who_holds_it_and_whom_it_replaced() {
-    assert_eq!(describe("ikku", None), "ikku free");
+    assert_eq!(describe("inge", None), "inge free");
     let l = Lease {
-        handle:   "ikku".into(),
+        handle:   "inge".into(),
         session:  "s2".into(),
         job:      "j".into(),
         taken:    at("2026-11-23T12:00:00Z"),
@@ -193,8 +193,8 @@ fn a_line_says_who_holds_it_and_whom_it_replaced() {
         replaces: Some("s1".into()),
     };
     assert_eq!(
-        describe("ikku", Some(&l)),
-        "ikku held by s2 for j since 2026-11-23T12:00:00Z until 2026-11-23T13:00:00Z, replacing s1"
+        describe("inge", Some(&l)),
+        "inge held by s2 for j since 2026-11-23T12:00:00Z until 2026-11-23T13:00:00Z, replacing s1"
     );
 }
 
@@ -205,18 +205,18 @@ fn an_alias_takes_the_identity_its_entry_names() {
     let Done::Held(l) = run(&t.a, &t.ws, "iida", take("s1", None), None, now).unwrap() else {
         panic!("an alias reaches its entry");
     };
-    assert_eq!(l.handle, "ikku");
-    let (seen, _) = read(&t.b, &t.ws, "ikku").unwrap();
+    assert_eq!(l.handle, "inge");
+    let (seen, _) = read(&t.b, &t.ws, "inge").unwrap();
     assert_eq!(seen.unwrap().session, "s1");
 }
 
 #[test]
 fn a_name_the_catalogue_lacks_is_refused_even_by_show() {
     let t = two();
-    assert!(entry(&t.ws, "ikku").is_ok());
-    let err = format!("{:#}", entry(&t.ws, "ikkuu").unwrap_err());
+    assert!(entry(&t.ws, "inge").is_ok());
+    let err = format!("{:#}", entry(&t.ws, "ingeu").unwrap_err());
     assert!(err.contains("no handle or alias"), "{err}");
-    assert!(entry(&t.ws, "op").is_err());
+    assert!(entry(&t.ws, "oz").is_err());
 }
 
 #[test]
@@ -225,21 +225,21 @@ fn a_lease_lasts_from_a_minute_to_a_week() {
     let now = at("2026-11-23T12:00:00Z");
     for bad in [0, 7 * 24 * 60 + 1, u32::MAX] {
         assert!(
-            run(&t.a, &t.ws, "ikku", take("s1", None), Some(bad), now).is_err(),
+            run(&t.a, &t.ws, "inge", take("s1", None), Some(bad), now).is_err(),
             "{bad}"
         );
     }
     let mut ws = t.ws.clone();
     ws.lease.minutes = 0;
     assert!(
-        run(&t.a, &ws, "ikku", take("s1", None), None, now).is_err(),
+        run(&t.a, &ws, "inge", take("s1", None), None, now).is_err(),
         "a configured length too"
     );
     assert!(
         run(
             &t.a,
             &t.ws,
-            "ikku",
+            "inge",
             take("s1", None),
             Some(7 * 24 * 60),
             now
@@ -252,7 +252,7 @@ fn a_lease_lasts_from_a_minute_to_a_week() {
 fn a_record_that_cannot_be_read_or_names_another_handle_is_refused_not_free() {
     let t = two();
     let now = at("2026-11-23T12:00:00Z");
-    let path = record_path(&t.ws, "ikku");
+    let path = record_path(&t.ws, "inge");
     let tip = git::fetch_branch(&t.a, "origin", "main").unwrap();
     let Swapped::Landed(tip) = swap_file(
         &t.a,
@@ -266,13 +266,13 @@ fn a_record_that_cannot_be_read_or_names_another_handle_is_refused_not_free() {
     .unwrap() else {
         panic!("lands");
     };
-    assert!(read(&t.b, &t.ws, "ikku").is_err());
+    assert!(read(&t.b, &t.ws, "inge").is_err());
     assert!(
-        run(&t.b, &t.ws, "ikku", take("s2", None), None, now).is_err(),
+        run(&t.b, &t.ws, "inge", take("s2", None), None, now).is_err(),
         "never overwritten"
     );
-    let other = "handle = \"kide\"\nsession = \"s1\"\njob = \"j\"\ntaken = \"2026-11-23T11:00:00Z\"\nexpires = \"2026-11-23T13:00:00Z\"\n";
+    let other = "handle = \"kent\"\nsession = \"s1\"\njob = \"j\"\ntaken = \"2026-11-23T11:00:00Z\"\nexpires = \"2026-11-23T13:00:00Z\"\n";
     swap_file(&t.a, "origin", "main", &tip, &path, Some(other), "y").unwrap();
-    let err = format!("{:#}", read(&t.b, &t.ws, "ikku").unwrap_err());
-    assert!(err.contains("names `kide`"), "{err}");
+    let err = format!("{:#}", read(&t.b, &t.ws, "inge").unwrap_err());
+    assert!(err.contains("names `kent`"), "{err}");
 }

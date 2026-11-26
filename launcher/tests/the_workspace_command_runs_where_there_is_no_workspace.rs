@@ -72,7 +72,7 @@ fn fixture() -> Fixture {
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let content = base.join("remotes").join("ws.git");
-    let member = base.join("remotes").join("notko.git");
+    let member = base.join("remotes").join("notch.git");
     repo(&content);
     repo_on_main(&member);
     let prefs = Prefs {
@@ -152,18 +152,18 @@ fn spawn_by_slug_clones_the_content_repository_and_the_members_on_their_trunks()
     .unwrap();
     let ws = f.home.join("work").join("alpha");
     assert!(ws.join(".git").is_dir(), "{said}");
-    assert!(ws.join("notko").join(".git").is_dir(), "{said}");
+    assert!(ws.join("notch").join(".git").is_dir(), "{said}");
     // the content repository has a `dev`, the member has only `main`, and
     // each was cloned on its own
     let members = status::survey(&ws).unwrap();
     let names: Vec<_> = members.iter().map(|m| m.name.as_str()).collect();
-    assert_eq!(names, vec![".", "notko"]);
+    assert_eq!(names, vec![".", "notch"]);
     assert_eq!(members[0].branch, "dev");
     // `--branch` switched the member, not the workspace's own clone
     assert_eq!(members[1].branch, "feat/x");
     assert!(members.iter().all(|m| !m.holds_work()), "{members:?}");
     assert!(said.contains("work here:"), "{said}");
-    assert!(said.contains("notko  main -> feat/x"), "{said}");
+    assert!(said.contains("notch  main -> feat/x"), "{said}");
 
     // the same slug again is refused rather than cloned over
     let err = run(&f, &f.home, None, Ask::Spawn {
@@ -179,7 +179,7 @@ fn spawn_by_slug_clones_the_content_repository_and_the_members_on_their_trunks()
     assert_eq!(listed, "alpha\n");
 
     // an extra repository on the command line, by url, lands beside
-    let second = f.home.join("remotes2").join("arvo.git");
+    let second = f.home.join("remotes2").join("acre.git");
     repo(&second);
     let said = run(&f, &f.home, None, Ask::Spawn {
         slug:   "beta".into(),
@@ -188,8 +188,8 @@ fn spawn_by_slug_clones_the_content_repository_and_the_members_on_their_trunks()
     })
     .unwrap();
     let beta = f.home.join("work").join("beta");
-    assert!(beta.join("arvo").join(".git").is_dir(), "{said}");
-    assert!(beta.join("notko").join(".git").is_dir(), "{said}");
+    assert!(beta.join("acre").join(".git").is_dir(), "{said}");
+    assert!(beta.join("notch").join(".git").is_dir(), "{said}");
     assert_eq!(run(&f, &f.home, None, Ask::List).unwrap(), "alpha\nbeta\n");
 }
 
@@ -253,7 +253,7 @@ fn spawn_in_place_takes_an_empty_directory_outside_any_repository() {
     std::fs::create_dir_all(&cwd).unwrap();
     let said = run(&f, &cwd, None, Ask::Bare).unwrap();
     assert!(cwd.join(".git").is_dir(), "{said}");
-    assert!(cwd.join("notko").join(".git").is_dir(), "{said}");
+    assert!(cwd.join("notch").join(".git").is_dir(), "{said}");
     assert!(
         said.starts_with(&format!("spawning {}\n", cwd.display())),
         "{said}"
@@ -292,18 +292,18 @@ fn status_reports_and_reap_refuses_on_exactly_what_would_be_lost() {
     let ws = f.home.join("work").join("alpha");
 
     // bare, inside: the status, with the root found by the caller
-    let said = run(&f, &ws.join("notko"), Some(&ws), Ask::Bare).unwrap();
+    let said = run(&f, &ws.join("notch"), Some(&ws), Ask::Bare).unwrap();
     assert!(
         said.starts_with(&format!("workspace {}\n", ws.display())),
         "{said}"
     );
     assert!(said.contains("  .  dev  "), "{said}");
-    assert!(said.contains("  notko  main  "), "{said}");
+    assert!(said.contains("  notch  main  "), "{said}");
     assert!(said.contains("clean"), "{said}");
 
     // bare reap from inside refuses whatever the state, since the shell would
     // be left standing in nothing, and it names the form to use instead
-    let err = run(&f, &ws.join("notko"), Some(&ws), Ask::Reap {
+    let err = run(&f, &ws.join("notch"), Some(&ws), Ask::Reap {
         slug:  None,
         force: true,
     })
@@ -315,24 +315,24 @@ fn status_reports_and_reap_refuses_on_exactly_what_would_be_lost() {
     assert!(ws.exists());
 
     // a dirty member refuses the reap, named from outside
-    std::fs::write(ws.join("notko").join("draft"), "half").unwrap();
+    std::fs::write(ws.join("notch").join("draft"), "half").unwrap();
     let err = run(&f, &f.home, Some(&ws), Ask::Reap {
         slug:  None,
         force: false,
     })
     .expect_err("reaped over a dirty tree");
     assert!(
-        err.contains("notko: uncommitted or untracked changes"),
+        err.contains("notch: uncommitted or untracked changes"),
         "{err}"
     );
     assert!(ws.exists());
     let said = run(&f, &ws, Some(&ws), Ask::Bare).unwrap();
-    assert!(said.contains("notko  main"), "{said}");
+    assert!(said.contains("notch  main"), "{said}");
     assert!(said.contains("dirty"), "{said}");
 
     // committed, it is a commit on no remote, which refuses too and is listed
-    git(&ws.join("notko"), &["add", "draft"]);
-    git(&ws.join("notko"), &[
+    git(&ws.join("notch"), &["add", "draft"]);
+    git(&ws.join("notch"), &[
         "-c",
         "user.email=t@example.com",
         "-c",
@@ -348,12 +348,12 @@ fn status_reports_and_reap_refuses_on_exactly_what_would_be_lost() {
         force: false,
     })
     .expect_err("reaped over an unpushed commit");
-    assert!(err.contains("notko: 1 commit(s) on no remote"), "{err}");
+    assert!(err.contains("notch: 1 commit(s) on no remote"), "{err}");
     assert!(err.contains("the draft"), "{err}");
     assert!(ws.exists());
 
     // pushed, nothing is held and the reap goes through
-    git(&ws.join("notko"), &[
+    git(&ws.join("notch"), &[
         "push",
         "-q",
         "origin",
@@ -517,7 +517,7 @@ fn reap_refuses_a_workspace_holding_a_worktree_whatever_force_says() {
     // a seat under `.worktrees/`, which is where the workspace rules put
     // them, and which the survey cannot see since its `.git` is a file
     std::fs::create_dir_all(ws.join(".worktrees")).unwrap();
-    git(&ws.join("notko"), &[
+    git(&ws.join("notch"), &[
         "worktree",
         "add",
         "-q",
@@ -539,12 +539,12 @@ fn reap_refuses_a_workspace_holding_a_worktree_whatever_force_says() {
         assert!(ws.exists());
     }
     // and one placed one level down rather than under `.worktrees/`
-    git(&ws.join("notko"), &[
+    git(&ws.join("notch"), &[
         "worktree",
         "remove",
         "../.worktrees/seat",
     ]);
-    git(&ws.join("notko"), &[
+    git(&ws.join("notch"), &[
         "worktree", "add", "-q", "../seat2", "-b", "seat2",
     ]);
     let err = run(&f, &f.home, None, Ask::Reap {
@@ -555,7 +555,7 @@ fn reap_refuses_a_workspace_holding_a_worktree_whatever_force_says() {
     assert!(err.contains("seat2"), "{err}");
     assert!(ws.exists());
     // the control: with the seat gone the reap goes through
-    git(&ws.join("notko"), &["worktree", "remove", "../seat2"]);
+    git(&ws.join("notch"), &["worktree", "remove", "../seat2"]);
     std::fs::remove_dir_all(ws.join(".worktrees")).unwrap();
     run(&f, &f.home, None, Ask::Reap {
         slug:  Some("alpha".into()),

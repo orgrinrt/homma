@@ -200,17 +200,17 @@ mod tests {
         // Both spellings git writes, with and without the suffix, plus the two
         // schemes that share the https shape.
         for url in [
-            "https://github.com/orgrinrt/notko.git",
-            "https://github.com/orgrinrt/notko",
-            "git@github.com:orgrinrt/notko.git",
-            "git@github.com:orgrinrt/notko",
-            "ssh://git@github.com/orgrinrt/notko.git",
-            "  https://github.com/orgrinrt/notko.git  ",
+            "https://github.com/woodland/notch.git",
+            "https://github.com/woodland/notch",
+            "git@github.com:woodland/notch.git",
+            "git@github.com:woodland/notch",
+            "ssh://git@github.com/woodland/notch.git",
+            "  https://github.com/woodland/notch.git  ",
         ] {
             let got = read_origin(url).unwrap_or_else(|| panic!("did not parse: {url}"));
             assert_eq!(got.host, "github.com", "{url}");
-            assert_eq!(got.owner, "orgrinrt", "{url}");
-            assert_eq!(got.name, "notko", "{url}");
+            assert_eq!(got.owner, "woodland", "{url}");
+            assert_eq!(got.name, "notch", "{url}");
         }
     }
 
@@ -229,11 +229,11 @@ mod tests {
         for url in [
             "",
             "   ",
-            "/srv/git/notko.git",
+            "/srv/git/notch.git",
             "../sibling",
-            "https://github.com/notko.git",
-            "git@github.com:notko.git",
-            "https:///orgrinrt/notko.git",
+            "https://github.com/notch.git",
+            "git@github.com:notch.git",
+            "https:///woodland/notch.git",
         ] {
             assert_eq!(read_origin(url), None, "read a forge out of {url:?}");
         }
@@ -251,15 +251,15 @@ mod tests {
             token_env: None,
             token_cmd: None,
         };
-        let composed = clone_https(&forge, "orgrinrt", "notko");
+        let composed = clone_https(&forge, "woodland", "notch");
         let read = read_origin(&composed).expect("what we composed reads back");
         assert_eq!(read.host, host_of(&forge.base_url));
         assert_eq!(
             (read.owner.as_str(), read.name.as_str()),
-            ("orgrinrt", "notko")
+            ("woodland", "notch")
         );
 
-        let over_ssh = read_origin(&clone_ssh(&forge, "orgrinrt", "notko")).expect("parses");
+        let over_ssh = read_origin(&clone_ssh(&forge, "woodland", "notch")).expect("parses");
         assert_eq!(over_ssh, read, "the two clone spellings disagree");
     }
 
@@ -308,8 +308,8 @@ mod tests {
     fn clone_https_uses_base_url() {
         let f = cfg("https://codeberg.org", "https://codeberg.org/api/v1");
         assert_eq!(
-            clone_https(&f, "orgrinrt", "homma"),
-            "https://codeberg.org/orgrinrt/homma.git"
+            clone_https(&f, "woodland", "homma"),
+            "https://codeberg.org/woodland/homma.git"
         );
     }
 
@@ -317,8 +317,8 @@ mod tests {
     fn clone_https_tolerates_trailing_slash() {
         let f = cfg("https://codeberg.org/", "https://codeberg.org/api/v1");
         assert_eq!(
-            clone_https(&f, "orgrinrt", "homma"),
-            "https://codeberg.org/orgrinrt/homma.git"
+            clone_https(&f, "woodland", "homma"),
+            "https://codeberg.org/woodland/homma.git"
         );
     }
 
@@ -326,8 +326,8 @@ mod tests {
     fn clone_ssh_strips_scheme_to_host() {
         let f = cfg("https://codeberg.org", "https://codeberg.org/api/v1");
         assert_eq!(
-            clone_ssh(&f, "orgrinrt", "homma"),
-            "git@codeberg.org:orgrinrt/homma.git"
+            clone_ssh(&f, "woodland", "homma"),
+            "git@codeberg.org:woodland/homma.git"
         );
     }
 
@@ -335,8 +335,8 @@ mod tests {
     fn web_url_omits_dot_git() {
         let f = cfg("https://codeberg.org", "https://codeberg.org/api/v1");
         assert_eq!(
-            web(&f, "orgrinrt", "homma"),
-            "https://codeberg.org/orgrinrt/homma"
+            web(&f, "woodland", "homma"),
+            "https://codeberg.org/woodland/homma"
         );
     }
 
@@ -344,8 +344,8 @@ mod tests {
     fn api_repo_appends_repos_segment() {
         let f = cfg("https://codeberg.org", "https://codeberg.org/api/v1");
         assert_eq!(
-            api_repo(&f, "orgrinrt", "homma"),
-            "https://codeberg.org/api/v1/repos/orgrinrt/homma"
+            api_repo(&f, "woodland", "homma"),
+            "https://codeberg.org/api/v1/repos/woodland/homma"
         );
     }
 

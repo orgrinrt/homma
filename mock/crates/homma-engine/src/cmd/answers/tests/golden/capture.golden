@@ -3,8 +3,8 @@ when: 2026-10-28 09:40
 kind: mixed
 source: the documents in fixture
 bears_on:
-  - clause-dev
-  - kaski
+  - glade-root
+  - kiosk
 tags: [dashboard, answers, notes]
 store:
   - answers/q1@2026-10-28T09:10:00Z

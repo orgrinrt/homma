@@ -29,17 +29,17 @@ fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
 }
 
 fn answer(id: &str, key: serde_json::Value, kind: &str, at: &str) -> String {
-    json!({"id": id, "key": key, "kind": kind, "where": "kaski", "asks": "Which?",
+    json!({"id": id, "key": key, "kind": kind, "where": "kiosk", "asks": "Which?",
            "options": ["a", "b"], "choice": "b", "text": "because", "at": at})
     .to_string()
 }
 
 fn run_in(tmp: &Path, mock: Option<PathBuf>) -> Run {
-    fs::create_dir_all(tmp.join("kaski/.git")).unwrap();
+    fs::create_dir_all(tmp.join("kiosk/.git")).unwrap();
     Run {
         root: tmp.to_path_buf(),
         store: tmp.join("store"),
-        work: Some("kaski".into()),
+        work: Some("kiosk".into()),
         mock,
     }
 }
@@ -153,17 +153,17 @@ fn a_channel_read_takes_answers_and_notes_and_skips_the_rest() {
         "msg",
         &format!("cat '{}'", tmp.path().join("listing.json").display()),
     );
-    let read = docs::read_channel(tmp.path(), &msg, "kaski", "op").unwrap();
+    let read = docs::read_channel(tmp.path(), &msg, "kiosk", "oz").unwrap();
     assert_eq!(read.taken.len(), 2);
     assert_eq!(read.skipped.len(), 1);
     assert!(read.skipped[0].contains("m4"));
 }
 
 #[test]
-fn a_channel_with_nothing_from_op_reads_as_empty() {
+fn a_channel_with_nothing_from_the_speaker_reads_as_empty() {
     let tmp = tempfile::tempdir().unwrap();
-    let msg = script(tmp.path(), "msg", "echo 'nothing from op' >&2; exit 1");
-    let read = docs::read_channel(tmp.path(), &msg, "kaski", "op").unwrap();
+    let msg = script(tmp.path(), "msg", "echo 'nothing from oz' >&2; exit 1");
+    let read = docs::read_channel(tmp.path(), &msg, "kiosk", "oz").unwrap();
     assert!(read.taken.is_empty());
 }
 
@@ -171,7 +171,7 @@ fn a_channel_with_nothing_from_op_reads_as_empty() {
 fn a_channel_that_fails_for_another_reason_is_an_error() {
     let tmp = tempfile::tempdir().unwrap();
     let msg = script(tmp.path(), "msg", "echo 'broken' >&2; exit 1");
-    assert!(docs::read_channel(tmp.path(), &msg, "kaski", "op").is_err());
+    assert!(docs::read_channel(tmp.path(), &msg, "kiosk", "oz").is_err());
 }
 
 // ---- render
@@ -215,13 +215,13 @@ fn a_fence_inside_the_question_gets_a_longer_fence() {
 fn the_name_is_the_minute_and_the_slug_and_a_taken_name_gets_the_hash() {
     let tmp = tempfile::tempdir().unwrap();
     let d = golden_docs();
-    let first = render::name(tmp.path(), "2026-10-28T09:40:00Z", "op answers q1", &d);
-    assert_eq!(first, "202610280940_op-answers-q1.md");
+    let first = render::name(tmp.path(), "2026-10-28T09:40:00Z", "oz answers q1", &d);
+    assert_eq!(first, "202610280940_oz-answers-q1.md");
     fs::write(tmp.path().join(&first), "x").unwrap();
-    let second = render::name(tmp.path(), "2026-10-28T09:40:00Z", "op answers q1", &d);
+    let second = render::name(tmp.path(), "2026-10-28T09:40:00Z", "oz answers q1", &d);
     assert_ne!(first, second);
     assert!(
-        second.starts_with("202610280940_op-answers-q1-"),
+        second.starts_with("202610280940_oz-answers-q1-"),
         "{second}"
     );
 }
@@ -362,8 +362,8 @@ fn a_row_that_cannot_be_written_leaves_the_capture_and_is_named() {
             skipped: vec![],
         },
         &Source::Channel {
-            channel: "kaski",
-            from:    "op",
+            channel: "kiosk",
+            from:    "oz",
         },
         None,
     )
@@ -379,7 +379,7 @@ fn a_row_that_cannot_be_written_leaves_the_capture_and_is_named() {
 fn the_delegate_takes_words_and_declines_everything_else() {
     let tmp = tempfile::tempdir().unwrap();
     let run = run_in(tmp.path(), Some(script(tmp.path(), "mock", "exit 0")));
-    let repo = tmp.path().join("kaski");
+    let repo = tmp.path().join("kiosk");
     let done = delegate::run(
         &run,
         &repo,
@@ -476,7 +476,7 @@ fn a_delegate_whose_row_cannot_be_written_fails_and_says_why() {
     let tmp = tempfile::tempdir().unwrap();
     let mock = script(tmp.path(), "mock", "echo 'no such row' >&2; exit 2");
     let run = run_in(tmp.path(), Some(mock));
-    let repo = tmp.path().join("kaski");
+    let repo = tmp.path().join("kiosk");
     let done = delegate::run(
         &run,
         &repo,
@@ -507,7 +507,7 @@ fn a_delegate_attaches_with_local_and_the_capture_path_it_wrote() {
         &format!("echo \"$@\" >> '{}'", log.display()),
     );
     let run = run_in(tmp.path(), Some(mock));
-    let repo = tmp.path().join("kaski");
+    let repo = tmp.path().join("kiosk");
     delegate::run(
         &run,
         &repo,
@@ -528,7 +528,7 @@ fn a_delegate_attaches_with_local_and_the_capture_path_it_wrote() {
 fn two_appends_at_one_time_with_different_words_are_two_captures_and_the_same_words_are_one() {
     let tmp = tempfile::tempdir().unwrap();
     let run = run_in(tmp.path(), Some(script(tmp.path(), "mock", "exit 0")));
-    let repo = tmp.path().join("kaski");
+    let repo = tmp.path().join("kiosk");
     let at = "2026-10-28T09:40:00Z";
     for words in ["yes", "no", "yes"] {
         delegate::run(
@@ -610,16 +610,16 @@ fn a_capture_says_where_its_words_were_left_and_who_left_them() {
     .unwrap();
     let from_the_page = Source::Dir(Path::new("fixture"));
     let from_the_channel = Source::Channel {
-        channel: "kaski",
-        from:    "coord",
+        channel: "kiosk",
+        from:    "chair",
     };
     let delegated = Source::Delegated("ticket::t1");
 
     let title = render::title(&docs, &from_the_channel);
-    assert_eq!(title, "coord answers ticket::t1");
+    assert_eq!(title, "chair answers ticket::t1");
     let text = render::text(&docs, "2026-10-28 09:40", &from_the_channel, &title);
     assert!(text.contains("tags: [channel, answers]"), "{text}");
-    assert!(text.contains("Left on the channel kaski,"), "{text}");
+    assert!(text.contains("Left on the channel kiosk,"), "{text}");
     assert!(!text.contains("dashboard"), "{text}");
 
     let text = render::text(&docs, "w", &delegated, &render::title(&docs, &delegated));
@@ -644,6 +644,6 @@ fn a_capture_says_where_its_words_were_left_and_who_left_them() {
     );
     assert_eq!(
         render::title(&[note], &from_the_channel),
-        "coord leaves a note on the channel"
+        "chair leaves a note on the channel"
     );
 }

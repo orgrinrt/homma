@@ -14,9 +14,9 @@ fn ws() -> tempfile::TempDir {
 #[test]
 fn init_writes_a_file_that_loads_and_ignores_it() {
     let d = ws();
-    assert!(init(d.path(), "kenno").unwrap());
+    assert!(init(d.path(), "knoll").unwrap());
     let (parsed, _) = show(d.path()).unwrap().unwrap();
-    assert_eq!(parsed.instance.work, "kenno");
+    assert_eq!(parsed.instance.work, "knoll");
     let ignore = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
     for line in ["/homma.local.toml", "/homma.local.toml.*"] {
         assert!(ignore.lines().any(|l| l == line), "{line} in {ignore}");
@@ -276,8 +276,8 @@ fn concurrent_writers_all_land_and_no_reader_sees_a_half() {
 // the stored configs
 // ---------------------------------------------------------------------------
 
-const KASKI: &str = "# stored\n[instance]\nwork = \"kaski\"\ntitle = \"the colony sim\"\nrepos = []\n\n[tools.goal]\nactive = \"false\"\n\n[tools.msg]\nas = \"coord\"\n";
-const KENNO: &str = "[instance]\nwork = \"kenno\"\n";
+const KIOSK: &str = "# stored\n[instance]\nwork = \"kiosk\"\ntitle = \"the colony sim\"\nrepos = []\n\n[tools.goal]\nactive = \"false\"\n\n[tools.msg]\nas = \"chair\"\n";
+const KNOLL: &str = "[instance]\nwork = \"knoll\"\n";
 
 fn store(d: &tempfile::TempDir, files: &[(&str, &str)]) {
     let dir = d.path().join(local::STORE_DIR);
@@ -294,15 +294,15 @@ fn file(d: &tempfile::TempDir) -> String {
 #[test]
 fn install_writes_the_one_project_line_and_no_copy_where_there_is_no_file() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
+    store(&d, &[("kiosk", KIOSK)]);
     assert_eq!(
-        install(d.path(), "kaski", false).unwrap(),
+        install(d.path(), "kiosk", false).unwrap(),
         Installed::Written
     );
-    assert_eq!(file(&d), local::project_skeleton("kaski"));
+    assert_eq!(file(&d), local::project_skeleton("kiosk"));
     let l = Local::load(d.path()).unwrap().unwrap();
-    assert_eq!(l.instance.work, "kaski");
-    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
+    assert_eq!(l.instance.work, "kiosk");
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("chair"));
     assert!(
         !std::fs::symlink_metadata(d.path().join(LOCAL_FILE))
             .unwrap()
@@ -314,8 +314,8 @@ fn install_writes_the_one_project_line_and_no_copy_where_there_is_no_file() {
 #[test]
 fn install_ignores_the_file_it_made() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    install(d.path(), "kiosk", false).unwrap();
     let ignore = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
     assert!(ignore.lines().any(|l| l == "/homma.local.toml"), "{ignore}");
 }
@@ -323,8 +323,8 @@ fn install_ignores_the_file_it_made() {
 #[test]
 fn install_leaves_no_lock_or_temporary_file_behind() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    install(d.path(), "kiosk", false).unwrap();
     let mut names: Vec<_> = std::fs::read_dir(d.path())
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
@@ -341,13 +341,13 @@ fn install_leaves_no_lock_or_temporary_file_behind() {
 #[test]
 fn what_a_tool_records_after_the_install_never_reaches_the_store() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    install(d.path(), "kiosk", false).unwrap();
     set(d.path(), "tools.dashboard.published", "abc").unwrap();
     set(d.path(), "tools.console.deployed", "c42e0a9").unwrap();
     assert_eq!(
-        std::fs::read_to_string(d.path().join(local::STORE_DIR).join("kaski.toml")).unwrap(),
-        KASKI
+        std::fs::read_to_string(d.path().join(local::STORE_DIR).join("kiosk.toml")).unwrap(),
+        KIOSK
     );
     assert!(file(&d).contains("published = \"abc\""));
 }
@@ -355,23 +355,23 @@ fn what_a_tool_records_after_the_install_never_reaches_the_store() {
 #[test]
 fn a_set_replaces_a_link_with_a_file_and_leaves_what_it_pointed_at() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    let stored = d.path().join(local::STORE_DIR).join("kaski.toml");
+    store(&d, &[("kiosk", KIOSK)]);
+    let stored = d.path().join(local::STORE_DIR).join("kiosk.toml");
     std::os::unix::fs::symlink(&stored, d.path().join(LOCAL_FILE)).unwrap();
     set(d.path(), "tools.dashboard.published", "abc").unwrap();
     let meta = std::fs::symlink_metadata(d.path().join(LOCAL_FILE)).unwrap();
     assert!(!meta.file_type().is_symlink());
-    assert_eq!(std::fs::read_to_string(&stored).unwrap(), KASKI);
+    assert_eq!(std::fs::read_to_string(&stored).unwrap(), KIOSK);
 }
 
 #[test]
 fn install_over_a_copy_of_the_same_work_migrates_it_and_keeps_what_differs() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    let copy = "[instance]\nwork = \"kaski\"\ntitle = \"the colony sim\"\n\n[tools.goal]\nactive = \"true\"\n\n[tools.dashboard]\npublished = \"abc\"\n";
+    store(&d, &[("kiosk", KIOSK)]);
+    let copy = "[instance]\nwork = \"kiosk\"\ntitle = \"the colony sim\"\n\n[tools.goal]\nactive = \"true\"\n\n[tools.dashboard]\npublished = \"abc\"\n";
     std::fs::write(d.path().join(LOCAL_FILE), copy).unwrap();
     let before = Local::parse(copy).unwrap();
-    match install(d.path(), "kaski", false).unwrap() {
+    match install(d.path(), "kiosk", false).unwrap() {
         Installed::Migrated {
             dropped,
             kept,
@@ -380,7 +380,7 @@ fn install_over_a_copy_of_the_same_work_migrates_it_and_keeps_what_differs() {
     }
     let text = file(&d);
     assert!(
-        text.contains("project = \"kaski\"") && !text.contains("work ="),
+        text.contains("project = \"kiosk\"") && !text.contains("work ="),
         "{text}"
     );
     let l = Local::load(d.path()).unwrap().unwrap();
@@ -388,17 +388,17 @@ fn install_over_a_copy_of_the_same_work_migrates_it_and_keeps_what_differs() {
     assert_eq!(l.tools["dashboard"]["published"].as_str(), Some("abc"));
     assert_eq!(l.instance.title, before.instance.title);
     // The control: what the copy lacked, the store now supplies.
-    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("chair"));
 }
 
 #[test]
 fn installing_twice_is_the_same_as_once() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    install(d.path(), "kiosk", false).unwrap();
     let once = file(&d);
     assert_eq!(
-        install(d.path(), "kaski", false).unwrap(),
+        install(d.path(), "kiosk", false).unwrap(),
         Installed::Unchanged
     );
     assert_eq!(file(&d), once);
@@ -407,15 +407,15 @@ fn installing_twice_is_the_same_as_once() {
 #[test]
 fn a_migrated_copy_is_not_migrated_again() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    std::fs::write(d.path().join(LOCAL_FILE), KASKI).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    std::fs::write(d.path().join(LOCAL_FILE), KIOSK).unwrap();
     assert!(matches!(
-        install(d.path(), "kaski", false).unwrap(),
+        install(d.path(), "kiosk", false).unwrap(),
         Installed::Migrated { .. }
     ));
     let once = file(&d);
     assert_eq!(
-        install(d.path(), "kaski", false).unwrap(),
+        install(d.path(), "kiosk", false).unwrap(),
         Installed::Unchanged
     );
     assert_eq!(file(&d), once);
@@ -424,12 +424,12 @@ fn a_migrated_copy_is_not_migrated_again() {
 #[test]
 fn install_over_another_work_refuses_and_touches_nothing() {
     let d = ws();
-    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
-    install(d.path(), "kenno", false).unwrap();
+    store(&d, &[("kiosk", KIOSK), ("knoll", KNOLL)]);
+    install(d.path(), "knoll", false).unwrap();
     let before = file(&d);
-    let err = install(d.path(), "kaski", false).unwrap_err().to_string();
+    let err = install(d.path(), "kiosk", false).unwrap_err().to_string();
     assert!(
-        err.contains("`kenno`") && err.contains("`kaski`") && err.contains("--replace"),
+        err.contains("`knoll`") && err.contains("`kiosk`") && err.contains("--replace"),
         "{err}"
     );
     assert_eq!(file(&d), before);
@@ -439,45 +439,45 @@ fn install_over_another_work_refuses_and_touches_nothing() {
 #[test]
 fn replace_moves_the_old_file_aside_whole_and_installs_the_stored_one() {
     let d = ws();
-    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
-    install(d.path(), "kenno", false).unwrap();
+    store(&d, &[("kiosk", KIOSK), ("knoll", KNOLL)]);
+    install(d.path(), "knoll", false).unwrap();
     set(d.path(), "tools.dashboard.published", "abc").unwrap();
     let before = file(&d);
-    match install(d.path(), "kaski", true).unwrap() {
+    match install(d.path(), "kiosk", true).unwrap() {
         Installed::Replaced(aside) => {
             assert_eq!(aside, d.path().join("homma.local.toml.replaced"));
             assert_eq!(std::fs::read_to_string(aside).unwrap(), before);
         },
         other => panic!("{other:?}"),
     }
-    assert_eq!(file(&d), local::project_skeleton("kaski"));
+    assert_eq!(file(&d), local::project_skeleton("kiosk"));
     assert_eq!(
         Local::load(d.path()).unwrap().unwrap().instance.work,
-        "kaski"
+        "kiosk"
     );
 }
 
 #[test]
 fn replace_refuses_to_overwrite_an_earlier_replaced_file() {
     let d = ws();
-    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
-    install(d.path(), "kenno", false).unwrap();
+    store(&d, &[("kiosk", KIOSK), ("knoll", KNOLL)]);
+    install(d.path(), "knoll", false).unwrap();
     std::fs::write(d.path().join("homma.local.toml.replaced"), "older").unwrap();
-    assert!(install(d.path(), "kaski", true).is_err());
+    assert!(install(d.path(), "kiosk", true).is_err());
     assert_eq!(
         std::fs::read_to_string(d.path().join("homma.local.toml.replaced")).unwrap(),
         "older"
     );
-    assert!(file(&d).contains("kenno"));
+    assert!(file(&d).contains("knoll"));
 }
 
 #[test]
 fn install_over_a_link_refuses_until_replace_and_then_leaves_the_target_alone() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    let stored = d.path().join(local::STORE_DIR).join("kaski.toml");
+    store(&d, &[("kiosk", KIOSK)]);
+    let stored = d.path().join(local::STORE_DIR).join("kiosk.toml");
     std::os::unix::fs::symlink(&stored, d.path().join(LOCAL_FILE)).unwrap();
-    assert!(install(d.path(), "kaski", false).is_err());
+    assert!(install(d.path(), "kiosk", false).is_err());
     assert!(
         std::fs::symlink_metadata(d.path().join(LOCAL_FILE))
             .unwrap()
@@ -485,7 +485,7 @@ fn install_over_a_link_refuses_until_replace_and_then_leaves_the_target_alone() 
             .is_symlink()
     );
     assert!(matches!(
-        install(d.path(), "kaski", true).unwrap(),
+        install(d.path(), "kiosk", true).unwrap(),
         Installed::Replaced(_)
     ));
     assert!(
@@ -494,18 +494,18 @@ fn install_over_a_link_refuses_until_replace_and_then_leaves_the_target_alone() 
             .file_type()
             .is_symlink()
     );
-    assert_eq!(std::fs::read_to_string(&stored).unwrap(), KASKI);
+    assert_eq!(std::fs::read_to_string(&stored).unwrap(), KIOSK);
 }
 
 #[test]
 fn install_over_a_file_that_does_not_parse_refuses_without_replace() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
+    store(&d, &[("kiosk", KIOSK)]);
     std::fs::write(d.path().join(LOCAL_FILE), "[instance]\n").unwrap();
-    assert!(install(d.path(), "kaski", false).is_err());
+    assert!(install(d.path(), "kiosk", false).is_err());
     assert_eq!(file(&d), "[instance]\n");
     assert!(matches!(
-        install(d.path(), "kaski", true).unwrap(),
+        install(d.path(), "kiosk", true).unwrap(),
         Installed::Replaced(_)
     ));
 }
@@ -513,16 +513,16 @@ fn install_over_a_file_that_does_not_parse_refuses_without_replace() {
 #[test]
 fn an_unknown_name_is_refused_with_the_names_there_are() {
     let d = ws();
-    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
+    store(&d, &[("kiosk", KIOSK), ("knoll", KNOLL)]);
     let err = install(d.path(), "nope", false).unwrap_err().to_string();
-    assert!(err.contains("kaski, kenno"), "{err}");
+    assert!(err.contains("kiosk, knoll"), "{err}");
     assert!(!d.path().join(LOCAL_FILE).exists());
 }
 
 #[test]
 fn a_name_that_could_leave_the_store_is_refused() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
+    store(&d, &[("kiosk", KIOSK)]);
     std::fs::write(
         d.path().join("outside.toml"),
         "[instance]\nwork = \"../../outside\"\n",
@@ -537,30 +537,30 @@ fn a_name_that_could_leave_the_store_is_refused() {
 #[test]
 fn a_stored_file_whose_work_is_not_its_name_is_refused() {
     let d = ws();
-    store(&d, &[("kenno", KASKI)]);
-    let err = install(d.path(), "kenno", false).unwrap_err().to_string();
-    assert!(err.contains("`kenno`") && err.contains("`kaski`"), "{err}");
+    store(&d, &[("knoll", KIOSK)]);
+    let err = install(d.path(), "knoll", false).unwrap_err().to_string();
+    assert!(err.contains("`knoll`") && err.contains("`kiosk`"), "{err}");
     assert!(!d.path().join(LOCAL_FILE).exists());
 }
 
 #[test]
 fn install_without_a_manifest_refuses() {
     let d = tempfile::tempdir().unwrap();
-    store(&d, &[("kaski", KASKI)]);
-    assert!(install(d.path(), "kaski", false).is_err());
+    store(&d, &[("kiosk", KIOSK)]);
+    assert!(install(d.path(), "kiosk", false).is_err());
     assert!(!d.path().join(LOCAL_FILE).exists());
 }
 
 #[test]
 fn list_names_the_stored_configs_sorted_and_marks_the_installed_one() {
     let d = ws();
-    store(&d, &[("kenno", KENNO), ("kaski", KASKI)]);
+    store(&d, &[("knoll", KNOLL), ("kiosk", KIOSK)]);
     std::fs::write(d.path().join(local::STORE_DIR).join("README.md"), "x").unwrap();
-    install(d.path(), "kenno", false).unwrap();
+    install(d.path(), "knoll", false).unwrap();
     let (entries, installed) = list(d.path()).unwrap().unwrap();
     let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
-    assert_eq!(names, ["kaski", "kenno"]);
-    assert_eq!(installed.as_deref(), Some("kenno"));
+    assert_eq!(names, ["kiosk", "knoll"]);
+    assert_eq!(installed.as_deref(), Some("knoll"));
     assert_eq!(entries[0].title.as_deref(), Some("the colony sim"));
 }
 
@@ -568,7 +568,7 @@ fn list_names_the_stored_configs_sorted_and_marks_the_installed_one() {
 fn list_with_nothing_installed_marks_none_and_without_a_store_is_none() {
     let d = ws();
     assert!(list(d.path()).unwrap().is_none());
-    store(&d, &[("kaski", KASKI)]);
+    store(&d, &[("kiosk", KIOSK)]);
     assert_eq!(list(d.path()).unwrap().unwrap().1, None);
 }
 
@@ -576,9 +576,9 @@ fn list_with_nothing_installed_marks_none_and_without_a_store_is_none() {
 fn list_shows_an_unusable_stored_file_instead_of_hiding_it() {
     let d = ws();
     store(&d, &[
-        ("kaski", KASKI),
+        ("kiosk", KIOSK),
         ("broken", "[instance]\n"),
-        ("kenno", KASKI),
+        ("knoll", KIOSK),
     ]);
     let (entries, _) = list(d.path()).unwrap().unwrap();
     let bad: Vec<_> = entries
@@ -586,19 +586,19 @@ fn list_shows_an_unusable_stored_file_instead_of_hiding_it() {
         .filter(|e| e.error.is_some())
         .map(|e| e.name.as_str())
         .collect();
-    assert_eq!(bad, ["broken", "kenno"]);
+    assert_eq!(bad, ["broken", "knoll"]);
 }
 
 #[test]
 fn list_shows_a_name_that_install_would_refuse_with_the_reason() {
     let d = ws();
     store(&d, &[
-        ("kaski", KASKI),
+        ("kiosk", KIOSK),
         ("a.b", "[instance]\nwork = \"a.b\"\n"),
     ]);
     let (entries, _) = list(d.path()).unwrap().unwrap();
     let by = |n: &str| entries.iter().find(|e| e.name == n).unwrap();
-    assert_eq!(by("kaski").error, None);
+    assert_eq!(by("kiosk").error, None);
     let reason = by("a.b").error.as_deref().expect("listed with its reason");
     assert!(reason.contains("not a stored name"), "{reason}");
     // The control: what `install` says of the same name is what `list` shows.
@@ -611,7 +611,7 @@ fn list_shows_a_name_that_install_would_refuse_with_the_reason() {
 fn list_shows_a_file_whose_name_is_not_utf8_instead_of_skipping_it() {
     use std::os::unix::ffi::OsStrExt;
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
+    store(&d, &[("kiosk", KIOSK)]);
     let odd = std::ffi::OsStr::from_bytes(b"a\xffb.toml");
     std::fs::write(
         d.path().join(local::STORE_DIR).join(odd),
@@ -636,8 +636,8 @@ fn list_shows_a_file_whose_name_is_not_utf8_instead_of_skipping_it() {
 #[test]
 fn a_replace_whose_write_fails_leaves_the_old_file_where_it_was() {
     let d = ws();
-    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
-    install(d.path(), "kenno", false).unwrap();
+    store(&d, &[("kiosk", KIOSK), ("knoll", KNOLL)]);
+    install(d.path(), "knoll", false).unwrap();
     let before = file(&d);
     // A directory where the temporary file goes, so writing it fails.
     std::fs::create_dir(
@@ -645,7 +645,7 @@ fn a_replace_whose_write_fails_leaves_the_old_file_where_it_was() {
             .join(format!("{LOCAL_FILE}.{}.tmp", std::process::id())),
     )
     .unwrap();
-    assert!(install(d.path(), "kaski", true).is_err());
+    assert!(install(d.path(), "kiosk", true).is_err());
     assert_eq!(file(&d), before, "the old file is still the file");
     assert!(
         !d.path().join("homma.local.toml.replaced").exists(),
@@ -653,38 +653,38 @@ fn a_replace_whose_write_fails_leaves_the_old_file_where_it_was() {
     );
 }
 
-const KASKI_CONSOLE: &str =
-    "[instance]\nwork = \"kaski\"\n\n[tools.console]\nchannel = \"kaski\"\ndeploy = \"x\"\n";
+const KIOSK_CONSOLE: &str =
+    "[instance]\nwork = \"kiosk\"\n\n[tools.console]\nchannel = \"kiosk\"\ndeploy = \"x\"\n";
 
 #[test]
 fn install_writes_the_console_form_and_refuses_a_stored_dashboard_beside_it() {
     let d = ws();
-    store(&d, &[("kaski", KASKI_CONSOLE)]);
+    store(&d, &[("kiosk", KIOSK_CONSOLE)]);
     assert_eq!(
-        install(d.path(), "kaski", false).unwrap(),
+        install(d.path(), "kiosk", false).unwrap(),
         Installed::Written
     );
-    assert_eq!(file(&d), local::project_skeleton("kaski"));
+    assert_eq!(file(&d), local::project_skeleton("kiosk"));
     let (parsed, _) = show(d.path()).unwrap().unwrap();
     assert!(parsed.names_console());
 
     // The control: the same store with a dashboard table beside the console is refused,
     // and the clone that holds the good file is left as it was.
-    let both = format!("{KASKI_CONSOLE}\n[tools.dashboard]\nregistry = [\"kaski\"]\n");
-    store(&d, &[("kaski", &both)]);
-    let err = install(d.path(), "kaski", true).unwrap_err().to_string();
+    let both = format!("{KIOSK_CONSOLE}\n[tools.dashboard]\nregistry = [\"kiosk\"]\n");
+    store(&d, &[("kiosk", &both)]);
+    let err = install(d.path(), "kiosk", true).unwrap_err().to_string();
     assert!(
         err.contains("tools.dashboard") && err.contains("console"),
         "{err}"
     );
-    assert_eq!(file(&d), local::project_skeleton("kaski"));
+    assert_eq!(file(&d), local::project_skeleton("kiosk"));
 }
 
 #[test]
 fn a_tool_cannot_record_a_dashboard_into_a_clone_that_names_a_console() {
     let d = ws();
-    store(&d, &[("kaski", KASKI_CONSOLE)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK_CONSOLE)]);
+    install(d.path(), "kiosk", false).unwrap();
     assert!(set(d.path(), "tools.dashboard.published", "abc").is_err());
     assert!(set(d.path(), "tools.console.deployed", "abc").is_ok());
     assert!(!file(&d).contains("dashboard"));
@@ -693,10 +693,10 @@ fn a_tool_cannot_record_a_dashboard_into_a_clone_that_names_a_console() {
 #[test]
 fn install_into_a_clone_keeping_its_dashboard_does_not_add_a_console() {
     let d = ws();
-    let old = "[instance]\nwork = \"kaski\"\n\n[tools.dashboard]\nregistry = [\"kaski\"]\n";
+    let old = "[instance]\nwork = \"kiosk\"\n\n[tools.dashboard]\nregistry = [\"kiosk\"]\n";
     std::fs::write(d.path().join(LOCAL_FILE), old).unwrap();
-    store(&d, &[("kaski", KASKI_CONSOLE)]);
-    let err = install(d.path(), "kaski", false).unwrap_err().to_string();
+    store(&d, &[("kiosk", KIOSK_CONSOLE)]);
+    let err = install(d.path(), "kiosk", false).unwrap_err().to_string();
     assert!(
         err.contains("tools.dashboard") && err.contains("console"),
         "{err}"
@@ -707,54 +707,54 @@ fn install_into_a_clone_keeping_its_dashboard_does_not_add_a_console() {
 #[test]
 fn show_gives_the_merged_document_while_the_text_stays_as_written() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    install(d.path(), "kiosk", false).unwrap();
     let (parsed, text) = show(d.path()).unwrap().unwrap();
-    assert_eq!(text, local::project_skeleton("kaski"));
+    assert_eq!(text, local::project_skeleton("kiosk"));
     assert_eq!(parsed.instance.title.as_deref(), Some("the colony sim"));
-    assert_eq!(parsed.instance.project.as_deref(), Some("kaski"));
+    assert_eq!(parsed.instance.project.as_deref(), Some("kiosk"));
     let doc = serde_json::to_value(&parsed).unwrap();
-    assert_eq!(doc["tools"]["msg"]["as"], "coord");
+    assert_eq!(doc["tools"]["msg"]["as"], "chair");
 }
 
 #[test]
 fn list_marks_the_project_a_file_names_and_the_work_a_copy_is_for() {
     let d = ws();
-    store(&d, &[("kaski", KASKI), ("kenno", KENNO)]);
-    install(d.path(), "kenno", false).unwrap();
-    assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("kenno"));
-    std::fs::write(d.path().join(LOCAL_FILE), KASKI).unwrap();
-    assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("kaski"));
+    store(&d, &[("kiosk", KIOSK), ("knoll", KNOLL)]);
+    install(d.path(), "knoll", false).unwrap();
+    assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("knoll"));
+    std::fs::write(d.path().join(LOCAL_FILE), KIOSK).unwrap();
+    assert_eq!(list(d.path()).unwrap().unwrap().1.as_deref(), Some("kiosk"));
 }
 
 #[test]
 fn set_refuses_what_leaves_an_inheriting_file_unable_to_load() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
-    install(d.path(), "kaski", false).unwrap();
+    store(&d, &[("kiosk", KIOSK)]);
+    install(d.path(), "kiosk", false).unwrap();
     let before = file(&d);
     assert!(set(d.path(), "instance.project", "nope").is_err());
     assert!(set(d.path(), "instance.work", "").is_err());
     assert_eq!(file(&d), before);
     // The controls: a value that still loads is written, and so is another project.
     assert!(set(d.path(), "instance.title", "mine").is_ok());
-    store(&d, &[("kenno", KENNO)]);
-    assert!(set(d.path(), "instance.project", "kenno").is_ok());
+    store(&d, &[("knoll", KNOLL)]);
+    assert!(set(d.path(), "instance.project", "knoll").is_ok());
 }
 
 #[test]
 fn set_can_repair_a_file_whose_project_is_missing() {
     let d = ws();
-    store(&d, &[("kaski", KASKI)]);
+    store(&d, &[("kiosk", KIOSK)]);
     std::fs::write(
         d.path().join(LOCAL_FILE),
         "[instance]\nproject = \"gone\"\n",
     )
     .unwrap();
     assert!(set(d.path(), "tools.msg.as", "x").is_ok());
-    assert!(set(d.path(), "instance.project", "kaski").is_ok());
+    assert!(set(d.path(), "instance.project", "kiosk").is_ok());
     assert_eq!(
         Local::load(d.path()).unwrap().unwrap().instance.work,
-        "kaski"
+        "kiosk"
     );
 }

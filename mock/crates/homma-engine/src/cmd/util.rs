@@ -79,13 +79,13 @@ mod tests {
     #[test]
     fn a_name_outside_the_scope_is_said_to_be_outside_it_and_a_stranger_is_not() {
         let mut cfg = Config::parse("[workspace]\nname = \"w\"\n").unwrap();
-        cfg.scope = homma_core::scope::Scope::named(["kaski"]);
-        let outside = no_such_member(&cfg, "arvo").to_string();
+        cfg.scope = homma_core::scope::Scope::named(["kiosk"]);
+        let outside = no_such_member(&cfg, "acre").to_string();
         assert!(outside.contains("outside this clone's scope"), "{outside}");
         cfg.scope = homma_core::scope::Scope::everything();
-        let stranger = no_such_member(&cfg, "arvo").to_string();
+        let stranger = no_such_member(&cfg, "acre").to_string();
         assert!(
-            stranger.contains("no repository named `arvo`"),
+            stranger.contains("no repository named `acre`"),
             "{stranger}"
         );
     }
@@ -93,16 +93,16 @@ mod tests {
     #[test]
     fn a_relative_path_anchors_at_the_root() {
         assert_eq!(
-            resolve_local_path(Path::new("/srv/ws"), Path::new("notko")),
-            PathBuf::from("/srv/ws/notko")
+            resolve_local_path(Path::new("/srv/ws"), Path::new("notch")),
+            PathBuf::from("/srv/ws/notch")
         );
     }
 
     #[test]
     fn an_absolute_path_passes_through() {
         assert_eq!(
-            resolve_local_path(Path::new("/srv/ws"), Path::new("/elsewhere/notko")),
-            PathBuf::from("/elsewhere/notko")
+            resolve_local_path(Path::new("/srv/ws"), Path::new("/elsewhere/notch")),
+            PathBuf::from("/elsewhere/notch")
         );
     }
 
@@ -112,8 +112,8 @@ mod tests {
         // about `..`, and a containment check walking the un-normalised one
         // read a sibling as nested.
         assert_eq!(
-            resolve_local_path(Path::new("/srv/ws"), Path::new("../out/notko")),
-            PathBuf::from("/srv/out/notko")
+            resolve_local_path(Path::new("/srv/ws"), Path::new("../out/notch")),
+            PathBuf::from("/srv/out/notch")
         );
     }
 }
@@ -123,8 +123,8 @@ mod tests {
 /// A `.` carries no information and every consumer downstream compares
 /// textually: the aggregated wrapper's scope check, the workspace gate's
 /// repo-table lookup, and anything else that joins the value to a root. So
-/// `./arvo` joined to `/ws` gives `/ws/./arvo`, which is not a textual prefix
-/// of `/ws/arvo/src/lib.rs`, and the check that was supposed to fire does not.
+/// `./acre` joined to `/ws` gives `/ws/./acre`, which is not a textual prefix
+/// of `/ws/acre/src/lib.rs`, and the check that was supposed to fire does not.
 ///
 /// Normalising here rather than in the emitted shell is deliberate: the shell
 /// would have to be fixed once per consumer, and each one would drift.
@@ -162,7 +162,7 @@ mod relative_str_tests {
 
     #[test]
     fn a_curdir_component_is_dropped() {
-        assert_eq!(relative_str(Path::new("./arvo")), "arvo");
+        assert_eq!(relative_str(Path::new("./acre")), "acre");
         assert_eq!(relative_str(Path::new("a/./b")), "a/b");
     }
 
@@ -170,7 +170,7 @@ mod relative_str_tests {
     fn a_path_with_nothing_to_drop_is_unchanged() {
         // The control. Without it a helper that rewrote paths generally would
         // satisfy the assertions above.
-        assert_eq!(relative_str(Path::new("arvo")), "arvo");
+        assert_eq!(relative_str(Path::new("acre")), "acre");
         assert_eq!(relative_str(Path::new("a/b/c")), "a/b/c");
     }
 
@@ -186,8 +186,8 @@ mod relative_str_tests {
         // whether to join against the workspace, so losing it silently changes
         // which arm runs.
         assert_eq!(
-            relative_str(Path::new("/elsewhere/arvo")),
-            "/elsewhere/arvo"
+            relative_str(Path::new("/elsewhere/acre")),
+            "/elsewhere/acre"
         );
         assert_eq!(relative_str(Path::new("/./a")), "/a");
     }
@@ -198,7 +198,7 @@ mod relative_str_tests {
         // would resolve a symlink the way the shell prints it rather than the
         // way the kernel walks it, which is a different decision than this
         // helper is entitled to make.
-        assert_eq!(relative_str(Path::new("../arvo")), "../arvo");
+        assert_eq!(relative_str(Path::new("../acre")), "../acre");
     }
 }
 

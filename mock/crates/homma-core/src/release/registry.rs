@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(crates_index_path("a"), "1/a");
         assert_eq!(crates_index_path("ab"), "2/ab");
         assert_eq!(crates_index_path("abc"), "3/a/abc");
-        assert_eq!(crates_index_path("notko"), "no/tk/notko");
+        assert_eq!(crates_index_path("notch"), "no/tc/notch");
         assert_eq!(
             crates_index_path("Include_Proc_Macro"),
             "in/cl/include_proc_macro"
@@ -232,16 +232,16 @@ mod tests {
             "https://index.crates.io/re/nk/renki"
         );
         assert_eq!(
-            url(Registry::Jsr, "@hiisi/loitsu"),
-            "https://jsr.io/@hiisi/loitsu/meta.json"
+            url(Registry::Jsr, "@meadow/lantern"),
+            "https://jsr.io/@meadow/lantern/meta.json"
         );
         assert_eq!(
-            url(Registry::Jsr, "hiisi/loitsu"),
-            "https://jsr.io/@hiisi/loitsu/meta.json"
+            url(Registry::Jsr, "meadow/lantern"),
+            "https://jsr.io/@meadow/lantern/meta.json"
         );
         assert_eq!(
-            url(Registry::Npm, "loitsu"),
-            "https://registry.npmjs.org/loitsu"
+            url(Registry::Npm, "lantern"),
+            "https://registry.npmjs.org/lantern"
         );
     }
 
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn jsr_meta_lists_versions_as_a_map_and_a_yanked_one_is_dropped() {
-        let body = r#"{"scope":"hiisi","name":"x","latest":"0.2.0","versions":{"0.2.0":{},"0.1.0":{},"0.1.5":{"yanked":true}}}"#;
+        let body = r#"{"scope":"meadow","name":"x","latest":"0.2.0","versions":{"0.2.0":{},"0.1.0":{},"0.1.5":{"yanked":true}}}"#;
         let v = parse(Registry::Jsr, body).unwrap();
         assert_eq!(v, vec![Version::new(0, 1, 0), Version::new(0, 2, 0)]);
     }

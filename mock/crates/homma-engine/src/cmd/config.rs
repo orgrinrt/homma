@@ -267,8 +267,8 @@ mod tests {
     #[test]
     fn a_repo_with_nothing_interesting_is_quiet() {
         let quiet = RepoConfigState {
-            repo:       "arvo".into(),
-            local_path: "/ws/arvo".into(),
+            repo:       "acre".into(),
+            local_path: "/ws/acre".into(),
             findings:   Vec::new(),
             blocked:    false,
         };
@@ -307,8 +307,8 @@ mod tests {
         // is not the thing that works. `cli.rs` pins that this parses.
         let report = ConfigReport {
             repos:      vec![RepoConfigState {
-                repo:       "arvo".into(),
-                local_path: "/ws/arvo".into(),
+                repo:       "acre".into(),
+                local_path: "/ws/acre".into(),
                 findings:   vec!["deny.toml is missing, and is required here".into()],
                 blocked:    true,
             }],
@@ -319,7 +319,7 @@ mod tests {
         report.render_human(&mut out).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("homma repo config init"), "{text}");
-        assert!(text.contains("arvo"), "{text}");
+        assert!(text.contains("acre"), "{text}");
         assert!(text.contains("deny.toml"), "{text}");
     }
 
@@ -328,8 +328,8 @@ mod tests {
         // The control on the case above, and the shape nearly every run has.
         let report = ConfigReport {
             repos:      vec![RepoConfigState {
-                repo:       "arvo".into(),
-                local_path: "/ws/arvo".into(),
+                repo:       "acre".into(),
+                local_path: "/ws/acre".into(),
                 findings:   Vec::new(),
                 blocked:    false,
             }],

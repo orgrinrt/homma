@@ -1186,8 +1186,8 @@ mod tests {
 
     #[test]
     fn parse_slug_happy_path() {
-        let (o, n) = ForgeOp::parse_slug("orgrinrt/homma").unwrap();
-        assert_eq!(o, "orgrinrt");
+        let (o, n) = ForgeOp::parse_slug("woodland/homma").unwrap();
+        assert_eq!(o, "woodland");
         assert_eq!(n, "homma");
     }
 
@@ -1232,7 +1232,7 @@ mod tests {
             "gate",
             "--hook",
             "origin",
-            "git@github.com:orgrinrt/notko.git",
+            "git@github.com:woodland/notch.git",
         ])
         .unwrap();
         match cli.command {
@@ -1248,7 +1248,7 @@ mod tests {
                 assert!(hook);
                 assert_eq!(repo.as_deref(), Some("origin"));
                 assert_eq!(git_args, vec![
-                    "git@github.com:orgrinrt/notko.git".to_string()
+                    "git@github.com:woodland/notch.git".to_string()
                 ]);
             },
             other => panic!("{other:?}"),
@@ -1302,7 +1302,7 @@ mod tests {
     #[test]
     fn cli_parses_forge_show() {
         let cli =
-            Cli::try_parse_from(["homma", "forge", "show", "github", "orgrinrt/homma"]).unwrap();
+            Cli::try_parse_from(["homma", "forge", "show", "github", "woodland/homma"]).unwrap();
         match cli.command {
             Command::Forge {
                 op:
@@ -1312,7 +1312,7 @@ mod tests {
                     },
             } => {
                 assert_eq!(forge, "github");
-                assert_eq!(slug, "orgrinrt/homma");
+                assert_eq!(slug, "woodland/homma");
             },
             other => panic!("unexpected command: {other:?}"),
         }
@@ -1339,7 +1339,7 @@ mod tests {
     fn cli_parses_repo_config_check_for_one_repo() {
         // The form the commit gate runs, so it is worth pinning by name.
         let cli =
-            Cli::try_parse_from(["homma", "repo", "config", "check", "--repo", "arvo"]).unwrap();
+            Cli::try_parse_from(["homma", "repo", "config", "check", "--repo", "acre"]).unwrap();
         match cli.command {
             Command::Repo {
                 op:
@@ -1349,7 +1349,7 @@ mod tests {
                                 repo,
                             },
                     },
-            } => assert_eq!(repo.as_deref(), Some("arvo")),
+            } => assert_eq!(repo.as_deref(), Some("acre")),
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -1359,7 +1359,7 @@ mod tests {
         // The form a refusal names as the fix. If this stops parsing, the
         // message tells somebody to run something that does not work.
         let cli =
-            Cli::try_parse_from(["homma", "repo", "config", "init", "--repo", "arvo"]).unwrap();
+            Cli::try_parse_from(["homma", "repo", "config", "init", "--repo", "acre"]).unwrap();
         match cli.command {
             Command::Repo {
                 op:
@@ -1369,7 +1369,7 @@ mod tests {
                                 repo,
                             },
                     },
-            } => assert_eq!(repo.as_deref(), Some("arvo")),
+            } => assert_eq!(repo.as_deref(), Some("acre")),
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -1384,7 +1384,7 @@ mod tests {
 
     #[test]
     fn cli_parses_migrate() {
-        let cli = Cli::try_parse_from(["homma", "migrate", "notko", "--to", "codeberg"]).unwrap();
+        let cli = Cli::try_parse_from(["homma", "migrate", "notch", "--to", "codeberg"]).unwrap();
         match cli.command {
             Command::Migrate {
                 repo,
@@ -1394,7 +1394,7 @@ mod tests {
                 source,
                 dry_run,
             } => {
-                assert_eq!(repo, "notko");
+                assert_eq!(repo, "notch");
                 assert_eq!(to, "codeberg");
                 assert_eq!(to_owner, None);
                 assert!(!to_org);
@@ -1410,11 +1410,11 @@ mod tests {
         let cli = Cli::try_parse_from([
             "homma",
             "migrate",
-            "notko",
+            "notch",
             "--to",
             "codeberg",
             "--to-owner",
-            "hiisi-digital",
+            "meadow-forest",
             "--to-org",
             "--source",
             "github",
@@ -1430,9 +1430,9 @@ mod tests {
                 source,
                 dry_run,
             } => {
-                assert_eq!(repo, "notko");
+                assert_eq!(repo, "notch");
                 assert_eq!(to, "codeberg");
-                assert_eq!(to_owner.as_deref(), Some("hiisi-digital"));
+                assert_eq!(to_owner.as_deref(), Some("meadow-forest"));
                 assert!(to_org);
                 assert_eq!(source.as_deref(), Some("github"));
                 assert!(dry_run);
@@ -1444,7 +1444,7 @@ mod tests {
     #[test]
     fn cli_parses_archive_with_overrides() {
         let cli = Cli::try_parse_from([
-            "homma", "archive", "notko", "--from", "github", "--owner", "orgrinrt",
+            "homma", "archive", "notch", "--from", "github", "--owner", "woodland",
         ])
         .unwrap();
         match cli.command {
@@ -1453,9 +1453,9 @@ mod tests {
                 from,
                 owner,
             } => {
-                assert_eq!(repo, "notko");
+                assert_eq!(repo, "notch");
                 assert_eq!(from.as_deref(), Some("github"));
-                assert_eq!(owner.as_deref(), Some("orgrinrt"));
+                assert_eq!(owner.as_deref(), Some("woodland"));
             },
             other => panic!("unexpected command: {other:?}"),
         }

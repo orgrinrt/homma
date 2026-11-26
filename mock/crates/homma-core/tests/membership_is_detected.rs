@@ -67,13 +67,13 @@ fn a_clone_is_a_member_and_its_remote_says_where_it_lives() {
     let root = tempfile::tempdir().unwrap();
     clone_at(
         root.path(),
-        "notko",
-        Some("https://github.com/orgrinrt/notko.git"),
+        "notch",
+        Some("https://github.com/woodland/notch.git"),
     );
     clone_at(
         root.path(),
-        "viola",
-        Some("git@codeberg.org:hiisi/viola.git"),
+        "vireo",
+        Some("git@codeberg.org:meadow/vireo.git"),
     );
 
     let mut cfg = config();
@@ -83,14 +83,14 @@ fn a_clone_is_a_member_and_its_remote_says_where_it_lives() {
         &homma_core::scope::Scope::everything(),
     );
 
-    let notko = cfg.repo("notko").expect("a clone is a member");
-    assert_eq!(notko.forge.as_deref(), Some("github"));
-    assert_eq!(notko.owner.as_deref(), Some("orgrinrt"));
-    assert_eq!(notko.local_path.as_os_str(), "notko");
+    let notch = cfg.repo("notch").expect("a clone is a member");
+    assert_eq!(notch.forge.as_deref(), Some("github"));
+    assert_eq!(notch.owner.as_deref(), Some("woodland"));
+    assert_eq!(notch.local_path.as_os_str(), "notch");
 
-    let viola = cfg.repo("viola").expect("the ssh spelling reads too");
-    assert_eq!(viola.forge.as_deref(), Some("codeberg"));
-    assert_eq!(viola.owner.as_deref(), Some("hiisi"));
+    let vireo = cfg.repo("vireo").expect("the ssh spelling reads too");
+    assert_eq!(vireo.forge.as_deref(), Some("codeberg"));
+    assert_eq!(vireo.owner.as_deref(), Some("meadow"));
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn a_directory_that_is_not_a_repository_is_not_a_member() {
     clone_at(
         root.path(),
         "real",
-        Some("https://github.com/orgrinrt/real.git"),
+        Some("https://github.com/woodland/real.git"),
     );
     std::fs::create_dir_all(root.path().join("notes")).unwrap();
     std::fs::create_dir_all(root.path().join("scripts/deep")).unwrap();
@@ -161,10 +161,10 @@ fn a_worktree_is_not_a_second_member() {
     let root = tempfile::tempdir().unwrap();
     clone_at(
         root.path(),
-        "notko",
-        Some("https://github.com/orgrinrt/notko.git"),
+        "notch",
+        Some("https://github.com/woodland/notch.git"),
     );
-    let clone = root.path().join("notko");
+    let clone = root.path().join("notch");
     let run = |args: &[&str]| {
         Command::new("git")
             .arg("-C")
@@ -185,13 +185,13 @@ fn a_worktree_is_not_a_second_member() {
         "-qm",
         "one",
     ]);
-    let out = run(&["worktree", "add", "-q", "../notko-seat", "-b", "seat"]);
+    let out = run(&["worktree", "add", "-q", "../notch-seat", "-b", "seat"]);
     assert!(
         out.status.success(),
         "the fixture worktree was not created: {out:?}"
     );
     assert!(
-        root.path().join("notko-seat/.git").is_file(),
+        root.path().join("notch-seat/.git").is_file(),
         "the fixture is wrong: a worktree's .git should be a file"
     );
 
@@ -203,7 +203,7 @@ fn a_worktree_is_not_a_second_member() {
     );
 
     let names: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
-    assert_eq!(names, vec!["notko"], "the worktree was counted as a member");
+    assert_eq!(names, vec!["notch"], "the worktree was counted as a member");
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn a_repository_inside_a_member_is_that_member_s_business() {
     clone_at(
         root.path(),
         "outer",
-        Some("https://github.com/orgrinrt/outer.git"),
+        Some("https://github.com/woodland/outer.git"),
     );
     clone_at(
         &root.path().join("outer"),
@@ -327,7 +327,7 @@ fn the_root_walked_is_the_workspace_root_and_not_the_manifest_s_own_directory() 
     clone_at(
         &root,
         "under-the-root",
-        Some("https://github.com/orgrinrt/x.git"),
+        Some("https://github.com/woodland/x.git"),
     );
     clone_at(dir.path(), "beside-the-manifest", None);
 

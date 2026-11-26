@@ -93,12 +93,12 @@ fn a_word_that_is_no_verb_goes_to_the_command_named_like_the_tool_with_every_wor
     let c = planned(
         &ws,
         "msg",
-        &["kaski", "board", "--states"],
+        &["kiosk", "board", "--states"],
         Asked::AsSubcommand,
     )
     .unwrap();
     assert!(Path::new(c.get_program()).ends_with("tools/msg/msg"));
-    assert_eq!(args(&c), ["kaski", "board", "--states"]);
+    assert_eq!(args(&c), ["kiosk", "board", "--states"]);
     let none = planned(&ws, "msg", &[], Asked::AsSubcommand).unwrap();
     assert!(
         none.get_args().next().is_none()

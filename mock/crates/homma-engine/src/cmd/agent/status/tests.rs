@@ -168,7 +168,7 @@ fn a_repo_with_no_agent_templates_of_its_own_is_not_partial() {
 
 #[test]
 fn the_mock_dir_is_the_one_mockspace_toml_declares() {
-    // `mock` is only the default: sodapop declares `linux`, and a probe
+    // `mock` is only the default: shingle declares `linux`, and a probe
     // for a literal `mock/` reports a fully adopted repo as having
     // none.
     let dir = tempfile::tempdir().unwrap();
@@ -209,7 +209,7 @@ fn a_repo_with_a_mockspace_toml_and_nothing_rendered_is_partial() {
 
 #[test]
 fn a_mockspace_toml_under_the_mock_dir_counts_as_adopting() {
-    // ikiuni keeps its config at `mock/mockspace.toml`, which the
+    // inlets keeps its config at `mock/mockspace.toml`, which the
     // commit gate already reads. A probe that looks only at the root
     // reports it as having no mockspace, and says nothing of what it
     // lacks.
@@ -224,7 +224,7 @@ fn a_mockspace_toml_under_the_mock_dir_counts_as_adopting() {
 
 #[test]
 fn a_repo_with_a_cargo_manifest_and_no_mockspace_is_not_configured() {
-    // notko, git-shook and the bash libraries are built without
+    // notch, git-shook and the bash libraries are built without
     // mockspace on purpose, so the absence is a fact about the repo and
     // not a gap in it.
     let dir = tempfile::tempdir().unwrap();

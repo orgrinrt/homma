@@ -47,8 +47,8 @@ fn plant_script(ws: &Path, rel: &str, marker: &Path) {
 
 fn repos() -> Vec<(String, String)> {
     vec![
-        ("arvo".to_string(), "arvo".to_string()),
-        ("kolli".to_string(), "./kolli".to_string()),
+        ("acre".to_string(), "acre".to_string()),
+        ("krill".to_string(), "./krill".to_string()),
     ]
 }
 
@@ -82,11 +82,11 @@ fn a_row_naming_one_repository_inside_and_one_outside_the_scope_keeps_the_inside
     let d = install_declared(
         &test_root(ws.path()),
         &table(&[("PreToolUse", "Bash", "scripts/guard", &[
-            "arvo",
+            "acre",
             "elsewhere",
         ])]),
         &repos(),
-        &Scope::named(["arvo"]),
+        &Scope::named(["acre"]),
     )
     .unwrap();
     assert!(d.problems.is_empty(), "{:?}", d.problems);
@@ -100,7 +100,7 @@ fn a_row_naming_one_repository_inside_and_one_outside_the_scope_keeps_the_inside
         "_declared--PreToolUse--scripts_guard.sh",
     ))
     .unwrap();
-    assert!(body.contains("arvo"), "{body}");
+    assert!(body.contains("acre"), "{body}");
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn a_row_whose_every_repository_is_outside_the_scope_is_dropped_and_not_widened(
             "other",
         ])]),
         &repos(),
-        &Scope::named(["arvo"]),
+        &Scope::named(["acre"]),
     )
     .unwrap();
     assert!(
@@ -191,7 +191,7 @@ fn a_row_narrowed_to_repositories_runs_only_for_calls_landing_in_them() {
     plant_script(ws.path(), "scripts/guard", &marker);
     install_declared(
         &test_root(ws.path()),
-        &table(&[("PreToolUse", "Bash", "scripts/guard", &["kolli"])]),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &["krill"])]),
         &repos(),
         &Scope::everything(),
     )
@@ -199,10 +199,10 @@ fn a_row_narrowed_to_repositories_runs_only_for_calls_landing_in_them() {
     let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
 
     // A shell call whose session is inside the repository, which is the case
-    // the row exists for: the manifest spells the path `./kolli`.
+    // the row exists for: the manifest spells the path `./krill`.
     let shell = format!(
         r#"{{"cwd":"{}","tool_input":{{"command":"cargo test"}}}}"#,
-        ws.path().join("kolli/src").display()
+        ws.path().join("krill/src").display()
     );
     run_with_payload(&w, &shell, &[]);
     assert!(
@@ -211,7 +211,7 @@ fn a_row_narrowed_to_repositories_runs_only_for_calls_landing_in_them() {
     );
 
     fs::remove_file(&marker).unwrap();
-    run_with_payload(&w, &writing(&ws.path().join("arvo/x.rs")), &[]);
+    run_with_payload(&w, &writing(&ws.path().join("acre/x.rs")), &[]);
     assert!(!marker.exists(), "a call in another repository ran the row");
 }
 
@@ -222,7 +222,7 @@ fn a_row_sees_a_shell_call_at_the_root_that_names_its_repository_by_path() {
     plant_script(ws.path(), "scripts/guard", &marker);
     install_declared(
         &test_root(ws.path()),
-        &table(&[("PreToolUse", "Bash", "scripts/guard", &["kolli"])]),
+        &table(&[("PreToolUse", "Bash", "scripts/guard", &["krill"])]),
         &repos(),
         &Scope::everything(),
     )
@@ -238,11 +238,11 @@ fn a_row_sees_a_shell_call_at_the_root_that_names_its_repository_by_path() {
         run_with_payload(&w, &payload, &[]);
         marker.exists()
     };
-    assert!(at_root("cargo bench --manifest-path kolli/mock/Cargo.toml"));
-    assert!(at_root("git -C kolli commit -m x"));
+    assert!(at_root("cargo bench --manifest-path krill/mock/Cargo.toml"));
+    assert!(at_root("git -C krill commit -m x"));
     // The control: the same calls naming the other repository.
-    assert!(!at_root("cargo bench --manifest-path arvo/mock/Cargo.toml"));
-    assert!(!at_root("git -C arvo commit -m x"));
+    assert!(!at_root("cargo bench --manifest-path acre/mock/Cargo.toml"));
+    assert!(!at_root("git -C acre commit -m x"));
 }
 
 #[test]
@@ -285,7 +285,7 @@ fn two_rows_running_one_script_under_one_event_get_a_wrapper_each() {
         &test_root(ws.path()),
         &table(&[
             ("PreToolUse", "Bash", "scripts/guard", &[]),
-            ("PreToolUse", "Edit", "scripts/guard", &["arvo"]),
+            ("PreToolUse", "Edit", "scripts/guard", &["acre"]),
         ]),
         &repos(),
         &Scope::everything(),
@@ -418,7 +418,7 @@ fn a_registration_naming_a_declared_file_homma_did_not_write_is_kept() {
 
 #[test]
 fn a_declared_wrapper_runs_its_hook_through_the_dedup_tool_when_the_workspace_has_it() {
-    for repos_for_row in [&[][..], &["arvo"][..]] {
+    for repos_for_row in [&[][..], &["acre"][..]] {
         let ws = tempfile::tempdir().unwrap();
         let marker = ws.path().join("fired");
         let seen = ws.path().join("dedup-seen");
@@ -431,7 +431,7 @@ fn a_declared_wrapper_runs_its_hook_through_the_dedup_tool_when_the_workspace_ha
         )
         .unwrap();
         let w = wrapper(ws.path(), "_declared--PreToolUse--scripts_guard.sh");
-        let call = writing(&ws.path().join("arvo/x.rs"));
+        let call = writing(&ws.path().join("acre/x.rs"));
 
         // The control: without the tool the hook runs and nothing went through it.
         run_with_payload(&w, &call, &["--x"]);

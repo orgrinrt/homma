@@ -24,7 +24,7 @@ fn cfg() -> ForgeConfig {
 fn create_path_user_owner() {
     let c = GitHubClient::anonymous("https://api.github.com");
     assert_eq!(
-        c.create_path("orgrinrt", OwnerKind::User),
+        c.create_path("woodland", OwnerKind::User),
         "https://api.github.com/user/repos"
     );
 }
@@ -33,8 +33,8 @@ fn create_path_user_owner() {
 fn create_path_org_owner() {
     let c = GitHubClient::anonymous("https://api.github.com");
     assert_eq!(
-        c.create_path("hiisi-digital", OwnerKind::Org),
-        "https://api.github.com/orgs/hiisi-digital/repos"
+        c.create_path("meadow-forest", OwnerKind::Org),
+        "https://api.github.com/orgs/meadow-forest/repos"
     );
 }
 
@@ -42,8 +42,8 @@ fn create_path_org_owner() {
 fn repo_path_composes_api_url() {
     let c = GitHubClient::anonymous("https://api.github.com");
     assert_eq!(
-        c.repo_path("orgrinrt", "homma"),
-        "https://api.github.com/repos/orgrinrt/homma"
+        c.repo_path("woodland", "homma"),
+        "https://api.github.com/repos/woodland/homma"
     );
 }
 
@@ -82,7 +82,7 @@ fn auth_header_absent_when_anonymous() {
 
 #[test]
 fn map_status_404_is_repo_not_found() {
-    let e = map_status(404, "orgrinrt", "homma", "Not Found".into());
+    let e = map_status(404, "woodland", "homma", "Not Found".into());
     assert!(matches!(e, ForgeError::RepoNotFound { .. }));
 }
 
@@ -172,18 +172,18 @@ fn github_repo_into_metadata_public() {
     let wire = GitHubRepo {
         name:           "homma".into(),
         owner:          GitHubOwner {
-            login: "orgrinrt".into(),
+            login: "woodland".into(),
         },
         description:    Some("workspace tooling".into()),
         default_branch: "dev".into(),
         private:        false,
         visibility:     Some("public".into()),
         archived:       false,
-        clone_url:      "https://github.com/orgrinrt/homma.git".into(),
+        clone_url:      "https://github.com/woodland/homma.git".into(),
         topics:         vec!["rust".into()],
     };
     let m = wire.into_metadata();
-    assert_eq!(m.owner, "orgrinrt");
+    assert_eq!(m.owner, "woodland");
     assert_eq!(m.name, "homma");
     assert_eq!(m.default_branch, "dev");
     assert_eq!(m.visibility, Visibility::Public);
@@ -358,29 +358,29 @@ fn github_patch_body_can_carry_default_branch_only() {
 
 #[test]
 fn github_repo_deserializes_realistic_payload() {
-    // Trimmed shape of a real GET /repos/orgrinrt/homma response. Sanity
+    // Trimmed shape of a real GET /repos/woodland/homma response. Sanity
     // check that serde tolerates the long tail of fields we don't use.
     let payload = r#"{
         "id": 123456789,
         "node_id": "R_kgABCDEF",
         "name": "homma",
-        "full_name": "orgrinrt/homma",
+        "full_name": "woodland/homma",
         "owner": {
-            "login": "orgrinrt",
+            "login": "woodland",
             "id": 1234,
             "node_id": "MDQ6VXNlcjEyMzQ=",
             "type": "User"
         },
         "private": false,
-        "html_url": "https://github.com/orgrinrt/homma",
+        "html_url": "https://github.com/woodland/homma",
         "description": "workspace tooling",
         "fork": false,
         "default_branch": "dev",
         "visibility": "public",
         "archived": false,
         "disabled": false,
-        "clone_url": "https://github.com/orgrinrt/homma.git",
-        "ssh_url": "git@github.com:orgrinrt/homma.git",
+        "clone_url": "https://github.com/woodland/homma.git",
+        "ssh_url": "git@github.com:woodland/homma.git",
         "topics": ["rust", "workspace"],
         "stargazers_count": 0,
         "watchers_count": 0,

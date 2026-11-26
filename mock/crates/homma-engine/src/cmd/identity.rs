@@ -196,20 +196,20 @@ mod tests {
     use super::*;
 
     const CATALOGUE: &str = r#"
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
-git_email = "op@example.invalid"
+handle = "oz"
+git_email = "oz@example.invalid"
 
-[org.aku]
+[org.abe]
 role = "hand"
-handle = "aku"
-git_email = "aarne@example.invalid"
+handle = "abe"
+git_email = "arlen@example.invalid"
 
-[org.ikku]
+[org.inge]
 role = "journeyman"
-handle = "ikku"
-git_email = "Ikku@Example.invalid"
+handle = "inge"
+git_email = "Inge@Example.invalid"
 "#;
 
     #[test]
@@ -217,7 +217,7 @@ git_email = "Ikku@Example.invalid"
         let ws = Workspace::parse(CATALOGUE).unwrap();
         assert_eq!(
             index_text(&ws),
-            "aarne@example.invalid\taku\thand\nikku@example.invalid\tikku\tjourneyman\n"
+            "arlen@example.invalid\tabe\thand\ninge@example.invalid\tinge\tjourneyman\n"
         );
     }
 
@@ -225,10 +225,10 @@ git_email = "Ikku@Example.invalid"
     fn a_match_strips_the_plus_tag_and_a_person_is_no_match() {
         let ws = Workspace::parse(CATALOGUE).unwrap();
         assert_eq!(
-            match_line(&ws, "aarne+review@example.invalid").as_deref(),
-            Some("aku\thand")
+            match_line(&ws, "arlen+review@example.invalid").as_deref(),
+            Some("abe\thand")
         );
-        assert_eq!(match_line(&ws, "op@example.invalid"), None);
+        assert_eq!(match_line(&ws, "oz@example.invalid"), None);
         assert_eq!(match_line(&ws, "stranger@example.invalid"), None);
     }
 
@@ -243,9 +243,9 @@ git_email = "Ikku@Example.invalid"
 
     #[test]
     fn a_launch_names_the_agent_and_runs_in_the_workspace() {
-        let cmd = launch_command(Path::new("/ws"), "coord", &["--resume".to_string()]);
+        let cmd = launch_command(Path::new("/ws"), "chair", &["--resume".to_string()]);
         let args: Vec<&OsStr> = cmd.get_args().collect();
-        assert_eq!(args, ["--agent", "coord", "--resume"]);
+        assert_eq!(args, ["--agent", "chair", "--resume"]);
         assert_eq!(cmd.get_current_dir(), Some(Path::new("/ws")));
     }
 }

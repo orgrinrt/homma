@@ -141,7 +141,7 @@ pub mod status {
     }
 
     /// Where a repo's `mockspace.toml` is: at the root, or under `mock/`,
-    /// which is where ikiuni keeps it and where the commit gate
+    /// which is where inlets keeps it and where the commit gate
     /// looks as well. Only those two places are looked in: a toml under any
     /// other directory is missed, and the root one wins where both exist.
     pub(super) fn mockspace_toml_path(local: &Path) -> Option<std::path::PathBuf> {
@@ -153,7 +153,7 @@ pub mod status {
 
     /// The directory a repo's `mockspace.toml` names as `mock_dir`, `mock`
     /// when the file or the key is absent. Only the default is a name worth
-    /// hard-coding: sodapop declares `linux`.
+    /// hard-coding: shingle declares `linux`.
     fn declared_mock_dir(local: &Path) -> String {
         read_mockspace_toml(local)
             .and_then(|t| {

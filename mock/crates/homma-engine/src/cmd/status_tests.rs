@@ -88,15 +88,15 @@ fn with_local(local: &str) -> StatusReport {
 #[test]
 fn a_scoped_name_with_no_clone_is_reported_as_not_cloned() {
     let mut cfg = Config::parse("[workspace]\nname = \"w\"\n").expect("a manifest parses");
-    cfg.scope = homma_core::scope::Scope::named(["kaski", "letkajenkka"]);
-    cfg.repos.insert("kaski".into(), homma_core::RepoConfig {
+    cfg.scope = homma_core::scope::Scope::named(["kiosk", "lanternfish"]);
+    cfg.repos.insert("kiosk".into(), homma_core::RepoConfig {
         forge:      None,
         owner:      None,
-        local_path: "kaski".into(),
+        local_path: "kiosk".into(),
     });
     let r = build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new());
-    assert_eq!(r.not_cloned, ["letkajenkka"]);
-    assert!(rendered(&r).contains("in scope and not cloned: letkajenkka"));
+    assert_eq!(r.not_cloned, ["lanternfish"]);
+    assert!(rendered(&r).contains("in scope and not cloned: lanternfish"));
 }
 
 #[test]
@@ -152,15 +152,15 @@ fn a_clone_without_a_local_file_says_nothing_about_what_it_is_for() {
 
 #[test]
 fn a_clone_with_a_local_file_says_what_it_is_for() {
-    let r = with_local("[instance]\nwork = \"kenno\"\n");
+    let r = with_local("[instance]\nwork = \"knoll\"\n");
     assert!(
-        rendered(&r).contains("  this clone is for kenno\n"),
+        rendered(&r).contains("  this clone is for knoll\n"),
         "{}",
         rendered(&r)
     );
-    let r = with_local("[instance]\nwork = \"kenno\"\ntitle = \"the tile machine\"\n");
+    let r = with_local("[instance]\nwork = \"knoll\"\ntitle = \"the tile machine\"\n");
     assert!(
-        rendered(&r).contains("  this clone is for kenno (the tile machine)\n"),
+        rendered(&r).contains("  this clone is for knoll (the tile machine)\n"),
         "{}",
         rendered(&r)
     );
@@ -348,11 +348,11 @@ fn a_healthy_workspace_says_nothing_about_any_population() {
     // The whole default. Thirty healthy members must not produce thirty
     // blocks, or nobody reads the one line that matters.
     let text = rendered(&with(
-        vec![agent_state("arvo", AgentState::Configured, true)],
+        vec![agent_state("acre", AgentState::Configured, true)],
         ConfigReport {
             repos:      vec![RepoConfigState {
-                repo:       "arvo".into(),
-                local_path: "/ws/arvo".into(),
+                repo:       "acre".into(),
+                local_path: "/ws/acre".into(),
                 findings:   Vec::new(),
                 blocked:    false,
             }],
@@ -360,7 +360,7 @@ fn a_healthy_workspace_says_nothing_about_any_population() {
             blocked:    false,
         },
         vec![WorktreeLine {
-            repo:    "arvo".into(),
+            repo:    "acre".into(),
             branch:  Some("dev".into()),
             clean:   true,
             changes: 0,
@@ -377,11 +377,11 @@ fn the_same_healthy_workspace_prints_every_population_under_full() {
     // The control on the case above: without it, the silence there could be
     // a renderer that never prints these at all.
     let text = rendered_full(&with(
-        vec![agent_state("arvo", AgentState::Configured, true)],
+        vec![agent_state("acre", AgentState::Configured, true)],
         ConfigReport {
             repos:      vec![RepoConfigState {
-                repo:       "arvo".into(),
-                local_path: "/ws/arvo".into(),
+                repo:       "acre".into(),
+                local_path: "/ws/acre".into(),
                 findings:   Vec::new(),
                 blocked:    false,
             }],
@@ -389,7 +389,7 @@ fn the_same_healthy_workspace_prints_every_population_under_full() {
             blocked:    false,
         },
         vec![WorktreeLine {
-            repo:    "arvo".into(),
+            repo:    "acre".into(),
             branch:  Some("dev".into()),
             clean:   true,
             changes: 0,
@@ -404,7 +404,7 @@ fn the_same_healthy_workspace_prints_every_population_under_full() {
 
 #[test]
 fn a_repo_with_no_mockspace_is_not_reported_in_the_summary() {
-    // notko, git-shook and the bash libraries have no mockspace on purpose.
+    // notch, git-shook and the bash libraries have no mockspace on purpose.
     // Listing them as missing four directories every session is a line
     // nobody can act on, which is what trains a reader past the lines that
     // can be acted on.
@@ -433,12 +433,12 @@ fn a_repo_with_no_mockspace_is_named_as_that_under_full() {
 
 #[test]
 fn a_missing_surface_names_the_command_that_renders_it_and_the_declared_mock_dir() {
-    let mut a = agent_state("sodapop", AgentState::Partial, true);
+    let mut a = agent_state("shingle", AgentState::Partial, true);
     a.surfaces.mock_dir_name = "linux".into();
     a.surfaces.mock_dir = false;
     a.surfaces.claude_dir = false;
     let text = rendered(&with(vec![a], empty_configs(), Vec::new()));
-    assert!(text.contains("sodapop missing linux/, .claude/"), "{text}");
+    assert!(text.contains("shingle missing linux/, .claude/"), "{text}");
     assert!(!text.contains("mock/agent"), "{text}");
     assert!(!text.contains("cargo-mock-alias"), "{text}");
     assert!(text.contains("homma agent regen"), "{text}");
@@ -449,12 +449,12 @@ fn a_repo_whose_hooks_are_not_wired_shows_up_without_full() {
     // The state that went unreported entirely. It has to reach the default
     // output or the fold has bought nothing.
     let text = rendered(&with(
-        vec![agent_state("kamu", AgentState::Partial, false)],
+        vec![agent_state("kelp", AgentState::Partial, false)],
         empty_configs(),
         Vec::new(),
     ));
     assert!(text.contains("agent surfaces:"), "{text}");
-    assert!(text.contains("kamu missing git-hooks"), "{text}");
+    assert!(text.contains("kelp missing git-hooks"), "{text}");
     assert!(text.contains("run `homma agent regen`"), "{text}");
 }
 
@@ -464,12 +464,12 @@ fn a_repo_not_on_disk_is_not_told_to_regenerate() {
     // would send somebody to a command that does nothing for that repo,
     // and the surfaces probed in a path that is not there say nothing.
     let text = rendered(&with(
-        vec![agent_state("kamu", AgentState::Missing, false)],
+        vec![agent_state("kelp", AgentState::Missing, false)],
         empty_configs(),
         Vec::new(),
     ));
-    assert!(text.contains("kamu not on disk"), "{text}");
-    assert!(!text.contains("kamu missing"), "{text}");
+    assert!(text.contains("kelp not on disk"), "{text}");
+    assert!(!text.contains("kelp missing"), "{text}");
     assert!(!text.contains("homma agent regen"), "{text}");
 }
 
@@ -479,8 +479,8 @@ fn a_missing_config_shows_up_without_full_and_names_the_fix() {
         Vec::new(),
         ConfigReport {
             repos:      vec![RepoConfigState {
-                repo:       "tassu".into(),
-                local_path: "/ws/tassu".into(),
+                repo:       "thorn".into(),
+                local_path: "/ws/thorn".into(),
                 findings:   vec!["deny.toml is missing, and is required here".into()],
                 blocked:    true,
             }],
@@ -489,7 +489,7 @@ fn a_missing_config_shows_up_without_full_and_names_the_fix() {
         },
         Vec::new(),
     ));
-    assert!(text.contains("tassu"), "{text}");
+    assert!(text.contains("thorn"), "{text}");
     assert!(text.contains("deny.toml is missing"), "{text}");
     assert!(text.contains("homma repo config init"), "{text}");
 }
@@ -497,23 +497,23 @@ fn a_missing_config_shows_up_without_full_and_names_the_fix() {
 #[test]
 fn a_dirty_tree_shows_up_without_full_and_a_clean_one_does_not() {
     let dirty = WorktreeLine {
-        repo:    "arvo".into(),
+        repo:    "acre".into(),
         branch:  Some("dev".into()),
         clean:   false,
         changes: 3,
         unread:  None,
     };
     let clean = WorktreeLine {
-        repo:    "notko".into(),
+        repo:    "notch".into(),
         branch:  Some("dev".into()),
         clean:   true,
         changes: 0,
         unread:  None,
     };
     let text = rendered(&with(Vec::new(), empty_configs(), vec![dirty, clean]));
-    assert!(text.contains("arvo 3 changes on dev"), "{text}");
+    assert!(text.contains("acre 3 changes on dev"), "{text}");
     assert!(
-        !text.contains("notko"),
+        !text.contains("notch"),
         "a clean tree reached the summary: {text}"
     );
 }
@@ -523,13 +523,13 @@ fn a_tree_that_could_not_be_read_is_reported_rather_than_passed_over() {
     // A member the manifest declares and nobody has cloned. Silence would
     // read as a clean tree, which is the one thing it is not.
     let text = rendered(&with(Vec::new(), empty_configs(), vec![WorktreeLine {
-        repo:    "kolli".into(),
+        repo:    "krill".into(),
         branch:  None,
         clean:   true,
         changes: 0,
-        unread:  Some("no repository at /ws/kolli".into()),
+        unread:  Some("no repository at /ws/krill".into()),
     }]));
-    assert!(text.contains("kolli not read"), "{text}");
+    assert!(text.contains("krill not read"), "{text}");
 }
 
 #[test]
@@ -540,20 +540,20 @@ fn json_is_never_summarised() {
     // healthy entries dropped has no way to tell.
     let r = with(
         vec![
-            agent_state("arvo", AgentState::Configured, true),
-            agent_state("kamu", AgentState::Partial, false),
+            agent_state("acre", AgentState::Configured, true),
+            agent_state("kelp", AgentState::Partial, false),
         ],
         ConfigReport {
             repos:      vec![
                 RepoConfigState {
-                    repo:       "arvo".into(),
-                    local_path: "/ws/arvo".into(),
+                    repo:       "acre".into(),
+                    local_path: "/ws/acre".into(),
                     findings:   Vec::new(),
                     blocked:    false,
                 },
                 RepoConfigState {
-                    repo:       "tassu".into(),
-                    local_path: "/ws/tassu".into(),
+                    repo:       "thorn".into(),
+                    local_path: "/ws/thorn".into(),
                     findings:   vec!["deny.toml is missing, and is required here".into()],
                     blocked:    true,
                 },
@@ -563,14 +563,14 @@ fn json_is_never_summarised() {
         },
         vec![
             WorktreeLine {
-                repo:    "arvo".into(),
+                repo:    "acre".into(),
                 branch:  Some("dev".into()),
                 clean:   true,
                 changes: 0,
                 unread:  None,
             },
             WorktreeLine {
-                repo:    "notko".into(),
+                repo:    "notch".into(),
                 branch:  Some("dev".into()),
                 clean:   false,
                 changes: 2,
@@ -580,7 +580,7 @@ fn json_is_never_summarised() {
     );
     // The human default drops the healthy ones, which is the contrast.
     let human = rendered(&r);
-    assert!(!human.contains("arvo ok"), "{human}");
+    assert!(!human.contains("acre ok"), "{human}");
 
     let doc = serde_json::to_value(&r).expect("the report serialises");
     assert_eq!(doc["agent"].as_array().unwrap().len(), 2, "{doc}");
@@ -591,8 +591,8 @@ fn json_is_never_summarised() {
     );
     assert_eq!(doc["worktrees"].as_array().unwrap().len(), 2, "{doc}");
     // And the healthy ones are the members that must still be there.
-    assert_eq!(doc["configs"]["repos"][0]["repo"], "arvo");
-    assert_eq!(doc["worktrees"][0]["repo"], "arvo");
+    assert_eq!(doc["configs"]["repos"][0]["repo"], "acre");
+    assert_eq!(doc["worktrees"][0]["repo"], "acre");
 }
 
 #[test]

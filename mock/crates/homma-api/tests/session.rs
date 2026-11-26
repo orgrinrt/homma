@@ -37,7 +37,7 @@ fn no_role_file_is_no_role() {
 
 #[test]
 fn a_role_file_that_holds_anything_else_is_refused_by_name() {
-    for text in ["", "\n", "helpr", "Coordinator", "coordinator helper", "kaski"] {
+    for text in ["", "\n", "helpr", "Coordinator", "coordinator helper", "kiosk"] {
         let err = Session::from_parts(Some(text), None).unwrap_err();
         assert_eq!(err.got(), text.trim(), "{text:?}");
         assert!(
