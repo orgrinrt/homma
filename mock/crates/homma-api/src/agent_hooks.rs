@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Component, Path};
 
+use crate::agent_nudges::Nudges;
+
 /// The events the agent host runs a hook for, by the names it gives them. A
 /// table naming anything else is refused when it loads.
 pub const AGENT_EVENTS: &[&str] = &[
@@ -187,12 +189,15 @@ impl<'de> serde::Deserialize<'de> for AgentHooks {
     }
 }
 
-/// `[agent]` in `homma.toml`, which holds the hooks table and nothing else.
+/// `[agent]` in `homma.toml`, which holds the hooks table and the nudges, and
+/// nothing else.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentTable {
     #[serde(default)]
-    pub hooks: AgentHooks,
+    pub hooks:  AgentHooks,
+    #[serde(default, skip_serializing_if = "Nudges::is_empty")]
+    pub nudges: Nudges,
 }
 
 /// Why an `[agent.hooks]` table, or one row of it, is refused.

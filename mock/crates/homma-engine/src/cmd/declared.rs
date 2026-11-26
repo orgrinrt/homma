@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use anyhow::{Context, Result, anyhow};
-use homma_api::{AgentHooks, Root};
+use homma_api::{AgentTable, Root};
 
 use crate::cmd::aggregate::{self, HookEntry, LANDS_IN_SH, MANAGED_MARK, sh_single_quote_escape};
 
@@ -25,9 +25,14 @@ use crate::cmd::aggregate::{self, HookEntry, LANDS_IN_SH, MANAGED_MARK, sh_singl
 /// and `--`.
 pub(crate) const DECLARED_PREFIX: &str = "_declared--";
 
-/// Whether a registration names a declared wrapper.
+/// Whether a registration names a declared wrapper, a row's or the nudges'.
 pub(crate) fn is_declared_command(cmd: &str) -> bool {
-    aggregate::hook_file_named(cmd).is_some_and(|n| n.starts_with(DECLARED_PREFIX))
+    aggregate::hook_file_named(cmd).is_some_and(|n| is_declared_name(&n))
+}
+
+/// Whether a file name under `.claude/hooks/` is a declared wrapper's.
+fn is_declared_name(name: &str) -> bool {
+    name.starts_with(DECLARED_PREFIX) || name.starts_with(crate::cmd::nudge::NUDGES_PREFIX)
 }
 
 /// What the rows produced: a registration for each wrapper written, and each
@@ -48,7 +53,7 @@ pub(crate) struct Declared {
 /// that is neither in `repos` nor outside the scope is a problem.
 pub(crate) fn install_declared(
     root: &Root,
-    hooks: &AgentHooks,
+    table: &AgentTable,
     repos: &[(String, String)],
     scope: &homma_core::scope::Scope,
 ) -> Result<Declared> {
@@ -61,7 +66,7 @@ pub(crate) fn install_declared(
     let mut written: BTreeSet<String> = BTreeSet::new();
     let mut taken: BTreeMap<String, usize> = BTreeMap::new();
 
-    'rows: for (event, row) in hooks.iter() {
+    'rows: for (event, row) in table.hooks.iter() {
         let shown = format!("`[[agent.hooks.{event}]]` running `{}`", row.run());
         let script = root.as_abs().join(row.run());
         if !script.is_file() {
@@ -130,6 +135,8 @@ pub(crate) fn install_declared(
         written.insert(name);
     }
 
+    crate::cmd::nudge::install_wrappers(root, &hooks_dir, &table.nudges, &mut out, &mut written)?;
+
     // A declared wrapper no row wrote this time is one whose row is gone, and
     // is removed if it is homma's. One that is not keeps its place.
     for entry in fs::read_dir(hooks_dir.as_path())
@@ -139,7 +146,7 @@ pub(crate) fn install_declared(
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
         };
-        if !name.starts_with(DECLARED_PREFIX) || written.contains(&name) {
+        if !is_declared_name(&name) || written.contains(&name) {
             continue;
         }
         let target = root

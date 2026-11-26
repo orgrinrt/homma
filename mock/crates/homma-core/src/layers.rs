@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 //! The layers: the overlay files `layers` in `homma.toml` names, read for the
-//! two hooks tables and nothing else. `homma.toml` is the base, each overlay
+//! two hooks tables and the nudges, and nothing else. `homma.toml` is the base, each overlay
 //! appends to it in list order, and no layer replaces another's entries.
 //!
 //! An overlay is `homma.<name>.toml` beside the manifest. `homma.local.toml`
@@ -17,7 +17,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use homma_api::layers::{DEFAULT_LAYER, MANIFEST};
-use homma_api::{AgentHooks, Hooks, Layers};
+use homma_api::{AgentHooks, AgentTable, Hooks, InvalidNudge, Layers, Nudges};
 
 use crate::local::{Local, LocalError};
 
@@ -25,7 +25,7 @@ use crate::local::{Local, LocalError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Overlay {
     pub hooks: Hooks,
-    pub agent: AgentHooks,
+    pub agent: AgentTable,
 }
 
 /// Why an overlay was not read.
@@ -51,10 +51,16 @@ pub enum LayerError {
         path:   PathBuf,
         reason: String,
     },
-    /// `[agent]` carrying something other than `hooks`.
+    /// `[agent]` carrying something other than `hooks` and `nudges`.
     AgentKey {
         path: PathBuf,
         key:  String,
+    },
+    /// A layer's nudges that cannot join the ones read before it, which is a
+    /// name a lower layer already has.
+    Nudges {
+        path:   PathBuf,
+        source: InvalidNudge,
     },
 }
 
@@ -86,7 +92,7 @@ impl fmt::Display for LayerError {
                 write!(
                     f,
                     "the layer {} carries `[{table}]`, which nothing reads from an overlay; an \
-                     overlay holds `[hooks]` and `[agent.hooks]`",
+                     overlay holds `[hooks]`, `[agent.hooks]` and `[agent.nudges]`",
                     path.display()
                 )
             },
@@ -96,7 +102,18 @@ impl fmt::Display for LayerError {
             } => {
                 write!(
                     f,
-                    "the layer {} carries `[agent.{key}]`; `[agent]` holds `hooks` and nothing else",
+                    "the layer {} carries `[agent.{key}]`; `[agent]` holds `hooks` and `nudges` \
+                     and nothing else",
+                    path.display()
+                )
+            },
+            LayerError::Nudges {
+                path,
+                ..
+            } => {
+                write!(
+                    f,
+                    "the layer {} adds nudges that cannot be read",
                     path.display()
                 )
             },
@@ -126,6 +143,10 @@ impl std::error::Error for LayerError {
                 ..
             } => Some(source),
             LayerError::Parse {
+                source,
+                ..
+            } => Some(source),
+            LayerError::Nudges {
                 source,
                 ..
             } => Some(source),
@@ -162,23 +183,27 @@ pub fn parse(path: &Path, text: &str, own_tables: bool) -> Result<Overlay, Layer
                 Some(v) => v.try_into::<AgentHooks>().map_err(parse_err)?,
                 None => AgentHooks::default(),
             };
+            let nudges = match a.remove("nudges") {
+                Some(v) => v.try_into::<Nudges>().map_err(parse_err)?,
+                None => Nudges::default(),
+            };
             if let Some(key) = a.keys().next() {
                 return Err(LayerError::AgentKey {
                     path: path.to_path_buf(),
                     key:  key.clone(),
                 });
             }
-            hooks
+            AgentTable {
+                hooks,
+                nudges,
+            }
         },
         Some(other) => {
             // an `agent` that is not a table is refused by the same words a
             // table of the wrong shape gets, from the type that reads it
-            other
-                .try_into::<homma_api::AgentTable>()
-                .map_err(parse_err)?
-                .hooks
+            other.try_into::<AgentTable>().map_err(parse_err)?
         },
-        None => AgentHooks::default(),
+        None => AgentTable::default(),
     };
     if !own_tables {
         if let Some(table) = table.keys().next() {
@@ -264,14 +289,23 @@ pub fn apply(
     dir: &Path,
     layers: &Layers,
     hooks: &mut Hooks,
-    agent: &mut AgentHooks,
+    agent: &mut AgentTable,
 ) -> Vec<LayerError> {
     let mut failed = Vec::new();
     for name in layers.names() {
         match read(dir, name) {
             Ok(Some(overlay)) => {
+                // the nudges are checked first, so a layer refused for them adds
+                // nothing at all rather than its hooks without its nudges
+                if let Err(source) = agent.nudges.append(&overlay.agent.nudges) {
+                    failed.push(LayerError::Nudges {
+                        path: dir.join(name),
+                        source,
+                    });
+                    continue;
+                }
                 hooks.append(&overlay.hooks);
-                agent.append(&overlay.agent);
+                agent.hooks.append(&overlay.agent.hooks);
             },
             Ok(None) => {},
             Err(e) => failed.push(e),

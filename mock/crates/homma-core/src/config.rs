@@ -113,8 +113,8 @@ pub struct Config {
     #[serde(default)]
     pub hooks: homma_api::Hooks,
 
-    /// `layers`: the overlay files beside the manifest that `[hooks]` and
-    /// `[agent.hooks]` are also read from, appended after this file's own in
+    /// `layers`: the overlay files beside the manifest that `[hooks]`,
+    /// `[agent.hooks]` and `[agent.nudges]` are also read from, appended after this file's own in
     /// list order. A declared list and not a glob of `homma.*.toml`; see
     /// [`crate::layers`]. [`Config::from_path`] applies them, so a caller
     /// reading `hooks` or `agent` from a loaded config has the merged tables.
@@ -143,7 +143,9 @@ pub struct Config {
 
     /// `[agent]`: the hooks a workspace declares for the agent host, one array
     /// per host event under `[agent.hooks]`. `homma agent regen` writes a
-    /// wrapper for each row and registers it; see `homma_api::AgentHooks`.
+    /// wrapper for each row and registers it; see `homma_api::AgentHooks`. The
+    /// nudges under `[agent.nudges]`, run by `homma agent nudge`; see
+    /// `homma_api::Nudges`.
     #[serde(default)]
     pub agent: homma_api::AgentTable,
 
@@ -257,8 +259,7 @@ impl Config {
         cfg.settle_token_commands(beside);
         cfg.settle_deny(beside);
         // beside the manifest, since the overlays are files next to it
-        let failed =
-            crate::layers::apply(beside, &cfg.layers, &mut cfg.hooks, &mut cfg.agent.hooks);
+        let failed = crate::layers::apply(beside, &cfg.layers, &mut cfg.hooks, &mut cfg.agent);
         cfg.layer_errors = failed
             .iter()
             .map(crate::layers::LayerError::report)
