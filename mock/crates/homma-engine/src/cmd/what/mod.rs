@@ -26,6 +26,7 @@ pub mod doc;
 pub mod rank;
 pub mod sources;
 pub mod text;
+pub mod vocab;
 
 use doc::{Doc, Gap, Gathered, Kind, wanted};
 
@@ -45,6 +46,8 @@ mod readme_tests;
 mod sources_tests;
 #[cfg(test)]
 mod text_tests;
+#[cfg(test)]
+mod vocab_tests;
 
 /// How many related things are named under an answer, and under how many answers.
 const RELATED_EACH: usize = 3;
@@ -99,7 +102,13 @@ pub struct Answer {
 }
 
 /// The answer to `query` over what was read. Pure: nothing here reads the disk.
-pub fn answer(docs: &[Doc], gaps: Vec<Gap>, query: &str, limit: usize) -> Answer {
+pub fn answer(
+    docs: &[Doc],
+    gaps: Vec<Gap>,
+    query: &str,
+    limit: usize,
+    vocabulary: &vocab::Vocabulary,
+) -> Answer {
     let pairs = text::pairs(query);
     let stems: Vec<String> = pairs.iter().map(|(_, s)| s.clone()).collect();
     let raw = |stem: &str| {
@@ -109,7 +118,7 @@ pub fn answer(docs: &[Doc], gaps: Vec<Gap>, query: &str, limit: usize) -> Answer
             .map(|(w, _)| w.clone())
             .unwrap_or_default()
     };
-    let mut ranked = rank::rank(docs, &stems);
+    let mut ranked = rank::rank(docs, &stems, vocabulary);
     ranked.truncate(limit);
     let rel = rank::related(docs, &ranked, RELATED_OF, RELATED_EACH);
     let hits = ranked
@@ -296,19 +305,21 @@ fn scope(root: &Path) -> (Scope, Option<Gap>) {
 ///
 /// # Errors
 ///
-/// When the answer cannot be written.
+/// A `[what]` table that does not read, and an answer that cannot be written.
 pub fn run(
     root: &Path,
+    cfg: Option<&homma_core::Config>,
     words: &[String],
     limit: usize,
     kinds: &[Kind],
     no_mock: bool,
     format: OutputFormat,
 ) -> Result<Outcome> {
+    let vocabulary = vocab::Vocabulary::of(cfg)?;
     let (repos, bad) = scope(root);
     let mut g = gather(root, kinds, no_mock, &repos);
     g.gaps.extend(bad);
-    let a = answer(&g.docs, g.gaps, &words.join(" "), limit);
+    let a = answer(&g.docs, g.gaps, &words.join(" "), limit, &vocabulary);
     emit(&a, format)?;
     Ok(if a.hits.is_empty() { Outcome::ReportedFailure } else { Outcome::Ok })
 }
