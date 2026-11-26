@@ -1731,6 +1731,7 @@ dependencies = [
  "regex",
  "renki 0.0.3",
  "renki-dirs 0.0.1",
+ "rusqlite",
  "rustix",
  "serde",
  "serde_json",
