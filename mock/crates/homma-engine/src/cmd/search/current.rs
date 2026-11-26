@@ -169,3 +169,39 @@ pub fn bring<E: Embedder>(
     };
     (measured, Vec::new())
 }
+
+/// For a file the crate refused as cut by another chunker than this build reads, which way it is
+/// out and what moves it: an older one is cut again by its own `build`, a newer one is read by a
+/// build of homma against the crate's trunk. The question never cuts it again itself.
+pub fn other_chunker(e: &Error, build: Option<&str>) -> Option<String> {
+    let Error::Header {
+        field: "chunker",
+        stored,
+        ..
+    } = e
+    else {
+        return None;
+    };
+    let stored: u32 = stored.parse().ok()?;
+    let reads = muisti::CHUNKER_VERSION;
+    match stored.cmp(&reads) {
+        std::cmp::Ordering::Less => {
+            Some(match build {
+                Some(b) => {
+                    format!(
+                        "cut again by {b}; homma reads chunker {reads}, so a build of the index \
+                         crate older than that cuts it to be refused again"
+                    )
+                },
+                None => format!("cut by an older chunker; homma reads chunker {reads}"),
+            })
+        },
+        std::cmp::Ordering::Greater => {
+            Some(format!(
+                "this build of homma reads chunker {reads}; a build of homma against the index \
+                 crate's trunk reads it, and the file is left as it is"
+            ))
+        },
+        std::cmp::Ordering::Equal => None,
+    }
+}

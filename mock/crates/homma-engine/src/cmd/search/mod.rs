@@ -37,6 +37,8 @@ use discover::Place;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_chunker;
+#[cfg(test)]
 mod tests_current;
 #[cfg(test)]
 mod tests_fresh;
@@ -361,7 +363,10 @@ pub fn open_current(p: &Place) -> (Result<layer::Index, muisti::Error>, Opened) 
             let (c, caveats) = current::bring(&mut index, &mut Words, p.build.as_deref());
             (Ok(index), (Some(c), caveats))
         },
-        Err(e) => (Err(e), (None, Vec::new())),
+        Err(e) => {
+            let moves = current::other_chunker(&e, p.build.as_deref());
+            (Err(e), (None, moves.into_iter().collect()))
+        },
     }
 }
 
@@ -375,9 +380,9 @@ pub fn index_out(m: Member, p: &Place, (currency, caveats): Opened, now: SystemT
         .flatten()
         .map(|t| ago(now.duration_since(t).unwrap_or_default()));
     let mut notes = p.notes.clone();
-    notes.extend(caveats);
     match m.answered {
         Ok(a) => {
+            notes.extend(caveats);
             notes.extend(a.caveats);
             IndexOut {
                 name: m.name,
@@ -395,6 +400,8 @@ pub fn index_out(m: Member, p: &Place, (currency, caveats): Opened, now: SystemT
             // A place that is shut is said in its own words; the index crate's error for it is
             // only the stand-in that keeps it a member of the question, and its prefix is not true.
             notes.push(p.shut.clone().unwrap_or(why));
+            // What the refusal leaves to do follows the refusal's own words.
+            notes.extend(caveats);
             // An index not there is built by its own command, never by the question.
             if let Some(build) = p
                 .build
