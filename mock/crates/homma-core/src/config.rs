@@ -91,6 +91,10 @@ pub struct Config {
     #[serde(default)]
     pub auth: AuthConfig,
 
+    /// `[session]`: how a session is told apart.
+    #[serde(default)]
+    pub session: homma_api::SessionConfig,
+
     /// `[markers]`: the files that mark a repository root and what each
     /// signals, `cargo`, `deno` or `content`. The gate reads a repo's kind off
     /// these. `Cargo.toml` and `deno.json` are present whether or not the table
@@ -469,7 +473,9 @@ impl std::str::FromStr for Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceConfig {
-    pub name: String,
+    /// One plain path component, refused otherwise: a session's role file
+    /// lives in a directory of this name.
+    pub name: homma_api::WorkspaceName,
     #[serde(default = "default_workspace_path")]
     pub path: PathBuf,
 }
@@ -608,13 +614,37 @@ pub struct AuthConfig {
     /// workspace root. A bare program name is left alone, so it is found on
     /// `PATH` the way it would be if typed.
     #[serde(default)]
-    pub token_cmd: Option<Vec<String>>,
+    pub token_cmd:      Option<Vec<String>>,
     /// Where `homma release auth npmrc` writes the npmrc a publish hands
     /// npm, relative to the workspace root where relative; unset, `homma/npmrc`
     /// under the user's cache directory, never inside a repository.
     #[serde(default)]
-    pub npmrc:     Option<PathBuf>,
+    pub npmrc:          Option<PathBuf>,
+    /// The prefix of the keychain service a publish credential is kept
+    /// under, `<prefix>-<registry>`. Unset, [`AuthConfig::service_prefix`]
+    /// gives the prefix homma has always used.
+    #[serde(default)]
+    pub service_prefix: Option<String>,
 }
+
+/// FIXME(homma_live_defaults_still_name_its_workspace_maintainer_and): the
+/// prefix homma has always used, kept until every manifest that relies on it
+/// sets `[auth] service_prefix`; then it becomes neutral.
+const DEFAULT_SERVICE_PREFIX: &str = "hiisi-release";
+
+impl AuthConfig {
+    /// The keychain service prefix in force.
+    pub fn service_prefix(&self) -> &str {
+        self.service_prefix
+            .as_deref()
+            .unwrap_or(DEFAULT_SERVICE_PREFIX)
+    }
+}
+
+/// The manifest keys this engine reads that an engine before them refuses,
+/// each as `<table>.<key>`. A manifest sets one only once every engine reading
+/// it lists it here, which `homma status` shows.
+pub const READS: &[&str] = &["session.cloud_var", "auth.service_prefix"];
 
 /// Hosting service type. Drives client selection in [crate::forge].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

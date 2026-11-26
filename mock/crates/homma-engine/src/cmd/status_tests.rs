@@ -626,3 +626,26 @@ fn an_unreadable_configs_directory_is_said_once_rather_than_per_repo() {
         "the workspace-level fault was repeated: {text}"
     );
 }
+
+#[test]
+fn the_workspace_line_lists_the_keys_an_older_engine_refuses() {
+    // Failing control: a status without the list reads as an older engine's,
+    // and the check before a manifest sets either key fails on it.
+    let r = report(vec![]);
+    for key in ["session.cloud_var", "auth.service_prefix"] {
+        assert!(
+            r.workspace.reads.iter().any(|k| k == key),
+            "{key} is not listed"
+        );
+    }
+    let text = rendered(&r);
+    assert!(
+        text.contains("  reads: session.cloud_var auth.service_prefix\n"),
+        "{text}"
+    );
+    let doc = serde_json::to_value(&r).unwrap();
+    assert_eq!(
+        doc["workspace"]["reads"],
+        serde_json::json!(["session.cloud_var", "auth.service_prefix"])
+    );
+}

@@ -34,7 +34,12 @@ mod tests;
 
 /// Where the documents came from, as the capture says it.
 pub enum Source<'a> {
-    Dir(&'a Path),
+    /// A page's directory, and the handle of the person whose page it is: the
+    /// catalogue's king, or none where the catalogue has no king.
+    Dir {
+        dir:    &'a Path,
+        person: Option<&'a str>,
+    },
     Channel {
         channel: &'a str,
         from:    &'a str,
@@ -45,7 +50,10 @@ pub enum Source<'a> {
 impl Source<'_> {
     fn words(&self) -> String {
         match self {
-            Source::Dir(d) => format!("the documents in {}", d.display()),
+            Source::Dir {
+                dir,
+                ..
+            } => format!("the documents in {}", dir.display()),
             Source::Channel {
                 channel,
                 ..
@@ -57,7 +65,9 @@ impl Source<'_> {
     /// The tag a capture carries for where its words were left.
     pub(crate) fn tag(&self) -> &'static str {
         match self {
-            Source::Dir(_) => "dashboard",
+            Source::Dir {
+                ..
+            } => "dashboard",
             Source::Channel {
                 ..
             } => "channel",
@@ -68,7 +78,9 @@ impl Source<'_> {
     /// The sentence under a capture's title.
     pub(crate) fn lead(&self) -> String {
         match self {
-            Source::Dir(_) => "Left on the dashboard page, copied field for field.".into(),
+            Source::Dir {
+                ..
+            } => "Left on the dashboard page, copied field for field.".into(),
             Source::Channel {
                 channel,
                 ..
@@ -81,11 +93,14 @@ impl Source<'_> {
         }
     }
 
-    /// Who the title says spoke: the page is op's, a channel's is whoever `--from` names, and
+    /// Who the title says spoke: the page is its person's, a channel's is whoever `--from` names, and
     /// a delegated append does not say.
     pub(crate) fn speaker(&self) -> &str {
         match self {
-            Source::Dir(_) => "op",
+            Source::Dir {
+                person,
+                ..
+            } => person.unwrap_or("someone"),
             Source::Channel {
                 from,
                 ..
@@ -97,7 +112,9 @@ impl Source<'_> {
     /// Where a title says notes were left, with its leading space, or nothing.
     pub(crate) fn place(&self) -> &'static str {
         match self {
-            Source::Dir(_) => " on the page",
+            Source::Dir {
+                ..
+            } => " on the page",
             Source::Channel {
                 ..
             } => " on the channel",
@@ -251,8 +268,18 @@ pub fn run(cli: &Cli, op: &AnswersOp) -> Result<Outcome> {
         } => {
             let run = context(cli, root, &ws, into.as_deref())?;
             let (read, source) = match (dir, channel) {
-                (Some(d), _) => (docs::read_dir(d)?, Source::Dir(d)),
+                (Some(d), _) => {
+                    (docs::read_dir(d)?, Source::Dir {
+                        dir:    d,
+                        person: ws.king(),
+                    })
+                },
                 (None, Some(c)) => {
+                    let from = from.as_deref().or(ws.king()).ok_or_else(|| {
+                        anyhow!(
+                            "name whose messages to take with --from: the catalogue has no king"
+                        )
+                    })?;
                     (
                         docs::read_channel(root, &docs::msg_program(root), c, from)?,
                         Source::Channel {

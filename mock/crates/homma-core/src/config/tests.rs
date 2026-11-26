@@ -491,3 +491,63 @@ mod whole_load_tests {
         assert!(cfg.scope.names().is_none());
     }
 }
+
+#[cfg(test)]
+mod live_default_tests {
+    use crate::config::*;
+
+    #[test]
+    fn a_manifest_without_the_new_keys_reads_the_values_in_use() {
+        // The values a running workspace reads today, given as configuration
+        // rather than compiled in: `HOMMA_TEST_CLOUD_VAR` and
+        // `HOMMA_TEST_SERVICE_PREFIX`. Without both, the test says so and returns.
+        // Failing control: with either default changed, a manifest that sets
+        // nothing moves where the cloud mark or the credential is found.
+        let (Ok(cloud), Ok(prefix)) = (
+            std::env::var("HOMMA_TEST_CLOUD_VAR"),
+            std::env::var("HOMMA_TEST_SERVICE_PREFIX"),
+        ) else {
+            eprintln!(
+                "skipped: HOMMA_TEST_CLOUD_VAR and HOMMA_TEST_SERVICE_PREFIX are not both set"
+            );
+            return;
+        };
+        let c = Config::parse("[workspace]\nname = \"w\"\n").unwrap();
+        assert_eq!(c.session.cloud_var, cloud);
+        assert_eq!(c.auth.service_prefix(), prefix);
+    }
+
+    #[test]
+    fn a_manifest_that_sets_the_new_keys_is_read_by_them() {
+        let c = Config::parse(
+            "[workspace]\nname = \"w\"\n[session]\ncloud_var = \"GLADE_CLOUD\"\n[auth]\nservice_prefix = \"glade-release\"\n",
+        )
+        .unwrap();
+        assert_eq!(c.session.cloud_var, "GLADE_CLOUD");
+        assert_eq!(c.auth.service_prefix(), "glade-release");
+    }
+
+    #[test]
+    fn an_unknown_key_of_the_session_table_is_refused() {
+        assert!(Config::parse("[workspace]\nname = \"w\"\n[session]\ncloud = \"X\"\n").is_err());
+    }
+
+    #[test]
+    fn a_workspace_name_that_cannot_be_a_directory_is_refused_at_parse() {
+        for bad in ["", ".hidden", "a/b", ".."] {
+            let text = format!("[workspace]\nname = {bad:?}\n");
+            assert!(Config::parse(&text).is_err(), "{bad:?} was taken");
+        }
+    }
+
+    #[test]
+    fn every_key_the_status_lists_as_read_is_one_this_engine_reads() {
+        // Failing control: a listed key this engine does not know is refused here.
+        assert!(!READS.is_empty());
+        for key in READS {
+            let (table, field) = key.split_once('.').unwrap();
+            let text = format!("[workspace]\nname = \"w\"\n[{table}]\n{field} = \"x\"\n");
+            assert!(Config::parse(&text).is_ok(), "{key} is listed and not read");
+        }
+    }
+}
