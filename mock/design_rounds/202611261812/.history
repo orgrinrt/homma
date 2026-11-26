@@ -1,0 +1,50 @@
+cc5235c chore: lock src changelist 202611261815
+6767d30 test: install the shook hook in a child and read the libtest summary
+207aad3 chore: lock doc changelist 202611261812
+a910661 docs: file the round for a hook the install writes
+abdb09c docs: regenerate the rendered design with the fixture crate
+94f7c62 chore: close design round 202611261744
+cbb2287 chore: lock src changelist 202611261748
+46a91fd test: plant scripts through one fixture crate every test binary reaches
+e14a4c0 chore: lock doc changelist 202611261744
+de6351b doc: design a fixture crate every test binary reaches
+efed0fc test: plant test scripts through a child and name no real tree
+7a8f895 test: plant test scripts through a child and name no real tree
+a02887d docs: regenerate the rendered design
+2c1d46b chore: close design round 202611261716
+abaa5ab chore: lock src changelist 202611261717
+d2505ef test: replace the samples the sweep left with invented names
+1dd50f6 chore: lock doc changelist 202611261716
+a4c7180 docs: regenerate the rendered api design
+cff5c0f chore: close design round 202611261626
+63377f7 chore: lock src changelist 202611261626
+9a48728 fix: point the git-shook install message at the tool again
+8585e7d chore: lock doc changelist 202611261626
+99d2cdb docs: name the planted handle in the address sample
+80caccb docs: open the round that puts a live link back
+aad24cd docs: name an invented repository in the readme examples
+f1b2f4d docs: regenerate the rendered design
+fa5792c chore: close design round 202611261602
+0f78155 chore: lock src changelist 202611261604
+474ac2b test: name invented trees, handles and owners in every test
+954e764 test: plant every script a test runs through a child
+61c3d0f chore: lock doc changelist 202611261602
+416f074 docs: replace the real names in the design's samples
+50b1a8b docs: open the round on planted scripts and invented names
+1948afc test: clear the what and ask test debts and split the config file
+1c00807 chore: close design round 202611251551-itcw
+a02524d chore: lock src changelist 202611251551-itcw
+812008c test: cut the ask and what source tests under the size limit
+0a7995d chore: lock doc changelist 202611251551-itcw
+56d1ca6 docs: open the round that cuts two test files under the limit
+d6110ac chore: close design round 202611251452-ojtm
+1335062 chore: lock src changelist 202611251452-ojtm
+503b5a0 test: plant the regen stub launcher through the one helper
+223a2d6 chore: lock doc changelist 202611251452-ojtm
+706583b docs: open the round on the regen launcher's planted script
+5cc400b chore: close design round 202611251443-nfvz
+974ff6a chore: lock src changelist 202611251443-nfvz
+0ab973e fix: plant every run script one way and pin the cache tests
+afedf04 chore: lock doc changelist 202611251443-nfvz
+e91527f docs: open the round on what the review of the fixtures found
+4f7568f chore: close design round 202611251422-cqgk
