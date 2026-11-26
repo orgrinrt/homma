@@ -11,16 +11,13 @@ use predicates::prelude::*;
 #[cfg(unix)]
 #[test]
 fn the_verb_prints_the_summary_with_the_pass_on_and_the_text_whole_with_it_off() {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = tempfile::tempdir().unwrap();
     let model = dir.path().join("model");
-    fs::write(
+    homma_fixture::script(
         &model,
         "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"is_error\":false,\"result\":\"- line 2: the second line\"}'\n",
-    )
-    .unwrap();
-    fs::set_permissions(&model, fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
     let text = dir.path().join("text.txt");
     fs::write(&text, "one\ntwo\n").unwrap();
 

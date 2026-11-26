@@ -164,21 +164,19 @@ fn branches_prints_each_branch_the_trunk_lacks_with_its_conflicts_and_call() {
 /// repository does, exit 128, and hands every other call to the real one.
 #[cfg(unix)]
 fn git_that_fails(dir: &Path, sub: &str) -> String {
-    use std::os::unix::fs::PermissionsExt;
     let real = std::process::Command::new("sh")
         .args(["-c", "command -v git"])
         .output()
         .unwrap();
     let real = String::from_utf8(real.stdout).unwrap().trim().to_string();
     let shim = dir.join("git");
-    std::fs::write(
+    homma_fixture::script(
         &shim,
-        format!(
+        &format!(
             "#!/bin/sh\nif [ \"$1\" = {sub} ] && [ \"$2\" != --is-ancestor ]; then\n  echo 'fatal: shim refuses {sub}' >&2\n  exit 128\nfi\nexec {real} \"$@\"\n"
         ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+        0o755,
+    );
     format!(
         "{}:{}",
         dir.display(),

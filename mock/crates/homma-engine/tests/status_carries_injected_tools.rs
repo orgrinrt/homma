@@ -32,12 +32,7 @@ fn workspace(extra: &str) -> tempfile::TempDir {
 /// An executable script at `tools/<name>`.
 fn tool(dir: &tempfile::TempDir, name: &str, body: &str) {
     let path = dir.path().join("tools").join(name);
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    homma_fixture::script(&path, &format!("#!/bin/sh\n{body}\n"), 0o755);
 }
 
 #[test]

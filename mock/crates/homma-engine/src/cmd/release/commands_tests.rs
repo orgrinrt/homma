@@ -42,7 +42,7 @@ fn history(dir: &Path, message: &str) -> PathBuf {
 /// it is given, never its working directory, as the real one does.
 fn scanner(dir: &Path, body: &str) -> PathBuf {
     let at = dir.join("scan");
-    crate::cmd::planted::script(&at, &format!("#!/bin/sh\n{body}\n"), 0o755);
+    homma_fixture::script(&at, &format!("#!/bin/sh\n{body}\n"), 0o755);
     at
 }
 

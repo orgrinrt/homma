@@ -55,7 +55,7 @@ pub(crate) fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> P
     let repo = ws.join("acre");
     fs::create_dir_all(repo.join(".claude/hooks")).unwrap();
     for (name, body) in hooks {
-        crate::cmd::planted::script(&repo.join(".claude/hooks").join(name), body, 0o755);
+        homma_fixture::script(&repo.join(".claude/hooks").join(name), body, 0o755);
     }
     fs::write(repo.join(".claude/settings.json"), settings).unwrap();
     repo

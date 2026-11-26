@@ -15,7 +15,7 @@ use super::sources::mock;
 #[cfg(unix)]
 fn fake_cargo(dir: &std::path::Path, body: &str) -> String {
     let p = dir.join("fake-cargo");
-    crate::cmd::planted::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
+    homma_fixture::script(&p, &format!("#!/bin/sh\n{body}\n"), 0o755);
     p.to_string_lossy().into_owned()
 }
 

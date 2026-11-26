@@ -136,27 +136,16 @@ fn the_cache_is_under_its_own_repository_whatever_git_dir_the_caller_exports() {
     let other = tempfile::tempdir().unwrap();
     git_init(planted.path());
     git_init(other.path());
-    let name = format!(
-        "{}::the_cache_is_under_its_own_repository_whatever_git_dir_the_caller_exports",
-        module_path!().split_once("::").unwrap().1
-    );
-    let out = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", &name, "--test-threads", "1"])
-        .env(CHILD_ROOT, planted.path())
-        .env("GIT_DIR", other.path().join(".git"))
-        .env_remove("GIT_WORK_TREE")
-        .output()
-        .unwrap();
-    let said = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        out.status.success(),
-        "{said}{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(
-        said.contains("1 passed"),
-        "the child ran the one test: {said}"
-    );
+    let out = homma_fixture::alone(
+        module_path!(),
+        "the_cache_is_under_its_own_repository_whatever_git_dir_the_caller_exports",
+    )
+    .env(CHILD_ROOT, planted.path())
+    .env("GIT_DIR", other.path().join(".git"))
+    .env_remove("GIT_WORK_TREE")
+    .output()
+    .unwrap();
+    homma_fixture::passed(&out);
 }
 
 /// Failing control: with the sweep taken out of `run`, the old partial is still there.

@@ -57,6 +57,7 @@ rustix = { version = "1.1.6", features = ["process"] }
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+homma-fixture = { path = "../homma-fixture" }
 # The launcher, for the one list the readme test needs from it: which commands
 # the launcher answers before the engine runs at all. Read off the launcher's
 # descriptor rather than written down here, so a second launcher command cannot

@@ -36,3 +36,4 @@ gix = { version = "0.87", default-features = false, features = [
 
 [dev-dependencies]
 tempfile = "3"
+homma-fixture = { path = "../homma-fixture" }
