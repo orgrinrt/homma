@@ -227,7 +227,7 @@ mod tests {
     }
 
     fn rec() -> Record {
-        Record::new("m1", "message", &Reference::org("paja"))
+        Record::new("m1", "message", &Reference::org("pike"))
             .with("body", Attr::Text("hello".into()))
     }
 
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn a_missing_required_attribute_is_refused() {
-        let r = Record::new("m1", "message", &Reference::org("paja"));
+        let r = Record::new("m1", "message", &Reference::org("pike"));
         assert_eq!(
             r.check(&message_kind()),
             Err(Invalid::Missing("body".into()))

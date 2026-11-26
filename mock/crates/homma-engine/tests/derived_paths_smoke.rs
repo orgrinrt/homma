@@ -243,7 +243,7 @@ fn a_workspace_cannot_build_a_path_of_directories_to_reach_itself() {
     // directory is not one.
     //
     // `create_dir_all` on its parent built whatever chain the configured path
-    // implied, so a workspace at `somewhere/.claude/hands/paja` created
+    // implied, so a workspace at `somewhere/.claude/hands/pike` created
     // `somewhere/` and `somewhere/.claude/` on the way. That is deny item three.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("root");

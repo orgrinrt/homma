@@ -211,7 +211,7 @@ pub fn provision<G: Git>(
         // **`create_dir`, not `create_dir_all`, and that is the whole guard.**
         // One level is required for the reason above. A chain never was, and
         // `create_dir_all` supplied whatever chain the configured path implied:
-        // a workspace at `somewhere/.claude/hands/paja` built `somewhere` and
+        // a workspace at `somewhere/.claude/hands/pike` built `somewhere` and
         // `somewhere/.claude` on the way there, which is deny item three, and
         // spelled with `..` it did so several levels above the root.
         //
@@ -286,9 +286,9 @@ mod tests {
     }
 
     fn hand() -> Identity {
-        let mut i = Identity::new(Role::Hand, "paja");
-        i.git_name = Some("paja".into());
-        i.git_email = Some("paja@example.invalid".into());
+        let mut i = Identity::new(Role::Hand, "pike");
+        i.git_name = Some("pike".into());
+        i.git_email = Some("pike@example.invalid".into());
         i
     }
 
@@ -421,7 +421,7 @@ mod tests {
     #[test]
     fn provisioning_clones_and_sets_the_identity_in_that_clone() {
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
@@ -430,7 +430,7 @@ mod tests {
         assert_eq!(git.clones.borrow().len(), 1);
         assert_eq!(
             git.identity(&ws).unwrap(),
-            Some(homma_api::CommitIdentity::same("paja", "paja@example.invalid").unwrap())
+            Some(homma_api::CommitIdentity::same("pike", "pike@example.invalid").unwrap())
         );
     }
 
@@ -471,7 +471,7 @@ mod tests {
         // repository, and refusing this would break the idempotence the whole
         // lifecycle rests on.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
@@ -491,7 +491,7 @@ mod tests {
         //
         // One level, which is what that reason needs.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("crew").join("paja"));
+        let ws = abs(d.path().join("crew").join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
@@ -517,10 +517,10 @@ mod tests {
     #[test]
     fn a_distinct_committer_reaches_the_clone() {
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("vouti"));
+        let ws = abs(d.path().join("vesta"));
         let mut id = staffed_hand(&ws);
-        id.git_name = Some("Onni Armas".into());
-        id.git_email = Some("ort@hiisi.digital".into());
+        id.git_name = Some("Olly Armas".into());
+        id.git_email = Some("ash@example.invalid".into());
         id.committer_email = Some("someone+alt@example.invalid".into());
         let git = FakeGit::default();
 
@@ -528,10 +528,10 @@ mod tests {
 
         let written = git.identities.borrow();
         let (_, got) = written.last().expect("an identity was set");
-        assert_eq!(got.author_name(), "Onni Armas");
+        assert_eq!(got.author_name(), "Olly Armas");
         assert_eq!(
             got.author_email(),
-            "ort@hiisi.digital",
+            "ash@example.invalid",
             "the author is the registry's, not the committer's"
         );
         assert_eq!(
@@ -541,7 +541,7 @@ mod tests {
         );
         assert_eq!(
             got.committer_name(),
-            "Onni Armas",
+            "Olly Armas",
             "the committer name defaults to the author's when the entry names none"
         );
     }
@@ -553,11 +553,11 @@ mod tests {
     #[test]
     fn a_distinct_committer_name_reaches_the_clone() {
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("vouti"));
+        let ws = abs(d.path().join("vesta"));
         let mut id = staffed_hand(&ws);
-        id.git_name = Some("Onni Armas".into());
-        id.git_email = Some("ort@hiisi.digital".into());
-        id.committer_name = Some("Vouti".into());
+        id.git_name = Some("Olly Armas".into());
+        id.git_email = Some("ash@example.invalid".into());
+        id.committer_name = Some("Vesta".into());
         let git = FakeGit::default();
 
         provision(&id, &ws, "git@example.invalid:x/y.git", &git).unwrap();
@@ -566,12 +566,12 @@ mod tests {
         let (_, got) = written.last().expect("an identity was set");
         assert_eq!(
             got.author_name(),
-            "Onni Armas",
+            "Olly Armas",
             "the author's name is unchanged"
         );
         assert_eq!(
             got.committer_name(),
-            "Vouti",
+            "Vesta",
             "and the committer's name is the one the registry gave"
         );
     }
@@ -582,7 +582,7 @@ mod tests {
         // the type, so the registry file can still distinguish "the same" from
         // "deliberately the same".
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
@@ -594,10 +594,10 @@ mod tests {
         // two halves of one recorded value catches nothing: it holds for any
         // implementation that writes the same thing twice, including one that
         // writes the wrong thing twice.
-        assert_eq!(got.author_name(), "paja");
-        assert_eq!(got.author_email(), "paja@example.invalid");
-        assert_eq!(got.committer_name(), "paja");
-        assert_eq!(got.committer_email(), "paja@example.invalid");
+        assert_eq!(got.author_name(), "pike");
+        assert_eq!(got.author_email(), "pike@example.invalid");
+        assert_eq!(got.committer_name(), "pike");
+        assert_eq!(got.committer_email(), "pike@example.invalid");
     }
 
     // Pins the widened read-back. Narrowing the comparison back to the author
@@ -606,10 +606,10 @@ mod tests {
     #[test]
     fn a_committer_that_never_reached_the_clone_is_caught() {
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("vouti"));
+        let ws = abs(d.path().join("vesta"));
         let mut id = staffed_hand(&ws);
-        id.git_name = Some("Onni Armas".into());
-        id.git_email = Some("ort@hiisi.digital".into());
+        id.git_name = Some("Olly Armas".into());
+        id.git_email = Some("ash@example.invalid".into());
         id.committer_email = Some("someone+alt@example.invalid".into());
         let git = FakeGit::default();
         git.committer_writes_vanish.set(true);
@@ -625,7 +625,7 @@ mod tests {
     #[test]
     fn an_identity_write_that_reports_success_and_lands_nowhere_is_caught() {
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.identity_writes_vanish.set(true);
@@ -647,7 +647,7 @@ mod tests {
         // remembering: a guard being pinned says nothing about whether what it
         // pins is wanted.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("nested").join("deeper").join("paja"));
+        let ws = abs(d.path().join("nested").join("deeper").join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
 
@@ -677,7 +677,7 @@ mod tests {
         // a fake that answered the matching URL for every path, so the refusing
         // arm was unreachable.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
@@ -711,7 +711,7 @@ mod tests {
         // Comparing the last path segment made these equal. For a fork or a
         // mirror this is the ordinary case.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
@@ -730,7 +730,7 @@ mod tests {
         // An existing directory that is a repository and points nowhere is not
         // the content repository, and adopting it would be a guess.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());
@@ -749,7 +749,7 @@ mod tests {
         // Standing up twice is the same answer, and this is the half of that
         // property the clone introduces.
         let d = tempfile::tempdir().unwrap();
-        let ws = abs(d.path().join("paja"));
+        let ws = abs(d.path().join("pike"));
         let id = staffed_hand(&ws);
         let git = FakeGit::default();
         git.existing.borrow_mut().push(ws.clone());

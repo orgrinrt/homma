@@ -155,7 +155,7 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
         // a non-empty list and render `handle`.field. Asserted through the
         // reported path rather than through the error type, because it is the
         // reporting that the fail-open version got wrong.
-        let handle = "vouti".to_string();
+        let handle = "vesta".to_string();
         let entries = std::collections::BTreeMap::from([(handle.clone(), WillNotSerialise::new())]);
         assert_eq!(unsafe_strings_of(&entries), vec![(
             handle,
@@ -193,7 +193,7 @@ mod an_entry_that_cannot_be_read_is_not_cleared {
         // had become fail-always.
         assert_eq!(
             control_character_fields(&Readable {
-                nickname: "vouti".to_string(),
+                nickname: "vesta".to_string(),
                 nested:   Nested {
                     note: "fine".to_string(),
                 },
@@ -221,12 +221,12 @@ mod tests {
     fn a_control_character_in_any_registry_string_is_reported() {
         // A newline here becomes an arbitrary key in generated frontmatter.
         let mut w = Workspace::parse(MINIMAL).unwrap();
-        let mut id = Identity::new(Role::Hand, "paja");
-        id.nickname = Some("Paja\nmemory: project".into());
-        w.org.insert("paja".into(), id);
+        let mut id = Identity::new(Role::Hand, "pike");
+        id.nickname = Some("Pike\nmemory: project".into());
+        w.org.insert("pike".into(), id);
         let bad = w.unsafe_strings();
         assert_eq!(bad.len(), 1);
-        assert_eq!(bad[0], ("paja".to_string(), "nickname".to_string()));
+        assert_eq!(bad[0], ("pike".to_string(), "nickname".to_string()));
     }
 
     /// Every free-form string an entry carries, by dotted path.
@@ -307,7 +307,7 @@ mod tests {
             workspace,
             session,
             repos,
-        } = Identity::new(Role::Hand, "paja");
+        } = Identity::new(Role::Hand, "pike");
 
         // Bound, so deleting a line above without deleting its name here is also
         // a compile error rather than a silent narrowing.
@@ -417,7 +417,7 @@ mod tests {
         }
 
         let mut ws = Workspace::parse(MINIMAL).expect("the minimal fixture parses");
-        ws.org.insert("paja".into(), bad);
+        ws.org.insert("pike".into(), bad);
 
         let reported: std::collections::BTreeSet<String> =
             ws.unsafe_strings().into_iter().map(|(_, f)| f).collect();
@@ -452,13 +452,13 @@ mod tests {
             ("delete", '\x7f'),
         ] {
             let mut w = Workspace::parse(MINIMAL).unwrap();
-            let mut id = Identity::new(Role::Hand, "paja");
-            id.nickname = Some(format!("Paja{c}memory: project"));
-            w.org.insert("paja".into(), id);
+            let mut id = Identity::new(Role::Hand, "pike");
+            id.nickname = Some(format!("Pike{c}memory: project"));
+            w.org.insert("pike".into(), id);
 
             assert_eq!(
                 w.unsafe_strings(),
-                vec![("paja".to_string(), "nickname".to_string())],
+                vec![("pike".to_string(), "nickname".to_string())],
                 "a {name} in a registry string must be reported"
             );
         }

@@ -56,7 +56,7 @@ fn two() -> Two {
     }
 }
 
-const PATH: &str = ".shared/state/leases/ikku.toml";
+const PATH: &str = ".shared/state/leases/inge.toml";
 
 #[test]
 fn a_write_lands_on_the_remote_without_touching_the_working_tree() {
@@ -69,7 +69,7 @@ fn a_write_lands_on_the_remote_without_touching_the_working_tree() {
         &tip,
         PATH,
         Some("session = \"s1\"\n"),
-        "lease: take ikku",
+        "lease: take inge",
     )
     .unwrap() else {
         panic!("a write on the read tip lands");

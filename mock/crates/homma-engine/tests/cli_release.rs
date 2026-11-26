@@ -98,7 +98,7 @@ fn a_workspace_wide_run_names_each_repo_it_passes_over_and_why() {
     git_in(&dir.path().join("x"), &[
         "tag", "-a", "v0.1.0", "-m", "v0.1.0",
     ]);
-    clone_at(dir.path(), "y", Some("https://github.com/orgrinrt/y.git"));
+    clone_at(dir.path(), "y", Some("https://github.com/woodland/y.git"));
     bin()
         .args(["-c", cfg.to_str().unwrap(), "release", "run", "--level", "patch", "--dry-run"])
         .assert()
@@ -257,7 +257,7 @@ fn a_worktree_beside_the_clones_resolves_to_its_clone_with_no_repo_named() {
             "gate",
             "--hook",
             "origin",
-            "git@github.com:orgrinrt/x.git",
+            "git@github.com:woodland/x.git",
         ])
         .write_stdin("")
         .assert()
@@ -275,7 +275,7 @@ fn a_worktree_beside_the_clones_resolves_to_its_clone_with_no_repo_named() {
             "gate",
             "--hook",
             "x",
-            "git@github.com:orgrinrt/x.git",
+            "git@github.com:woodland/x.git",
         ])
         .write_stdin("")
         .assert()

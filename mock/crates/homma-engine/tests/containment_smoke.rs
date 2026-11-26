@@ -299,12 +299,12 @@ fn a_workspace_root_inside_another_repository_is_refused() {
     std::fs::create_dir_all(&root).unwrap();
     let cfg = root.join("homma.toml");
     std::fs::write(&cfg, format!("content_repo = \"{}\"\n", src.display())).unwrap();
-    let ws = dir.path().join("out").join("paja");
+    let ws = dir.path().join("out").join("pike");
 
-    add_hand(&cfg, "paja", ws.to_str().unwrap());
+    add_hand(&cfg, "pike", ws.to_str().unwrap());
 
     bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "paja"])
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "pike"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("workspace root"));
@@ -337,17 +337,17 @@ fn a_symlink_in_the_chain_does_not_hide_the_repository_above_it() {
     std::fs::create_dir_all(&elsewhere).unwrap();
     std::os::unix::fs::symlink(victim.join("inside"), elsewhere.join("link")).unwrap();
 
-    let ws = elsewhere.join("link").join("paja");
-    add_hand(&cfg, "paja", ws.to_str().unwrap());
+    let ws = elsewhere.join("link").join("pike");
+    add_hand(&cfg, "pike", ws.to_str().unwrap());
 
     bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "paja"])
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "pike"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("sits inside the repository"));
 
     assert!(
-        !victim.join("inside").join("paja").exists(),
+        !victim.join("inside").join("pike").exists(),
         "nothing may be written through the link into the victim"
     );
 }
@@ -371,10 +371,10 @@ fn a_bare_repository_ancestor_is_seen() {
     let cfg = root.join("homma.toml");
     std::fs::write(&cfg, "content_repo = \"local\"\n").unwrap();
 
-    add_hand(&cfg, "paja", root.join("hand").to_str().unwrap());
+    add_hand(&cfg, "pike", root.join("hand").to_str().unwrap());
 
     bin()
-        .args(["--config", cfg.to_str().unwrap(), "org", "up", "paja"])
+        .args(["--config", cfg.to_str().unwrap(), "org", "up", "pike"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("sits inside the repository"));

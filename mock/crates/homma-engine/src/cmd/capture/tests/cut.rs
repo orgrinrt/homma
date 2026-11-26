@@ -145,7 +145,7 @@ fn the_recovered_object_is_read_as_an_ordinary_line() {
         since:    None,
         bears_on: &[],
         into:     None,
-        store:    Path::new(".data/op-responses"),
+        store:    Path::new(".data/oz-responses"),
         running:  None,
     };
     let made = make(Path::new("/"), &t, "s", None, &ask, &TimeZone::UTC)

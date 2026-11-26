@@ -145,7 +145,7 @@ fn a_symlink_below_the_checked_directory_cannot_carry_a_write_out() {
 
     // A repository with a hook to aggregate, so the pass has work to do. It
     // sits under the workspace root because that is what makes it a member.
-    let repo = ws.join("notko");
+    let repo = ws.join("notch");
     make_a_repo(&repo);
     std::fs::create_dir_all(repo.join(".claude").join("hooks")).unwrap();
     std::fs::write(
@@ -249,12 +249,12 @@ workspace = "{}"
 
 #[test]
 fn a_participant_may_aggregate_into_their_own_workspace() {
-    // **The other half of op's answer, and the reason deny item one is not an
-    // absolute here.** Op's own workspace is one participant's: denied
+    // **The other half of the answer, and the reason deny item one is not an
+    // absolute here.** The maintainer's own workspace is one participant's: denied
     // to every other participant, and permitted to its owner, because nobody is
     // denied their own.
     //
-    // The workspace sits at `<home>/Dev/clause-dev` deliberately. That is the
+    // The workspace sits at `<home>/Dev/glade-root` deliberately. That is the
     // one path the home-derived deny list hard-codes, so it is the only fixture
     // that reaches the branch this test is about; a workspace anywhere else
     // passes without the permission existing at all, which is what the previous
@@ -263,7 +263,7 @@ fn a_participant_may_aggregate_into_their_own_workspace() {
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join(".claude")).unwrap();
 
-    let mine = home.join("Dev").join("clause-dev");
+    let mine = home.join("Dev").join("glade-root");
     std::fs::create_dir_all(&mine).unwrap();
 
     let cfg = dir.path().join("homma.toml");
@@ -325,9 +325,9 @@ fn workspace_with_a_repo_and_a_config(dir: &std::path::Path) -> (std::path::Path
     )
     .unwrap();
 
-    let repo = ws.join("arvo");
+    let repo = ws.join("acre");
     make_a_repo(&repo);
-    std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"arvo\"\n").unwrap();
+    std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"acre\"\n").unwrap();
 
     let cfg = config_at(&ws);
     (ws, cfg)
@@ -344,7 +344,7 @@ fn regen_places_a_missing_shared_config_and_leaves_it_there() {
     let cfg = dir.path().join("homma.toml");
     std::fs::write(&cfg, cfg_body).unwrap();
 
-    let placed = ws.join("arvo").join("deny.toml");
+    let placed = ws.join("acre").join("deny.toml");
     assert!(!placed.exists(), "the fixture starts without the config");
 
     bin()
@@ -385,7 +385,7 @@ fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_o
     std::fs::write(tagged.join("rustfmt.toml"), "wrap_comments = true\n").unwrap();
 
     let body = config_at(&ws);
-    for (name, pinned) in [("arvo", true), ("renki", false)] {
+    for (name, pinned) in [("acre", true), ("renki", false)] {
         let repo = ws.join(name);
         make_a_repo(&repo);
         std::fs::write(
@@ -418,7 +418,7 @@ fn the_nightly_only_config_reaches_a_pinned_repo_and_is_withheld_from_a_stable_o
         .expect("the binary runs");
 
     assert!(
-        ws.join("arvo").join("rustfmt.toml").exists(),
+        ws.join("acre").join("rustfmt.toml").exists(),
         "the pinned repo did not get the config"
     );
     assert!(
@@ -482,7 +482,7 @@ fn a_repo_whose_config_differs_is_warned_about_and_the_run_still_succeeds() {
     let cfg = dir.path().join("homma.toml");
     std::fs::write(&cfg, cfg_body).unwrap();
 
-    let theirs = ws.join("arvo").join("deny.toml");
+    let theirs = ws.join("acre").join("deny.toml");
     std::fs::write(&theirs, "[bans]\nmultiple-versions = \"warn\"\n").unwrap();
 
     let out = bin()
@@ -591,7 +591,7 @@ fn a_write_leaving_the_workspace_is_refused_before_the_deny_list_is_consulted() 
 
     // A repository with a hook to aggregate, so the pass has work to do. It
     // sits under the workspace root because that is what makes it a member.
-    let repo = ws.join("notko");
+    let repo = ws.join("notch");
     make_a_repo(&repo);
     std::fs::create_dir_all(repo.join(".claude").join("hooks")).unwrap();
     std::fs::write(

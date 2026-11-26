@@ -23,9 +23,9 @@ fn what_a_target_without_renki_is_told_names_renki_and_unix() {
 #[test]
 fn an_unknown_top_level_word_reaches_the_dispatch_with_its_flags_untouched() {
     let cli =
-        Cli::try_parse_from(["homma", "msg", "kaski", "board", "--states", "--json"]).unwrap();
+        Cli::try_parse_from(["homma", "msg", "kiosk", "board", "--states", "--json"]).unwrap();
     match cli.command {
-        Command::External(w) => assert_eq!(w, ["msg", "kaski", "board", "--states", "--json"]),
+        Command::External(w) => assert_eq!(w, ["msg", "kiosk", "board", "--states", "--json"]),
         other => panic!("{other:?}"),
     }
 }

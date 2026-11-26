@@ -53,8 +53,8 @@ fn status_human_renders_workspace_summary() {
         .assert()
         .success()
         .stdout(predicate::str::contains("workspace: test-ws"))
-        // notko has no mockspace in this fixture, which is nothing it is short of
-        .stdout(predicate::str::contains("notko").not())
+        // notch has no mockspace in this fixture, which is nothing it is short of
+        .stdout(predicate::str::contains("notch").not())
         .stdout(predicate::str::contains("missing").not());
 }
 
@@ -68,7 +68,7 @@ fn status_full_names_a_repo_with_no_mockspace_as_that() {
         .args(["-c", cfg.to_str().unwrap(), "status", "--full"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("notko no mockspace"));
+        .stdout(predicate::str::contains("notch no mockspace"));
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn status_json_renders_typed_payload() {
     let v: serde_json::Value = serde_json::from_str(s).expect("output is valid JSON");
     assert_eq!(v["workspace"]["name"], "test-ws");
     assert_eq!(v["forges"][0]["name"], "github");
-    assert_eq!(v["repos"][0]["name"], "notko");
+    assert_eq!(v["repos"][0]["name"], "notch");
 }
 
 #[test]
@@ -107,8 +107,8 @@ fn a_member_s_branches_are_the_workspace_defaults_because_there_is_nowhere_else(
     .unwrap();
     clone_at(
         dir.path(),
-        "notko",
-        Some("https://github.com/orgrinrt/notko.git"),
+        "notch",
+        Some("https://github.com/woodland/notch.git"),
     );
     let out = bin()
         .args(["-c", path.to_str().unwrap(), "--output", "json", "status"])
@@ -202,7 +202,7 @@ api_url = "https://api.github.com"
     clone_at(
         dir.path(),
         "real",
-        Some("https://github.com/orgrinrt/real.git"),
+        Some("https://github.com/woodland/real.git"),
     );
     bin()
         .args(["-c", cfg_path.to_str().unwrap(), "verify"])
@@ -329,7 +329,7 @@ fn migrate_undeclared_destination_forge_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "migrate", "notko", "--to", "codeberg"])
+        .args(["-c", cfg.to_str().unwrap(), "migrate", "notch", "--to", "codeberg"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("forge `codeberg` not declared"));
@@ -362,7 +362,7 @@ fn archive_undeclared_forge_override_errors_cleanly() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = write_tmp_config(&dir);
     bin()
-        .args(["-c", cfg.to_str().unwrap(), "archive", "notko", "--from", "doesnotexist"])
+        .args(["-c", cfg.to_str().unwrap(), "archive", "notch", "--from", "doesnotexist"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -398,7 +398,7 @@ fn a_table_key_disagreeing_with_its_handle_is_refused() {
     let cfg = dir.path().join("homma.toml");
     std::fs::write(
         &cfg,
-        "content_repo = \"local\"\n\n[org.paja]\nrole = \"hand\"\nhandle = \"someone-else\"\n",
+        "content_repo = \"local\"\n\n[org.pike]\nrole = \"hand\"\nhandle = \"someone-else\"\n",
     )
     .unwrap();
 

@@ -359,7 +359,7 @@ mod tests {
 
         use crate::cli::{Command, ReleaseOp};
         let manifest = Path::new("/somewhere/homma.toml");
-        let args = poster_args(manifest, "notko", "abc123");
+        let args = poster_args(manifest, "notch", "abc123");
         let argv: Vec<&str> = std::iter::once("homma")
             .chain(args.iter().map(String::as_str))
             .collect();
@@ -381,7 +381,7 @@ mod tests {
                         ..
                     },
             } => {
-                assert_eq!(repo.as_deref(), Some("notko"));
+                assert_eq!(repo.as_deref(), Some("notch"));
                 assert_eq!(post.as_deref(), Some("abc123"));
                 assert!(wait, "a poster waits for the forge");
                 assert!(!hook && sha.is_none());

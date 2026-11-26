@@ -7,7 +7,7 @@
 //!
 //! A workspace accumulates tools homma has no business owning. What fills a
 //! session's context window, what the rule corpus costs to load, what is
-//! outstanding on the agenda: each is real, each belongs to whoever wrote it,
+//! outstanding in a backlog: each is real, each belongs to whoever wrote it,
 //! and none of them is a thing a workspace orchestrator should grow an opinion
 //! about. So homma runs them and prints what they say, in the order they are
 //! declared, and knows nothing else about them.
@@ -267,7 +267,7 @@ fn pipe_through(pipeline: &str, input: &str, cwd: &Path) -> Result<String, Strin
     // held for small inputs and only for small inputs: a kilobyte came back
     // fine and a megabyte through `cat` sat until it was killed.
     //
-    // An injected tool printing the agenda or the rule corpus is well past
+    // An injected tool printing a backlog or the rule corpus is well past
     // that, and what it hangs is `homma status`.
     if let Some(mut stdin) = child.stdin.take() {
         let buf = input.as_bytes().to_vec();

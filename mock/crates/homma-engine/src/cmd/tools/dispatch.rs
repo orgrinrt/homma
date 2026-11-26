@@ -7,7 +7,7 @@
 //!
 //! The first word after the tool's name is a verb when the descriptor names a command that way. When it
 //! does not, the command named like the tool takes every word, which is how a tool whose first argument
-//! is not a verb (`msg kaski board`) is a subcommand. Anything else is refused with the verbs listed, and
+//! is not a verb (`msg kiosk board`) is a subcommand. Anything else is refused with the verbs listed, and
 //! a tool whose descriptor is broken is refused by name with the reason, never by silence.
 //!
 //! Where the tool is, and the process that runs it, are renki's: [`locate`] finds it against the backends

@@ -231,24 +231,24 @@ mod tests {
 
     #[test]
     fn a_short_name_takes_the_content_repositorys_host_and_spelling() {
-        let ssh = "git@github.com:orgrinrt/clause-dev.git";
+        let ssh = "git@github.com:woodland/glade-root.git";
         assert_eq!(
-            url_of(ssh, "orgrinrt/notko"),
-            "git@github.com:orgrinrt/notko.git"
+            url_of(ssh, "woodland/notch"),
+            "git@github.com:woodland/notch.git"
         );
         assert_eq!(
-            url_of(ssh, "hiisi-digital/viola.git"),
-            "git@github.com:hiisi-digital/viola.git"
+            url_of(ssh, "meadow-forest/vireo.git"),
+            "git@github.com:meadow-forest/vireo.git"
         );
-        let https = "https://github.com/orgrinrt/clause-dev.git";
+        let https = "https://github.com/woodland/glade-root.git";
         assert_eq!(
-            url_of(https, "orgrinrt/notko"),
-            "https://github.com/orgrinrt/notko.git"
+            url_of(https, "woodland/notch"),
+            "https://github.com/woodland/notch.git"
         );
-        let sshurl = "ssh://git@github.com/orgrinrt/clause-dev.git";
+        let sshurl = "ssh://git@github.com/woodland/glade-root.git";
         assert_eq!(
-            url_of(sshurl, "orgrinrt/notko"),
-            "ssh://git@github.com/orgrinrt/notko.git"
+            url_of(sshurl, "woodland/notch"),
+            "ssh://git@github.com/woodland/notch.git"
         );
         // a full url, a path and a relative path are left alone
         for already in [
@@ -267,11 +267,11 @@ mod tests {
     #[test]
     fn the_clone_directory_is_the_last_segment_without_the_suffix() {
         assert_eq!(
-            name_of("git@github.com:orgrinrt/clause-dev.git"),
-            "clause-dev"
+            name_of("git@github.com:woodland/glade-root.git"),
+            "glade-root"
         );
-        assert_eq!(name_of("https://github.com/orgrinrt/Loru.git"), "Loru");
-        assert_eq!(name_of("https://github.com/orgrinrt/notko"), "notko");
+        assert_eq!(name_of("https://github.com/woodland/Loch.git"), "Loch");
+        assert_eq!(name_of("https://github.com/woodland/notch"), "notch");
         assert_eq!(name_of("/srv/git/ws.git/"), "ws");
         assert_eq!(name_of("ws"), "ws");
     }

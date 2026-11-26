@@ -21,8 +21,8 @@ fn ws() -> tempfile::TempDir {
 
 #[test]
 fn the_work_alone_is_a_whole_file() {
-    let l = Local::parse("[instance]\nwork = \"kenno\"\n").unwrap();
-    assert_eq!(l.instance.work, "kenno");
+    let l = Local::parse("[instance]\nwork = \"knoll\"\n").unwrap();
+    assert_eq!(l.instance.work, "knoll");
     assert_eq!(l.instance.title, None);
     assert!(l.instance.repos.is_empty());
     assert_eq!(l.instance.state, None);
@@ -35,23 +35,23 @@ fn every_instance_key_is_read() {
     let l = Local::parse(
         r#"
         [instance]
-        work = "kenno"
+        work = "knoll"
         title = "the tile machine"
-        repos = ["kenno", "homma"]
-        state = ".shared/state/kenno.md"
-        goal = ".data/op-responses/goal.md"
+        repos = ["knoll", "homma"]
+        state = ".shared/state/knoll.md"
+        goal = ".data/oz-responses/goal.md"
         "#,
     )
     .unwrap();
     assert_eq!(l.instance.title.as_deref(), Some("the tile machine"));
-    assert_eq!(l.instance.repos, vec!["kenno", "homma"]);
+    assert_eq!(l.instance.repos, vec!["knoll", "homma"]);
     assert_eq!(
         l.instance.state,
-        Some(PathBuf::from(".shared/state/kenno.md"))
+        Some(PathBuf::from(".shared/state/knoll.md"))
     );
     assert_eq!(
         l.instance.goal,
-        Some(PathBuf::from(".data/op-responses/goal.md"))
+        Some(PathBuf::from(".data/oz-responses/goal.md"))
     );
 }
 
@@ -78,7 +78,7 @@ fn an_unknown_top_level_table_is_refused() {
 
 #[test]
 fn repos_as_a_string_is_refused() {
-    assert!(Local::parse("[instance]\nwork = \"k\"\nrepos = \"kenno\"\n").is_err());
+    assert!(Local::parse("[instance]\nwork = \"k\"\nrepos = \"knoll\"\n").is_err());
 }
 
 #[test]
@@ -177,8 +177,8 @@ fn a_manifest_carrying_a_local_table_is_still_refused() {
 
 #[test]
 fn the_skeleton_loads_and_carries_the_work() {
-    let l = Local::parse(&skeleton("kenno")).unwrap();
-    assert_eq!(l.instance.work, "kenno");
+    let l = Local::parse(&skeleton("knoll")).unwrap();
+    assert_eq!(l.instance.work, "knoll");
     assert!(l.instance.repos.is_empty());
 }
 
@@ -417,7 +417,7 @@ fn the_leftovers_line_ignores_exactly_what_set_leaves_behind() {
 // the stored config
 // ---------------------------------------------------------------------------
 
-const STORED: &str = "# the stored one\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n";
+const STORED: &str = "# the stored one\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"chair\"\n";
 
 #[test]
 fn a_stored_config_is_the_one_its_name_says() {
@@ -505,7 +505,7 @@ fn naming_a_console_beside_a_dashboard_is_refused_by_set() {
 // inheriting a project
 // ---------------------------------------------------------------------------
 
-const BASE: &str = "[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\", \"b\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n";
+const BASE: &str = "[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\", \"b\"]\n\n[tools.goal]\nactive = \"false\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"chair\"\n";
 
 fn with_store(base: &str, local: &str) -> tempfile::TempDir {
     let d = ws();
@@ -527,7 +527,7 @@ fn a_file_of_one_project_line_is_the_whole_stored_config() {
     assert_eq!(l.instance.title.as_deref(), Some("stored title"));
     assert_eq!(l.instance.repos, ["a", "b"]);
     assert_eq!(l.tools["goal"]["objective"].as_str(), Some("o"));
-    assert_eq!(l.tools["msg"]["as"].as_str(), Some("coord"));
+    assert_eq!(l.tools["msg"]["as"].as_str(), Some("chair"));
     let p = l.provenance.unwrap();
     assert_eq!(p.project, "k");
     assert!(p.local.is_empty() && p.overridden.is_empty() && p.unset.is_empty());
@@ -697,7 +697,7 @@ fn a_file_without_a_project_loads_as_written_with_no_provenance() {
 
 #[test]
 fn migrating_a_copy_drops_what_equals_the_store_and_keeps_the_rest() {
-    let copy = "# mine\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\", \"b\"]\n\n[tools.goal]\nactive = \"true\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"coord\"\n\n[tools.console]\ndeployed = \"abc\"\n";
+    let copy = "# mine\n[instance]\nwork = \"k\"\ntitle = \"stored title\"\nrepos = [\"a\", \"b\"]\n\n[tools.goal]\nactive = \"true\"\nobjective = \"o\"\n\n[tools.msg]\nas = \"chair\"\n\n[tools.console]\ndeployed = \"abc\"\n";
     let m = migrate(copy, BASE, "k").unwrap();
     assert_eq!(m.dropped, [
         "instance.work",
@@ -713,7 +713,7 @@ fn migrating_a_copy_drops_what_equals_the_store_and_keeps_the_rest() {
 
 #[test]
 fn a_migrated_copy_means_what_the_copy_meant() {
-    let copy = "[instance]\nwork = \"k\"\ntitle = \"my title\"\nrepos = [\"a\", \"b\"]\n[tools.goal]\nactive = \"true\"\nobjective = \"o\"\n[tools.msg]\nas = \"coord\"\n[tools.recorded]\nsha = \"abc\"\n";
+    let copy = "[instance]\nwork = \"k\"\ntitle = \"my title\"\nrepos = [\"a\", \"b\"]\n[tools.goal]\nactive = \"true\"\nobjective = \"o\"\n[tools.msg]\nas = \"chair\"\n[tools.recorded]\nsha = \"abc\"\n";
     let m = migrate(copy, BASE, "k").unwrap();
     let d = with_store(BASE, &m.text);
     let before = Local::parse(copy).unwrap();

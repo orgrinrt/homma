@@ -103,18 +103,18 @@ content_repo = "git@example.invalid:someone/content.git"
 [paths]
 hands = "custom/hands"
 
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
+handle = "oz"
 
-[org.paja]
+[org.pike]
 role = "hand"
 staffed = true
-handle = "paja"
-nickname = "Paja"
-git_name = "paja"
-git_email = "paja@example.invalid"
-workspace = "/tmp/paja"
+handle = "pike"
+nickname = "Pike"
+git_name = "pike"
+git_email = "pike@example.invalid"
+workspace = "/tmp/pike"
 repos = ["homma"]
 
 [org.rendering]
@@ -141,8 +141,8 @@ mod tests {
     #[test]
     fn the_registry_answers_what_role_a_handle_holds() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.role_of("op"), Some(Role::King));
-        assert_eq!(w.role_of("paja"), Some(Role::Hand));
+        assert_eq!(w.role_of("oz"), Some(Role::King));
+        assert_eq!(w.role_of("pike"), Some(Role::Hand));
         assert_eq!(w.role_of("stranger"), None);
     }
 }

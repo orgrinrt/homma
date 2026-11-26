@@ -61,9 +61,9 @@ mod tests {
 
     #[test]
     fn an_office_is_counted_unless_it_says_otherwise() {
-        let o: Office = toml::from_str("holder = \"onni\"").unwrap();
+        let o: Office = toml::from_str("holder = \"olly\"").unwrap();
         assert!(o.counted);
-        assert_eq!(o.holder.as_deref(), Some("onni"));
+        assert_eq!(o.holder.as_deref(), Some("olly"));
         let o: Office = toml::from_str("counted = false").unwrap();
         assert!(!o.counted);
         assert_eq!(o.holder, None);

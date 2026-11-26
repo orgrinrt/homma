@@ -21,17 +21,17 @@ fn bin() -> Command {
     c
 }
 
-/// A workspace holding one clone named `kaski`, a page directory with one console ticket answer,
+/// A workspace holding one clone named `kiosk`, a page directory with one console ticket answer,
 /// and a launcher that appends its arguments to `args`.
 fn setup(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let root = dir.join("ws");
-    std::fs::create_dir_all(root.join("kaski/.git")).unwrap();
+    std::fs::create_dir_all(root.join("kiosk/.git")).unwrap();
     std::fs::write(root.join("homma.toml"), "[workspace]\nname = \"ws\"\n").unwrap();
     let page = dir.join("page");
     std::fs::create_dir_all(page.join("answers")).unwrap();
     std::fs::write(
         page.join("answers/tk.json"),
-        r#"{"id":"tk","key":{"ticket":"tk_one"},"kind":"ticket","where":"kaski","asks":"Which?","options":["a","b"],"choice":"b","text":"because","at":"2026-10-28T09:40:00Z"}"#,
+        r#"{"id":"tk","key":{"ticket":"tk_one"},"kind":"ticket","where":"kiosk","asks":"Which?","options":["a","b"],"choice":"b","text":"because","at":"2026-10-28T09:40:00Z"}"#,
     )
     .unwrap();
     let args = dir.join("args");
@@ -119,9 +119,9 @@ fn the_placed_hook_takes_words_and_declines_the_rest() {
     assert!(hook.is_file());
     let run = |field: &str, value: &str| {
         std::process::Command::new(&hook)
-            .current_dir(root.join("kaski"))
+            .current_dir(root.join("kiosk"))
             .env("HOMMA_MOCK", &mock)
-            .env("MOCKSPACE_REPO_ROOT", root.join("kaski"))
+            .env("MOCKSPACE_REPO_ROOT", root.join("kiosk"))
             .args(["ticket::tk_one", field, value])
             .status()
             .unwrap()
@@ -155,9 +155,9 @@ fn a_hook_whose_row_cannot_be_written_exits_one_leaves_no_capture_and_can_be_ret
     let hook = root.join(".mockspace/hooks/registry-append");
     let run = || {
         std::process::Command::new(&hook)
-            .current_dir(root.join("kaski"))
+            .current_dir(root.join("kiosk"))
             .env("HOMMA_MOCK", &mock)
-            .env("MOCKSPACE_REPO_ROOT", root.join("kaski"))
+            .env("MOCKSPACE_REPO_ROOT", root.join("kiosk"))
             .args(["ticket::tk_one", "answers", "2026-10-28T09:41:00Z: yes please"])
             .output()
             .unwrap()

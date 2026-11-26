@@ -85,7 +85,7 @@ fn a_mock_dir_with_no_toml_is_skipped_and_cargo_mock_is_not_run() {
 
 #[test]
 fn a_repo_with_a_toml_and_a_declared_mock_dir_is_not_skipped() {
-    // The control: sodapop's `linux/` with its toml reaches `cargo mock`, so
+    // The control: shingle's `linux/` with its toml reaches `cargo mock`, so
     // the test above does not pass for a stage that skips everything. What
     // `cargo mock` then answers in a temporary directory is not the question.
     let dir = tempfile::tempdir().unwrap();

@@ -198,15 +198,15 @@ fn a_real_multi_select_with_typed_text_after_it_splits_where_the_typing_starts()
     let o = options(&[
         "~/Dev/staging generally",
         "~/.meet, properly this time",
-        "loru itself, the rest of it",
+        "loch itself, the rest of it",
         "Nothing more",
     ]);
-    let a = "~/Dev/staging generally, \"~/.meet, properly this time\", \"loru itself, the rest of it\", Just probably worth it to grep any keywords from ~/Dev in general.";
+    let a = "~/Dev/staging generally, \"~/.meet, properly this time\", \"loch itself, the rest of it\", Just probably worth it to grep any keywords from ~/Dev in general.";
     assert_eq!(answered(a, &o, Takes::Several), Answer {
         chose: vec![
             "~/Dev/staging generally".into(),
             "~/.meet, properly this time".into(),
-            "loru itself, the rest of it".into(),
+            "loch itself, the rest of it".into(),
         ],
         typed: Some("Just probably worth it to grep any keywords from ~/Dev in general.".into()),
     });

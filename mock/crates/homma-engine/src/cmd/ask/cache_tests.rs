@@ -99,19 +99,71 @@ fn the_git_directory_is_asked_without_the_callers_git_variables() {
     }
 }
 
-/// Failing control: with the sweep taken out of `run`, the old partial is still there.
-#[test]
-fn an_ask_sweeps_its_cache_before_it_answers_even_a_refused_one() {
-    let ws = tempfile::tempdir().unwrap();
+/// A repository at `at`, made without the caller's git variables.
+fn git_init(at: &std::path::Path) {
     let git = std::process::Command::new("git")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .arg("-C")
-        .arg(ws.path())
+        .arg(at)
         .args(["init", "-q"])
         .status()
         .unwrap();
     assert!(git.success());
+}
+
+/// Set only in the child the test below starts: the planted repository the child asks for.
+const CHILD_ROOT: &str = "HOMMA_TEST_CACHE_CHILD_ROOT";
+
+/// Failing control: with `of_workspace` asking a plain `git rev-parse --absolute-git-dir`, the
+/// cache lands under the repository `GIT_DIR` names.
+///
+/// The variable is exported in a child of this test binary that runs this one test, so no other
+/// test thread sees it.
+#[test]
+fn the_cache_is_under_its_own_repository_whatever_git_dir_the_caller_exports() {
+    if let Some(root) = std::env::var_os(CHILD_ROOT) {
+        let root = std::path::Path::new(&root);
+        let c = Cache::of_workspace(root).unwrap();
+        assert!(
+            c.dir().starts_with(root.canonicalize().unwrap()) || c.dir().starts_with(root),
+            "the cache is the planted root's: {}",
+            c.dir().display()
+        );
+        return;
+    }
+    let planted = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    git_init(planted.path());
+    git_init(other.path());
+    let name = format!(
+        "{}::the_cache_is_under_its_own_repository_whatever_git_dir_the_caller_exports",
+        module_path!().split_once("::").unwrap().1
+    );
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", &name, "--test-threads", "1"])
+        .env(CHILD_ROOT, planted.path())
+        .env("GIT_DIR", other.path().join(".git"))
+        .env_remove("GIT_WORK_TREE")
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{said}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        said.contains("1 passed"),
+        "the child ran the one test: {said}"
+    );
+}
+
+/// Failing control: with the sweep taken out of `run`, the old partial is still there.
+#[test]
+fn an_ask_sweeps_its_cache_before_it_answers_even_a_refused_one() {
+    let ws = tempfile::tempdir().unwrap();
+    git_init(ws.path());
     let c = Cache::of_workspace(ws.path()).unwrap();
     assert!(
         c.dir().starts_with(ws.path().canonicalize().unwrap()) || c.dir().starts_with(ws.path()),

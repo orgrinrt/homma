@@ -905,7 +905,7 @@ only. Off unix the engine builds without them, and every command that would
 reach a tool, `homma tools`, `homma tools check`, `homma tools run`, a built-in
 group's word handed on and `homma <tool>`, is refused saying that renki, which
 the tools run on, is unix only. No feature turns them off on a platform that can
-carry them. On 23 October 2026 op waived the feature half of the per-target and
+carry them. On 23 October 2026 the maintainer waived the feature half of the per-target and
 per-feature gate for these tools, choosing that over a default-off `tools` feature
 that workspace builds would turn on.
 
@@ -919,7 +919,7 @@ the workspace root, and a `git` tool is fetched by renki's git backend into the
 shared cache once for each revision and run from there. A backend renki has no
 row for is refused, and the refusal names the ones it has.
 
-A promoted tool is a subcommand: `homma msg kaski board` runs the tool `msg`.
+A promoted tool is a subcommand: `homma msg kiosk board` runs the tool `msg`.
 The first word after the tool's name is a verb when the descriptor names a
 command that way, and that command gets the rest. When it does not, and the
 descriptor names a command with the tool's own name, that command is the tool's
@@ -1003,7 +1003,7 @@ tool.
   fenced block that begins with the tool's name or the name of one of its commands is a usage line, and a
   usage line is a verb: its name is the words after the command, its summary is the text set off by a
   column gap of two spaces or more, and its command is the line without that text, the tool's own name
-  replaced by the command that dispatches it, so `msg kaski show 3f9a1c` is answered as `homma msg kaski show 3f9a1c`.
+  replaced by the command that dispatches it, so `msg kiosk show 3f9a1c` is answered as `homma msg kiosk show 3f9a1c`.
   The prose of the readme is the rest of the tool's text, weighed as the rest of a script's header is. A
   readme that is absent or unreadable is no gap, since a tool does not need one. At most 80 usage lines
   and 24000 characters of prose are kept from one readme, the prose stopping at the
@@ -1058,7 +1058,7 @@ with nothing in it, a local config that does not parse is read as naming no repo
 a workspace with no mockspace repository has no such commands, and a source left
 out by a flag is a source not read. The answer's footer says each, with the count of what it
 could not describe: `12 scripts under .shared/scripts carry no header comment`,
-`1 tool.toml cannot be read`, `mockspace commands not listed in muisti: cargo mock
+`1 tool.toml cannot be read`, `mockspace commands not listed in mosaic: cargo mock
 tools failed`. The footer is the way a gap in the tooling becomes visible to the
 agent that hit it, and it is printed whether or not anything matched.
 

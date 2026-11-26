@@ -404,7 +404,7 @@ mod tests {
             crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
         )
         .unwrap();
-        let inside = root.as_abs().join("hands").join("paja");
+        let inside = root.as_abs().join("hands").join("pike");
         assert!(root.contain(&inside).is_ok());
     }
 
@@ -441,7 +441,7 @@ mod tests {
             crate::Denied::under_home(&AbsPath::new("/nonexistent-home").unwrap()),
         )
         .unwrap();
-        let through_the_link = root.as_abs().join("shared").join("hands").join("paja");
+        let through_the_link = root.as_abs().join("shared").join("hands").join("pike");
 
         let err = root
             .contain(&through_the_link)

@@ -350,14 +350,14 @@ mod tests {
 
     fn sample_meta() -> RepoMetadata {
         RepoMetadata {
-            owner:           "orgrinrt".into(),
-            name:            "notko".into(),
+            owner:           "woodland".into(),
+            name:            "notch".into(),
             description:     Some("foundation primitives".into()),
             default_branch:  "dev".into(),
             visibility:      Visibility::Public,
             topics:          vec!["rust".into(), "no-std".into()],
             archived:        false,
-            clone_url_https: "https://github.com/orgrinrt/notko.git".into(),
+            clone_url_https: "https://github.com/woodland/notch.git".into(),
         }
     }
 
@@ -396,8 +396,8 @@ mod tests {
     #[test]
     fn build_create_spec_replicates_metadata() {
         let meta = sample_meta();
-        let spec = build_create_spec("notko", &meta, false);
-        assert_eq!(spec.name, "notko");
+        let spec = build_create_spec("notch", &meta, false);
+        assert_eq!(spec.name, "notch");
         assert_eq!(spec.description.as_deref(), Some("foundation primitives"));
         assert!(matches!(spec.visibility, Visibility::Public));
         assert_eq!(spec.default_branch.as_deref(), Some("dev"));
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn build_create_spec_marks_org_when_requested() {
         let meta = sample_meta();
-        let spec = build_create_spec("notko", &meta, true);
+        let spec = build_create_spec("notch", &meta, true);
         assert!(matches!(spec.owner_kind, OwnerKind::Org));
     }
 
@@ -418,22 +418,22 @@ mod tests {
         let plan = build_plan(
             "github",
             "codeberg",
-            "orgrinrt",
-            "notko",
-            "hiisi-digital",
-            "notko",
+            "woodland",
+            "notch",
+            "meadow-forest",
+            "notch",
             &meta,
         );
         assert_eq!(plan.source_forge, "github");
         assert_eq!(plan.dest_forge, "codeberg");
-        assert_eq!(plan.source_owner, "orgrinrt");
-        assert_eq!(plan.dest_owner, "hiisi-digital");
+        assert_eq!(plan.source_owner, "woodland");
+        assert_eq!(plan.dest_owner, "meadow-forest");
         assert_eq!(plan.default_branch, "dev");
         assert_eq!(plan.visibility, "public");
         assert_eq!(plan.topic_count, 2);
         assert_eq!(
             plan.source_clone_url,
-            "https://github.com/orgrinrt/notko.git"
+            "https://github.com/woodland/notch.git"
         );
     }
 

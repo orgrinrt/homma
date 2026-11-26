@@ -164,8 +164,8 @@ mod tests {
 
     fn registry(handle: &str) -> Option<Role> {
         match handle {
-            "op" => Some(Role::King),
-            "paja" => Some(Role::Hand),
+            "oz" => Some(Role::King),
+            "pike" => Some(Role::Hand),
             "proof" => Some(Role::Expert),
             _ => None,
         }
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn a_reference_round_trips_through_its_rendering() {
-        for text in ["@paja", "#hila/reorder_scheduler", "&hila/rework", "!gh/pr/13", "~blocked"] {
+        for text in ["@pike", "#hila/reorder_scheduler", "&hila/rework", "!gh/pr/13", "~blocked"] {
             let parsed: Reference = text.parse().expect("should parse");
             assert_eq!(parsed.to_string(), text);
         }
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn a_bare_word_is_not_a_reference() {
-        assert_eq!("paja".parse::<Reference>(), Err(NotAReference));
+        assert_eq!("pike".parse::<Reference>(), Err(NotAReference));
     }
 
     #[test]
@@ -204,8 +204,8 @@ mod tests {
 
     #[test]
     fn the_king_is_the_only_ratified_rung() {
-        assert_eq!(Reference::org("op").rung(&registry), Rung::Ratified);
-        assert_eq!(Reference::org("paja").rung(&registry), Rung::AgentOutput);
+        assert_eq!(Reference::org("oz").rung(&registry), Rung::Ratified);
+        assert_eq!(Reference::org("pike").rung(&registry), Rung::AgentOutput);
         assert_eq!(Reference::org("proof").rung(&registry), Rung::AgentOutput);
     }
 
@@ -227,6 +227,6 @@ mod tests {
         // The rung is a function of the registry, so a handle that merely looks
         // like the king's without being in the registry as king does not get it.
         let empty = |_: &str| None;
-        assert_eq!(Reference::org("op").rung(&empty), Rung::Unknown);
+        assert_eq!(Reference::org("oz").rung(&empty), Rung::Unknown);
     }
 }

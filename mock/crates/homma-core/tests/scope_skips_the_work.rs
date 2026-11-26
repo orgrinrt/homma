@@ -88,7 +88,7 @@ fn clone_at(root: &Path, name: &str) {
 
 fn workspace() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
-    for n in ["kaski", "homma", "arvo", "notko", "viola"] {
+    for n in ["kiosk", "homma", "acre", "notch", "vireo"] {
         clone_at(root.path(), n);
     }
     root
@@ -99,15 +99,15 @@ fn a_clone_out_of_scope_is_never_asked_about() {
     let root = workspace();
     let spy = Spy::default();
     let mut cfg = config();
-    cfg.detect_members(root.path(), &spy, &Scope::named(["kaski", "homma"]));
+    cfg.detect_members(root.path(), &spy, &Scope::named(["kiosk", "homma"]));
 
     assert_eq!(
         spy.names(),
-        ["homma", "kaski"],
+        ["homma", "kiosk"],
         "git was asked only about the scope"
     );
     assert_eq!(cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(), [
-        "homma", "kaski"
+        "homma", "kiosk"
     ]);
 }
 
@@ -117,21 +117,21 @@ fn without_a_scope_every_clone_is_asked() {
     let root = workspace();
     let spy = Spy::default();
     config().detect_members(root.path(), &spy, &Scope::everything());
-    assert_eq!(spy.names(), ["arvo", "homma", "kaski", "notko", "viola"]);
+    assert_eq!(spy.names(), ["acre", "homma", "kiosk", "notch", "vireo"]);
 }
 
 #[test]
 fn a_named_repository_that_is_not_cloned_is_not_a_member_and_not_an_error() {
     let root = workspace();
     let mut cfg = config();
-    let scope = Scope::named(["kaski", "letkajenkka"]);
+    let scope = Scope::named(["kiosk", "lanternfish"]);
     cfg.detect_members(root.path(), &GixGit, &scope);
 
     assert_eq!(cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(), [
-        "kaski"
+        "kiosk"
     ]);
     assert_eq!(scope.unmet(cfg.repos.keys().map(String::as_str)), [
-        "letkajenkka"
+        "lanternfish"
     ]);
 }
 
@@ -145,13 +145,13 @@ fn loading_a_manifest_applies_the_local_file_beside_it() {
     .unwrap();
     std::fs::write(
         root.path().join("homma.local.toml"),
-        "[instance]\nwork = \"w\"\nrepos = [\"kaski\"]\n",
+        "[instance]\nwork = \"w\"\nrepos = [\"kiosk\"]\n",
     )
     .unwrap();
 
     let cfg = Config::from_path(&root.path().join("homma.toml")).unwrap();
     assert_eq!(cfg.repos.keys().map(String::as_str).collect::<Vec<_>>(), [
-        "kaski"
+        "kiosk"
     ]);
 }
 

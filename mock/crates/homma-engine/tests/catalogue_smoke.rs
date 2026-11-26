@@ -15,23 +15,23 @@ use std::path::Path;
 use predicates::prelude::*;
 
 const CATALOGUE: &str = r#"
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
-git_email = "op@example.invalid"
+handle = "oz"
+git_email = "oz@example.invalid"
 
-[org.aku]
+[org.abe]
 role = "hand"
-handle = "aku"
-git_email = "aarne@example.invalid"
+handle = "abe"
+git_email = "arlen@example.invalid"
 
-[org.ikku]
+[org.inge]
 role = "journeyman"
-handle = "ikku"
-git_email = "ikku@example.invalid"
+handle = "inge"
+git_email = "inge@example.invalid"
 
-[offices.coord]
-holder = "aku"
+[offices.chair]
+holder = "abe"
 "#;
 
 fn workspace(extra: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -55,15 +55,15 @@ fn run(cfg: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
 #[test]
 fn a_tagged_sub_agent_address_matches_its_launcher() {
     let (_d, cfg) = workspace("");
-    run(&cfg, &["identity", "match", "Aarne+review@example.invalid"])
+    run(&cfg, &["identity", "match", "Arlen+review@example.invalid"])
         .success()
-        .stdout("aku\thand\n");
+        .stdout("abe\thand\n");
 }
 
 #[test]
 fn a_person_matches_no_agent_and_exits_one() {
     let (_d, cfg) = workspace("");
-    run(&cfg, &["identity", "match", "op@example.invalid"])
+    run(&cfg, &["identity", "match", "oz@example.invalid"])
         .code(1)
         .stdout("");
     run(&cfg, &["identity", "match", "stranger@example.invalid"]).code(1);
@@ -76,7 +76,7 @@ fn the_index_is_written_under_the_paths_key() {
     let index = fs::read_to_string(d.path().join(".shared/.index/identities.tsv")).unwrap();
     assert_eq!(
         index,
-        "aarne@example.invalid\taku\thand\nikku@example.invalid\tikku\tjourneyman\n"
+        "arlen@example.invalid\tabe\thand\ninge@example.invalid\tinge\tjourneyman\n"
     );
 }
 
@@ -97,12 +97,12 @@ fn a_regen_writes_the_index_too() {
 #[test]
 fn a_catalogue_with_a_shared_address_is_refused_naming_it() {
     let (_d, cfg) = workspace(
-        "\n[org.kide]\nrole = \"journeyman\"\nhandle = \"kide\"\ngit_email = \"ikku+x@example.invalid\"\n",
+        "\n[org.kent]\nrole = \"journeyman\"\nhandle = \"kent\"\ngit_email = \"inge+x@example.invalid\"\n",
     );
-    run(&cfg, &["identity", "match", "ikku@example.invalid"])
+    run(&cfg, &["identity", "match", "inge@example.invalid"])
         .failure()
         .stderr(
-            predicate::str::contains("ikku@example.invalid").and(predicate::str::contains("kide")),
+            predicate::str::contains("inge@example.invalid").and(predicate::str::contains("kent")),
         );
     run(&cfg, &["org", "list"]).failure();
 }

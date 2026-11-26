@@ -17,10 +17,10 @@ fn no_scope_admits_every_repository() {
 
 #[test]
 fn a_named_scope_admits_only_its_names() {
-    let s = Scope::named(["kaski", "homma"]);
-    assert!(s.admits("kaski"));
+    let s = Scope::named(["kiosk", "homma"]);
+    assert!(s.admits("kiosk"));
     assert!(s.admits("homma"));
-    assert!(!s.admits("arvo"));
+    assert!(!s.admits("acre"));
     assert!(!s.admits("kask"), "a prefix of a name is not the name");
 }
 
@@ -32,9 +32,9 @@ fn an_empty_list_narrows_nothing() {
 
 #[test]
 fn a_named_repository_that_is_not_cloned_is_unmet_and_nothing_else_is() {
-    let s = Scope::named(["kaski", "homma", "letkajenkka"]);
-    assert_eq!(s.unmet(["kaski", "arvo"]), vec!["homma", "letkajenkka"]);
-    assert!(Scope::everything().unmet(["arvo"]).is_empty());
+    let s = Scope::named(["kiosk", "homma", "lanternfish"]);
+    assert_eq!(s.unmet(["kiosk", "acre"]), vec!["homma", "lanternfish"]);
+    assert!(Scope::everything().unmet(["acre"]).is_empty());
 }
 
 #[test]
@@ -48,10 +48,10 @@ fn a_directory_with_no_local_file_gives_everything_and_no_error() {
 #[test]
 fn the_local_files_repos_are_the_scope() {
     let d = tempfile::tempdir().unwrap();
-    write_local(d.path(), "[\"kaski\", \"homma\"]");
+    write_local(d.path(), "[\"kiosk\", \"homma\"]");
     let (s, err) = Scope::load(d.path());
     assert!(err.is_none());
-    assert_eq!(s, Scope::named(["kaski", "homma"]));
+    assert_eq!(s, Scope::named(["kiosk", "homma"]));
 }
 
 #[test]

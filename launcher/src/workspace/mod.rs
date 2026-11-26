@@ -229,12 +229,12 @@ mod tests {
         );
         assert_eq!(
             Ask::parse(&s(&[
-                "spawn", "alpha", "o/notko", "--branch", "feat/x", "o/arvo"
+                "spawn", "alpha", "o/notch", "--branch", "feat/x", "o/acre"
             ]))
             .unwrap(),
             Ask::Spawn {
                 slug:   "alpha".into(),
-                repos:  vec!["o/notko".into(), "o/arvo".into()],
+                repos:  vec!["o/notch".into(), "o/acre".into()],
                 branch: Some("feat/x".into()),
             }
         );

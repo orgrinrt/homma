@@ -47,14 +47,14 @@ fn workspace(tag_dir: &str) -> (tempfile::TempDir, PathBuf) {
     // that is missing.
     std::fs::write(
         ws.join("homma.toml"),
-        "content_repo = \"git@example.invalid:orgrinrt/clause-dev.git\"\n\n[workspace]\nname = \
+        "content_repo = \"git@example.invalid:woodland/glade-root.git\"\n\n[workspace]\nname = \
          \"t\"\n",
     )
     .unwrap();
 
-    let repo = ws.join("arvo");
+    let repo = ws.join("acre");
     std::fs::create_dir_all(&repo).unwrap();
-    std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"arvo\"\n").unwrap();
+    std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"acre\"\n").unwrap();
     git_init(&repo);
     (dir, ws)
 }
@@ -68,7 +68,7 @@ fn git_init(at: &Path) {
     assert!(ok.success(), "git init failed in {}", at.display());
 }
 
-/// Run `repo config <verb>` for `arvo` and return the exit code plus stdout.
+/// Run `repo config <verb>` for `acre` and return the exit code plus stdout.
 ///
 /// The code, not `success()`. A boolean cannot tell `1` from `2`, and those are
 /// two different things the gate does two different things about, so a helper
@@ -79,7 +79,7 @@ fn git_init(at: &Path) {
 /// and an arm asserting against it fails rather than passing on an absence.
 fn run(ws: &Path, verb: &str) -> (Option<i32>, String) {
     let out = bin()
-        .args(["--dir", ws.to_str().unwrap(), "repo", "config", verb, "--repo", "arvo"])
+        .args(["--dir", ws.to_str().unwrap(), "repo", "config", verb, "--repo", "acre"])
         .output()
         .expect("the binary runs");
     (
@@ -101,7 +101,7 @@ fn a_repo_missing_a_required_config_exits_one() {
     );
     // The refusal a person sees has to say which repo and which config, or the
     // gate quotes an empty reason and stops them with no way to act.
-    assert!(text.contains("arvo"), "{text}");
+    assert!(text.contains("acre"), "{text}");
     assert!(text.contains("deny.toml"), "{text}");
 }
 
@@ -111,7 +111,7 @@ fn a_workspace_whose_configs_are_in_order_exits_zero() {
     // exits non-zero unconditionally, which would refuse every commit in every
     // repo and look exactly like the gate working.
     let (_dir, ws) = workspace("rust_required");
-    std::fs::write(ws.join("arvo").join("deny.toml"), DENY).unwrap();
+    std::fs::write(ws.join("acre").join("deny.toml"), DENY).unwrap();
     let (code, text) = run(&ws, "check");
     assert_eq!(code, Some(0), "a repo owing nothing was refused: {text}");
 }
@@ -129,7 +129,7 @@ fn a_manifest_that_does_not_parse_exits_two_rather_than_one() {
     // refusing, reported at line 1 column 1 rather than at the missing table.
     std::fs::write(
         ws.join("homma.toml"),
-        "content_repo = \"git@example.invalid:orgrinrt/clause-dev.git\"\n",
+        "content_repo = \"git@example.invalid:woodland/glade-root.git\"\n",
     )
     .unwrap();
     let (code, text) = run(&ws, "check");
@@ -150,7 +150,7 @@ fn init_places_it_and_the_check_then_passes() {
     // Read back rather than trusting the report: a placement stage that
     // reported success and wrote nothing would satisfy an assertion about its
     // own output, which is the exact shape of a fail-open.
-    let placed = ws.join("arvo").join("deny.toml");
+    let placed = ws.join("acre").join("deny.toml");
     assert_eq!(
         std::fs::read_to_string(&placed).expect("the config was placed"),
         DENY,

@@ -160,21 +160,21 @@ impl Forge for MockForge {
 
 fn sample_source() -> RepoMetadata {
     RepoMetadata {
-        owner:           "orgrinrt".into(),
+        owner:           "woodland".into(),
         name:            "homma".into(),
         description:     Some("workspace tooling".into()),
         default_branch:  "dev".into(),
         visibility:      Visibility::Public,
         topics:          vec!["rust".into(), "workspace".into()],
         archived:        false,
-        clone_url_https: "https://github.com/orgrinrt/homma.git".into(),
+        clone_url_https: "https://github.com/woodland/homma.git".into(),
     }
 }
 
 #[test]
 fn fetch_repo_returns_metadata_when_present() {
     let f = MockForge::new().with_repo(sample_source());
-    let m = f.fetch_repo("orgrinrt", "homma").expect("fetch");
+    let m = f.fetch_repo("woodland", "homma").expect("fetch");
     assert_eq!(m.default_branch, "dev");
     assert_eq!(m.visibility, Visibility::Public);
 }
@@ -182,27 +182,27 @@ fn fetch_repo_returns_metadata_when_present() {
 #[test]
 fn fetch_repo_returns_not_found_when_absent() {
     let f = MockForge::new();
-    let err = f.fetch_repo("orgrinrt", "homma").unwrap_err();
+    let err = f.fetch_repo("woodland", "homma").unwrap_err();
     assert!(matches!(err, ForgeError::RepoNotFound { .. }));
 }
 
 #[test]
 fn repo_exists_round_trip() {
     let f = MockForge::new().with_repo(sample_source());
-    assert!(f.repo_exists("orgrinrt", "homma").unwrap());
-    assert!(!f.repo_exists("orgrinrt", "absent").unwrap());
+    assert!(f.repo_exists("woodland", "homma").unwrap());
+    assert!(!f.repo_exists("woodland", "absent").unwrap());
 }
 
 #[test]
 fn create_repo_round_trip_then_already_exists() {
     let f = MockForge::new();
     let spec = CreateRepoSpec::new("homma");
-    let created = f.create_repo("orgrinrt", &spec).expect("create");
+    let created = f.create_repo("woodland", &spec).expect("create");
     assert_eq!(created.name, "homma");
     assert_eq!(created.default_branch, "main");
     assert_eq!(created.visibility, Visibility::Public);
 
-    let err = f.create_repo("orgrinrt", &spec).unwrap_err();
+    let err = f.create_repo("woodland", &spec).unwrap_err();
     assert!(matches!(err, ForgeError::RepoAlreadyExists { .. }));
 }
 
@@ -219,18 +219,18 @@ fn replicate_from_copies_migrate_relevant_fields() {
 #[test]
 fn archive_then_delete() {
     let f = MockForge::new().with_repo(sample_source());
-    f.archive_repo("orgrinrt", "homma").expect("archive");
-    let after = f.fetch_repo("orgrinrt", "homma").unwrap();
+    f.archive_repo("woodland", "homma").expect("archive");
+    let after = f.fetch_repo("woodland", "homma").unwrap();
     assert!(after.archived);
 
-    f.delete_repo("orgrinrt", "homma").expect("delete");
-    assert!(!f.repo_exists("orgrinrt", "homma").unwrap());
+    f.delete_repo("woodland", "homma").expect("delete");
+    assert!(!f.repo_exists("woodland", "homma").unwrap());
 }
 
 #[test]
 fn archive_unknown_fails() {
     let f = MockForge::new();
-    let err = f.archive_repo("orgrinrt", "homma").unwrap_err();
+    let err = f.archive_repo("woodland", "homma").unwrap_err();
     assert!(matches!(err, ForgeError::RepoNotFound { .. }));
 }
 
@@ -249,9 +249,9 @@ fn create_repo_spec_in_org_flips_owner_kind() {
 #[test]
 fn forge_error_display_carries_context() {
     let e = ForgeError::RepoNotFound {
-        owner: "orgrinrt".into(),
+        owner: "woodland".into(),
         name:  "homma".into(),
     };
     let s = format!("{e}");
-    assert!(s.contains("orgrinrt/homma"), "got: {s}");
+    assert!(s.contains("woodland/homma"), "got: {s}");
 }

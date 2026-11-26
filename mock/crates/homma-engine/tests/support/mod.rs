@@ -52,8 +52,8 @@ pub fn write_tmp_config(dir: &tempfile::TempDir) -> PathBuf {
     std::fs::write(&path, minimal_config_toml()).unwrap();
     clone_at(
         dir.path(),
-        "notko",
-        Some("https://github.com/orgrinrt/notko.git"),
+        "notch",
+        Some("https://github.com/woodland/notch.git"),
     );
     path
 }
@@ -82,7 +82,7 @@ pub fn clone_at(root: &Path, name: &str, url: Option<&str>) {
 }
 
 pub fn committed_crate(root: &Path, name: &str) {
-    clone_at(root, name, Some("https://github.com/orgrinrt/x.git"));
+    clone_at(root, name, Some("https://github.com/woodland/x.git"));
     let path = root.join(name);
     std::fs::write(
         path.join("Cargo.toml"),

@@ -56,7 +56,7 @@ fn crates_pkg(manifest: &str) -> Package {
 fn jsr_pkg() -> Package {
     Package {
         registry: Registry::Jsr,
-        name:     "@hiisi/x".into(),
+        name:     "@meadow/x".into(),
         manifest: "deno.json".into(),
         version:  None,
     }
@@ -128,11 +128,11 @@ fn a_directory_with_no_manifest_declares_nothing() {
 fn a_scoped_package_is_read_when_the_scope_is_ours() {
     let d = tree(&[(
         "deno.json",
-        r#"{"name": "@hiisi/ft-flags", "version": "0.4.0"}"#,
+        r#"{"name": "@meadow/fx-gates", "version": "0.4.0"}"#,
     )]);
-    assert_eq!(jsr_packages(d.path(), Some("hiisi")), [Package {
+    assert_eq!(jsr_packages(d.path(), Some("meadow")), [Package {
         registry: Registry::Jsr,
-        name:     "@hiisi/ft-flags".into(),
+        name:     "@meadow/fx-gates".into(),
         manifest: "deno.json".into(),
         version:  Some("0.4.0".into()),
     }]);
@@ -141,7 +141,7 @@ fn a_scoped_package_is_read_when_the_scope_is_ours() {
 #[test]
 fn someone_else_s_scope_is_not_ours_to_publish() {
     let d = tree(&[("deno.json", r#"{"name": "@std/path", "version": "1.0.0"}"#)]);
-    assert!(jsr_packages(d.path(), Some("hiisi")).is_empty());
+    assert!(jsr_packages(d.path(), Some("meadow")).is_empty());
     // with no scope configured, every name counts
     assert_eq!(jsr_packages(d.path(), None).len(), 1);
 }
@@ -187,7 +187,7 @@ fn the_working_tree_is_not_what_is_read() {
 #[test]
 fn a_jsr_manifest_is_read_as_json_and_not_as_toml() {
     let d = tagged(
-        &[("deno.json", r#"{"name": "@hiisi/x", "version": "0.4.0"}"#)],
+        &[("deno.json", r#"{"name": "@meadow/x", "version": "0.4.0"}"#)],
         "v0.4.0",
     );
     assert_eq!(
@@ -255,10 +255,10 @@ fn a_repository_declaring_both_reports_both() {
         ),
         (
             "both/deno.json",
-            r#"{"name": "@hiisi/d", "version": "0.2.0"}"#,
+            r#"{"name": "@meadow/d", "version": "0.2.0"}"#,
         ),
     ]);
-    let mut got: Vec<&str> = packages_under(root.path(), Some("hiisi"))
+    let mut got: Vec<&str> = packages_under(root.path(), Some("meadow"))
         .iter()
         .map(|(_, p)| p.registry.key())
         .collect();
