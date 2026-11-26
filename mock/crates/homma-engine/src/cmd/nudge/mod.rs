@@ -116,28 +116,56 @@ fn run_program(root: &Path, path: &str, stdin: &str, reason: Option<&str>) -> Ra
     }
 }
 
-/// Where the row's marker sits in `text` as a word, and the reason after it.
-fn marker_in<'t>(row: &Nudge, text: &'t str) -> Option<(usize, &'t str)> {
+/// A shell command carrying a row's marker in one of the two shapes it counts in.
+#[derive(Debug, PartialEq, Eq)]
+enum Marked<'t> {
+    /// `<call> # <marker> <why>`, the comment on the command's last line: the
+    /// call is everything before the `#`.
+    Restated {
+        call:   &'t str,
+        reason: &'t str,
+    },
+    /// `: <marker> <why>` and nothing else, which runs nothing.
+    Alone {
+        reason: &'t str,
+    },
+}
+
+/// What in a `: <marker> <why>` command would run something beside the `:`.
+const RUNS_MORE: &[&str] = &["\n", ";", "&", "|", "<", ">", "`", "$("];
+
+/// The shape the row's marker takes in `text`, or none where it is absent or
+/// in any other shape.
+fn marked<'t>(row: &Nudge, text: &'t str) -> Option<Marked<'t>> {
     let marker = row.answer()?;
+    let text = text.trim();
+    if !RUNS_MORE.iter().any(|s| text.contains(s)) {
+        if let Some(reason) = text.strip_prefix(':').and_then(|t| after(marker, t)) {
+            return Some(Marked::Alone {
+                reason,
+            });
+        }
+    }
+    let start = text.rfind('\n').map_or(0, |i| i + 1);
     let re = Regex::new(&format!(
-        r"(?m)(?:^|[\s#:;])({})(?:[ \t]+(.*))?$",
+        r"[ \t]#[ \t]*{}(?:[ \t][^\n]*)?\z",
         regex::escape(marker)
     ))
     .ok()?;
-    let caps = re.captures(text)?;
-    let at = caps.get(1)?.start();
-    Some((at, caps.get(2).map_or("", |m| m.as_str().trim())))
+    let found = re.find(&text[start ..])?;
+    let at = start + found.start();
+    let reason = after(marker, text[at ..].trim_start().strip_prefix('#')?)?;
+    let call = text[.. at].trim_end();
+    (!call.is_empty()).then_some(Marked::Restated {
+        call,
+        reason,
+    })
 }
 
-/// The call's text with the marker, its reason and the `#` or `:` before it
-/// taken off the end, which is the call the agent means when it carries both.
-fn without_marker(text: &str, at: usize) -> String {
-    let head = text[.. at].trim_end();
-    let head = head
-        .strip_suffix('#')
-        .or_else(|| head.strip_suffix(':'))
-        .unwrap_or(head);
-    head.trim_end().to_string()
+/// The reason in `text` when it is the marker as a word and the reason after it.
+fn after<'t>(marker: &str, text: &'t str) -> Option<&'t str> {
+    let rest = text.trim_start().strip_prefix(marker)?;
+    (rest.is_empty() || rest.starts_with([' ', '\t'])).then(|| rest.trim())
 }
 
 fn within(at: u64, now: u64, row: &Nudge) -> bool {
@@ -186,12 +214,23 @@ fn decide(
     let mut bare = call.text.clone();
     if call.tool == SHELL_TOOL {
         for row in rows.iter().filter(|r| r.strength() == Strength::Once) {
-            let Some((at, reason)) = marker_in(row, &call.text) else {
+            let Some(marked) = marked(row, &call.text) else {
                 continue;
             };
-            bare = without_marker(&call.text, at);
+            let (restated, reason) = match marked {
+                Marked::Restated {
+                    call,
+                    reason,
+                } => (Some(call), reason),
+                Marked::Alone {
+                    reason,
+                } => (None, reason),
+            };
+            bare = restated.unwrap_or_default().to_string();
             let state = record.rows.entry(row.name().to_string()).or_default();
-            let Some(stopped) = state.stopped.clone().filter(|s| within(s.at, ctx.now, row)) else {
+            let Some(stopped) = state.stopped.clone().filter(|s| {
+                within(s.at, ctx.now, row) && restated.is_none_or(|c| c == s.text.trim())
+            }) else {
                 continue;
             };
             if let Some(evidence) = row.evidence() {
