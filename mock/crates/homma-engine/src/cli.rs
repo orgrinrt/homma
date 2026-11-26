@@ -487,6 +487,16 @@ pub enum AgentOp {
         #[arg(long)]
         repo: Option<String>,
     },
+    /// Run the nudges under `[agent.nudges]` on one host event.
+    ///
+    /// Reads the payload the host hands a hook on stdin and prints nothing
+    /// where no row applies, the host's deny where a row stops the call, and
+    /// added context where a reminder is due. The wrapper the regen writes for
+    /// each event the rows name is what calls it.
+    Nudge {
+        /// The host event, as the host names it.
+        event: String,
+    },
     /// Regenerate per-repo agent surfaces and aggregate them at the
     /// workspace level.
     ///

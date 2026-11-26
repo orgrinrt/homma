@@ -10,6 +10,7 @@
 //! depending on each other.
 
 pub mod agent_hooks;
+pub mod agent_nudges;
 pub mod catalogue;
 pub mod config;
 pub mod contained;
@@ -34,6 +35,7 @@ pub mod version;
 pub mod workspace_name;
 
 pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
+pub use agent_nudges::{Fault, InvalidNudge, Nudge, NudgeRow, Nudges, Strength, Ttl};
 pub use catalogue::{LeaseConfig, Office};
 pub use config::Workspace;
 pub use config::identity::{Identity, Role, Staffing};

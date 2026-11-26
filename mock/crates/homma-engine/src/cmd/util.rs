@@ -297,3 +297,31 @@ pub(crate) fn branches_for<'a>(cfg: &'a Config, root: &Path) -> (&'a str, &'a st
     let there = homma_core::release::git::sha(root, &format!("origin/{working}")).is_ok();
     if here || there { (working, public) } else { (public, public) }
 }
+
+/// The question for the git directory of `root`, asked with `GIT_DIR` and
+/// `GIT_WORK_TREE` removed: a caller's would answer for another repository.
+pub(crate) fn git_dir_query(root: &Path) -> std::process::Command {
+    let mut git = std::process::Command::new("git");
+    git.env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--absolute-git-dir"]);
+    git
+}
+
+/// `homma/<name>` under the git directory of the repository at `root`, where a
+/// verb keeps what belongs to the clone and is never tracked.
+///
+/// # Errors
+/// Git's words where `root` is not in a repository.
+pub(crate) fn homma_dir(root: &Path, name: &str) -> Result<PathBuf, String> {
+    let out = git_dir_query(root)
+        .output()
+        .map_err(|e| format!("git did not start: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let git = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    Ok(Path::new(&git).join("homma").join(name))
+}

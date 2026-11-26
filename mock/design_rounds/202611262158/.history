@@ -1,0 +1,50 @@
+edcee98 chore: lock src changelist 202611262200
+964827e feat: run declared nudges through `homma agent nudge`
+1d9f08d chore: regenerate generated files
+1ce6f88 chore: lock doc changelist 202611262158
+820fbee design: declare a nudge as a row of the agent table
+720a04f design: open the round on a nudge as a declared row
+404eb92 fix: read the unread paths keys in status alone
+06486e6 fix: read the unread paths keys in status alone
+683c3e6 chore: record the test history of the merged tree
+a6f068c Merge remote-tracking branch 'origin/dev' into work/homma-tail-2
+efd3e5e feat: join a workspace's own synonym groups to the what table
+ba98e53 feat: join a workspace's own synonym groups to the what table
+a42cdf0 chore: regenerate generated files
+d7aaea2 chore: close design round 202611262043
+79444c0 chore: lock src changelist 202611262044
+d108c5b refactor: drop `paths_unread` from the workspace
+8ce569c chore: lock doc changelist 202611262043
+6a175ff docs: keep the unread path keys off the workspace
+4b34165 chore: regenerate generated files
+93bf9d5 chore: close design round 202611262034
+15ff911 chore: lock src changelist 202611262035
+337b597 fix: refuse a `[what]` table that does not read in `homma what`
+d17dfaa chore: lock doc changelist 202611262034
+6de51bd docs: refuse a `[what]` table that does not read
+af7227d chore: close design round 202611262017
+d1ce9da chore: lock src changelist 202611262018
+8b24da8 fix: graft the what table into the key list again
+4278ed7 chore: lock doc changelist 202611262017
+f8e2ae8 docs: open the round that grafts the what table into the key list
+1880790 Merge remote-tracking branch 'origin/dev' into work/homma-tail-1
+66c3a37 chore: close design round 202611261956
+daeaefc chore: lock src changelist 202611261957
+ecf4353 feat: join a workspace's own synonym groups to the what table
+b654f4e feat: name the paths keys the engine does not read in status
+233e26e feat: name the paths keys the engine does not read in status
+8a03555 chore: close design round 202611261948
+9da8556 chore: lock src changelist 202611261959
+a0cf596 feat: name the paths keys an engine does not read in status
+aa085f1 Merge remote-tracking branch 'origin/dev' into work/homma-tail-2
+f48806d docs: regenerate the rendered design with the workspace synonym groups
+424b377 chore: open src changelist 202611261956
+a676b57 chore: lock doc changelist 202611261956
+dd4cd47 docs: read a workspace's own synonym groups from its manifest
+9274be0 docs: regenerate the rendered design with the unread paths keys
+6da232a chore: lock doc changelist 202611261948
+378bad2 feat: derive the keys status says the engine reads from the config
+c0cbc69 docs: report the paths keys an engine does not read before refusing
+7deee18 feat: derive the keys status says the engine reads from the config
+3bd162c chore: record the test history of the merged tree
+a2db5c2 Merge remote-tracking branch 'origin/dev' into work/homma-tail-3

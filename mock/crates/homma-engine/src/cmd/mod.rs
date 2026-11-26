@@ -51,6 +51,7 @@ pub mod lease;
 pub mod local;
 pub mod migrate;
 pub mod milestone;
+pub mod nudge;
 pub mod org;
 pub mod registry;
 pub mod release;
@@ -334,6 +335,12 @@ pub fn run(cli: Cli) -> Result<Outcome> {
                 } => {
                     let cfg = load_config(&cli)?;
                     agent::status::run(&cfg, repo.as_deref(), cli.output)?;
+                    Ok(Outcome::Ok)
+                },
+                AgentOp::Nudge {
+                    event,
+                } => {
+                    nudge::run(load_config(&cli).map_err(|e| format!("{e:#}")), event);
                     Ok(Outcome::Ok)
                 },
                 AgentOp::Regen {

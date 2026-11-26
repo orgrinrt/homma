@@ -590,7 +590,7 @@ pub mod regen {
             // would sweep the rows' registrations and have none to write back.
             let declared_ok = match crate::cmd::declared::install_declared(
                 &root,
-                &cfg.agent.hooks,
+                &cfg.agent,
                 &repo_paths,
                 &cfg.scope,
             ) {
