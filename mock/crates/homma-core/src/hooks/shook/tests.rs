@@ -291,10 +291,18 @@ fn install_writes_entrypoints_and_registers_nothing_where_git_shook_holds_no_key
     assert!(!d.path().join(".git/shook").exists());
 }
 
+/// Set only in the child the test below starts: the clone to install into.
+const INSTALL_IN_CHILD: &str = "HOMMA_TEST_SHOOK_INSTALL_IN_CHILD";
+
 /// The end to end: the real git-shook, a layer-only hook, and a commit that
 /// runs it. Needs `GIT_SHOOK` pointing at the git-shook script, since git-shook
 /// is a separate program the machine may not have; without it the test says so
 /// and returns.
+///
+/// The install writes and modes the entrypoints in the process that calls it,
+/// and the commit then executes them, so the install runs in a child of this
+/// test binary that runs only this test: no thread of this process can carry a
+/// descriptor of an entrypoint open for writing into a fork.
 #[test]
 fn a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit() {
     let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
@@ -302,6 +310,15 @@ fn a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit() {
         return;
     };
     let shook_dir = script.parent().unwrap().to_path_buf();
+    if let Some(root) = std::env::var_os(INSTALL_IN_CHILD) {
+        let root = PathBuf::from(root);
+        let cfg = crate::Config::from_path(&root.join("homma.toml")).unwrap();
+        let i = install_with(&root, &cfg.hooks, Some(&shook_dir)).unwrap();
+        assert!(i.reached());
+        let events: Vec<&str> = i.written.iter().map(|w| w.event.as_str()).collect();
+        assert_eq!(events, vec!["pre-commit", "pre-push"]);
+        return;
+    }
     let d = repo();
     // the layer: a hook the manifest does not have, in a file only this clone has
     std::fs::write(d.path().join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
@@ -317,10 +334,14 @@ fn a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit() {
         "the layer reached the table"
     );
 
-    let i = install_with(d.path(), &cfg.hooks, Some(&shook_dir)).unwrap();
-    assert!(i.reached());
-    let events: Vec<&str> = i.written.iter().map(|w| w.event.as_str()).collect();
-    assert_eq!(events, vec!["pre-commit", "pre-push"]);
+    let installed = homma_fixture::alone(
+        module_path!(),
+        "a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit",
+    )
+    .env(INSTALL_IN_CHILD, d.path())
+    .output()
+    .unwrap();
+    homma_fixture::passed(&installed);
 
     // a homma that records how it was called, ahead of any on the machine
     let bin = tempfile::tempdir().unwrap();
