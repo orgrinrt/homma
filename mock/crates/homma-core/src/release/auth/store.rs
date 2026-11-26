@@ -65,10 +65,6 @@ pub trait Store {
     }
 }
 
-/// The keychain item's service prefix, one service per registry so a search
-/// finds them together.
-pub const SERVICE_PREFIX: &str = "hiisi-release";
-
 /// The keychain item's account.
 pub const ACCOUNT: &str = "publish";
 
@@ -83,18 +79,22 @@ pub const ACCOUNT: &str = "publish";
 pub struct Keychain {
     pub program: String,
     pub account: String,
+    /// The service prefix, `[auth] service_prefix`: one service per registry,
+    /// `<prefix>-<registry>`, so a search finds them together.
+    pub prefix:  String,
 }
 
 impl Keychain {
-    pub fn new() -> Self {
+    pub fn new(prefix: &str) -> Self {
         Self {
             program: "security".into(),
             account: ACCOUNT.into(),
+            prefix:  prefix.into(),
         }
     }
 
-    fn service(key: &str) -> String {
-        format!("{SERVICE_PREFIX}-{key}")
+    fn service(&self, key: &str) -> String {
+        format!("{}-{key}", self.prefix)
     }
 
     fn run(&self, args: &[&str]) -> Result<sh::Output, Unavailable> {
@@ -107,19 +107,13 @@ impl Keychain {
     }
 }
 
-impl Default for Keychain {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Store for Keychain {
     fn name(&self) -> String {
         "the keychain".into()
     }
 
     fn get(&self, key: &str) -> Result<Option<Stored>, Unavailable> {
-        let svc = Self::service(key);
+        let svc = self.service(key);
         let got = self.run(&["find-generic-password", "-a", &self.account, "-s", &svc, "-w"])?;
         let secret = got.stdout.trim().to_string();
         if !got.ok() || secret.is_empty() {
@@ -133,7 +127,7 @@ impl Store for Keychain {
     }
 
     fn put(&self, key: &str, secret: &str, expires: Option<Day>) -> Result<(), Unavailable> {
-        let svc = Self::service(key);
+        let svc = self.service(key);
         let when = expires.map(|d| d.to_string());
         let mut args =
             vec!["add-generic-password", "-a", &self.account, "-s", &svc, "-w", secret, "-U"];
@@ -152,7 +146,7 @@ impl Store for Keychain {
     }
 
     fn forget(&self, key: &str) -> Result<bool, Unavailable> {
-        let svc = Self::service(key);
+        let svc = self.service(key);
         Ok(self
             .run(&["delete-generic-password", "-a", &self.account, "-s", &svc])?
             .ok())
@@ -231,14 +225,15 @@ impl Store for Environment {
 
 /// The store this machine holds tokens in: the keychain on macOS, the
 /// environment elsewhere. `vars` is each registry's `token_env`.
-pub fn default_store(vars: Vec<(String, String)>) -> Box<dyn Store> {
+pub fn default_store(vars: Vec<(String, String)>, prefix: &str) -> Box<dyn Store> {
     #[cfg(target_os = "macos")]
     {
         let _ = vars;
-        Box::new(Keychain::new())
+        Box::new(Keychain::new(prefix))
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = prefix;
         Box::new(Environment {
             vars,
         })

@@ -30,6 +30,7 @@ pub mod rule;
 pub mod session;
 pub mod skill;
 pub mod version;
+pub mod workspace_name;
 
 pub use agent_hooks::{AGENT_EVENTS, AgentHook, AgentHooks, AgentTable, InvalidAgentHooks};
 pub use catalogue::{LeaseConfig, Office};
@@ -71,5 +72,6 @@ pub use release::{
     Version,
 };
 pub use rule::{MetaError, Parsed, RuleKind, RuleMeta};
-pub use session::{CLOUD_VAR, Place, ROLE_FILE, Session, SessionRole, UnknownWord};
+pub use session::{Place, Session, SessionConfig, SessionRole, UnknownWord, role_file};
 pub use skill::{SkillError, SkillMeta};
+pub use workspace_name::{NotAWorkspaceName, WorkspaceName};

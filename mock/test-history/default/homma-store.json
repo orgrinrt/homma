@@ -3,14 +3,14 @@
   "flavour": "",
   "member": "homma-store",
   "green": {
-    "full": "d6028b5a6b070f9fd1a3bfe14964d9a2209339e141c63de7943342ad7ce904ed",
+    "full": "fddbbc93a2585aa5f7188e76d24474edaa22dd182bc322d3834cc4bc9d0f5101",
     "own": {
-      "homma-api": "8530af4f848ee85f87c5c48836d641edcd9465a07f24ad04ac6022773602cc14",
+      "homma-api": "2d8909eeb9f03ab9bc3c02968505ea3042df191bfd69a67fb8cc03b0cab9acca",
       "homma-store": "d2c07f2820b15ba71457a6a44b54cd4d82d540e1378d5535738cfdf0e3130df5"
     }
   },
   "tests": {},
   "bins": {
-    "homma-store": "e6f785051298a1a04ddce8b520dff9f3f9f5dadbf68fd69f49a3223cd9192718"
+    "homma-store": "d98a7af547cd3f0d5bfd285383e71456a191986122e32db38924b1f51fd3ec89"
   }
 }

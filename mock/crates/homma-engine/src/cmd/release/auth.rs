@@ -92,7 +92,7 @@ fn store(cfg: &Config) -> Box<dyn Store> {
                 .map(|v| (e.key.to_string(), v))
         })
         .collect();
-    default_store(vars)
+    default_store(vars, cfg.auth.service_prefix())
 }
 
 /// Where the npmrc goes: `[auth] npmrc`, against the workspace root where

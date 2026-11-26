@@ -75,6 +75,15 @@ impl Workspace {
         self.org.get(handle).map(|i| i.role)
     }
 
+    /// The handle of the catalogue's king, the person, or none where the
+    /// catalogue has no king.
+    pub fn king(&self) -> Option<&str> {
+        self.org
+            .values()
+            .find(|i| i.role == Role::King)
+            .map(|i| i.handle.as_str())
+    }
+
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
     }

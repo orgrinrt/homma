@@ -14,7 +14,7 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use homma_api::session::{CLOUD_VAR, Place, ROLE_FILE, Session, SessionRole};
+use homma_api::session::{Place, Session, SessionRole};
 use homma_core::Config;
 use homma_org::rules::{Corpus, Principles};
 use serde::Serialize;
@@ -59,14 +59,16 @@ fn load_cards(cfg: &Config, p: &PrinciplesArgs) -> Result<Corpus> {
 /// An option wins over what the machine says. Without `--role` the role file
 /// is read, and a file that is there and holds anything but a role is refused
 /// by name, since reading it as no role would load every card for a session
-/// whose file was merely misspelt. `home` and `cloud` are arguments so a test
-/// is not at the mercy of the process environment.
+/// whose file was merely misspelt. `role_file` is relative to `home`, and
+/// `home` and `cloud` are arguments so a test is not at the mercy of the
+/// process environment.
 pub(crate) fn resolve_session(
     args: &SessionArgs,
+    role_file: &Path,
     home: Option<&Path>,
     cloud: Option<&str>,
 ) -> Result<Session> {
-    let file = home.map(|h| h.join(ROLE_FILE));
+    let file = home.map(|h| h.join(role_file));
     let text = match (&args.role, &file) {
         (None, Some(path)) => {
             match fs::read_to_string(path) {
@@ -80,8 +82,10 @@ pub(crate) fn resolve_session(
     let mut session = Session::from_parts(text.as_deref(), cloud).with_context(|| {
         format!(
             "the role file {}",
-            file.as_deref()
-                .map_or_else(|| ROLE_FILE.into(), |p| p.display().to_string())
+            file.as_deref().map_or_else(
+                || role_file.display().to_string(),
+                |p| p.display().to_string()
+            )
         )
     })?;
     if let Some(role) = args.role {
@@ -93,11 +97,13 @@ pub(crate) fn resolve_session(
     Ok(session)
 }
 
-/// The session of this process: the options, then `$HOME` and `CLAUSE_CLOUD`.
-fn current_session(args: &SessionArgs) -> Result<Session> {
+/// The session of this process: the options, then the workspace's role file
+/// under `$HOME` and the variable `[session] cloud_var` names.
+fn current_session(cfg: &Config, args: &SessionArgs) -> Result<Session> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let cloud = std::env::var(CLOUD_VAR).ok();
-    resolve_session(args, home.as_deref(), cloud.as_deref())
+    let cloud = std::env::var(&cfg.session.cloud_var).ok();
+    let role_file = homma_api::role_file(&cfg.workspace.name);
+    resolve_session(args, &role_file, home.as_deref(), cloud.as_deref())
 }
 
 /// How a session reads in a report: its role, or `any` for one with none.
@@ -253,7 +259,7 @@ pub mod render {
         principles: &PrinciplesArgs,
         format: OutputFormat,
     ) -> Result<()> {
-        let session = current_session(args)?;
+        let session = current_session(cfg, args)?;
         let src = authored_dir(cfg);
         let dst = cfg.workspace.path.join(GENERATED);
         let corpus = load_cards(cfg, principles)?;
@@ -405,7 +411,7 @@ pub mod load {
             }
             rows
         } else {
-            vec![row(&corpus, &current_session(args)?, true)?]
+            vec![row(&corpus, &current_session(cfg, args)?, true)?]
         };
         emit(
             &LoadReport {
