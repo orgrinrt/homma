@@ -84,3 +84,15 @@ fn a_child_that_ran_no_test_is_not_passed() {
     );
     assert!(std::panic::catch_unwind(|| passed(&out)).is_err());
 }
+
+#[test]
+fn a_child_that_ran_eleven_tests_is_not_one_that_ran_its_one() {
+    // Failing control: a check for the substring "1 passed" takes this summary.
+    use std::os::unix::process::ExitStatusExt;
+    let out = Output {
+        status: std::process::ExitStatus::from_raw(0),
+        stdout: b"running 11 tests\n\ntest result: ok. 11 passed; 0 failed; 0 ignored\n".to_vec(),
+        stderr: Vec::new(),
+    };
+    assert!(std::panic::catch_unwind(|| passed(&out)).is_err());
+}

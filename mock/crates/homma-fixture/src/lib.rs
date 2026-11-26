@@ -54,7 +54,11 @@ pub fn passed(out: &Output) {
         "{said}{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(said.contains("1 passed"), "the child ran no test: {said}");
+    assert!(
+        said.lines()
+            .any(|l| l.starts_with("test result: ok. 1 passed;")),
+        "the child did not run its one test to a pass: {said}"
+    );
 }
 
 #[cfg(test)]
