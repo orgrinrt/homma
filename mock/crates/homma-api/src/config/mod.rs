@@ -67,12 +67,6 @@ pub struct Workspace {
     /// operator's arrangement and is named here rather than compiled in.
     #[serde(default)]
     pub deny:         Vec<crate::DenyEntry>,
-    /// The keys under `[paths]` that [`crate::Paths`] does not read, sorted,
-    /// set by [`Workspace::parse`]. Nothing refuses them yet, so a manifest
-    /// whose other programs keep keys there goes on working while they move
-    /// them out.
-    #[serde(skip)]
-    pub paths_unread: Vec<String>,
 }
 
 impl Workspace {
@@ -91,13 +85,7 @@ impl Workspace {
     }
 
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
-        let mut workspace: Self = toml::from_str(text)?;
-        let raw: toml::Table = toml::from_str(text)?;
-        if let Some(paths) = raw.get("paths") {
-            workspace.paths_unread =
-                crate::Paths::unread(paths).map_err(serde::de::Error::custom)?;
-        }
-        Ok(workspace)
+        toml::from_str(text)
     }
 
     /// Registry strings that would inject structure into anything generated
