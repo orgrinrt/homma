@@ -144,7 +144,7 @@ fn register(root: &Path, hooks: &Hooks, on_path: Option<&Path>) -> Result<Instal
         let said = out.stderr.trim();
         return Err(HookError::Shook(if said.contains("not a git command") {
             "git-shook is not installed: `git shook` is not a git command here. Install it from \
-             https://github.com/woodland/git-shook, or put git-shook on PATH"
+             https://github.com/orgrinrt/git-shook, or put git-shook on PATH"
                 .to_string()
         } else {
             format!("`git shook install --yes --only homma` refused: {said}")
