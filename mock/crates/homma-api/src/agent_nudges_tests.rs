@@ -180,3 +180,24 @@ fn a_table_written_back_reads_the_same() {
     let text = toml::to_string(&t).unwrap();
     assert_eq!(parse(&text).unwrap(), t);
 }
+
+#[test]
+fn a_brief_is_read_on_a_reminder_only() {
+    let inform = "[[nudges]]\nname = \"b\"\nsays = \"bears on it:\"\nstrength = \"inform\"\nevent = \
+                  \"UserPromptSubmit\"\nbrief = true\n";
+    let t = parse(inform).unwrap();
+    assert!(t.nudges.iter().next().unwrap().brief());
+    assert!(
+        !parse(&row(""))
+            .unwrap()
+            .nudges
+            .iter()
+            .next()
+            .unwrap()
+            .brief()
+    );
+    let e = parse(&row("brief = true")).unwrap_err();
+    assert!(e.contains("`brief`"), "{e}");
+    // false is what an absent key reads as, so it is read on any strength
+    assert!(parse(&row("brief = false")).is_ok());
+}

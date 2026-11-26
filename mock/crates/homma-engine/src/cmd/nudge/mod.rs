@@ -29,11 +29,12 @@ pub(crate) const REASON_VAR: &str = "HOMMA_NUDGE_REASON";
 const SHELL_TOOL: &str = "Bash";
 
 /// What the verb runs against: the workspace its programs are under, where it
-/// keeps its record, and the moment it is asked, in seconds.
 pub(crate) struct Ctx<'a> {
     pub root:  &'a Path,
     pub store: Store,
     pub now:   u64,
+    /// The brief of a text, or none where nothing bears on it.
+    pub brief: &'a dyn Fn(&str) -> Option<String>,
 }
 
 /// The call as the payload gives it.
@@ -56,7 +57,7 @@ impl Call {
         };
         let input = payload.get("tool_input");
         let text = match input {
-            None => String::new(),
+            None => field("prompt"),
             Some(i) => {
                 match i.get("command").and_then(|c| c.as_str()) {
                     Some(c) => c.to_string(),
@@ -276,7 +277,7 @@ fn decide(
         }
     }
 
-    let mut informs: Vec<&Nudge> = Vec::new();
+    let mut informs: Vec<(&Nudge, String, Option<String>)> = Vec::new();
     for row in rows {
         if !row.takes_tool(&call.tool) || !row.takes_text(&bare) {
             continue;
@@ -284,11 +285,32 @@ fn decide(
         let state = record.rows.entry(row.name().to_string()).or_default();
         match row.strength() {
             Strength::Inform => {
-                if state.said.is_some_and(|at| within(at, ctx.now, row)) {
+                let work = bare.trim();
+                if row.brief() && work.is_empty() {
                     continue;
                 }
-                if applies(ctx, row, call).is_some() {
-                    informs.push(row);
+                let digest = row
+                    .brief()
+                    .then(|| crate::cmd::summary::version_of(&[work]));
+                let new_work = digest.is_some() && state.briefed != digest;
+                if !new_work && state.said.is_some_and(|at| within(at, ctx.now, row)) {
+                    continue;
+                }
+                if applies(ctx, row, call).is_none() {
+                    continue;
+                }
+                if !row.brief() {
+                    informs.push((row, row.says().to_string(), None));
+                    continue;
+                }
+                match (ctx.brief)(work) {
+                    Some(b) => informs.push((row, format!("{}\n{b}", row.says()), digest)),
+                    None => {
+                        // nothing bears on the work: silent, and not asked again for it
+                        let state = record.rows.entry(row.name().to_string()).or_default();
+                        state.said = Some(ctx.now);
+                        state.briefed = digest;
+                    },
                 }
             },
             Strength::Once => {
@@ -343,9 +365,13 @@ fn decide(
         return None;
     }
     let mut text = Vec::new();
-    for row in informs {
-        record.rows.entry(row.name().to_string()).or_default().said = Some(ctx.now);
-        text.push(row.says().to_string());
+    for (row, said, digest) in informs {
+        let state = record.rows.entry(row.name().to_string()).or_default();
+        state.said = Some(ctx.now);
+        if digest.is_some() {
+            state.briefed = digest;
+        }
+        text.push(said);
     }
     Some(context(event, &text.join("\n")))
 }
@@ -457,10 +483,19 @@ pub(crate) fn run(cfg: Result<homma_core::Config, String>, event: &str) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
+    let brief = |work: &str| {
+        use crate::cmd::what::brief;
+        match brief::of_workspace(&root, Some(&cfg), work, brief::LIMIT, &[]) {
+            Ok(b) if !b.things.is_empty() => Some(b.render()),
+            Ok(_) => None,
+            Err(why) => Some(format!("The brief was not made: {why:#}")),
+        }
+    };
     let ctx = Ctx {
         root: &root,
         store: Store::at(dir),
         now,
+        brief: &brief,
     };
     if let Some(out) = answer(&ctx, &cfg.agent.nudges, event, &payload) {
         println!("{out}");

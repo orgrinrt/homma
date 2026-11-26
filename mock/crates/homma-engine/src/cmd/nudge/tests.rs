@@ -14,15 +14,18 @@ use super::*;
 
 /// The workspace a test runs in, its rows and the moment it asks at.
 struct Ws {
-    dir:    tempfile::TempDir,
-    nudges: Nudges,
+    dir:     tempfile::TempDir,
+    nudges:  Nudges,
+    /// The texts a brief was asked for, in order.
+    briefed: std::cell::RefCell<Vec<String>>,
 }
 
 impl Ws {
     fn new(rows: &str) -> Ws {
         Ws {
-            dir:    tempfile::tempdir().unwrap(),
-            nudges: toml::from_str::<AgentTable>(rows).unwrap().nudges,
+            dir:     tempfile::tempdir().unwrap(),
+            nudges:  toml::from_str::<AgentTable>(rows).unwrap().nudges,
+            briefed: std::cell::RefCell::default(),
         }
     }
 
@@ -35,10 +38,16 @@ impl Ws {
     }
 
     fn ask_at(&self, now: u64, event: &str, payload: &str) -> Option<Value> {
+        // a stand-in brief: none for a text about nothing, else one naming the text
+        let brief = |text: &str| {
+            self.briefed.borrow_mut().push(text.to_string());
+            (!text.contains("nothing")).then(|| format!("rule r: brief of {text}"))
+        };
         let ctx = Ctx {
             root: self.root(),
             store: Store::at(self.store_dir()),
             now,
+            brief: &brief,
         };
         answer(&ctx, &self.nudges, event, payload).map(|s| serde_json::from_str(&s).unwrap())
     }
@@ -369,5 +378,6 @@ fn the_marker_is_found_only_as_a_word() {
     assert!(ws.logged("answered").is_empty());
 }
 
+mod brief;
 mod marker;
 mod wrappers;

@@ -92,6 +92,8 @@ pub struct NudgeRow {
     pub evidence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl:      Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub brief:    bool,
 }
 
 /// One checked row. Built through [`Nudge::new`] and nowhere else, so a row
@@ -171,6 +173,9 @@ impl Nudge {
         if row.evidence.is_some() && row.answer.is_none() {
             return Err(fault(Fault::Unread("evidence")));
         }
+        if row.brief && row.strength != Strength::Inform {
+            return Err(fault(Fault::Unread("brief")));
+        }
         let ttl = match &row.ttl {
             None => Ttl::HOUR,
             Some(t) => Ttl::parse(t)?,
@@ -237,6 +242,11 @@ impl Nudge {
 
     pub fn ttl(&self) -> Ttl {
         self.ttl
+    }
+
+    /// Whether the row says the brief of the call's text after its `says`.
+    pub fn brief(&self) -> bool {
+        self.row.brief
     }
 
     /// The row as written.
@@ -397,7 +407,8 @@ impl fmt::Display for InvalidNudge {
                         write!(
                             f,
                             "sets `{key}`, which nothing reads for its strength: `answer` is for \
-                             `once`, and `evidence` for a row with an `answer`"
+                             `once`, `evidence` for a row with an `answer`, and `brief` for \
+                             `inform`"
                         )
                     },
                     Fault::Answer(a) => {

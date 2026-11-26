@@ -194,6 +194,12 @@ pub const fn required(n: usize) -> usize {
 
 /// The things that answer `terms`, best first. Ties break on kind, then name.
 pub fn rank(docs: &[Doc], terms: &[String], vocabulary: &Vocabulary) -> Vec<Hit> {
+    rank_with(docs, terms, vocabulary, required(terms.len()))
+}
+
+/// [`rank`] with `need` the words a thing must match to be an answer, in place of [`required`]: a
+/// work's text has hundreds of words and one thing answers a few of them.
+pub fn rank_with(docs: &[Doc], terms: &[String], vocabulary: &Vocabulary, need: usize) -> Vec<Hit> {
     if terms.is_empty() {
         return Vec::new();
     }
@@ -210,7 +216,6 @@ pub fn rank(docs: &[Doc], terms: &[String], vocabulary: &Vocabulary) -> Vec<Hit>
         })
         .collect();
     let idf_all: f64 = idf.iter().sum();
-    let need = required(terms.len());
     let mut hits: Vec<Hit> = Vec::new();
     for (di, row) in per_doc.iter().enumerate() {
         let covered = row.iter().flatten().count();

@@ -451,6 +451,7 @@ pub fn run(cli: Cli) -> Result<Outcome> {
         },
         Command::What {
             words,
+            brief,
             limit,
             kinds,
             no_mock,
@@ -458,11 +459,15 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             let path = config_path(&cli);
             let root = tools::root(&path);
             let cfg = if path.exists() { Some(load_config(&cli)?) } else { None };
+            if let Some(file) = brief {
+                let limit = limit.map_or(what::brief::LIMIT, |n| n as usize);
+                return what::brief::run(&root, cfg.as_ref(), file, limit, kinds, cli.output);
+            }
             what::run(
                 &root,
                 cfg.as_ref(),
                 words,
-                *limit as usize,
+                limit.map_or(5, |n| n as usize),
                 kinds,
                 *no_mock,
                 cli.output,
