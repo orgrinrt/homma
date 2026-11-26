@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use homma_api::AgentHook;
+use homma_api::{AgentHook, AgentHooks, AgentTable};
 use homma_core::scope::Scope;
 
 use super::*;
@@ -17,7 +17,7 @@ use crate::cmd::aggregate::tests::test_root;
 
 type Row<'a> = (&'a str, &'a str, &'a str, &'a [&'a str]);
 
-fn table(rows: &[Row<'_>]) -> AgentHooks {
+fn table(rows: &[Row<'_>]) -> AgentTable {
     let mut m: BTreeMap<String, Vec<AgentHook>> = BTreeMap::new();
     for (event, matcher, run, repos) in rows {
         m.entry(event.to_string()).or_default().push(
@@ -29,7 +29,10 @@ fn table(rows: &[Row<'_>]) -> AgentHooks {
             .unwrap(),
         );
     }
-    AgentHooks::new(m).unwrap()
+    AgentTable {
+        hooks:  AgentHooks::new(m).unwrap(),
+        nudges: homma_api::Nudges::default(),
+    }
 }
 
 /// A script under the workspace at `rel` that records its arguments in
@@ -315,7 +318,7 @@ fn a_declared_wrapper_no_row_wants_is_removed_and_one_homma_did_not_write_is_not
 
     install_declared(
         &test_root(ws.path()),
-        &AgentHooks::default(),
+        &AgentTable::default(),
         &repos(),
         &Scope::everything(),
     )
@@ -386,7 +389,7 @@ fn a_row_reaches_settings_and_leaves_it_when_it_goes() {
 
     let d = install_declared(
         &root,
-        &AgentHooks::default(),
+        &AgentTable::default(),
         &repos(),
         &Scope::everything(),
     )

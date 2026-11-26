@@ -86,10 +86,10 @@ fn a_write_in_flight_is_neither_counted_nor_swept_and_one_left_behind_expires() 
     );
 }
 
-/// Failing control: with the removal taken out of `git_dir_query`, the variables are inherited.
+/// Failing control: with the removal taken out of `util::git_dir_query`, the variables are inherited.
 #[test]
 fn the_git_directory_is_asked_without_the_callers_git_variables() {
-    let q = super::cache::git_dir_query(std::path::Path::new("/nowhere"));
+    let q = crate::cmd::util::git_dir_query(std::path::Path::new("/nowhere"));
     for var in ["GIT_DIR", "GIT_WORK_TREE"] {
         assert!(
             q.get_envs()

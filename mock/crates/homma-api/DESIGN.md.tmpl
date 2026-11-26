@@ -76,6 +76,15 @@ not list, sorted; the status is what reads it, and the workspace keeps no copy.
 Nothing is refused for such a key yet, so a manifest whose other programs keep
 keys there parses and goes on working while they move them out; a later release
 refuses such a key as every other table does.
+`[agent]` holds two tables and nothing else: `hooks`, read as `AgentHooks`, and
+`nudges`, read as `Nudges`, a list of `Nudge` rows each checked whole when it
+loads. A `Nudge` is built through `Nudge::new` from a `NudgeRow` and nowhere
+else, so a row whose regular expressions do not compile, whose program climbs
+out of the workspace, whose `ttl` is not a duration, or which stops a call on an
+event that cannot stop one does not exist; its `Strength` is `Inform`, `Once` or
+`Refuse`, and its `Ttl` is a count of seconds. `Nudges::new` refuses two rows of
+one name, and `Nudges::append` adds a layer's rows after the ones already read,
+refusing a name a lower layer already has.
 Identities are blocks: a role, a handle, and whatever that role needs. A person
 needs a git identity and a workspace; a consultant needs neither.
 

@@ -27,14 +27,7 @@ impl Cache {
     /// # Errors
     /// Git's words where `root` is not in a repository.
     pub fn of_workspace(root: &Path) -> Result<Self, String> {
-        let out = git_dir_query(root)
-            .output()
-            .map_err(|e| format!("git did not start: {e}"))?;
-        if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-        }
-        let git = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        Ok(Self::at(Path::new(&git).join("homma/ask")))
+        crate::cmd::util::homma_dir(root, "ask").map(Self::at)
     }
 
     /// The directory the two caches sit under.
@@ -109,18 +102,6 @@ impl Cache {
     pub fn keep_answer(&self, key: &str, text: &str) -> Result<(), String> {
         write(&self.dir.join("answers"), key, text)
     }
-}
-
-/// The question for the git directory of `root`, asked with `GIT_DIR` and
-/// `GIT_WORK_TREE` removed: a caller's would answer for another repository.
-pub(super) fn git_dir_query(root: &Path) -> std::process::Command {
-    let mut git = std::process::Command::new("git");
-    git.env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .arg("-C")
-        .arg(root)
-        .args(["rev-parse", "--absolute-git-dir"]);
-    git
 }
 
 /// A cache file's text, its modification time stamped now as the moment it was

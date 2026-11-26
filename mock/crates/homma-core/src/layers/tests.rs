@@ -27,7 +27,7 @@ fn a_hook_declared_only_in_an_overlay_reaches_the_table() {
          [[agent.hooks.Stop]]\nrun = \"scripts/stop\"\n",
     );
     let mut hooks = Hooks::default();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     assert!(
         apply(
             d.path(),
@@ -39,7 +39,11 @@ fn a_hook_declared_only_in_an_overlay_reaches_the_table() {
     );
     assert_eq!(runs(&hooks, "post-merge"), vec!["local-merge"]);
     assert_eq!(
-        agent.iter().map(|(e, r)| (e, r.run())).collect::<Vec<_>>(),
+        agent
+            .hooks
+            .iter()
+            .map(|(e, r)| (e, r.run()))
+            .collect::<Vec<_>>(),
         vec![("Stop", "scripts/stop")]
     );
 }
@@ -58,7 +62,7 @@ fn overlays_append_in_the_order_the_list_gives() {
         "[[hooks.pre-commit]]\nrun = \"from-b\"\n",
     );
     let mut hooks: Hooks = toml::from_str("[[pre-commit]]\nrun = \"base\"\n").unwrap();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     assert!(
         apply(
             d.path(),
@@ -87,7 +91,7 @@ fn overlays_append_in_the_order_the_list_gives() {
 fn a_named_overlay_that_is_absent_is_skipped() {
     let d = tempfile::tempdir().unwrap();
     let mut hooks = Hooks::default();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     assert!(
         apply(
             d.path(),
@@ -177,7 +181,7 @@ fn the_survey_names_what_is_read_what_is_absent_and_what_is_never_read() {
     assert_eq!(s.strays, vec!["homma.local.old.toml", "homma.stray.toml"]);
     // and a stray is not read: its hook is nowhere in the merged table
     let mut hooks = Hooks::default();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     assert!(
         apply(
             d.path(),
@@ -316,7 +320,7 @@ fn a_clones_own_hook_list_replaces_the_projects_for_that_event() {
         "[instance]\nproject = \"k\"\n[[hooks.post-merge]]\nrun = \"from-clone\"\n",
     );
     let mut hooks = Hooks::default();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     assert!(
         apply(
             d.path(),
@@ -341,7 +345,7 @@ fn a_project_the_store_lacks_fails_the_layer_naming_it() {
         "[instance]\nproject = \"gone\"\n",
     );
     let mut hooks = Hooks::default();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     let failed = apply(
         d.path(),
         &layers(&["homma.local.toml"]),
@@ -371,7 +375,7 @@ fn a_hook_declared_only_in_the_stored_config_reaches_a_clone_that_names_it() {
         "[instance]\nproject = \"k\"\n",
     );
     let mut hooks = Hooks::default();
-    let mut agent = AgentHooks::default();
+    let mut agent = AgentTable::default();
     assert!(
         apply(
             d.path(),
@@ -382,4 +386,97 @@ fn a_hook_declared_only_in_the_stored_config_reaches_a_clone_that_names_it() {
         .is_empty()
     );
     assert_eq!(runs(&hooks, "post-merge"), vec!["from-store"]);
+}
+
+fn nudge(name: &str) -> String {
+    format!("[[agent.nudges]]\nname = \"{name}\"\nsays = \"x\"\nstrength = \"once\"\n")
+}
+
+fn names(agent: &AgentTable) -> Vec<&str> {
+    agent.nudges.iter().map(homma_api::Nudge::name).collect()
+}
+
+#[test]
+fn an_overlays_nudges_come_after_the_ones_read_before_it() {
+    let d = tempfile::tempdir().unwrap();
+    write(d.path(), "homma.a.toml", &nudge("from-a"));
+    write(d.path(), "homma.b.toml", &nudge("from-b"));
+    let mut hooks = Hooks::default();
+    let mut agent: AgentTable = toml::from_str(&nudge("base").replace("agent.", "")).unwrap();
+    let failed = apply(
+        d.path(),
+        &layers(&["homma.a.toml", "homma.b.toml"]),
+        &mut hooks,
+        &mut agent,
+    );
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(names(&agent), ["base", "from-a", "from-b"]);
+}
+
+#[test]
+fn an_overlay_reusing_a_nudge_name_is_refused_whole_and_the_others_still_apply() {
+    let d = tempfile::tempdir().unwrap();
+    write(
+        d.path(),
+        "homma.a.toml",
+        &format!(
+            "{}[[agent.hooks.Stop]]\nrun = \"scripts/a-stop\"\n",
+            nudge("base")
+        ),
+    );
+    write(d.path(), "homma.b.toml", &nudge("from-b"));
+    let mut hooks = Hooks::default();
+    let mut agent: AgentTable = toml::from_str(&nudge("base").replace("agent.", "")).unwrap();
+    let failed = apply(
+        d.path(),
+        &layers(&["homma.a.toml", "homma.b.toml"]),
+        &mut hooks,
+        &mut agent,
+    );
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    let said = failed[0].report();
+    assert!(
+        said.contains("homma.a.toml") && said.contains("`base`"),
+        "{said}"
+    );
+    assert_eq!(names(&agent), ["base", "from-b"]);
+    assert!(
+        agent.hooks.is_empty(),
+        "the refused layer's hooks are not added either"
+    );
+
+    // the same layer under another name is read whole, which is the control
+    write(
+        d.path(),
+        "homma.a.toml",
+        &format!(
+            "{}[[agent.hooks.Stop]]\nrun = \"scripts/a-stop\"\n",
+            nudge("from-a")
+        ),
+    );
+    let mut agent: AgentTable = toml::from_str(&nudge("base").replace("agent.", "")).unwrap();
+    assert!(
+        apply(
+            d.path(),
+            &layers(&["homma.a.toml", "homma.b.toml"]),
+            &mut hooks,
+            &mut agent
+        )
+        .is_empty()
+    );
+    assert_eq!(names(&agent), ["base", "from-a", "from-b"]);
+    assert!(!agent.hooks.is_empty());
+}
+
+#[test]
+fn an_agent_key_beside_hooks_and_nudges_is_refused_by_name() {
+    let d = tempfile::tempdir().unwrap();
+    write(d.path(), "homma.a.toml", &nudge("a"));
+    assert!(read(d.path(), "homma.a.toml").is_ok());
+    write(d.path(), "homma.a.toml", "[agent.reminders]\nx = 1\n");
+    let e = read(d.path(), "homma.a.toml").unwrap_err().to_string();
+    assert!(
+        e.contains("[agent.reminders]") && e.contains("`nudges`"),
+        "{e}"
+    );
 }
