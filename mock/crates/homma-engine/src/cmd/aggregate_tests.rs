@@ -20,17 +20,6 @@ pub(crate) fn test_root(workspace: &Path) -> Root {
     .expect("a tempdir is a legitimate root")
 }
 
-/// Mark a file executable, which the wrapper's own `[ -x ]` check reads.
-pub(crate) fn make_executable(p: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perm = fs::metadata(p).unwrap().permissions();
-        perm.set_mode(0o755);
-        fs::set_permissions(p, perm).unwrap();
-    }
-}
-
 #[test]
 fn aggregated_command_detected_by_prefix() {
     let cmd = ".claude/hooks/arvo--no-alloc-guard.sh";
@@ -138,12 +127,11 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         "---\npaths:\n  - \"crates/**/*.rs\"\n---\nBody.\n",
     )
     .unwrap();
-    fs::write(
-        repo_abs.join(".claude/hooks/no-alloc.sh"),
+    crate::cmd::planted::script(
+        &repo_abs.join(".claude/hooks/no-alloc.sh"),
         "#!/usr/bin/env bash\n# @matchers: Write, Edit\necho hi\n",
-    )
-    .unwrap();
-    make_executable(&repo_abs.join(".claude/hooks/no-alloc.sh"));
+        0o755,
+    );
     fs::write(
         repo_abs.join(".claude/settings.json"),
         r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/no-alloc.sh"}]}]}}"#,

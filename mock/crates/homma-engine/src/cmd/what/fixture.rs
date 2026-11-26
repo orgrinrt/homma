@@ -17,16 +17,8 @@ pub(super) fn workspace() -> tempfile::TempDir {
 }
 
 fn file(root: &Path, rel: &str, text: &str, exec: bool) {
-    let p = root.join(rel);
-    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(&p, text).unwrap();
-    #[cfg(unix)]
-    if exec {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    #[cfg(not(unix))]
-    let _ = exec;
+    let mode = if exec { 0o755 } else { 0o644 };
+    crate::cmd::planted::script(&root.join(rel), text, mode);
 }
 
 /// A tool with its commands, each a script under `commands/`.

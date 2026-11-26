@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::tests::{make_executable, test_root};
+use super::tests::test_root;
 use super::*;
 
 /// Run a wrapper with `payload` on stdin and `args` on its command line,
@@ -55,9 +55,7 @@ pub(crate) fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> P
     let repo = ws.join("arvo");
     fs::create_dir_all(repo.join(".claude/hooks")).unwrap();
     for (name, body) in hooks {
-        let p = repo.join(".claude/hooks").join(name);
-        fs::write(&p, body).unwrap();
-        make_executable(&p);
+        crate::cmd::planted::script(&repo.join(".claude/hooks").join(name), body, 0o755);
     }
     fs::write(repo.join(".claude/settings.json"), settings).unwrap();
     repo

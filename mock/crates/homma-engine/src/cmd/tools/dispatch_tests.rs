@@ -8,7 +8,6 @@
 //! are, and never a file that leaves the tool.
 
 use std::ffi::OsString;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -26,10 +25,7 @@ fn words(w: &[&str]) -> Vec<OsString> {
 }
 
 fn script(dir: &Path, rel: &str, mode: u32) {
-    let p = dir.join(rel);
-    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(&p, "#!/bin/sh\n").unwrap();
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(mode)).unwrap();
+    crate::cmd::planted::script(&dir.join(rel), "#!/bin/sh\n", mode);
 }
 
 /// A workspace with `msg` (promoted, a default command and `show`), `quiet` (not promoted, one verb),

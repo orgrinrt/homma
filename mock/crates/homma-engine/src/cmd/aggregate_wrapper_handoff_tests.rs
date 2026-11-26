@@ -13,20 +13,17 @@ use std::path::Path;
 
 use super::tests::{planted, run_payload};
 use super::*;
-use crate::cmd::aggregate::tests::make_executable;
 
 /// Rewrite the planted hook to record the directory it runs in.
 fn records_its_directory(ws: &Path, rel: &str, marker: &Path) {
-    let real = ws.join(rel).join(".claude/hooks/foo.sh");
-    fs::write(
-        &real,
-        format!(
+    crate::cmd::planted::script(
+        &ws.join(rel).join(".claude/hooks/foo.sh"),
+        &format!(
             "#!/usr/bin/env bash\ncat > /dev/null\npwd -P > '{}'\n",
             marker.display()
         ),
-    )
-    .unwrap();
-    make_executable(&real);
+        0o755,
+    );
 }
 
 /// Run the wrapper as the host does, in `cwd`, with a shell call there.

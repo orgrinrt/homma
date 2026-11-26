@@ -13,7 +13,7 @@ use homma_core::scope::Scope;
 
 use super::*;
 use crate::cmd::aggregate::chains_tests::run_with_payload;
-use crate::cmd::aggregate::tests::{make_executable, test_root};
+use crate::cmd::aggregate::tests::test_root;
 
 type Row<'a> = (&'a str, &'a str, &'a str, &'a [&'a str]);
 
@@ -35,17 +35,14 @@ fn table(rows: &[Row<'_>]) -> AgentHooks {
 /// A script under the workspace at `rel` that records its arguments in
 /// `marker`, so whether it ran is observable.
 fn plant_script(ws: &Path, rel: &str, marker: &Path) {
-    let p = ws.join(rel);
-    fs::create_dir_all(p.parent().unwrap()).unwrap();
-    fs::write(
-        &p,
-        format!(
+    crate::cmd::planted::script(
+        &ws.join(rel),
+        &format!(
             "#!/usr/bin/env bash\ncat > /dev/null\nprintf '%s' \"$*\" > '{}'\n",
             marker.display()
         ),
-    )
-    .unwrap();
-    make_executable(&p);
+        0o755,
+    );
 }
 
 fn repos() -> Vec<(String, String)> {
