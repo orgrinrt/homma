@@ -1126,7 +1126,14 @@ first three answers, never one that is already an answer.
 
 The synonym table is a vocabulary of the tooling, a list of groups of words, and
 adding a group is a data change with a test beside it. It is not a list of
-tools, and no tool is named in it.
+tools, and no tool is named in it. A workspace's own words, the name of its
+messenger or how it speaks of its sessions, belong in groups of its own and not
+in the table: it adds them under `[what] synonyms` in its manifest, an array of
+groups of words, and its groups and the table's are one vocabulary, groups that
+share a word once stemmed being one group, so `["message", "msg"]` joins `msg`
+to the table's message group. A `[what]` table that does not read, a key it does
+not know among them, fails the verb with an error naming `[what]`; with no
+manifest the verb answers from the compiled table.
 
 The acceptance of the command is a set of queries run against a small workspace
 the tests plant, with neutral names: tools with verbs, scripts with headers and

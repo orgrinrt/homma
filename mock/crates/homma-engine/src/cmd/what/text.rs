@@ -10,8 +10,7 @@
 //! are one stem. Two stems are the same word, a word of the same group, a prefix of each other or a
 //! misspelling of each other, and [`grade`] says which, strongest first.
 
-use std::collections::HashMap;
-use std::sync::OnceLock;
+use super::vocab::Vocabulary;
 
 /// Words that carry no subject: the shape of a question rather than what it asks about.
 const FILLER: &[&str] = &[
@@ -116,6 +115,8 @@ pub(super) const SYNONYMS: &[&[&str]] = &[
         "hung",
     ],
     &["end", "ended", "stop", "kill", "terminate", "halt"],
+    // FIXME(homma_what_synonym_groups_carry_a_workspace_s_vocabulary): `msg` here and the group below
+    // are one workspace's words; they leave once it sets them under `[what] synonyms`.
     &["message", "msg", "mail", "dm", "send", "post", "notify", "tell", "channel"],
     &["helper", "helpers", "session", "sessions", "worker", "wrapper"],
     &["open", "start", "begin", "create", "new"],
@@ -209,22 +210,6 @@ fn undouble(s: &mut String) {
     }
 }
 
-/// The group a stem belongs to, if any.
-pub fn group_of(stem_word: &str) -> Option<usize> {
-    static MAP: OnceLock<HashMap<String, usize>> = OnceLock::new();
-    MAP.get_or_init(|| {
-        let mut m = HashMap::new();
-        for (i, g) in SYNONYMS.iter().enumerate() {
-            for w in *g {
-                m.entry(stem(w)).or_insert(i);
-            }
-        }
-        m
-    })
-    .get(stem_word)
-    .copied()
-}
-
 /// How a query stem matched a stem of the text, strongest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Grade {
@@ -257,11 +242,11 @@ impl Grade {
 }
 
 /// How the query stem `q` matches the text stem `t`, or not at all.
-pub fn grade(q: &str, t: &str) -> Option<Grade> {
+pub fn grade(q: &str, t: &str, vocabulary: &Vocabulary) -> Option<Grade> {
     if q == t {
         return Some(Grade::Same);
     }
-    if let (Some(a), Some(b)) = (group_of(q), group_of(t)) {
+    if let (Some(a), Some(b)) = (vocabulary.group_of(q), vocabulary.group_of(t)) {
         if a == b {
             return Some(Grade::Synonym);
         }
