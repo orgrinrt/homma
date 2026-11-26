@@ -16,6 +16,8 @@ use super::super::doc::{Doc, Gap, Gathered, Kind};
 pub const SKILLS: &str = ".shared/skills";
 /// Where the rules are authored, from the workspace root.
 pub const RULES: &str = ".shared/rules";
+/// A skill's manifest in its directory, as authored.
+const SKILL_MANIFEST: &str = "SKILL.md.tmpl";
 
 fn absent(source: &'static str, dir: &str) -> Gathered {
     Gathered {
@@ -40,12 +42,16 @@ pub fn skills(root: &Path) -> Gathered {
                     .skills
                     .iter()
                     .map(|k| {
-                        Doc::new(
+                        let mut d = Doc::new(
                             Kind::Skill,
                             &k.name,
                             &format!("/{}", k.name),
                             &k.meta.description,
-                        )
+                        );
+                        // a manifest that cannot be read leaves a brief the description
+                        d.text =
+                            std::fs::read_to_string(k.dir.join(SKILL_MANIFEST)).unwrap_or_default();
+                        d
                     })
                     .collect(),
                 gaps: Vec::new(),
@@ -84,6 +90,7 @@ pub fn rules(root: &Path) -> Gathered {
                         );
                         d.tags.clone_from(&r.meta.topics);
                         d.body.clone_from(&r.card);
+                        d.text = format!("{}\n{}", r.card, r.elaboration);
                         d
                     })
                     .collect(),

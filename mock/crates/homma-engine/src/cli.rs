@@ -330,13 +330,20 @@ pub enum Command {
     /// that do it, each with the exact command and the words that matched, and what sits beside them.
     /// Names, tags and summaries are matched by stem, synonym, prefix and misspelling. A footer counts
     /// what could not be searched for want of a descriptor. Exits non-zero when nothing matches.
+    ///
+    /// With `--brief <file>` it takes the text of a unit of work in place of the words, `-` for stdin,
+    /// and answers with the rules, skills and tools that bear on it, each with its lines that apply
+    /// quoted from its source, through the summarising pass where `[summary]` is on.
     What {
         /// What you want to do, in your own words.
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required_unless_present = "brief", conflicts_with = "brief", num_args = 1..)]
         words:   Vec<String>,
-        /// How many answers to give.
-        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u32).range(1..))]
-        limit:   u32,
+        /// The text of a unit of work to brief, or `-` for stdin, in place of the words.
+        #[arg(long, value_name = "FILE")]
+        brief:   Option<std::path::PathBuf>,
+        /// How many answers to give: five for words, twelve candidates for a brief.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        limit:   Option<u32>,
         /// Only things of this kind. Repeatable.
         #[arg(long = "kind", value_enum)]
         kinds:   Vec<crate::cmd::what::doc::Kind>,

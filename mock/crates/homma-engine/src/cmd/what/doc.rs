@@ -79,6 +79,9 @@ pub struct Doc {
     pub verbs:   Vec<Verb>,
     /// Where it sits, as words: the directories of a script, the repository of a mockspace command.
     pub place:   Vec<String>,
+    /// What its source holds in full, where that is more than the rest: a rule's card and
+    /// elaboration, a skill's manifest. A brief quotes from it; a query does not read it.
+    pub text:    String,
 }
 
 impl Doc {
@@ -93,6 +96,7 @@ impl Doc {
             tags: Vec::new(),
             verbs: Vec::new(),
             place: Vec::new(),
+            text: String::new(),
         }
     }
 }
