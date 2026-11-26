@@ -448,8 +448,18 @@ pub fn run(cli: Cli) -> Result<Outcome> {
             kinds,
             no_mock,
         } => {
-            let root = tools::root(&config_path(&cli));
-            what::run(&root, words, *limit as usize, kinds, *no_mock, cli.output)
+            let path = config_path(&cli);
+            let root = tools::root(&path);
+            let cfg = if path.exists() { Some(load_config(&cli)?) } else { None };
+            what::run(
+                &root,
+                cfg.as_ref(),
+                words,
+                *limit as usize,
+                kinds,
+                *no_mock,
+                cli.output,
+            )
         },
         #[cfg(feature = "search")]
         Command::Search {
