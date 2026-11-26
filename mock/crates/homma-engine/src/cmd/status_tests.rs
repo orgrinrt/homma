@@ -628,11 +628,13 @@ fn an_unreadable_configs_directory_is_said_once_rather_than_per_repo() {
 }
 
 #[test]
-fn the_workspace_line_lists_the_keys_an_older_engine_refuses() {
-    // Failing control: a status without the list reads as an older engine's,
-    // and the check before a manifest sets either key fails on it.
+fn the_workspace_line_lists_every_key_this_engine_reads() {
+    // Failing control: a status without the list reads as an older engine's, and the check
+    // before a manifest sets a new key fails on it.
     let r = report(vec![]);
-    for key in ["session.cloud_var", "auth.service_prefix"] {
+    let all: Vec<String> = homma_core::config::keys().read().iter().cloned().collect();
+    assert_eq!(r.workspace.reads, all);
+    for key in ["session.cloud_var", "auth.service_prefix", "paths.captures"] {
         assert!(
             r.workspace.reads.iter().any(|k| k == key),
             "{key} is not listed"
@@ -640,12 +642,12 @@ fn the_workspace_line_lists_the_keys_an_older_engine_refuses() {
     }
     let text = rendered(&r);
     assert!(
-        text.contains("  reads: session.cloud_var auth.service_prefix\n"),
+        text.contains(&format!(
+            "  reads: {} keys, listed in the json output\n",
+            all.len()
+        )),
         "{text}"
     );
     let doc = serde_json::to_value(&r).unwrap();
-    assert_eq!(
-        doc["workspace"]["reads"],
-        serde_json::json!(["session.cloud_var", "auth.service_prefix"])
-    );
+    assert_eq!(doc["workspace"]["reads"], serde_json::json!(all));
 }
