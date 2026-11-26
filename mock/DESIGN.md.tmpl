@@ -1291,6 +1291,14 @@ levels down and does not enter a build directory it found, `.git` or
 where there is something in it, and the document carries the list always, empty
 where there is nothing. Nothing is deleted.
 
+The workspace line of the document carries `reads`, the manifest keys this
+engine reads that an engine before them refuses, each as `<table>.<key>`, and
+the human output names them under the workspace line. A manifest sets such a key
+only once every engine that reads it lists the key, so an older engine in a
+clone or a container is seen by the key missing from its list, or by the list
+missing altogether, before the manifest changes. A key leaves the list once no
+engine in use predates it.
+
 Covered: the workspace and its forges, what this clone of it is for, the agent
 surfaces including whether the repository's git hooks are wired at all, the
 shared tool configs, the working tree, and the build directories under the
