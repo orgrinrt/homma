@@ -143,10 +143,11 @@ state whom a rule binds. `roles` is a list of `coordinator` and `helper`, and
 absent means every role, and so does an empty list; a role named twice is read
 as listed. `where` is `cloud` or `local`, and absent means both.
 A role here is the session's own, which is not the standing a person has in the
-organisation. The session is the role found in `~/.config/clause-dev/role`, the
-file the setup script and the bootstrap write, and the place, which is cloud
-when `CLAUSE_CLOUD` is `1` and local otherwise; an explicit option on the
-command overrides each. A session with no role file takes every role, so
+organisation. The session is the role found in the role file,
+`.config/<workspace name>/role` under the home directory with the name
+`[workspace] name` gives, which the workspace's own setup writes, and the place,
+which is cloud when the variable `[session] cloud_var` names is `1` and local
+otherwise; an explicit option on the command overrides each. A session with no role file takes every role, so
 nothing is withheld from it for want of a role, and its place is still read from
 the cloud variable. A home directory that is not set means there is no role file.
 A role file
@@ -560,8 +561,8 @@ nothing was piped to it and exits 1 without reading.
 `homma capture --title <title>` reads an agent session's transcript and writes
 what the person typed into it, and every question put to them with the options
 and the answer, as one capture file in the workspace's capture store. The store
-is `captures` under `[paths]` in the manifest, `.data/op-responses/` in the
-content repository when the key is absent, and `--into` names another directory
+is `captures` under `[paths]` in the manifest, a directory of the content
+repository, and `--into` names another directory
 for one run. The transcript is the one `--session` names, by id or by path; else
 the session the command runs inside, which the harness names to every shell it
 starts as `CLAUDE_CODE_SESSION_ID`; else the newest session the harness keeps for
@@ -714,7 +715,8 @@ branch in the content repository already.
 `homma answers take` is the same kind of command for words left on a page rather
 than typed into a session. Its source is `--dir`, a directory holding `answers/`
 and `notes/` of JSON documents, or `--channel`, which runs the workspace's `msg`
-tool for the messages of kind `answer` and `note` from `--from` (`op` by default)
+tool for the messages of kind `answer` and `note` from `--from` (by default the
+handle of the catalogue's king, and required where the catalogue has none)
 and takes each body that is a JSON document. A document is checked before
 anything is derived from it, because whoever can open the page wrote it: a
 timestamp in `at`, an identifier of plain characters in `id`, `key` and `where`,
@@ -729,8 +731,9 @@ choice in plain words, and what was written as a blockquote, each copied as the
 page holds it. Where the words were left is said in the capture and not assumed:
 the `tags` and the line under the title read the dashboard page for `--dir`, the
 channel for `--channel` and the `registry-append` for the delegate, and the title
-names who spoke, `op` for a directory, `--from` for a channel and `someone` for
-the delegate. The name is the minute of the latest `at` and the title as a slug,
+names who spoke, the king's handle for a directory, since the page is the
+person's, `--from` for a channel and `someone` for the delegate and for a page
+of a catalogue with no king. The name is the minute of the latest `at` and the title as a slug,
 and a name already taken gets a short hash of the keys. Each answer
 whose `key` names a row, `{"ticket": "<id>"}` or a bare id of a `question`, is
 attached to it: `cargo mock registry-append <namespace>::<id> answers "<at>:
