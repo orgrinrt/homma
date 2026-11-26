@@ -1184,15 +1184,26 @@ fits, and the answer says so.
 
 Every quoted span is checked against the content. A line of the answer whose
 place is `line <n>` or `lines <a>-<b>`, and which quotes, keeps only where each
-span in double quotes, its whitespace folded, is in those lines of the content
-with theirs folded; any other quoting line is dropped, and the answer's last
-line says how many were. A line placed at a heading is the thing that heading
-opens; any other line belongs to the thing whose text holds its place. The brief
-is then printed by thing, in the order the answer first names each: the kind,
-the name and the command, the line on why, and the quoted lines under it. A
-thing the answer named with no quote stays, and one it did not name is not
-printed. A line of the answer with no place in the content, or one that names a
-place past its end, is dropped and counted with the rest.
+span in double quotes is a whole line of those, or the whole of the lines named,
+compared with whitespace folded and with a line's leading list, heading and
+quote marks and its emphasis marks set aside on both sides. A fragment is
+dropped, however long, so a quote cannot leave out a "never" of what it quotes.
+A line placed at a heading names the thing that heading opens, and its words
+after the heading's own are the thing's one line on why; a later line at the
+same heading adds nothing. Any other line belongs to the thing whose text holds
+its place and counts only for what it quotes, so a line there with no quote is
+the model's own words about a source and is dropped. A thing keeps three quotes
+at most. The brief is then printed by thing, in the order the answer first names
+each: the kind, the name and the command, the line on why, and the quoted lines
+under it. A thing the answer named with no quote stays, and one it did not name
+is not printed. A line of the answer with no place in the content, or one that
+names a place past its end, is dropped, and everything dropped is counted on one
+line of the brief.
+
+What a brief prints is at most 3000 bytes. Things are kept in order while the
+whole fits, the line of what was dropped and the lines that follow it included,
+and those left out are counted on one line naming `homma what <words>` and a
+smaller `--limit` as the ways to see them.
 
 Where the pass is off, or its call fails, there is no extract, and the brief is
 the candidates as a query would print them, with one line saying why there is
@@ -1395,12 +1406,16 @@ input of any other tool written as JSON, and for an event with no tool, such as
 `UserPromptSubmit`, the payload's `prompt`.
 
 `brief = true` makes an `inform` row say, after its `says`, the brief of that
-text, as `homma what --brief` gives it under its name. Such a row is due once
-for each text in a session, and again for the same text once `ttl` has passed,
-since a brief is of the work it was asked for and a new work is a new brief. A
-text that is empty once trimmed is not briefed, and a brief with nothing in it
-says nothing, so the row is silent for a prompt nothing bears on. `brief` on a
-row of any other strength refuses the manifest.
+text, as `homma what --brief` gives it under its name. Such a row is due as any
+reminder is, once in a session and again once `ttl` has passed, whatever the
+text, so a session is briefed at the start of its work and not on each message
+after; a new prompt inside the `ttl` is not briefed. A brief at any other time is
+asked of the verb, `homma what --brief -` with the work on stdin. A text that is
+empty once trimmed is not briefed, and a brief with nothing in it says nothing;
+neither counts as said, so the first prompt something bears on is still briefed.
+A brief that cannot be made is said once in its place, as `The brief was not
+made:`, the reason, and the command that makes it by hand. `brief` on a row of
+any other strength refuses the manifest.
 
 ```toml
 [[agent.nudges]]
@@ -1447,8 +1462,7 @@ line, the call going on as if there were no record.
 
 The record is per session, by the payload's `session_id`, one file at
 `homma/nudges/<session>.json` under the workspace's git directory, holding per
-row when its text was last said, for a brief row the digest of the text it was
-said for, the call it stopped and when, and the answer taken and when. The log is `homma/nudges.log` beside it, one JSON line per stop,
+row when its text was last said, the call it stopped and when, and the answer taken and when. The log is `homma/nudges.log` beside it, one JSON line per stop,
 answer, refusal, refused evidence and failed predicate, with the time, session,
 row, call text and reason, so a row's taken answers list where whatever its
 marker stands for fell short. Both are the clone's and neither is tracked.
