@@ -78,6 +78,11 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ask: Option<toml::Value>,
 
+    /// A workspace's own words for `homma what`. Read as `homma_api::WhatConfig`
+    /// by that verb alone; same reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what: Option<toml::Value>,
+
     /// Places homma may not write, beyond the ones it derives.
     ///
     /// Read here as well as by `homma_api::Workspace`, which parses the same

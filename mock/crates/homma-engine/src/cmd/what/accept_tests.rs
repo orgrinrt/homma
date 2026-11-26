@@ -9,6 +9,7 @@
 
 use super::doc::Kind;
 use super::fixture::workspace;
+use super::vocab::Vocabulary;
 use super::{Answer, answer, gather};
 
 /// Everything the planted workspace holds, read once for the whole set. The mockspace listing is
@@ -29,7 +30,7 @@ fn everything() -> &'static (Vec<super::doc::Doc>, Vec<super::doc::Gap>) {
 
 fn ask(q: &str) -> Answer {
     let (docs, gaps) = everything();
-    answer(docs, gaps.clone(), q, 5)
+    answer(docs, gaps.clone(), q, 5, Vocabulary::compiled())
 }
 
 fn first(q: &str) -> (Kind, String, String) {
@@ -99,7 +100,13 @@ fn what_a_kind_filter_leaves_out_is_said_in_the_footer() {
         true,
         &homma_core::scope::Scope::everything(),
     );
-    let a = answer(&g.docs, g.gaps, "water the plants", 5);
+    let a = answer(
+        &g.docs,
+        g.gaps,
+        "water the plants",
+        5,
+        Vocabulary::compiled(),
+    );
     assert!(
         a.gaps
             .iter()

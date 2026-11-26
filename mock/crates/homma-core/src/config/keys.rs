@@ -4,7 +4,7 @@
 
 //! Every key the manifest is read for, by both parsers of it.
 
-use homma_api::{AskConfig, Keys, SearchConfig, SummaryConfig, Workspace, keys_of};
+use homma_api::{AskConfig, Keys, SearchConfig, SummaryConfig, WhatConfig, Workspace, keys_of};
 
 use super::Config;
 
@@ -19,6 +19,7 @@ pub fn keys() -> Keys {
     keys.graft("search", probe::<SearchConfig>());
     keys.graft("summary", probe::<SummaryConfig>());
     keys.graft("ask", probe::<AskConfig>());
+    keys.graft("what", probe::<WhatConfig>());
     keys
 }
 

@@ -25,6 +25,7 @@ fn the_keys_of_both_parsers_are_listed_and_a_raw_table_is_not() {
         "search.members",
         "summary.model",
         "ask.cache_expire_hours",
+        "what.synonyms",
     ] {
         assert!(
             listed.iter().any(|k| k == key),
@@ -32,7 +33,7 @@ fn the_keys_of_both_parsers_are_listed_and_a_raw_table_is_not() {
         );
     }
     // Failing control: a table held raw is listed only by the keys under it.
-    for raw in ["paths", "org", "lease", "search", "summary", "ask"] {
+    for raw in ["paths", "org", "lease", "search", "summary", "ask", "what"] {
         assert!(!listed.iter().any(|k| k == raw), "{raw} is listed whole");
     }
 }

@@ -6,6 +6,7 @@
 use super::doc::{Doc, Kind, Verb};
 use super::rank::{Field, rank, related, required};
 use super::text::pairs;
+use super::vocab::Vocabulary;
 
 fn terms(q: &str) -> Vec<String> {
     pairs(q).into_iter().map(|(_, s)| s).collect()
@@ -18,7 +19,7 @@ fn doc(kind: Kind, name: &str, summary: &str, tags: &[&str]) -> Doc {
 }
 
 fn names(docs: &[Doc], q: &str) -> Vec<String> {
-    rank(docs, &terms(q))
+    rank(docs, &terms(q), Vocabulary::compiled())
         .iter()
         .map(|h| docs[h.doc].name.clone())
         .collect()
@@ -153,7 +154,11 @@ fn the_verb_that_matched_best_is_named() {
         },
     ];
     let docs = vec![d];
-    let r = rank(&docs, &terms("which crops are ready"));
+    let r = rank(
+        &docs,
+        &terms("which crops are ready"),
+        Vocabulary::compiled(),
+    );
     assert_eq!(docs[0].verbs[r[0].verb.expect("a verb")].name, "ripe");
 }
 
@@ -164,7 +169,7 @@ fn the_best_way_a_word_matches_is_the_one_kept() {
     d.body = "worktree".to_string();
     d.place = vec!["worktree".to_string()];
     let docs = vec![d];
-    let r = rank(&docs, &terms("worktree"));
+    let r = rank(&docs, &terms("worktree"), Vocabulary::compiled());
     assert_eq!(r[0].matches.len(), 1);
     assert_eq!(
         r[0].matches[0].field,
@@ -207,7 +212,7 @@ fn related_things_are_the_ones_nearest_in_their_words() {
             "other",
         ])
     }));
-    let ranked = rank(&docs, &terms("disk"));
+    let ranked = rank(&docs, &terms("disk"), Vocabulary::compiled());
     assert_eq!(docs[ranked[0].doc].name, "disk-tidy");
     let rel = related(&docs, &ranked[.. 1], 1, 3);
     let got: Vec<&str> = rel[0].iter().map(|&i| docs[i].name.as_str()).collect();
@@ -224,7 +229,7 @@ fn related_never_names_an_answer() {
         doc(Kind::Tool, "disk-tidy", "give the disk back", &["hygiene"]),
         doc(Kind::Tool, "disk-sweep", "give the disk back", &["hygiene"]),
     ];
-    let ranked = rank(&docs, &terms("disk"));
+    let ranked = rank(&docs, &terms("disk"), Vocabulary::compiled());
     assert_eq!(ranked.len(), 2);
     assert!(related(&docs, &ranked, 2, 3).iter().all(Vec::is_empty));
 }
@@ -238,7 +243,7 @@ fn a_tool_is_not_related_to_a_rule_by_a_shared_word() {
             "hygiene",
         ]),
     ];
-    let ranked = rank(&docs, &terms("tidy"));
+    let ranked = rank(&docs, &terms("tidy"), Vocabulary::compiled());
     let rel = related(&docs, &ranked[.. 1], 1, 3);
     assert!(rel[0].is_empty(), "{rel:?}");
 }
