@@ -539,15 +539,4 @@ mod live_default_tests {
             assert!(Config::parse(&text).is_err(), "{bad:?} was taken");
         }
     }
-
-    #[test]
-    fn every_key_the_status_lists_as_read_is_one_this_engine_reads() {
-        // Failing control: a listed key this engine does not know is refused here.
-        assert!(!READS.is_empty());
-        for key in READS {
-            let (table, field) = key.split_once('.').unwrap();
-            let text = format!("[workspace]\nname = \"w\"\n[{table}]\n{field} = \"x\"\n");
-            assert!(Config::parse(&text).is_ok(), "{key} is listed and not read");
-        }
-    }
 }

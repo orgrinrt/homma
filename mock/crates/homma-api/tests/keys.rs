@@ -221,3 +221,76 @@ fn the_types_grafted_read_what_they_list() {
     let bare = Either::deserialize(toml::Value::String("b".into())).unwrap();
     assert!(matches!(bare, Either::Bare(ref s) if s == "b"));
 }
+
+/// A table whose own check refuses a key it does not know, as a table of named events does.
+struct Events(BTreeMap<String, Step>);
+
+impl<'de> Deserialize<'de> for Events {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let read = BTreeMap::<String, Step>::deserialize(d)?;
+        match read.keys().find(|k| k.as_str() != "start") {
+            Some(k) => Err(serde::de::Error::custom(format!("{k} is no event"))),
+            None => Ok(Self(read)),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct Checked {
+    #[serde(default)]
+    events: Option<Events>,
+    #[serde(default)]
+    after:  Option<String>,
+}
+
+#[test]
+fn a_table_whose_check_refuses_the_probe_is_listed_and_the_keys_after_it_too() {
+    // Failing control: without the second pass the check's refusal ends the probe.
+    let keys = keys_of::<Checked>().expect("the second pass offers the table empty");
+    assert_eq!(read(&keys), ["after", "events.*.run"]);
+    let c: Checked = toml::from_str("after = \"a\"\n[events.start]\nrun = [\"r\"]\n").unwrap();
+    assert_eq!(c.after.as_deref(), Some("a"));
+    assert_eq!(
+        c.events.map(|e| e.0["start"].run.clone()),
+        Some(vec!["r".to_string()])
+    );
+    assert!(toml::from_str::<Checked>("[events.other]\nrun = []\n").is_err());
+}
+
+/// A type that refuses every value the probe can offer, empty or not.
+struct Never;
+
+impl<'de> Deserialize<'de> for Never {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        String::deserialize(d)?;
+        Err(serde::de::Error::custom("never"))
+    }
+}
+
+#[derive(Deserialize)]
+struct Refuses {
+    #[serde(default)]
+    never: Option<Never>,
+    #[serde(default)]
+    plain: String,
+}
+
+#[test]
+fn a_type_that_refuses_every_value_refuses_the_probe() {
+    // Option<Never> is offered none on the second pass, so it is the bare type that refuses.
+    #[derive(Deserialize)]
+    struct Bare {
+        never: Never,
+    }
+    let err = keys_of::<Bare>().unwrap_err();
+    assert!(err.to_string().contains("never"), "{err}");
+    assert!(
+        toml::from_str::<Bare>("never = \"x\"")
+            .map(|b| b.never)
+            .is_err()
+    );
+    let keys = keys_of::<Refuses>().unwrap();
+    assert_eq!(read(&keys), ["never", "plain"]);
+    let r: Refuses = toml::from_str("plain = \"p\"").unwrap();
+    assert!(r.never.is_none() && r.plain == "p");
+}

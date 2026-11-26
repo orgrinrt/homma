@@ -86,20 +86,44 @@ impl Keys {
 
 /// The keys `T` reads, or why the probe could not read it.
 ///
-/// A leaf is offered the plainest value of its kind: `false`, `1`, `"x"`. A type
-/// that refuses that value refuses the probe, and the error says so.
+/// A leaf is offered the plainest value of its kind: `false`, `1`, `"x"`, and a
+/// map the one key `*`. A type whose own check refuses what the probe offered
+/// at a key is probed again with that key empty, a map or an array with no
+/// entry and an option with none, keeping the keys the first pass found under
+/// it. A type that refuses even that refuses the probe, and the error says so.
 pub fn keys_of<T: DeserializeOwned>() -> Result<Keys, Error> {
-    let keys = RefCell::new(Keys::default());
-    T::deserialize(Probe {
-        at:   String::new(),
-        keys: &keys,
-    })?;
-    Ok(keys.into_inner())
+    let state = State::default();
+    loop {
+        state.failed.borrow_mut().take();
+        let pass = T::deserialize(Probe {
+            at:   String::new(),
+            keys: &state,
+        });
+        match pass {
+            Ok(_) => return Ok(state.keys.into_inner()),
+            Err(e) => {
+                let Some(at) = state.failed.borrow_mut().take() else { return Err(e) };
+                if !state.refused.borrow_mut().insert(at) {
+                    return Err(e);
+                }
+            },
+        }
+    }
+}
+
+/// What the passes of one probe share.
+#[derive(Default)]
+struct State {
+    keys:    RefCell<Keys>,
+    /// The keys whose value a check refused on an earlier pass, offered empty.
+    refused: RefCell<BTreeSet<String>>,
+    /// The innermost key whose value was refused on this pass.
+    failed:  RefCell<Option<String>>,
 }
 
 struct Probe<'k> {
     at:   String,
-    keys: &'k RefCell<Keys>,
+    keys: &'k State,
 }
 
 impl<'k> Probe<'k> {
@@ -117,16 +141,21 @@ impl<'k> Probe<'k> {
         }
     }
 
+    /// Whether a check refused this key's value on an earlier pass.
+    fn refused(&self) -> bool {
+        self.keys.refused.borrow().contains(&self.at)
+    }
+
     fn leaf(&self) {
         if !self.at.is_empty() {
-            self.keys.borrow_mut().read.insert(self.at.clone());
+            self.keys.keys.borrow_mut().read.insert(self.at.clone());
         }
     }
 
     fn opaque(&self) {
         self.leaf();
         if !self.at.is_empty() {
-            self.keys.borrow_mut().opaque.insert(self.at.clone());
+            self.keys.keys.borrow_mut().opaque.insert(self.at.clone());
         }
     }
 }
@@ -173,6 +202,9 @@ impl<'de> de::Deserializer<'de> for Probe<'_> {
     }
 
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        if self.refused() {
+            return visitor.visit_none();
+        }
         visitor.visit_some(self)
     }
 
@@ -194,9 +226,10 @@ impl<'de> de::Deserializer<'de> for Probe<'_> {
     }
 
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        let left = usize::from(!self.refused());
         visitor.visit_seq(Elements {
             probe: self,
-            left:  1,
+            left,
         })
     }
 
@@ -217,10 +250,11 @@ impl<'de> de::Deserializer<'de> for Probe<'_> {
     }
 
     fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        let fields: &'static [&'static str] = if self.refused() { &[] } else { &["*"] };
         visitor.visit_map(Fields {
-            probe:  self,
-            fields: &["*"],
-            next:   None,
+            probe: self,
+            fields,
+            next: None,
         })
     }
 
@@ -304,7 +338,12 @@ impl<'de> MapAccess<'de> for Fields<'_> {
             .next
             .take()
             .ok_or_else(|| de::Error::custom("a value asked for before its key"))?;
-        seed.deserialize(self.probe.under(key))
+        let probe = self.probe.under(key);
+        let at = probe.at.clone();
+        let state = probe.keys;
+        seed.deserialize(probe).inspect_err(|_| {
+            state.failed.borrow_mut().get_or_insert(at);
+        })
     }
 }
 
