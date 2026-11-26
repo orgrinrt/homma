@@ -46,6 +46,30 @@ pub struct Paths {
     pub leases:         RelPath,
 }
 
+impl Paths {
+    /// The keys of a raw `[paths]` table that this type does not read, sorted.
+    ///
+    /// The keys it reads are the ones the key probe lists, so a field added
+    /// here stops being reported with no other edit. A value that is no table
+    /// has none.
+    ///
+    /// # Errors
+    ///
+    /// When the probe cannot read this type, which it reads with no input, so
+    /// on every call alike.
+    pub fn unread(raw: &toml::Value) -> Result<Vec<String>, serde::de::value::Error> {
+        let known = crate::keys_of::<Paths>()?;
+        let Some(table) = raw.as_table() else { return Ok(Vec::new()) };
+        let mut unread: Vec<String> = table
+            .keys()
+            .filter(|k| !known.read().contains(k.as_str()))
+            .cloned()
+            .collect();
+        unread.sort_unstable();
+        Ok(unread)
+    }
+}
+
 impl Default for Paths {
     fn default() -> Self {
         // Every one of these is a literal in this file, so `expect` here says

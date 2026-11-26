@@ -3,20 +3,21 @@
   "flavour": "",
   "member": "homma-api",
   "green": {
-    "full": "04e40a9545050805b85ab3eb638fd9f43dcf6406b3fbe04df65b6fabf3af7cd0",
+    "full": "d613c75b12cbfd1e4ce30d656627c781c15b9e35497e74f2d866fb17a19b3a3b",
     "own": {
-      "homma-api": "ed804277c722f1a745fb0ee27d12cdcd79baacf6bda9687eab2104381c6c351d"
+      "homma-api": "cc2baab5967247dd4a566863a0434e015ca45ce6d46f770f5dd5704899d80c92"
     }
   },
   "tests": {},
   "bins": {
-    "homma-api": "cf36b3ce556a7a94c80860226921592d4a6fa713b60aff64161fbb24b5ac2b07",
-    "homma-api::compile_fail": "319b20dd8a5f7764d6b2887da44fda601add6da5d8e0204f982ad23f524bbc28",
-    "homma-api::frontmatter": "1e618a1e098bfca21c8cc71c7b9963488b639d17ebe6ad571fc70848a2c85347",
-    "homma-api::keys": "3b53547269d7361d4f6395d04abe6d4e66bc4fa21e5ce39769100ac3f79bf4ca",
-    "homma-api::rule_meta": "11e3e638478b49b325f591cde82017f8780c9f2387644864edd5a51721b694f9",
-    "homma-api::session": "a74fc6407e1bf36e81f82331fe7faf7cac2a63f40a55a9ace13483b5b349ecb9",
-    "homma-api::skill_meta": "be6ae6d1b89f7745b273b14495f36061448ce9f01b111c4f885ef9b90b6412dd",
-    "homma-api::the_home_must_be_known": "6aac4b6f1477d366db59e3db0f48eb655163efa4f09403d7a988604e1768daf1"
+    "homma-api": "948c43e564d112e13a8cf9781f28204b4a0986c0eb8a3abe0338c7ab43db0302",
+    "homma-api::compile_fail": "a3ecffd916e1cd011ba2868819d1bc7e3ab5715b461321186c2fe960ff1c33a4",
+    "homma-api::frontmatter": "0924b69e1ccaac40b8c4da6830f0c0ae1ff0a9dff365eeccfeb668a5a006e350",
+    "homma-api::keys": "2f47868ac12386223b5e0b6b752c96723e6fe2a27a9be0d228c9ae57a1219049",
+    "homma-api::paths_unread": "931e0e810f302f05f6df070e4c9b3631c128e250f845114c7f30c79e78b1cc4e",
+    "homma-api::rule_meta": "a537f865d3f6c26388e1452b0ca9517fb5d2bc4270f3cd564f3173a805654209",
+    "homma-api::session": "52dcb3aedc9216cd2921f7efd65e9a97eb96d62f1686ecc5b82cf4d84e93db34",
+    "homma-api::skill_meta": "d669218683516bd8feced929366f0f98579ca0a9cfd511e87c1b663e24f873bb",
+    "homma-api::the_home_must_be_known": "afcba3a894789a066f7ce8f6fba6f86edf993522f7b8e4fd7e9ce568f9fb74e0"
   }
 }
