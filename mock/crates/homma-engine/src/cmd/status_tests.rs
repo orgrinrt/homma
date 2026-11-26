@@ -632,22 +632,74 @@ fn the_workspace_line_lists_every_key_this_engine_reads() {
     // Failing control: a status without the list reads as an older engine's, and the check
     // before a manifest sets a new key fails on it.
     let r = report(vec![]);
-    let all: Vec<String> = homma_core::config::keys().read().iter().cloned().collect();
-    assert_eq!(r.workspace.reads, all);
     for key in ["session.cloud_var", "auth.service_prefix", "paths.captures"] {
         assert!(
             r.workspace.reads.iter().any(|k| k == key),
             "{key} is not listed"
         );
     }
+    assert!(r.workspace.reads_unknown.is_none());
     let text = rendered(&r);
     assert!(
         text.contains(&format!(
             "  reads: {} keys, listed in the json output\n",
-            all.len()
+            r.workspace.reads.len()
         )),
         "{text}"
     );
     let doc = serde_json::to_value(&r).unwrap();
-    assert_eq!(doc["workspace"]["reads"], serde_json::json!(all));
+    assert_eq!(
+        doc["workspace"]["reads"],
+        serde_json::json!(r.workspace.reads)
+    );
+}
+
+fn report_of(manifest: &str) -> StatusReport {
+    let cfg = Config::parse(manifest).expect("the manifest parses");
+    build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new())
+}
+
+#[test]
+fn the_keys_under_paths_this_engine_does_not_read_are_named_under_the_workspace_line() {
+    let r = report_of(
+        "[workspace]\nname = \"w\"\n[paths]\ncaptures = \"c\"\nbackups = \"b\"\nan_old_list = \"l\"\n",
+    );
+    assert_eq!(r.workspace.unread_paths, ["an_old_list", "backups"]);
+    let text = rendered(&r);
+    assert!(
+        text.contains("  not read under [paths]: an_old_list backups\n"),
+        "{text}"
+    );
+    let doc = serde_json::to_value(&r).unwrap();
+    assert_eq!(
+        doc["workspace"]["unread_paths"],
+        serde_json::json!(["an_old_list", "backups"])
+    );
+    // Failing control: a manifest whose [paths] keys are all read names none, prints no line,
+    // and still carries the list, empty, for the check that waits on it.
+    let read = report_of("[workspace]\nname = \"w\"\n[paths]\ncaptures = \"c\"\n");
+    assert!(read.workspace.unread_paths.is_empty());
+    assert!(
+        !rendered(&read).contains("not read under"),
+        "{}",
+        rendered(&read)
+    );
+    let doc = serde_json::to_value(&read).unwrap();
+    assert_eq!(doc["workspace"]["unread_paths"], serde_json::json!([]));
+    let none = report_of("[workspace]\nname = \"w\"\n");
+    assert!(none.workspace.unread_paths.is_empty());
+}
+
+#[test]
+fn a_key_probe_that_could_not_read_a_type_is_said_and_lists_nothing() {
+    let mut r = report(vec![]);
+    r.workspace.reads = Vec::new();
+    r.workspace.reads_unknown = Some("the manifest type T refuses the key probe: no".into());
+    let text = rendered(&r);
+    assert!(
+        text.contains("  reads: not known, the manifest type T refuses the key probe: no\n"),
+        "{text}"
+    );
+    // Failing control: the count line is printed only over a list.
+    assert!(!text.contains("keys, listed in the json output"), "{text}");
 }

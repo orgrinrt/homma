@@ -86,6 +86,12 @@ pub struct WorkspaceLine {
     /// Every manifest key this engine reads, as a dotted path with a map's
     /// keys `*`, derived from the types that read the manifest.
     pub reads:                  Vec<String>,
+    /// Why `reads` is empty where the key probe could not read a manifest
+    /// type; none where it could.
+    pub reads_unknown:          Option<String>,
+    /// The keys under `[paths]` this engine does not read, sorted; empty
+    /// where there is none, or where `[paths]` is not a table.
+    pub unread_paths:           Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -210,12 +216,24 @@ fn build_report(
     configs: ConfigReport,
     worktrees: Vec<WorktreeLine>,
 ) -> StatusReport {
+    let (reads, reads_unknown) = match homma_core::config::keys() {
+        Ok(keys) => (keys.read().iter().cloned().collect(), None),
+        Err(e) => (Vec::new(), Some(e.to_string())),
+    };
+    // A probe that cannot read `Paths` is the fault `reads_unknown` already names.
+    let unread_paths = cfg
+        .paths
+        .as_ref()
+        .and_then(|raw| homma_api::Paths::unread(raw).ok())
+        .unwrap_or_default();
     let workspace = WorkspaceLine {
-        name:                   cfg.workspace.name.to_string(),
-        path:                   cfg.workspace.path.display().to_string(),
-        default_public_branch:  cfg.defaults.public_branch.clone(),
+        name: cfg.workspace.name.to_string(),
+        path: cfg.workspace.path.display().to_string(),
+        default_public_branch: cfg.defaults.public_branch.clone(),
         default_working_branch: cfg.defaults.working_branch.clone(),
-        reads:                  homma_core::config::keys().read().iter().cloned().collect(),
+        reads,
+        reads_unknown,
+        unread_paths,
     };
     let forges = cfg
         .forges
@@ -316,6 +334,16 @@ impl StatusReport {
                 out,
                 "  reads: {} keys, listed in the json output",
                 self.workspace.reads.len()
+            )?;
+        }
+        if let Some(why) = &self.workspace.reads_unknown {
+            writeln!(out, "  reads: not known, {why}")?;
+        }
+        if !self.workspace.unread_paths.is_empty() {
+            writeln!(
+                out,
+                "  not read under [paths]: {}",
+                self.workspace.unread_paths.join(" ")
             )?;
         }
         if let Some(i) = &self.instance {
