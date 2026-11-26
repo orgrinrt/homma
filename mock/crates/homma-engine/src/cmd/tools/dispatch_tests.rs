@@ -25,7 +25,7 @@ fn words(w: &[&str]) -> Vec<OsString> {
 }
 
 fn script(dir: &Path, rel: &str, mode: u32) {
-    crate::cmd::planted::script(&dir.join(rel), "#!/bin/sh\n", mode);
+    homma_fixture::script(&dir.join(rel), "#!/bin/sh\n", mode);
 }
 
 /// A workspace with `msg` (promoted, a default command and `show`), `quiet` (not promoted, one verb),

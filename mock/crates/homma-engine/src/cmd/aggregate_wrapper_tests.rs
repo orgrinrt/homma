@@ -11,7 +11,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::cmd::planted;
 
 /// Run an emitted wrapper with a tool-input payload naming `target`.
 fn run_wrapper(wrapper: &Path, target: &Path) {
@@ -68,7 +67,7 @@ pub(super) fn planted(ws: &Path, rel: &str) -> (PathBuf, PathBuf) {
     fs::create_dir_all(ws.join(rel).join(".claude/hooks")).unwrap();
     let marker = ws.join("fired");
     let real = ws.join(rel).join(".claude/hooks/foo.sh");
-    planted::script(
+    homma_fixture::script(
         &real,
         &format!(
             "#!/usr/bin/env bash\ncat > /dev/null\ntouch '{}'\n",
@@ -77,7 +76,7 @@ pub(super) fn planted(ws: &Path, rel: &str) -> (PathBuf, PathBuf) {
         0o755,
     );
     let wrapper = hooks.join("acre--foo.sh");
-    planted::script(
+    homma_fixture::script(
         &wrapper,
         &wrapper_script("acre", rel, ".claude/hooks/foo.sh", ""),
         0o755,
@@ -163,14 +162,14 @@ fn a_wrapper_without_jq_hands_off_rather_than_guessing_from_the_directory() {
     // Builtins only, because this runs under a PATH holding one program.
     let marker = ws.path().join("fired");
     let real = ws.path().join("acre/.claude/hooks/foo.sh");
-    planted::script(
+    homma_fixture::script(
         &real,
         &format!("#!/usr/bin/env bash\nprintf '' > '{}'\n", marker.display()),
         0o755,
     );
 
     let wrapper = hooks.join("acre--foo.sh");
-    planted::script(
+    homma_fixture::script(
         &wrapper,
         &wrapper_script("acre", "acre", ".claude/hooks/foo.sh", ""),
         0o755,
@@ -206,7 +205,7 @@ fn a_wrapper_declines_when_the_repo_is_not_cloned_here() {
 
     for runner in ["", "bash"] {
         let wrapper = hooks.join("acre--foo.sh");
-        planted::script(
+        homma_fixture::script(
             &wrapper,
             &wrapper_script("acre", "acre", ".claude/hooks/foo.sh", runner),
             0o755,
@@ -391,7 +390,7 @@ fn a_hook_run_through_a_program_is_run_through_it() {
     // Not executable, and a shape only bash runs, so whether it ran through
     // the program is what the marker says.
     let real = ws.path().join("acre/.claude/hooks/check.sh");
-    planted::script(
+    homma_fixture::script(
         &real,
         &format!(
             "cat > /dev/null\nprintf '%s' \"$*\" > '{}'\n",
@@ -400,7 +399,7 @@ fn a_hook_run_through_a_program_is_run_through_it() {
         0o644,
     );
     let wrapper = ws.path().join(".claude/hooks/acre--check.sh");
-    planted::script(
+    homma_fixture::script(
         &wrapper,
         &wrapper_script("acre", "acre", ".claude/hooks/check.sh", "bash"),
         0o755,
@@ -435,7 +434,7 @@ fn a_hook_run_through_a_program_is_run_through_it() {
     // The control: the same file with no program is not run, since it is not
     // executable and the wrapper declines.
     fs::remove_file(&marker).unwrap();
-    planted::script(
+    homma_fixture::script(
         &wrapper,
         &wrapper_script("acre", "acre", ".claude/hooks/check.sh", ""),
         0o755,
@@ -451,7 +450,7 @@ fn a_hook_run_through_a_program_is_run_through_it() {
 /// A stand-in for the dedup tool that records it was asked to run and then runs
 /// what follows `run`, so whether a wrapper goes through it is observable.
 pub(in crate::cmd) fn plant_dedup(ws: &Path, seen: &Path) {
-    planted::script(
+    homma_fixture::script(
         &ws.join("tools/hookdedup/hookdedup"),
         &format!(
             "#!/usr/bin/env bash\nprintf '%s' \"$1\" > '{}'\nshift\nexec \"$@\"\n",

@@ -735,7 +735,7 @@ done
 cat "$HOMMA_STUB_DIR/status-$repo.json" && exit 0
 exit 3 ;;
 esac"#;
-        crate::cmd::planted::script(
+        homma_fixture::script(
             &at,
             &format!("#!/usr/bin/env bash\n{preamble}\n{body}\n"),
             0o755,

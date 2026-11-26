@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use homma_api::HookEntry;
@@ -29,8 +28,7 @@ fn table(events: &[&str]) -> Hooks {
 
 fn executable(dir: &Path, name: &str, body: &str) -> PathBuf {
     let p = dir.join(name);
-    std::fs::write(&p, body).unwrap();
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    homma_fixture::script(&p, body, 0o755);
     p
 }
 

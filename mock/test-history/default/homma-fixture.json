@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "flavour": "",
+  "member": "homma-fixture",
+  "green": {
+    "full": "94a013c14fbafd3e5b00793822d635d41ef68c0373ae92c92bd37c213d845170",
+    "own": {
+      "homma-fixture": "96bdc2ea27035150617b99c2b95f8f212a0b9061d133ec5936fbe2e7798443ab"
+    }
+  },
+  "tests": {},
+  "bins": {
+    "homma-fixture": "432a830924e5fdc384ac3d89582912408650e79703702b14406dd78f58a17935"
+  }
+}

@@ -244,7 +244,7 @@ fn the_rules_version_is_pinned_to_the_rules_as_they_stand() {
 #[cfg(unix)]
 fn stand_in(dir: &std::path::Path, body: &str) -> super::call::Command {
     let script = dir.join("model");
-    crate::cmd::planted::script(&script, &format!("#!/bin/sh\n{body}"), 0o755);
+    homma_fixture::script(&script, &format!("#!/bin/sh\n{body}"), 0o755);
     super::call::Command {
         program: script.display().to_string(),
         model:   "haiku".into(),

@@ -290,19 +290,15 @@ fn a_layer_only_hook_installed_under_git_shook_runs_on_a_real_commit() {
     // workspace root; this stands in for it with the same two words
     let shim = tempfile::tempdir().unwrap();
     let launcher = shim.path().join("homma");
-    std::fs::write(
+    homma_fixture::script(
         &launcher,
-        format!(
+        &format!(
             "#!/bin/sh\nexec '{}' --dir '{}' \"$@\"\n",
             bin().get_program().to_string_lossy(),
             root.display()
         ),
-    )
-    .unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+        0o755,
+    );
     let path = format!(
         "{}:{}:{}",
         shim.path().display(),
