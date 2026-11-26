@@ -1,0 +1,50 @@
+98887b2 chore: lock src changelist 202611262246
+e7ff685 feat: brief a unit of work on what bears on it
+4d39599 chore: lock doc changelist 202611262245
+a7464bc docs: design a brief of what bears on a unit of work
+1ddc5d4 docs: open the round on a brief of what bears on the work
+859636a chore: record the test history of the fix
+ea23a9b chore: regenerate generated files
+dd1ca44 chore: close design round 202611262230
+d42a2cb chore: lock src changelist 202611262231
+c76f9d3 fix: let a marker answer only in its two exact shapes
+f29c87e chore: lock doc changelist 202611262230
+fa01caa docs: let a marker count only in its two exact shapes
+cdfa836 docs: open the round on what a marked call may carry
+8fb2114 chore: record the test history of the merged tree
+a61672e chore: record `regex` in the root lockfile
+08ea541 Merge remote-tracking branch 'origin/dev' into work/homma-nudges
+79acead chore: close design round 202611262158
+edcee98 chore: lock src changelist 202611262200
+964827e feat: run declared nudges through `homma agent nudge`
+1d9f08d chore: regenerate generated files
+1ce6f88 chore: lock doc changelist 202611262158
+820fbee design: declare a nudge as a row of the agent table
+720a04f design: open the round on a nudge as a declared row
+54d2012 fix: name the command that rebuilds a member index of another format
+b5d98a6 fix: name the command that rebuilds a member index of another format
+2066a4d chore: record the test history of the merged tree
+bc22b23 Merge remote-tracking branch 'origin/dev' into work/homma-answers-2
+072e368 chore: regenerate generated files
+e4ad070 chore: close design round 202611262124
+a3344f7 chore: lock src changelist 202611262134
+9bae086 fix: say what moves an index of another extraction too
+698cc64 chore: lock doc changelist 202611262124
+6526f75 docs: say an index of another extraction as one of another chunker
+404eb92 fix: read the unread paths keys in status alone
+06486e6 fix: read the unread paths keys in status alone
+683c3e6 chore: record the test history of the merged tree
+a6f068c Merge remote-tracking branch 'origin/dev' into work/homma-tail-2
+96cbc7c chore: record the test history of the merged tree
+d616588 Merge remote-tracking branch 'origin/dev' into work/homma-answers-2
+57f618a chore: regenerate generated files
+efd3e5e feat: join a workspace's own synonym groups to the what table
+2576e84 chore: close design round 202611262058
+ba98e53 feat: join a workspace's own synonym groups to the what table
+8c01a45 chore: lock src changelist 202611262059
+ae540ff feat: say what moves an index cut by another chunker
+cf57391 chore: lock doc changelist 202611262058
+1b7ca72 docs: name what cuts again an index of another chunker
+a42cdf0 chore: regenerate generated files
+d7aaea2 chore: close design round 202611262043
+79444c0 chore: lock src changelist 202611262044
