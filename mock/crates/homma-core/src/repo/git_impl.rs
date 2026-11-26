@@ -239,7 +239,7 @@ mod tests {
     // rather than the config.
     //
     // **Run against a hostile global configuration**, which is the half the
-    // first version missed. It asserted the author was `ort@hiisi.digital`,
+    // first version missed. It asserted the author was `ash@example.invalid`,
     // which is this machine's own global `user.email`, so deleting every author
     // write homma performs left the test passing. The machine was answering it.
     //
@@ -300,9 +300,9 @@ mod tests {
         git.set_identity(
             &at,
             &CommitIdentity::split(
-                "Onni Armas",
-                "ort@hiisi.digital",
-                "Vouti",
+                "Olly Armas",
+                "ash@example.invalid",
+                "Vesta",
                 "someone+alt@example.invalid",
             )
             .unwrap(),
@@ -313,11 +313,11 @@ mod tests {
             .identity(&at)
             .unwrap()
             .expect("an identity is configured");
-        assert_eq!(got.author_name(), "Onni Armas");
-        assert_eq!(got.author_email(), "ort@hiisi.digital");
+        assert_eq!(got.author_name(), "Olly Armas");
+        assert_eq!(got.author_email(), "ash@example.invalid");
         assert_eq!(
             got.committer_name(),
-            "Vouti",
+            "Vesta",
             "read from committer.name, not fabricated from the author"
         );
         assert_eq!(got.committer_email(), "someone+alt@example.invalid");
@@ -391,9 +391,9 @@ mod tests {
         git.set_identity(
             &at,
             &CommitIdentity::split(
-                "Onni Armas",
-                "ort@hiisi.digital",
-                "Onni Armas",
+                "Olly Armas",
+                "ash@example.invalid",
+                "Olly Armas",
                 "someone+alt@example.invalid",
             )
             .unwrap(),
@@ -425,7 +425,7 @@ mod tests {
 
         assert_eq!(
             run(&["log", "-1", "--format=%ae"]),
-            "ort@hiisi.digital",
+            "ash@example.invalid",
             "the configured author must beat the global"
         );
         assert_eq!(
@@ -435,10 +435,10 @@ mod tests {
         );
         assert_eq!(
             run(&["log", "-1", "--format=%an"]),
-            "Onni Armas",
+            "Olly Armas",
             "a global author.name overrides a local user.name, so the name is a hole too"
         );
-        assert_eq!(run(&["log", "-1", "--format=%cn"]), "Onni Armas");
+        assert_eq!(run(&["log", "-1", "--format=%cn"]), "Olly Armas");
     }
 
     #[test]
@@ -459,12 +459,12 @@ mod tests {
 
         git.set_identity(
             &abs_into,
-            &CommitIdentity::same("paja", "paja@example.invalid").unwrap(),
+            &CommitIdentity::same("pike", "pike@example.invalid").unwrap(),
         )
         .unwrap();
         assert_eq!(
             git.identity(&abs_into).unwrap(),
-            Some(CommitIdentity::same("paja", "paja@example.invalid").unwrap())
+            Some(CommitIdentity::same("pike", "pike@example.invalid").unwrap())
         );
     }
 
@@ -500,13 +500,13 @@ mod tests {
             .unwrap();
         git.set_identity(
             &abs_into,
-            &CommitIdentity::same("paja", "paja@example.invalid").unwrap(),
+            &CommitIdentity::same("pike", "pike@example.invalid").unwrap(),
         )
         .unwrap();
 
         let local = std::fs::read_to_string(into.join(".git/config")).unwrap();
         assert!(
-            local.contains("paja@example.invalid"),
+            local.contains("pike@example.invalid"),
             "the identity must be in the clone's own config, got:\n{local}"
         );
 
@@ -526,10 +526,10 @@ mod tests {
         };
         assert_eq!(
             key("user.name"),
-            "paja",
+            "pike",
             "user.name is the documented fallback"
         );
-        assert_eq!(key("user.email"), "paja@example.invalid");
+        assert_eq!(key("user.email"), "pike@example.invalid");
 
         // The half the name claimed and the body did not check. "Never
         // globally" is the entire content of the requirement, and reading the

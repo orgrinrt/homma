@@ -20,27 +20,16 @@ pub(crate) fn test_root(workspace: &Path) -> Root {
     .expect("a tempdir is a legitimate root")
 }
 
-/// Mark a file executable, which the wrapper's own `[ -x ]` check reads.
-pub(crate) fn make_executable(p: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perm = fs::metadata(p).unwrap().permissions();
-        perm.set_mode(0o755);
-        fs::set_permissions(p, perm).unwrap();
-    }
-}
-
 #[test]
 fn aggregated_command_detected_by_prefix() {
-    let cmd = ".claude/hooks/arvo--no-alloc-guard.sh";
-    assert!(is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
+    let cmd = ".claude/hooks/acre--no-alloc-guard.sh";
+    assert!(is_aggregated_command(cmd, &["acre", "hollowbridge"]));
 }
 
 #[test]
 fn non_aggregated_command_not_detected() {
     let cmd = ".claude/hooks/workspace-only.sh";
-    assert!(!is_aggregated_command(cmd, &["arvo"]));
+    assert!(!is_aggregated_command(cmd, &["acre"]));
 }
 
 #[test]
@@ -49,36 +38,36 @@ fn legacy_imports_path_detected_as_aggregated() {
     // `imports/<repo>/<name>.sh` rather than the current flat
     // `<repo>--<name>.sh` convention. Entries left over from that
     // era must still get swept out on regen.
-    let cmd = ".claude/hooks/imports/arvo/no-alloc-guard.sh";
+    let cmd = ".claude/hooks/imports/acre/no-alloc-guard.sh";
     assert!(is_retired_aggregated_command(cmd, &[
-        "arvo",
-        "hilavitkutin"
+        "acre",
+        "hollowbridge"
     ]));
     // and the current-shape check does not claim it, so the two are not
     // silently the same predicate under two names
-    assert!(!is_aggregated_command(cmd, &["arvo", "hilavitkutin"]));
+    assert!(!is_aggregated_command(cmd, &["acre", "hollowbridge"]));
 }
 
 #[test]
 fn legacy_imports_at_path_start_detected_as_aggregated() {
     // Relative path starting with `imports/<repo>/` (no leading
     // separator). Must still match the legacy pattern.
-    let cmd = "imports/arvo/no-alloc-guard.sh";
-    assert!(is_retired_aggregated_command(cmd, &["arvo"]));
+    let cmd = "imports/acre/no-alloc-guard.sh";
+    assert!(is_retired_aggregated_command(cmd, &["acre"]));
 }
 
 #[test]
 fn an_absolute_managed_command_is_retired_whatever_repo_it_names() {
-    let cmd = "/Users/someone/Dev/their-workspace/.claude/hooks/arvo--no-alloc-guard.sh";
-    assert!(is_retired_aggregated_command(cmd, &["arvo"]));
+    let cmd = "/Users/someone/Dev/their-workspace/.claude/hooks/acre--no-alloc-guard.sh";
+    assert!(is_retired_aggregated_command(cmd, &["acre"]));
 }
 
 #[test]
 fn a_placeholder_command_for_an_unvisited_repo_is_not_retired() {
     // The control that keeps the preservation rule alive. A predicate that
     // swept both shapes would satisfy the test above and quietly undo it.
-    let cmd = "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--no-alloc-guard.sh";
-    assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
+    let cmd = "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--no-alloc-guard.sh";
+    assert!(!is_retired_aggregated_command(cmd, &["acre"]));
 }
 
 #[test]
@@ -86,18 +75,18 @@ fn an_unmanaged_absolute_command_is_left_alone() {
     // The second control, and the worst thing this could get wrong: a
     // hand-authored user-level hook is absolute too.
     let cmd = "/Users/someone/.claude/hooks/self-compact-trigger.sh";
-    assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
-    assert!(!is_aggregated_command(cmd, &["arvo"]));
+    assert!(!is_retired_aggregated_command(cmd, &["acre"]));
+    assert!(!is_aggregated_command(cmd, &["acre"]));
 }
 
 #[test]
 fn imports_substring_not_at_path_boundary_not_detected() {
-    // A command that happens to contain the substring `imports/arvo/`
+    // A command that happens to contain the substring `imports/acre/`
     // in the middle of a longer path component must NOT be flagged.
     // Path-component anchoring prevents false positives on
-    // e.g. user-authored paths like `myimports/arvo/foo.sh`.
-    let cmd = ".claude/hooks/myimports/arvo/foo.sh";
-    assert!(!is_retired_aggregated_command(cmd, &["arvo"]));
+    // e.g. user-authored paths like `myimports/acre/foo.sh`.
+    let cmd = ".claude/hooks/myimports/acre/foo.sh";
+    assert!(!is_retired_aggregated_command(cmd, &["acre"]));
 }
 
 #[test]
@@ -117,7 +106,7 @@ fn matcher_detection_from_hook_body_directive() {
 fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
-    let repo_abs = workspace.join("arvo");
+    let repo_abs = workspace.join("acre");
     fs::create_dir_all(repo_abs.join(".claude/rules")).unwrap();
     fs::create_dir_all(repo_abs.join(".claude/hooks")).unwrap();
 
@@ -125,8 +114,8 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     // swept out on regen even though no new rule is being written.
     fs::create_dir_all(workspace.join(".claude/rules")).unwrap();
     fs::write(
-        workspace.join(".claude/rules/arvo--stale-rule.md"),
-        "---\npaths:\n  - \"arvo/**\"\n---\nLeftover.\n",
+        workspace.join(".claude/rules/acre--stale-rule.md"),
+        "---\npaths:\n  - \"acre/**\"\n---\nLeftover.\n",
     )
     .unwrap();
 
@@ -138,12 +127,11 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         "---\npaths:\n  - \"crates/**/*.rs\"\n---\nBody.\n",
     )
     .unwrap();
-    fs::write(
-        repo_abs.join(".claude/hooks/no-alloc.sh"),
+    crate::cmd::planted::script(
+        &repo_abs.join(".claude/hooks/no-alloc.sh"),
         "#!/usr/bin/env bash\n# @matchers: Write, Edit\necho hi\n",
-    )
-    .unwrap();
-    make_executable(&repo_abs.join(".claude/hooks/no-alloc.sh"));
+        0o755,
+    );
     fs::write(
         repo_abs.join(".claude/settings.json"),
         r#"{"hooks":{"PreToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/no-alloc.sh"}]}]}}"#,
@@ -151,25 +139,25 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     .unwrap();
 
     let mut settings = Vec::new();
-    let a = aggregate_repo(&test_root(workspace), "arvo", &repo_abs, &mut settings).unwrap();
+    let a = aggregate_repo(&test_root(workspace), "acre", &repo_abs, &mut settings).unwrap();
     assert_eq!(a.hooks, 1);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
 
     // Stale aggregated rule was cleaned.
     assert!(
-        !workspace.join(".claude/rules/arvo--stale-rule.md").exists(),
+        !workspace.join(".claude/rules/acre--stale-rule.md").exists(),
         "stale aggregated rule should have been cleaned by clean_stale"
     );
     // Repo-side rule was NOT propagated.
     assert!(
         !workspace
-            .join(".claude/rules/arvo--type-surface.md")
+            .join(".claude/rules/acre--type-surface.md")
             .exists(),
         "homma no longer aggregates per-repo rules"
     );
 
-    let hook = fs::read_to_string(workspace.join(".claude/hooks/arvo--no-alloc.sh")).unwrap();
-    assert!(hook.contains("REPO_REL='arvo'"));
+    let hook = fs::read_to_string(workspace.join(".claude/hooks/acre--no-alloc.sh")).unwrap();
+    assert!(hook.contains("REPO_REL='acre'"));
     assert!(hook.contains("ORIG_HOOK="));
     assert!(
         !hook.contains(workspace.to_str().unwrap()),
@@ -180,7 +168,7 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     assert_eq!(settings[0].event, "PreToolUse");
     assert_eq!(settings[0].matcher, "Edit");
     assert_eq!(
-        settings[0].command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--no-alloc.sh",
+        settings[0].command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--no-alloc.sh",
         "the registered command must name the host's project-root placeholder rather \
          than this run's workspace",
     );
@@ -190,7 +178,7 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         settings[0].command,
     );
 
-    merge_settings(&test_root(workspace), &["arvo"], &["arvo"], &settings, None).unwrap();
+    merge_settings(&test_root(workspace), &["acre"], &["acre"], &settings, None).unwrap();
     let written = fs::read_to_string(workspace.join(".claude/settings.local.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&written).unwrap();
     let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
@@ -198,7 +186,7 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
     assert_eq!(arr[0]["matcher"], "Edit");
     let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
     assert!(
-        cmd.ends_with("/.claude/hooks/arvo--no-alloc.sh"),
+        cmd.ends_with("/.claude/hooks/acre--no-alloc.sh"),
         "expected absolute path, got: {cmd}",
     );
 }

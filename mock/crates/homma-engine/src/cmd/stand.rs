@@ -294,24 +294,24 @@ mod tests {
     const ORG: &str = r#"
 content_repo = "git@example.invalid:someone/content.git"
 
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
+handle = "oz"
 
-[org.paja]
+[org.pike]
 role = "hand"
 staffed = true
-handle = "paja"
-nickname = "Paja"
+handle = "pike"
+nickname = "Pike"
 domain = "tooling"
-git_name = "paja"
-git_email = "paja@example.invalid"
-committer_name = "Vouti"
+git_name = "pike"
+git_email = "pike@example.invalid"
+committer_name = "Vesta"
 committer_email = "someone+alt@example.invalid"
-workspace = "/tmp/paja"
+workspace = "/tmp/pike"
 
 # Staffed, with an author and no committer, so the fallback stays covered at
-# this layer after `paja` gained a distinct one. Without an entry like this the
+# this layer after `pike` gained a distinct one. Without an entry like this the
 # two halves are equal in every fixture here, and a double that substitutes one
 # for the other passes.
 [org.fallback]
@@ -364,7 +364,7 @@ domain = "rendering"
         );
 
         let git = FakeGit::at_the_content_repo();
-        let err = stand_up(&ws_with_inside_workspace(), &raw, "paja", &git)
+        let err = stand_up(&ws_with_inside_workspace(), &raw, "pike", &git)
             .expect_err("a workspace inside the root is refused whatever the root looks like");
         let msg = format!("{err:#}");
         assert!(
@@ -378,7 +378,7 @@ domain = "rendering"
     /// Relative on purpose: an absolute workspace ignores the root entirely, so
     /// only a relative one exercises the comparison this test is about.
     fn ws_with_inside_workspace() -> Workspace {
-        Workspace::parse(&ORG.replace("workspace = \"/tmp/paja\"", "workspace = \"inside/paja\""))
+        Workspace::parse(&ORG.replace("workspace = \"/tmp/pike\"", "workspace = \"inside/pike\""))
             .expect("the fixture parses")
     }
 
@@ -389,21 +389,21 @@ domain = "rendering"
         // directories and no workspace at all.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::at_the_content_repo();
-        let out = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
+        let out = stand_up(&ws(), &abs(d.path()), "pike", &git).unwrap();
 
         assert!(out.cloned, "a fresh workspace must be cloned");
         assert_eq!(git.cloned.borrow().len(), 1);
         // **All four values differ**, which is what makes this discriminate.
-        // While the fixture gave `paja` no committer, both halves resolved to
+        // While the fixture gave `pike` no committer, both halves resolved to
         // the author and a double substituting one for the other passed. The
         // fallback that produced that equality is asserted separately below.
         assert_eq!(
             git.identity(&out.workspace).unwrap(),
             Some(
                 homma_api::CommitIdentity::split(
-                    "paja",
-                    "paja@example.invalid",
-                    "Vouti",
+                    "pike",
+                    "pike@example.invalid",
+                    "Vesta",
                     "someone+alt@example.invalid"
                 )
                 .unwrap()
@@ -432,8 +432,8 @@ domain = "rendering"
     fn standing_up_twice_does_not_clone_over_the_workspace() {
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::at_the_content_repo();
-        stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
-        let second = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
+        stand_up(&ws(), &abs(d.path()), "pike", &git).unwrap();
+        let second = stand_up(&ws(), &abs(d.path()), "pike", &git).unwrap();
         assert!(!second.cloned);
         assert_eq!(git.cloned.borrow().len(), 1);
     }
@@ -446,7 +446,7 @@ domain = "rendering"
         // every guard here exists to stop. It exited 0.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::somewhere_else();
-        let err = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap_err();
+        let err = stand_up(&ws(), &abs(d.path()), "pike", &git).unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("content"), "must name what it expected: {msg}");
         assert!(msg.contains("member"), "and what it found: {msg}");
@@ -463,7 +463,7 @@ domain = "rendering"
         // refuse; the URI came from the configuration either way.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::no_origin();
-        let out = stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
+        let out = stand_up(&ws(), &abs(d.path()), "pike", &git).unwrap();
         assert!(out.cloned);
         assert_eq!(git.cloned.borrow()[0].0, CONTENT);
     }
@@ -473,7 +473,7 @@ domain = "rendering"
         // The whole defect in one assertion.
         let d = tempfile::tempdir().unwrap();
         let git = FakeGit::at_the_content_repo();
-        stand_up(&ws(), &abs(d.path()), "paja", &git).unwrap();
+        stand_up(&ws(), &abs(d.path()), "pike", &git).unwrap();
         assert_eq!(git.cloned.borrow()[0].0, CONTENT);
     }
 
@@ -532,7 +532,7 @@ domain = "rendering"
         // under the one handle whose provenance derives a ratified standing.
         let d = tempfile::tempdir().unwrap();
         let err =
-            stand_up(&ws(), &abs(d.path()), "op", &FakeGit::at_the_content_repo()).unwrap_err();
+            stand_up(&ws(), &abs(d.path()), "oz", &FakeGit::at_the_content_repo()).unwrap_err();
         assert!(err.to_string().contains("owns no workspace"), "{err}");
         assert!(!d.path().join(".claude/agents/op.md").exists());
     }
@@ -540,10 +540,10 @@ domain = "rendering"
     #[test]
     fn a_registry_carrying_a_control_character_is_refused_before_generating() {
         let mut w = ws();
-        w.org.get_mut("paja").unwrap().nickname = Some("Paja\nmemory: project".into());
+        w.org.get_mut("pike").unwrap().nickname = Some("Pike\nmemory: project".into());
         let d = tempfile::tempdir().unwrap();
         let err =
-            stand_up(&w, &abs(d.path()), "paja", &FakeGit::at_the_content_repo()).unwrap_err();
+            stand_up(&w, &abs(d.path()), "pike", &FakeGit::at_the_content_repo()).unwrap_err();
         assert!(err.to_string().contains("control characters"), "{err}");
     }
 
@@ -567,7 +567,7 @@ domain = "rendering"
         let out = stand_up(
             &ws(),
             &abs(d.path()),
-            "paja",
+            "pike",
             &FakeGit::at_the_content_repo(),
         )
         .unwrap();
@@ -580,7 +580,7 @@ domain = "rendering"
         assert!(!twin.contains("memory:"));
         assert!(prime.contains(DISCIPLINE.lines().next().unwrap()));
 
-        let link = d.path().join(".claude/agent-memory/paja");
+        let link = d.path().join(".claude/agent-memory/pike");
         assert!(
             std::fs::symlink_metadata(&link)
                 .unwrap()
@@ -594,15 +594,15 @@ domain = "rendering"
     #[test]
     fn standing_up_an_authored_identity_is_refused_before_anything_is_created() {
         let d = tempfile::tempdir().unwrap();
-        let hands = d.path().join(".shared/hands/paja");
+        let hands = d.path().join(".shared/hands/pike");
         std::fs::create_dir_all(&hands).unwrap();
         std::fs::write(
             hands.join("character.md"),
-            "---\nname: paja\nrole: a role\n---\n\nVoice.\n",
+            "---\nname: pike\nrole: a role\n---\n\nVoice.\n",
         )
         .unwrap();
         let git = FakeGit::at_the_content_repo();
-        let err = stand_up(&ws(), &abs(d.path()), "paja", &git)
+        let err = stand_up(&ws(), &abs(d.path()), "pike", &git)
             .expect_err("an identity's definition is written by `identity render`");
         assert!(
             format!("{err:#}").contains("homma identity render"),
@@ -622,7 +622,7 @@ domain = "rendering"
         let a = stand_up(
             &ws(),
             &abs(d.path()),
-            "paja",
+            "pike",
             &FakeGit::at_the_content_repo(),
         )
         .unwrap();
@@ -630,7 +630,7 @@ domain = "rendering"
         let b = stand_up(
             &ws(),
             &abs(d.path()),
-            "paja",
+            "pike",
             &FakeGit::at_the_content_repo(),
         )
         .unwrap();

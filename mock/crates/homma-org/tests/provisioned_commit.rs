@@ -6,7 +6,7 @@
 //! The seam U-3.1 names, which nothing was testing.
 //!
 //! Its exit test says "A commit made in a **provisioned** workspace reports
-//! author `ort@hiisi.digital` and committer `orgrinrt+vouti@ikiuni.dev`, read
+//! author `ash@example.invalid` and committer `woodland+vesta@inlets.dev`, read
 //! back from the commit". Everything shipped so far tested one half or the
 //! other: `provision` against a fake `Git`, and `GixGit` by calling
 //! `set_identity` directly. The registry's committer never travelled the whole
@@ -69,7 +69,7 @@ fn run(args: &[&str], at: &std::path::Path, hostile: &std::path::Path, tier: Tie
 /// A global configuration naming somebody else, for every key homma writes.
 ///
 /// Without this the machine answers the test: an earlier version asserted the
-/// author was `ort@hiisi.digital`, which was the author machine's own global
+/// author was `ash@example.invalid`, which was the author machine's own global
 /// `user.email`, and deleting every author write left it passing.
 fn hostile_config(dir: &std::path::Path) -> std::path::PathBuf {
     let p = dir.join("hostile.gitconfig");
@@ -132,25 +132,25 @@ fn commit_in_provisioned(
     );
 }
 
-/// The registry entry with the two identities the record settles for Vouti.
-fn vouti(ws: &std::path::Path) -> Identity {
-    let mut id = Identity::new(Role::Hand, "onni");
+/// The registry entry with the two identities the record settles for Vesta.
+fn vesta(ws: &std::path::Path) -> Identity {
+    let mut id = Identity::new(Role::Hand, "olly");
     id.staffed = true;
     id.workspace = Some(ws.to_string_lossy().into_owned());
-    id.git_name = Some("Onni Armas".into());
-    id.git_email = Some("ort@hiisi.digital".into());
-    id.committer_name = Some("Vouti".into());
-    id.committer_email = Some("orgrinrt+vouti@ikiuni.dev".into());
+    id.git_name = Some("Olly Armas".into());
+    id.git_email = Some("ash@example.invalid".into());
+    id.committer_name = Some("Vesta".into());
+    id.committer_email = Some("woodland+vesta@inlets.dev".into());
     id
 }
 
 /// The ordinary entry, with one identity and no committer of its own.
-fn paja(ws: &std::path::Path) -> Identity {
-    let mut id = Identity::new(Role::Hand, "paja");
+fn pike(ws: &std::path::Path) -> Identity {
+    let mut id = Identity::new(Role::Hand, "pike");
     id.staffed = true;
     id.workspace = Some(ws.to_string_lossy().into_owned());
-    id.git_name = Some("Vaino Pajanen".into());
-    id.git_email = Some("vaino.pajanen@hiisi.digital".into());
+    id.git_name = Some("Vale Pikenen".into());
+    id.git_email = Some("vale.pine@example.invalid".into());
     id
 }
 
@@ -158,28 +158,28 @@ fn two_identities_travel_to_the_commit(tier: Tier) {
     let d = tempfile::tempdir().unwrap();
     let hostile = hostile_config(d.path());
     let src = content_repo(d.path(), &hostile, tier);
-    let ws = d.path().join("crew").join("vouti");
+    let ws = d.path().join("crew").join("vesta");
 
-    commit_in_provisioned(&vouti(&ws), &ws, &src, &hostile, tier);
+    commit_in_provisioned(&vesta(&ws), &ws, &src, &hostile, tier);
 
     assert_eq!(
         run(&["log", "-1", "--format=%an"], &ws, &hostile, tier),
-        "Onni Armas",
+        "Olly Armas",
         "the author's name travels from the registry to the commit"
     );
     assert_eq!(
         run(&["log", "-1", "--format=%ae"], &ws, &hostile, tier),
-        "ort@hiisi.digital",
+        "ash@example.invalid",
         "the author stays op, per the record"
     );
     assert_eq!(
         run(&["log", "-1", "--format=%cn"], &ws, &hostile, tier),
-        "Vouti",
+        "Vesta",
         "and the committer's name is the registry's, not the author's"
     );
     assert_eq!(
         run(&["log", "-1", "--format=%ce"], &ws, &hostile, tier),
-        "orgrinrt+vouti@ikiuni.dev",
+        "woodland+vesta@inlets.dev",
         "and the committer address is what distinguishes the crew's writes"
     );
 }
@@ -190,20 +190,20 @@ fn one_identity_commits_throughout(tier: Tier) {
     let d = tempfile::tempdir().unwrap();
     let hostile = hostile_config(d.path());
     let src = content_repo(d.path(), &hostile, tier);
-    let ws = d.path().join("crew").join("paja");
+    let ws = d.path().join("crew").join("pike");
 
-    commit_in_provisioned(&paja(&ws), &ws, &src, &hostile, tier);
+    commit_in_provisioned(&pike(&ws), &ws, &src, &hostile, tier);
 
     for format in ["--format=%an", "--format=%cn"] {
         assert_eq!(
             run(&["log", "-1", format], &ws, &hostile, tier),
-            "Vaino Pajanen"
+            "Vale Pikenen"
         );
     }
     for format in ["--format=%ae", "--format=%ce"] {
         assert_eq!(
             run(&["log", "-1", format], &ws, &hostile, tier),
-            "vaino.pajanen@hiisi.digital"
+            "vale.pine@example.invalid"
         );
     }
 }

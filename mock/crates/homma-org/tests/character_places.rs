@@ -17,17 +17,17 @@ use homma_org::character::{CharacterError, MemoryDir, identities};
 
 #[test]
 fn the_memory_directory_constructor_refuses_the_root_and_what_leaves_it() {
-    assert!(MemoryDir::new(".shared/hands/coord/memory").is_some());
+    assert!(MemoryDir::new(".shared/hands/chair/memory").is_some());
     assert!(MemoryDir::new(".shared").is_none());
     assert!(MemoryDir::new("/.shared/x").is_none());
     assert!(MemoryDir::new(".shared/../x").is_none());
 }
 
 fn named(name: &str, memory: &str) -> String {
-    COORD
-        .replace("name: coord", &format!("name: {name}"))
-        .replace("# coord", &format!("# {name}"))
-        .replace(".shared/hands/coord/memory", memory)
+    CHAIR
+        .replace("name: chair", &format!("name: {name}"))
+        .replace("# chair", &format!("# {name}"))
+        .replace(".shared/hands/chair/memory", memory)
 }
 
 #[test]
@@ -80,24 +80,24 @@ fn a_directory_where_a_definition_goes_is_found_before_anything_is_written() {
 #[test]
 fn a_configured_hands_place_does_not_break_the_default_memory() {
     let r = root();
-    let dir = r.join("custom/hands/coord");
+    let dir = r.join("custom/hands/chair");
     fs::create_dir_all(&dir).unwrap();
     fs::write(
         dir.join("character.md"),
-        COORD.replace("memories: [.shared/hands/coord/memory]\n", ""),
+        CHAIR.replace("memories: [.shared/hands/chair/memory]\n", ""),
     )
     .unwrap();
     let paths = Paths {
         hands: RelPath::new("custom/hands").unwrap(),
         ..Paths::default()
     };
-    let done = go_with(&r, &paths, &["coord"]).unwrap().remove(0);
-    assert_eq!(done.name, "coord");
-    assert!(r.join(".shared/hands/coord/memory").is_dir());
+    let done = go_with(&r, &paths, &["chair"]).unwrap().remove(0);
+    assert_eq!(done.name, "chair");
+    assert!(r.join(".shared/hands/chair/memory").is_dir());
     assert!(
-        fs::read_to_string(r.join(".claude/agents/coord.md"))
+        fs::read_to_string(r.join(".claude/agents/chair.md"))
             .unwrap()
-            .contains("`.shared/hands/coord/memory`")
+            .contains("`.shared/hands/chair/memory`")
     );
 }
 
@@ -117,27 +117,27 @@ fn a_handle_cannot_start_with_a_dash() {
 #[test]
 fn an_older_persona_text_is_not_authored_and_a_frontmatter_one_is() {
     use homma_org::character::is_authored;
-    assert!(is_authored(COORD));
+    assert!(is_authored(CHAIR));
     assert!(is_authored("---  \nname: x\n"));
-    assert!(!is_authored("# Aku\n\n---\n"));
+    assert!(!is_authored("# Abe\n\n---\n"));
     assert!(!is_authored(""));
 }
 
 #[test]
 fn two_identities_keeping_one_memory_are_refused_and_neither_is_written() {
     let r = root();
-    author(&r, "coord", &named("coord", ".shared/common-mem"));
+    author(&r, "chair", &named("chair", ".shared/common-mem"));
     author(&r, "second", &named("second", ".shared/common-mem"));
     let err = go(&r, &[]).expect_err("one memory, two owners");
     assert!(matches!(err, CharacterError::MemoryShared { .. }), "{err}");
-    assert!(!r.join(".claude/agents/coord.md").exists());
+    assert!(!r.join(".claude/agents/chair.md").exists());
     assert!(!r.join(".claude/agents/second.md").exists());
 }
 
 #[test]
 fn naming_one_identity_still_refuses_a_memory_another_keeps() {
     let r = root();
-    author(&r, "coord", &named("coord", ".shared/common-mem"));
+    author(&r, "chair", &named("chair", ".shared/common-mem"));
     author(&r, "second", &named("second", ".shared/common-mem"));
     assert!(matches!(
         go(&r, &["second"]),
@@ -148,14 +148,14 @@ fn naming_one_identity_still_refuses_a_memory_another_keeps() {
 #[test]
 fn one_that_cannot_be_rendered_stops_the_pass_before_any_is_written() {
     let r = root();
-    author(&r, "coord", COORD);
+    author(&r, "chair", CHAIR);
     author(
         &r,
         "second",
-        &COORD
-            .replace("name: coord", "name: second")
-            .replace("# coord", "# second")
-            .replace("coord/memory", "second/memory")
+        &CHAIR
+            .replace("name: chair", "name: second")
+            .replace("# chair", "# second")
+            .replace("chair/memory", "second/memory")
             .replace("[.shared/hands/second/memory]", "[../outside]"),
     );
     let err = go(&r, &[]).expect_err("a memory that leaves `.shared`");
@@ -164,7 +164,7 @@ fn one_that_cannot_be_rendered_stops_the_pass_before_any_is_written() {
         "{err}"
     );
     assert!(
-        !r.join(".claude/agents/coord.md").exists(),
+        !r.join(".claude/agents/chair.md").exists(),
         "the good one waits for the bad one"
     );
 }
@@ -172,9 +172,9 @@ fn one_that_cannot_be_rendered_stops_the_pass_before_any_is_written() {
 #[test]
 fn a_declared_name_that_is_not_the_directory_is_refused() {
     let r = root();
-    author(&r, "coord", &COORD.replace("name: coord", "name: other"));
+    author(&r, "chair", &CHAIR.replace("name: chair", "name: other"));
     assert!(matches!(
-        go(&r, &["coord"]),
+        go(&r, &["chair"]),
         Err(CharacterError::NameMismatch { .. })
     ));
 }
@@ -195,14 +195,14 @@ fn a_block_form_memories_list_is_refused_by_the_shared_reader() {
     let r = root();
     author(
         &r,
-        "coord",
-        &COORD.replace(
-            "memories: [.shared/hands/coord/memory]",
-            "memories:\n  - .shared/hands/coord/memory",
+        "chair",
+        &CHAIR.replace(
+            "memories: [.shared/hands/chair/memory]",
+            "memories:\n  - .shared/hands/chair/memory",
         ),
     );
     assert!(matches!(
-        go(&r, &["coord"]),
+        go(&r, &["chair"]),
         Err(CharacterError::Frontmatter { .. })
     ));
 }
@@ -210,24 +210,24 @@ fn a_block_form_memories_list_is_refused_by_the_shared_reader() {
 #[test]
 fn a_real_directory_where_the_link_goes_is_not_replaced() {
     let r = root();
-    author(&r, "coord", COORD);
-    fs::create_dir_all(r.join(".claude/agent-memory/coord")).unwrap();
-    fs::write(r.join(".claude/agent-memory/coord/note.md"), "kept").unwrap();
-    match go(&r, &["coord"]) {
+    author(&r, "chair", CHAIR);
+    fs::create_dir_all(r.join(".claude/agent-memory/chair")).unwrap();
+    fs::write(r.join(".claude/agent-memory/chair/note.md"), "kept").unwrap();
+    match go(&r, &["chair"]) {
         Err(CharacterError::Occupied {
             path,
             ..
         }) => {
-            assert_eq!(path, r.join(".claude/agent-memory/coord"))
+            assert_eq!(path, r.join(".claude/agent-memory/chair"))
         },
         other => panic!("{other:?}"),
     }
     assert_eq!(
-        fs::read_to_string(r.join(".claude/agent-memory/coord/note.md")).unwrap(),
+        fs::read_to_string(r.join(".claude/agent-memory/chair/note.md")).unwrap(),
         "kept"
     );
     assert!(
-        !r.join(".claude/agents/coord.md").exists(),
+        !r.join(".claude/agents/chair.md").exists(),
         "found before anything was written"
     );
 }
@@ -235,14 +235,14 @@ fn a_real_directory_where_the_link_goes_is_not_replaced() {
 #[test]
 fn a_regular_file_where_the_link_goes_is_reported_as_what_it_is() {
     let r = root();
-    author(&r, "coord", COORD);
+    author(&r, "chair", CHAIR);
     fs::create_dir_all(r.join(".claude/agent-memory")).unwrap();
-    fs::write(r.join(".claude/agent-memory/coord"), "kept").unwrap();
-    let err = go(&r, &["coord"]).expect_err("a file is not a link");
+    fs::write(r.join(".claude/agent-memory/chair"), "kept").unwrap();
+    let err = go(&r, &["chair"]).expect_err("a file is not a link");
     assert!(matches!(err, CharacterError::Occupied { .. }), "{err}");
     assert!(err.to_string().contains("is not a link"), "{err}");
     assert_eq!(
-        fs::read_to_string(r.join(".claude/agent-memory/coord")).unwrap(),
+        fs::read_to_string(r.join(".claude/agent-memory/chair")).unwrap(),
         "kept"
     );
 }
@@ -250,13 +250,13 @@ fn a_regular_file_where_the_link_goes_is_reported_as_what_it_is() {
 #[test]
 fn a_claude_directory_linked_out_of_the_root_takes_no_write() {
     let r = root();
-    author(&r, "coord", COORD);
+    author(&r, "chair", CHAIR);
     let outside = root();
     fs::create_dir_all(outside.join("deep/.claude")).unwrap();
     std::os::unix::fs::symlink(outside.join("deep/.claude"), r.join(".claude")).unwrap();
-    let err = go(&r, &["coord"]).expect_err("the harness directory leaves the root");
+    let err = go(&r, &["chair"]).expect_err("the harness directory leaves the root");
     assert!(matches!(err, CharacterError::Escaped(_)), "{err}");
-    assert!(!outside.join("deep/.claude/agents/coord.md").exists());
+    assert!(!outside.join("deep/.claude/agents/chair.md").exists());
     assert!(!outside.join("deep/.claude/agent-memory").exists());
 }
 
@@ -264,59 +264,59 @@ fn a_claude_directory_linked_out_of_the_root_takes_no_write() {
 fn a_shared_directory_linked_out_of_the_root_is_not_read_or_written_through() {
     let r = root();
     let victim = root();
-    fs::create_dir_all(victim.join("hands/coord")).unwrap();
-    fs::write(victim.join("hands/coord/character.md"), COORD).unwrap();
+    fs::create_dir_all(victim.join("hands/chair")).unwrap();
+    fs::write(victim.join("hands/chair/character.md"), CHAIR).unwrap();
     fs::remove_dir_all(r.join(".shared")).unwrap();
     std::os::unix::fs::symlink(&victim, r.join(".shared")).unwrap();
-    let err = go(&r, &["coord"]).expect_err("the shared directory leaves the root");
+    let err = go(&r, &["chair"]).expect_err("the shared directory leaves the root");
     assert!(matches!(err, CharacterError::Escaped(_)), "{err}");
-    assert!(!victim.join("hands/coord/memory").exists());
-    assert!(!r.join(".claude/agents/coord.md").exists());
+    assert!(!victim.join("hands/chair/memory").exists());
+    assert!(!r.join(".claude/agents/chair.md").exists());
 }
 
 #[test]
 fn the_configured_agents_directory_is_where_the_definition_goes() {
     let r = root();
-    author(&r, "coord", COORD);
+    author(&r, "chair", CHAIR);
     let paths = Paths {
         agents: RelPath::new("elsewhere/agents").unwrap(),
         ..Paths::default()
     };
-    let done = go_with(&r, &paths, &["coord"]).unwrap().remove(0);
+    let done = go_with(&r, &paths, &["chair"]).unwrap().remove(0);
     assert_eq!(
         done.definition.as_path(),
-        r.join("elsewhere/agents/coord.md")
+        r.join("elsewhere/agents/chair.md")
     );
-    assert!(!r.join(".claude/agents/coord.md").exists());
+    assert!(!r.join(".claude/agents/chair.md").exists());
 }
 
 #[test]
 fn an_older_persona_without_frontmatter_is_not_an_identity() {
     let r = root();
-    author(&r, "coord", COORD);
-    author(&r, "aku", "# Aku\n\n## Who he is\n\n- Holds arvo.\n");
+    author(&r, "chair", CHAIR);
+    author(&r, "abe", "# Abe\n\n## Who he is\n\n- Holds acre.\n");
     let paths = Paths::default();
     assert_eq!(identities(&layout(&r, &paths)).unwrap(), vec![
-        "coord".to_string()
+        "chair".to_string()
     ]);
 }
 
 #[test]
 fn files_and_directories_without_a_character_are_not_identities_and_not_errors() {
     let r = root();
-    author(&r, "coord", COORD);
+    author(&r, "chair", CHAIR);
     fs::write(r.join(".shared/hands/README.md"), "# hands\n").unwrap();
     fs::create_dir_all(r.join(".shared/hands/empty")).unwrap();
     let paths = Paths::default();
     assert_eq!(identities(&layout(&r, &paths)).unwrap(), vec![
-        "coord".to_string()
+        "chair".to_string()
     ]);
 }
 
 #[test]
 fn a_character_file_that_cannot_be_read_is_reported_not_skipped() {
     let r = root();
-    author(&r, "coord", COORD);
+    author(&r, "chair", CHAIR);
     fs::create_dir_all(r.join(".shared/hands/broken/character.md")).unwrap();
     let paths = Paths::default();
     assert!(matches!(
@@ -328,8 +328,8 @@ fn a_character_file_that_cannot_be_read_is_reported_not_skipped() {
 #[test]
 fn a_directory_with_frontmatter_and_an_unusable_name_is_reported_not_skipped() {
     let r = root();
-    author(&r, "coord", COORD);
-    author(&r, "not a handle", COORD);
+    author(&r, "chair", CHAIR);
+    author(&r, "not a handle", CHAIR);
     let paths = Paths::default();
     assert!(matches!(
         identities(&layout(&r, &paths)),
@@ -365,8 +365,8 @@ fn a_file_where_the_memory_is_kept_is_found_before_the_first_identity_is_written
 #[test]
 fn a_memory_under_another_names_hands_directory_is_refused() {
     for memory in [
-        ".shared/hands/paja/memory",
-        ".shared/hands/paja",
+        ".shared/hands/pike/memory",
+        ".shared/hands/pike",
         ".shared/hands",
         ".shared/hands/aa-other/memory",
     ] {

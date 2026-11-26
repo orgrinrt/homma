@@ -17,9 +17,9 @@ Run these from the workspace root, where `homma.toml` lives:
 ```bash
 homma status
 homma verify --forge
-homma forge show github orgrinrt/notko
-homma migrate notko --to codeberg
-homma archive notko --from github
+homma forge show github someone/some-repo
+homma migrate some-repo --to codeberg
+homma archive some-repo --from github
 ```
 
 The manifest is a `homma.toml` at the root of the directory holding the clones, and tokens are read from the environment by the name the forge gives, so nothing secret goes in it:

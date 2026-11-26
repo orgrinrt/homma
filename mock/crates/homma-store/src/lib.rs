@@ -271,11 +271,11 @@ mod tests {
     }
 
     fn msg(id: &str, body: &str) -> Record {
-        Record::new(id, "message", &Reference::org("paja")).with("body", Attr::Text(body.into()))
+        Record::new(id, "message", &Reference::org("pike")).with("body", Attr::Text(body.into()))
     }
 
     fn tsk(id: &str, title: &str) -> Record {
-        Record::new(id, "task", &Reference::org("vouti")).with("title", Attr::Text(title.into()))
+        Record::new(id, "task", &Reference::org("vesta")).with("title", Attr::Text(title.into()))
     }
 
     fn store() -> (tempfile::TempDir, Store) {
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn a_record_that_does_not_satisfy_its_kind_never_reaches_the_disk() {
         let (_d, s) = store();
-        let bad = Record::new("m1", "message", &Reference::org("paja"));
+        let bad = Record::new("m1", "message", &Reference::org("pike"));
         assert!(matches!(s.append(&message(), &bad), Err(Error::Invalid(_))));
         assert!(s.read("message").unwrap().is_empty());
     }
@@ -413,7 +413,7 @@ mod tests {
         let evil = Kind::new("../../escaped", Mutability::Mutable)
             .with_attr("title", AttrType::Text)
             .requiring("title");
-        let r = Record::new("x", "../../escaped", &Reference::org("paja"))
+        let r = Record::new("x", "../../escaped", &Reference::org("pike"))
             .with("title", Attr::Text("out".into()));
         assert!(matches!(s.append(&evil, &r), Err(Error::UnsafeKind(_))));
         let outside = d

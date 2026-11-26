@@ -181,19 +181,19 @@ mod tests {
     const ORG: &str = r#"
 content_repo = "git@example.invalid:someone/content.git"
 
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
+handle = "oz"
 
-[org.paja]
+[org.pike]
 role = "hand"
 staffed = true
-handle = "paja"
-nickname = "Paja"
+handle = "pike"
+nickname = "Pike"
 domain = "tooling"
-git_name = "paja"
-git_email = "paja@example.invalid"
-workspace = "/tmp/paja"
+git_name = "pike"
+git_email = "pike@example.invalid"
+workspace = "/tmp/pike"
 
 [org.nameless]
 role = "hand"
@@ -224,7 +224,7 @@ domain = "rendering"
             line_for(&lines, "nameless").staffing,
             Staffing::Incomplete(_)
         ));
-        assert_eq!(line_for(&lines, "paja").staffing, Staffing::Staffed);
+        assert_eq!(line_for(&lines, "pike").staffing, Staffing::Staffed);
     }
 
     #[test]
@@ -241,7 +241,7 @@ domain = "rendering"
     #[test]
     fn adding_a_duplicate_handle_is_refused() {
         let mut w = ws();
-        let err = add(&mut w, Identity::new(Role::Hand, "paja")).unwrap_err();
+        let err = add(&mut w, Identity::new(Role::Hand, "pike")).unwrap_err();
         assert!(err.to_string().contains("already in the registry"));
     }
 
@@ -270,11 +270,11 @@ domain = "rendering"
     #[test]
     fn adding_an_entry_whose_address_another_answers_to_is_refused() {
         let mut w = ws();
-        let mut id = Identity::new(Role::Journeyman, "kide");
-        id.git_email = Some("PAJA+kide@example.invalid".into());
+        let mut id = Identity::new(Role::Journeyman, "kent");
+        id.git_email = Some("PIKE+kent@example.invalid".into());
         let err = add(&mut w, id).unwrap_err().to_string();
-        assert!(err.contains("paja@example.invalid"), "{err}");
-        assert!(!w.org.contains_key("kide"));
+        assert!(err.contains("pike@example.invalid"), "{err}");
+        assert!(!w.org.contains_key("kent"));
     }
 
     #[test]
@@ -290,17 +290,17 @@ domain = "rendering"
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("homma.toml");
         let text = format!(
-            "{ORG}\n[org.kide]\nrole = \"journeyman\"\nhandle = \"kide\"\ngit_email = \
-             \"Paja+x@example.invalid\"\n\n[offices.coord]\nholder = \"valtsu\"\n"
+            "{ORG}\n[org.kent]\nrole = \"journeyman\"\nhandle = \"kent\"\ngit_email = \
+             \"Pike+x@example.invalid\"\n\n[offices.chair]\nholder = \"vardon\"\n"
         );
         std::fs::write(&path, text).unwrap();
         let err = format!("{:#}", load(&path).unwrap_err());
         assert!(err.contains("does not hold"), "{err}");
         assert!(
-            err.contains("paja@example.invalid"),
+            err.contains("pike@example.invalid"),
             "the shared address is named: {err}"
         );
-        assert!(err.contains("valtsu"), "the missing holder is named: {err}");
+        assert!(err.contains("vardon"), "the missing holder is named: {err}");
     }
 
     #[test]
@@ -309,11 +309,11 @@ domain = "rendering"
         let path = dir.path().join("homma.toml");
         std::fs::write(
             &path,
-            format!("{ORG}\n[offices.tooling-track]\nholder = \"paja\"\n"),
+            format!("{ORG}\n[offices.workshop-desk]\nholder = \"pike\"\n"),
         )
         .unwrap();
         let w = load(&path).unwrap();
-        assert_eq!(w.offices["tooling-track"].holder.as_deref(), Some("paja"));
+        assert_eq!(w.offices["workshop-desk"].holder.as_deref(), Some("pike"));
     }
 
     #[test]

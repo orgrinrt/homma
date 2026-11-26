@@ -13,20 +13,17 @@ use std::path::Path;
 
 use super::tests::{planted, run_payload};
 use super::*;
-use crate::cmd::aggregate::tests::make_executable;
 
 /// Rewrite the planted hook to record the directory it runs in.
 fn records_its_directory(ws: &Path, rel: &str, marker: &Path) {
-    let real = ws.join(rel).join(".claude/hooks/foo.sh");
-    fs::write(
-        &real,
-        format!(
+    crate::cmd::planted::script(
+        &ws.join(rel).join(".claude/hooks/foo.sh"),
+        &format!(
             "#!/usr/bin/env bash\ncat > /dev/null\npwd -P > '{}'\n",
             marker.display()
         ),
-    )
-    .unwrap();
-    make_executable(&real);
+        0o755,
+    );
 }
 
 /// Run the wrapper as the host does, in `cwd`, with a shell call there.
@@ -60,12 +57,12 @@ fn shell_call_in(wrapper: &Path, cwd: &Path, command: &str) {
 fn a_hook_runs_in_the_directory_the_host_ran_it_in() {
     let ws = tempfile::tempdir().unwrap();
     let ws = ws.path().canonicalize().unwrap();
-    let (wrapper, marker) = planted(&ws, "arvo");
-    records_its_directory(&ws, "arvo", &marker);
-    let inside = ws.join("arvo/src");
+    let (wrapper, marker) = planted(&ws, "acre");
+    records_its_directory(&ws, "acre", &marker);
+    let inside = ws.join("acre/src");
     fs::create_dir_all(&inside).unwrap();
 
-    shell_call_in(&wrapper, &ws, "cp a arvo/src/x");
+    shell_call_in(&wrapper, &ws, "cp a acre/src/x");
     assert_eq!(
         fs::read_to_string(&marker).unwrap().trim(),
         ws.display().to_string(),
@@ -87,7 +84,7 @@ fn a_hook_runs_in_the_directory_the_host_ran_it_in() {
 #[test]
 fn a_file_path_that_climbs_lands_everywhere() {
     let ws = tempfile::tempdir().unwrap();
-    let (wrapper, marker) = planted(ws.path(), "arvo");
+    let (wrapper, marker) = planted(ws.path(), "acre");
     let fires = |path: String| {
         let _ = fs::remove_file(&marker);
         let payload = serde_json::json!({ "tool_input": { "file_path": path } }).to_string();
@@ -95,7 +92,7 @@ fn a_file_path_that_climbs_lands_everywhere() {
         marker.exists()
     };
     let ws = ws.path().display();
-    assert!(fires(format!("{ws}/other/../arvo/src/lib.rs")));
+    assert!(fires(format!("{ws}/other/../acre/src/lib.rs")));
     assert!(fires(format!("{ws}/other/..")));
     // The control: the same sibling without the climb is outside.
     assert!(!fires(format!("{ws}/other/src/lib.rs")));
@@ -107,7 +104,7 @@ fn a_file_path_that_climbs_lands_everywhere() {
 /// kept where it is a program, arguments and all.
 #[test]
 fn a_runner_that_is_a_line_of_shell_is_refused() {
-    let one = |r: &str| one_runner(std::iter::once(r), "arvo/.claude/hooks/x.sh");
+    let one = |r: &str| one_runner(std::iter::once(r), "acre/.claude/hooks/x.sh");
     for shell in [
         "FOO=1",
         "cd dir &&",
@@ -130,6 +127,6 @@ fn a_runner_that_is_a_line_of_shell_is_refused() {
     assert_eq!(one("node --flag=x"), Ok("node --flag=x".to_string()));
     assert_eq!(one(""), Ok(String::new()));
     // Two ways is refused for its own reason, and says which.
-    let two = one_runner(["", "bash"].into_iter(), "arvo/.claude/hooks/x.sh");
+    let two = one_runner(["", "bash"].into_iter(), "acre/.claude/hooks/x.sh");
     assert!(two.is_err_and(|e| e.contains("itself and `bash`")));
 }

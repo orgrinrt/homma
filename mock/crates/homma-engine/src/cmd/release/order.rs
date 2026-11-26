@@ -17,8 +17,7 @@ use homma_core::release::publish;
 /// below already reads the edges out of each manifest; what is left is the
 /// ordering over them, the way `publish::crate_order` orders the crates of
 /// one workspace. Until then `run_cmd` refuses a workspace-wide run that has
-/// such an edge in it. The gap is a red test below, tracked in the workspace
-/// agenda as `homma-release-orders-repos-by-dependency`.
+/// such an edge in it. The gap is a red test below.
 pub(super) fn release_order(cfg: &Config) -> Vec<String> {
     cfg.repos.keys().cloned().collect()
 }
@@ -109,13 +108,13 @@ mod tests {
             "remote",
             "add",
             "origin",
-            &format!("https://github.com/orgrinrt/{name}.git"),
+            &format!("https://github.com/woodland/{name}.git"),
         ]);
         let mut manifest =
             format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
         for d in deps {
             manifest.push_str(&format!(
-                "{d} = {{ git = \"https://github.com/orgrinrt/{d}.git\" }}\n"
+                "{d} = {{ git = \"https://github.com/woodland/{d}.git\" }}\n"
             ));
         }
         std::fs::write(path.join("Cargo.toml"), manifest).unwrap();
@@ -180,7 +179,7 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(
             d.join("deno.json"),
-            r#"{"name": "@h/deno-one", "imports": {"zed": "jsr:@orgrinrt/zed@^0.1"}}"#,
+            r#"{"name": "@h/deno-one", "imports": {"zed": "jsr:@woodland/zed@^0.1"}}"#,
         )
         .unwrap();
         assert_eq!(sibling_dependency(&d, &siblings), Some("zed".into()));
@@ -201,7 +200,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             w.join("crates/inner/Cargo.toml"),
-            "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[dependencies]\nzed = { git = \"https://github.com/orgrinrt/zed.git\" }\n",
+            "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n[dependencies]\nzed = { git = \"https://github.com/woodland/zed.git\" }\n",
         )
         .unwrap();
         assert_eq!(sibling_dependency(&w, &siblings), Some("zed".into()));
@@ -216,31 +215,31 @@ mod tests {
     #[test]
     fn a_repo_matches_its_own_member_crate_unless_its_name_is_left_out() {
         let dir = tempfile::tempdir().unwrap();
-        // the repo `notko` is a workspace whose members include a crate
-        // called `notko`, which `notko-hlist` depends on
-        let w = dir.path().join("notko");
-        std::fs::create_dir_all(w.join("crates/notko")).unwrap();
-        std::fs::create_dir_all(w.join("crates/notko-hlist")).unwrap();
+        // the repo `notch` is a workspace whose members include a crate
+        // called `notch`, which `notch-hlist` depends on
+        let w = dir.path().join("notch");
+        std::fs::create_dir_all(w.join("crates/notch")).unwrap();
+        std::fs::create_dir_all(w.join("crates/notch-hlist")).unwrap();
         std::fs::write(
             w.join("Cargo.toml"),
             "[workspace]\nmembers = [\"crates/*\"]\n",
         )
         .unwrap();
         std::fs::write(
-            w.join("crates/notko/Cargo.toml"),
-            "[package]\nname = \"notko\"\nversion = \"0.1.0\"\n",
+            w.join("crates/notch/Cargo.toml"),
+            "[package]\nname = \"notch\"\nversion = \"0.1.0\"\n",
         )
         .unwrap();
         std::fs::write(
-            w.join("crates/notko-hlist/Cargo.toml"),
-            "[package]\nname = \"notko-hlist\"\nversion = \"0.1.0\"\n[dependencies]\nnotko = { path = \"../notko\" }\n",
+            w.join("crates/notch-hlist/Cargo.toml"),
+            "[package]\nname = \"notch-hlist\"\nversion = \"0.1.0\"\n[dependencies]\nnotch = { path = \"../notch\" }\n",
         )
         .unwrap();
         // with its own name in the slice it matches itself, which is why the
         // caller takes the name out first
         assert_eq!(
-            sibling_dependency(&w, &["notko".to_string(), "zed".to_string()]),
-            Some("notko".into())
+            sibling_dependency(&w, &["notch".to_string(), "zed".to_string()]),
+            Some("notch".into())
         );
         assert_eq!(sibling_dependency(&w, &["zed".to_string()]), None);
     }

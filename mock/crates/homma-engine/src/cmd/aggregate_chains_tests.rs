@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::tests::{make_executable, test_root};
+use super::tests::test_root;
 use super::*;
 
 /// Run a wrapper with `payload` on stdin and `args` on its command line,
@@ -49,15 +49,13 @@ fn recording(marker: &Path) -> String {
     )
 }
 
-/// A repository `arvo` under `ws`, with each `(name, body)` as an executable
+/// A repository `acre` under `ws`, with each `(name, body)` as an executable
 /// hook and `settings` as its `settings.json`.
 pub(crate) fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> PathBuf {
-    let repo = ws.join("arvo");
+    let repo = ws.join("acre");
     fs::create_dir_all(repo.join(".claude/hooks")).unwrap();
     for (name, body) in hooks {
-        let p = repo.join(".claude/hooks").join(name);
-        fs::write(&p, body).unwrap();
-        make_executable(&p);
+        crate::cmd::planted::script(&repo.join(".claude/hooks").join(name), body, 0o755);
     }
     fs::write(repo.join(".claude/settings.json"), settings).unwrap();
     repo
@@ -68,8 +66,8 @@ pub(crate) fn plant_repo(ws: &Path, hooks: &[(&str, &str)], settings: &str) -> P
 pub(crate) fn regen(ws: &Path, repo: &Path) -> (Aggregated, serde_json::Value) {
     let root = test_root(ws);
     let mut entries = Vec::new();
-    let a = aggregate_repo(&root, "arvo", repo, &mut entries).unwrap();
-    merge_settings(&root, &["arvo"], &["arvo"], &entries, None).unwrap();
+    let a = aggregate_repo(&root, "acre", repo, &mut entries).unwrap();
+    merge_settings(&root, &["acre"], &["acre"], &entries, None).unwrap();
     (a, settings(ws))
 }
 
@@ -138,9 +136,9 @@ fn every_event_and_matcher_a_repository_gives_a_hook_is_carried_to_it() {
     let mut got = registrations(&v);
     got.sort();
     let mut want = vec![
-        reg("PreToolUse", Some("Edit"), "arvo--guard.sh"),
-        reg("PostToolUse", Some("Write"), "arvo--guard.sh"),
-        reg("Stop", None, "arvo--at-the-end.sh"),
+        reg("PreToolUse", Some("Edit"), "acre--guard.sh"),
+        reg("PostToolUse", Some("Write"), "acre--guard.sh"),
+        reg("Stop", None, "acre--at-the-end.sh"),
     ];
     want.sort();
     // Exactly these: an event folded into another, a matcher invented for a
@@ -165,8 +163,8 @@ fn a_hook_named_only_by_its_own_matchers_line_is_carried_to_pre_tool_use() {
     let mut got = registrations(&v);
     got.sort();
     assert_eq!(got, vec![
-        reg("PreToolUse", Some("Bash"), "arvo--guard.sh"),
-        reg("PreToolUse", Some("Edit"), "arvo--guard.sh"),
+        reg("PreToolUse", Some("Bash"), "acre--guard.sh"),
+        reg("PreToolUse", Some("Edit"), "acre--guard.sh"),
     ]);
 }
 
@@ -180,15 +178,15 @@ fn a_hook_nothing_calls_is_reported_by_path_and_no_wrapper_is_written() {
     );
     let (a, v) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
-    assert!(a.problems[0].contains("arvo/.claude/hooks/orphan.sh"));
+    assert!(a.problems[0].contains("acre/.claude/hooks/orphan.sh"));
     assert!(a.problems[0].contains("nothing would call it"));
-    assert!(!ws.path().join(".claude/hooks/arvo--orphan.sh").exists());
+    assert!(!ws.path().join(".claude/hooks/acre--orphan.sh").exists());
     // The control: its registered sibling in the same pass is carried.
-    assert!(ws.path().join(".claude/hooks/arvo--guard.sh").exists());
+    assert!(ws.path().join(".claude/hooks/acre--guard.sh").exists());
     assert_eq!(registrations(&v), vec![reg(
         "PreToolUse",
         Some("Bash"),
-        "arvo--guard.sh"
+        "acre--guard.sh"
     )]);
 }
 
@@ -203,13 +201,13 @@ fn a_hook_the_host_could_not_run_is_reported_and_not_carried() {
     fs::write(repo.join(".claude/hooks/plain.sh"), QUIET).unwrap();
     let (a, v) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
-    assert!(a.problems[0].contains("arvo/.claude/hooks/plain.sh"));
+    assert!(a.problems[0].contains("acre/.claude/hooks/plain.sh"));
     assert!(a.problems[0].contains("not executable"));
-    assert!(!ws.path().join(".claude/hooks/arvo--plain.sh").exists());
+    assert!(!ws.path().join(".claude/hooks/acre--plain.sh").exists());
     assert_eq!(registrations(&v), vec![reg(
         "PreToolUse",
         Some("Bash"),
-        "arvo--guard.sh"
+        "acre--guard.sh"
     )]);
 }
 
@@ -227,9 +225,9 @@ fn a_hook_in_any_language_is_carried_and_runs() {
     assert_eq!(registrations(&v), vec![reg(
         "PreToolUse",
         Some("Edit"),
-        "arvo--guard.sh"
+        "acre--guard.sh"
     )]);
-    let wrapper = ws.path().join(".claude/hooks/arvo--guard.sh");
+    let wrapper = ws.path().join(".claude/hooks/acre--guard.sh");
     let payload = format!(
         r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
         repo.join("src/lib.rs").display()
@@ -250,11 +248,11 @@ fn the_arguments_a_registration_carries_reach_the_hook() {
     let (a, v) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
     let (_, _, cmd) = &registrations(&v)[0];
-    assert!(cmd.ends_with("arvo--guard.sh --strict"), "{cmd}");
+    assert!(cmd.ends_with("acre--guard.sh --strict"), "{cmd}");
 
     // What the host does with that command: the wrapper runs with the
     // argument, and has to pass it on.
-    let wrapper = ws.path().join(".claude/hooks/arvo--guard.sh");
+    let wrapper = ws.path().join(".claude/hooks/acre--guard.sh");
     let payload = format!(
         r#"{{"tool_input":{{"file_path":"{}"}}}}"#,
         repo.join("src/lib.rs").display()
@@ -269,19 +267,19 @@ fn a_file_homma_did_not_write_is_neither_overwritten_nor_unregistered() {
     workspace_settings(
         ws.path(),
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--guard.sh"}]},
-            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--gone.sh"}]}
+            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--guard.sh"}]},
+            {"matcher":"Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--gone.sh"}]}
         ]}}"#,
     );
     let mine = "#!/bin/sh\n# somebody's own guard\n";
-    let theirs = ws.path().join(".claude/hooks/arvo--guard.sh");
+    let theirs = ws.path().join(".claude/hooks/acre--guard.sh");
     fs::write(&theirs, mine).unwrap();
     // A wrapper homma wrote on an earlier run for a hook the repo has since
     // dropped: this one is homma's to remove, which is the control.
-    let gone = ws.path().join(".claude/hooks/arvo--gone.sh");
+    let gone = ws.path().join(".claude/hooks/acre--gone.sh");
     fs::write(
         &gone,
-        wrapper_script("arvo", "arvo", ".claude/hooks/gone.sh", ""),
+        wrapper_script("acre", "acre", ".claude/hooks/gone.sh", ""),
     )
     .unwrap();
 
@@ -294,14 +292,14 @@ fn a_file_homma_did_not_write_is_neither_overwritten_nor_unregistered() {
 
     assert_eq!(fs::read_to_string(&theirs).unwrap(), mine);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
-    assert!(a.problems[0].contains(".claude/hooks/arvo--guard.sh"));
+    assert!(a.problems[0].contains(".claude/hooks/acre--guard.sh"));
     assert!(a.problems[0].contains("not written by homma"));
     // Its own registration is kept as it was, and none is added for the repo
     // hook that could not be carried over it.
     assert_eq!(registrations(&v), vec![reg(
         "PreToolUse",
         Some("Bash"),
-        "arvo--guard.sh"
+        "acre--guard.sh"
     )]);
     assert!(!gone.exists(), "a stale wrapper homma wrote survived");
 }
@@ -311,9 +309,9 @@ fn a_file_under_a_repositorys_prefix_that_homma_did_not_write_survives_the_sweep
     let ws = tempfile::tempdir().unwrap();
     workspace_settings(
         ws.path(),
-        r#"{"hooks":{"PostToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":".claude/hooks/arvo--mine.sh"}]}]}}"#,
+        r#"{"hooks":{"PostToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":".claude/hooks/acre--mine.sh"}]}]}}"#,
     );
-    let mine = ws.path().join(".claude/hooks/arvo--mine.sh");
+    let mine = ws.path().join(".claude/hooks/acre--mine.sh");
     fs::write(&mine, "#!/bin/sh\n").unwrap();
     let repo = plant_repo(ws.path(), &[], "{}");
     let (a, v) = regen(ws.path(), &repo);
@@ -322,7 +320,7 @@ fn a_file_under_a_repositorys_prefix_that_homma_did_not_write_survives_the_sweep
     assert_eq!(registrations(&v), vec![(
         "PostToolUse".to_string(),
         Some("Write".to_string()),
-        ".claude/hooks/arvo--mine.sh".to_string()
+        ".claude/hooks/acre--mine.sh".to_string()
     )]);
 }
 
@@ -333,15 +331,15 @@ fn every_event_is_swept_of_homma_registrations_and_of_nothing_else() {
         ws.path(),
         r#"{"hooks":{
             "PostToolUse":[{"matcher":"Write","hooks":[
-                {"type":"command","command":".claude/hooks/arvo--old.sh"},
+                {"type":"command","command":".claude/hooks/acre--old.sh"},
                 {"type":"command","command":".claude/hooks/hand.sh"}
             ]}],
-            "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/arvo--old2.sh"}]}],
+            "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/acre--old2.sh"}]}],
             "Notification":[],
             "SessionStart":[{"matcher":"startup"}]
         }}"#,
     );
-    merge_settings(&test_root(ws.path()), &["arvo"], &["arvo"], &[], None).unwrap();
+    merge_settings(&test_root(ws.path()), &["acre"], &["acre"], &[], None).unwrap();
     let v = settings(ws.path());
     assert_eq!(registrations(&v), vec![(
         "PostToolUse".to_string(),
@@ -369,7 +367,7 @@ fn the_mark_is_what_makes_a_file_hommas() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("h.sh");
 
-    fs::write(&p, wrapper_script("arvo", "arvo", ".claude/hooks/x.sh", "")).unwrap();
+    fs::write(&p, wrapper_script("acre", "acre", ".claude/hooks/x.sh", "")).unwrap();
     assert!(carries_the_mark(&p), "an aggregated wrapper");
 
     fs::write(
@@ -408,9 +406,9 @@ fn a_shell_call_is_narrowed_by_the_directory_the_host_says_the_session_is_in() {
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/guard.sh"}]}]}}"#,
     );
     regen(ws.path(), &repo);
-    let wrapper = ws.path().join(".claude/hooks/arvo--guard.sh");
+    let wrapper = ws.path().join(".claude/hooks/acre--guard.sh");
     let inside = repo.join("src");
-    let outside = ws.path().join("kolli");
+    let outside = ws.path().join("krill");
 
     let call = |cwd: &Path| {
         format!(

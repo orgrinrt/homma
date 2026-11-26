@@ -13,7 +13,7 @@ fn renders_workspace_name_into_template() {
     let config = Config::parse(
         r#"
 [workspace]
-name = "clause-dev"
+name = "glade-root"
 "#,
     )
     .unwrap();
@@ -22,7 +22,7 @@ name = "clause-dev"
     let out = env
         .render_str("Workspace: {{ workspace.name }}", &config)
         .unwrap();
-    assert_eq!(out, "Workspace: clause-dev");
+    assert_eq!(out, "Workspace: glade-root");
 }
 
 #[test]

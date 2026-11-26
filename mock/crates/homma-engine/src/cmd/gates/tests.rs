@@ -28,8 +28,8 @@ fn install_writes_executable_script_and_returns_entry() {
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();
     let repos = vec![
-        ("arvo".to_string(), "arvo".to_string()),
-        ("notko".to_string(), "notko".to_string()),
+        ("acre".to_string(), "acre".to_string()),
+        ("notch".to_string(), "notch".to_string()),
     ];
     let entry = install_workspace_gate(&test_root(workspace), &repos).unwrap();
     assert_eq!(entry.matcher, "Bash");
@@ -47,8 +47,8 @@ fn install_writes_executable_script_and_returns_entry() {
     assert!(script.exists());
     let body = fs::read_to_string(&script).unwrap();
     assert!(body.starts_with("#!/usr/bin/env bash"));
-    assert!(body.contains("'arvo|arvo'"));
-    assert!(body.contains("'notko|notko'"));
+    assert!(body.contains("'acre|acre'"));
+    assert!(body.contains("'notch|notch'"));
     assert!(
         !body.contains(workspace.to_str().unwrap()),
         "the gate baked the generating workspace's path"
@@ -72,7 +72,7 @@ fn is_workspace_gate_command_matches_managed_path() {
 #[test]
 fn is_workspace_gate_command_rejects_other_paths() {
     assert!(!is_workspace_gate_command(
-        ".claude/hooks/arvo--no-alloc.sh"
+        ".claude/hooks/acre--no-alloc.sh"
     ));
 }
 
@@ -81,8 +81,8 @@ fn a_manifest_path_carrying_a_curdir_component_resolves_to_the_repo() {
     // The gate's repo table is the one place a manifest path reaches an
     // emitted script without passing through a `strip_prefix` that would
     // have normalised it: `agent.rs` reads `local_path` straight off the
-    // manifest. So `local_path = "./arvo"` is the reachable shape, and
-    // `/ws/./arvo` is not a textual prefix of `/ws/arvo/src/lib.rs`, which
+    // manifest. So `local_path = "./acre"` is the reachable shape, and
+    // `/ws/./acre` is not a textual prefix of `/ws/acre/src/lib.rs`, which
     // is how the longest-prefix match silently finds nothing.
     //
     // Through `install_workspace_gate` rather than through the helper, so
@@ -92,14 +92,14 @@ fn a_manifest_path_carrying_a_curdir_component_resolves_to_the_repo() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path();
     install_workspace_gate(&test_root(ws), &[(
-        "arvo".to_string(),
-        "./arvo".to_string(),
+        "acre".to_string(),
+        "./acre".to_string(),
     )])
     .unwrap();
     let installed =
         fs::read_to_string(ws.join(".claude/hooks/_workspace--mockspace-gate.sh")).unwrap();
     assert!(
-        installed.contains("'arvo|arvo'"),
+        installed.contains("'acre|acre'"),
         "the gate kept a no-op path component from the manifest: {installed}"
     );
     assert!(!installed.contains("/./"));
@@ -108,12 +108,12 @@ fn a_manifest_path_carrying_a_curdir_component_resolves_to_the_repo() {
 #[test]
 fn script_body_includes_workspace_repo_paths() {
     let repos = vec![
-        ("arvo".to_string(), "/abs/arvo".to_string()),
-        ("hilavitkutin".to_string(), "/abs/hilavitkutin".to_string()),
+        ("acre".to_string(), "/abs/acre".to_string()),
+        ("hollowbridge".to_string(), "/abs/hollowbridge".to_string()),
     ];
     let body = gate_script(&repos);
-    assert!(body.contains("'arvo|/abs/arvo'"));
-    assert!(body.contains("'hilavitkutin|/abs/hilavitkutin'"));
+    assert!(body.contains("'acre|/abs/acre'"));
+    assert!(body.contains("'hollowbridge|/abs/hollowbridge'"));
 }
 
 #[test]
@@ -332,13 +332,13 @@ fn gate_e2e_without_jq_denies_rather_than_allowing_silently() {
     let path = a_path_without_jq(dir.path());
     // Full adoption: the case that is *supposed* to be allowed, so a deny
     // here can only be the missing tool and not the drift check.
-    let repo = fake_repo(dir.path(), "arvo", true, true);
+    let repo = fake_repo(dir.path(), "acre", true, true);
     fs::write(
         repo.join("mockspace.toml"),
         "mock_dir = \"mock\"\nmockspace_branch = \"dev\"\n",
     )
     .unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
 
     // The control, on the inherited PATH: this exact call is allowed when
@@ -367,13 +367,13 @@ fn gate_e2e_launcher_pin_counts_as_config_marker() {
     // a `mockspace_branch` pin. With mock/ + hooksPath present, that is full
     // adoption and must not deny.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, true);
+    let repo = fake_repo(dir.path(), "acre", true, true);
     fs::write(
         repo.join("mockspace.toml"),
         "mock_dir = \"mock\"\nmockspace_branch = \"dev\"\n",
     )
     .unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -384,18 +384,18 @@ fn gate_e2e_launcher_pin_counts_as_config_marker() {
 
 #[test]
 fn gate_e2e_declared_mock_dir_counts_as_the_mock_dir() {
-    // sodapop declares `mock_dir = "linux"`. A gate looking for a literal
+    // shingle declares `mock_dir = "linux"`. A gate looking for a literal
     // `mock/` reads it as missing the directory and denies a fully adopted
     // repo.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "sodapop", false, true);
+    let repo = fake_repo(dir.path(), "shingle", false, true);
     fs::create_dir_all(repo.join("linux")).unwrap();
     fs::write(
         repo.join("mockspace.toml"),
         "mock_dir = \"linux\"\nmockspace_branch = \"dev\"\n",
     )
     .unwrap();
-    let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("shingle".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -407,13 +407,13 @@ fn gate_e2e_declared_mock_dir_counts_as_the_mock_dir() {
 #[test]
 fn gate_e2e_declared_mock_dir_that_is_absent_is_named_in_the_deny() {
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "sodapop", false, true);
+    let repo = fake_repo(dir.path(), "shingle", false, true);
     fs::write(
         repo.join("mockspace.toml"),
         "mock_dir = \"linux\"\nmockspace_branch = \"dev\"\n",
     )
     .unwrap();
-    let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("shingle".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -429,8 +429,8 @@ fn gate_e2e_a_mock_dir_with_no_toml_is_left_alone() {
     // `mockspace.toml` it has not adopted mockspace, and a deny naming
     // `homma agent regen` sends somebody to a command that skips it.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, false);
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repo = fake_repo(dir.path(), "acre", true, false);
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -441,17 +441,17 @@ fn gate_e2e_a_mock_dir_with_no_toml_is_left_alone() {
 
 #[test]
 fn gate_e2e_a_toml_under_the_mock_dir_counts_as_adopting() {
-    // ikiuni keeps its config at `mock/mockspace.toml`. Drift fixture with
+    // inlets keeps its config at `mock/mockspace.toml`. Drift fixture with
     // the pin under `mock/` and no hooks: the gate must see the toml and
     // deny, not treat the repo as unadopted.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "ikiuni", true, false);
+    let repo = fake_repo(dir.path(), "inlets", true, false);
     fs::write(
         repo.join("mock/mockspace.toml"),
         "mockspace_branch = \"dev\"\n",
     )
     .unwrap();
-    let repos = vec![("ikiuni".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("inlets".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -466,7 +466,7 @@ fn gate_e2e_the_root_toml_wins_over_the_one_under_the_mock_dir() {
     // Both exist and disagree about `mock_dir`; the root one is the one
     // read, as the status probe reads it.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "sodapop", true, true);
+    let repo = fake_repo(dir.path(), "shingle", true, true);
     fs::create_dir_all(repo.join("linux")).unwrap();
     fs::write(
         repo.join("mockspace.toml"),
@@ -478,7 +478,7 @@ fn gate_e2e_the_root_toml_wins_over_the_one_under_the_mock_dir() {
         "mock_dir = \"elsewhere\"\n",
     )
     .unwrap();
-    let repos = vec![("sodapop".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("shingle".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -490,9 +490,9 @@ fn gate_e2e_the_root_toml_wins_over_the_one_under_the_mock_dir() {
 #[test]
 fn gate_e2e_partial_adoption_emits_deny() {
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, false);
+    let repo = fake_repo(dir.path(), "acre", true, false);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -515,9 +515,9 @@ fn gate_e2e_zero_adoption_emits_no_deny() {
     // hooksPath. Adopted in name only, with no surface present, which is
     // not drift, so the gate stays out of the way.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", false, false);
+    let repo = fake_repo(dir.path(), "acre", false, false);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -556,10 +556,10 @@ fn gate_e2e_a_git_shook_hooks_path_is_not_a_mockspace_surface() {
     // of three, which is drift, and refuses every commit in a repository
     // with nothing wrong with it and nothing `homma agent regen` can fix.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", false, false);
+    let repo = fake_repo(dir.path(), "acre", false, false);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
     point_hooks_path_at_shook(&repo);
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -619,9 +619,9 @@ fn gate_e2e_a_hooks_path_that_is_not_git_shooks_still_counts() {
     // other hooks path is still evidence that mockspace's hooks are wired,
     // so a repository carrying that and nothing else is still drift.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", false, true);
+    let repo = fake_repo(dir.path(), "acre", false, true);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -638,7 +638,7 @@ fn gate_e2e_an_alias_does_not_stand_in_for_the_launcher_pin() {
     // pin is drift, and the fix is the pin, not `homma agent regen`, which
     // runs `cargo mock`.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, true);
+    let repo = fake_repo(dir.path(), "acre", true, true);
     fs::create_dir_all(repo.join(".cargo")).unwrap();
     fs::write(
         repo.join(".cargo/config.toml"),
@@ -646,7 +646,7 @@ fn gate_e2e_an_alias_does_not_stand_in_for_the_launcher_pin() {
     )
     .unwrap();
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -667,9 +667,9 @@ fn gate_e2e_non_git_command_is_silent_allow() {
     // toml and a mock directory, no pin, no hooks path), which is what the
     // control below shows the gate refusing, so the allow can only be the filter.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, false);
+    let repo = fake_repo(dir.path(), "acre", true, false);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("ls -la", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -799,12 +799,12 @@ fn run_gate_in_a_workspace_with(
         fs::write(ws.join("homma.toml"), "content_repo = \"x\"\n").unwrap();
     }
     // Zero adoption on purpose: no mock/, no alias, no hooksPath.
-    let repo = fake_repo(&ws, "arvo", false, false);
+    let repo = fake_repo(&ws, "acre", false, false);
 
     let script = hooks.join("gate.sh");
     fs::write(
         &script,
-        gate_script(&[("arvo".to_string(), "arvo".to_string())]),
+        gate_script(&[("acre".to_string(), "acre".to_string())]),
     )
     .unwrap();
 
@@ -818,11 +818,11 @@ fn run_gate_in_a_workspace_with(
     match status {
         Answer::Probe => {
             write_status_fixtures(&stub_dir, &[(
-                "arvo".to_string(),
+                "acre".to_string(),
                 repo.to_string_lossy().to_string(),
             )])
         },
-        Answer::Literal(text) => fs::write(stub_dir.join("status-arvo.json"), text).unwrap(),
+        Answer::Literal(text) => fs::write(stub_dir.join("status-acre.json"), text).unwrap(),
         Answer::Absent => {},
     }
     let mut child = Command::new("bash")
@@ -859,13 +859,13 @@ fn gate_denies_when_a_required_config_is_missing_and_names_the_fix() {
     // Non-zero is what it does when something blocks, and what it printed
     // is what the person needs to see.
     let out = run_gate_in_a_workspace(
-        Some("echo 'arvo'; echo '  deny.toml is missing, and is required here'; exit 1"),
+        Some("echo 'acre'; echo '  deny.toml is missing, and is required here'; exit 1"),
         true,
     );
     assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
     assert!(out.contains("deny.toml is missing"), "{out}");
     assert!(
-        out.contains("homma repo config init --repo arvo"),
+        out.contains("homma repo config init --repo acre"),
         "the refusal did not name the command that fixes it: {out}"
     );
 }
@@ -955,13 +955,13 @@ fn the_two_arms_are_reported_together_rather_than_one_hiding_the_other() {
     fs::create_dir_all(&hooks).unwrap();
     fs::write(ws.join("homma.toml"), "content_repo = \"x\"\n").unwrap();
     // Partial adoption: a toml and mock/ present, no pin, no hooksPath.
-    let repo = fake_repo(&ws, "arvo", true, false);
+    let repo = fake_repo(&ws, "acre", true, false);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
 
     let script = hooks.join("gate.sh");
     fs::write(
         &script,
-        gate_script(&[("arvo".to_string(), "arvo".to_string())]),
+        gate_script(&[("acre".to_string(), "acre".to_string())]),
     )
     .unwrap();
     let path = a_path_with_homma(
@@ -971,7 +971,7 @@ fn the_two_arms_are_reported_together_rather_than_one_hiding_the_other() {
     let input = input_json("git commit -m x", &repo.to_string_lossy());
     let stub_dir = dir.path().join("stub");
     write_status_fixtures(&stub_dir, &[(
-        "arvo".to_string(),
+        "acre".to_string(),
         repo.to_string_lossy().to_string(),
     )]);
     let mut child = Command::new("bash")
@@ -1008,7 +1008,7 @@ fn the_two_arms_are_reported_together_rather_than_one_hiding_the_other() {
         "the pin advice was overwritten: {out}"
     );
     assert!(
-        out.contains("homma repo config init --repo arvo"),
+        out.contains("homma repo config init --repo acre"),
         "the config advice is missing: {out}"
     );
 }
@@ -1031,9 +1031,9 @@ fn gate_e2e_a_pin_alone_is_a_surface_and_the_rest_missing_is_drift() {
     // The pin counts toward adoption: a toml with a pin and no mock directory
     // and no hooks path is one surface of three, which is neither none nor all.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", false, false);
+    let repo = fake_repo(dir.path(), "acre", false, false);
     fs::write(repo.join("mockspace.toml"), "mockspace_branch = \"dev\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
@@ -1088,13 +1088,13 @@ fn gate_e2e_an_empty_mock_dir_does_not_shift_the_facts() {
     // in the facts the gate splits must stay an empty field, or the ones after
     // it move and a correct answer from homma reads as unreadable.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", false, true);
+    let repo = fake_repo(dir.path(), "acre", false, true);
     fs::write(
         repo.join("mockspace.toml"),
         "mock_dir = \"\"\nmockspace_branch = \"dev\"\n",
     )
     .unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(
@@ -1113,13 +1113,13 @@ fn gate_e2e_a_toml_that_does_not_parse_is_refused_for_a_missing_pin() {
     // status counts the toml as adopting, with the default mock directory and
     // no pin, so the gate names the pin as missing even where the line is there.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, true);
+    let repo = fake_repo(dir.path(), "acre", true, true);
     fs::write(
         repo.join("mockspace.toml"),
         "mockspace_branch = \"dev\"\nmock_dir = \n",
     )
     .unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let input = input_json("git commit -m hi", &repo.to_string_lossy());
     let out = run_gate(&repos, &input);
     assert!(out.contains("no launcher pin"), "{out}");
@@ -1130,11 +1130,11 @@ fn gate_e2e_a_push_on_a_drift_repo_is_refused_and_a_non_git_command_is_not() {
     // The gate covers `git push` as well as `git commit`: the same drift repo
     // is refused on both forms, including behind a `cd`, and allowed on `ls`.
     let dir = tempfile::tempdir().unwrap();
-    let repo = fake_repo(dir.path(), "arvo", true, false);
+    let repo = fake_repo(dir.path(), "acre", true, false);
     fs::write(repo.join("mockspace.toml"), "mock_dir = \"mock\"\n").unwrap();
-    let repos = vec![("arvo".to_string(), repo.to_string_lossy().to_string())];
+    let repos = vec![("acre".to_string(), repo.to_string_lossy().to_string())];
     let at = repo.to_string_lossy().to_string();
-    for command in ["git push origin dev", "cd arvo && git commit -m hi"] {
+    for command in ["git push origin dev", "cd acre && git commit -m hi"] {
         let out = run_gate(&repos, &input_json(command, &at));
         assert!(
             out.contains("\"permissionDecision\":\"deny\""),

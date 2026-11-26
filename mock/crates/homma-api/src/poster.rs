@@ -100,7 +100,7 @@ mod tests {
 
     fn one() -> PosterGaveUp {
         PosterGaveUp {
-            repo:        "notko".into(),
+            repo:        "notch".into(),
             sha:         "0123456789abcdef0123456789abcdef01234567".into(),
             gave_up_at:  "2026-09-03T21:00:00Z".into(),
             waited_secs: 600,
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn a_gate_run_record_is_not_a_give_up_and_a_bad_count_is_refused() {
         let run = crate::GateRun {
-            repo:    "notko".into(),
+            repo:    "notch".into(),
             sha:     one().sha,
             ran_at:  one().gave_up_at,
             verdict: crate::Verdict::Green,

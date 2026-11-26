@@ -136,7 +136,7 @@ fn run() -> GateRun {
         docs,
     ];
     GateRun {
-        repo: "notko".into(),
+        repo: "notch".into(),
         sha: "abc123".into(),
         ran_at: "2026-09-02T21:00:00Z".into(),
         verdict: GateRun::verdict_of(&steps),

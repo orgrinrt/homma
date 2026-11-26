@@ -67,10 +67,10 @@ fn a_promoted_tool_is_a_subcommand_that_gets_the_words_after_its_name() {
     let ws = workspace();
     let real = std::fs::canonicalize(ws.path()).unwrap();
     homma(ws.path())
-        .args(["msg", "kaski", "board", "--states"])
+        .args(["msg", "kiosk", "board", "--states"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("msg:kaski board --states"))
+        .stdout(predicate::str::contains("msg:kiosk board --states"))
         .stdout(predicate::str::contains(real.to_str().unwrap()))
         .stdout(predicate::str::contains(format!(
             "ws={}",

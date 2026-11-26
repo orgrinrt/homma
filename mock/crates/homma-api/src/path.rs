@@ -488,8 +488,8 @@ mod tests {
         // containment check against the filesystem, not the arithmetic.
         let base = AbsPath::new("/srv/ws").unwrap();
         assert_eq!(
-            AbsPath::resolve(&base, "../out/paja").as_path(),
-            Path::new("/srv/out/paja")
+            AbsPath::resolve(&base, "../out/pike").as_path(),
+            Path::new("/srv/out/pike")
         );
     }
 

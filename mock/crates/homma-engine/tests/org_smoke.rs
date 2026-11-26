@@ -30,8 +30,8 @@ fn registry_with_a_comment(dir: &tempfile::TempDir) -> PathBuf {
     let path = dir.path().join("homma.toml");
     std::fs::write(
         &path,
-        "# a comment that must survive\ncontent_repo = \"git@example.invalid:orgrinrt/clause-dev.git\"\n\n\
-         [org.op]\nrole = \"king\"\nhandle = \"op\"\n",
+        "# a comment that must survive\ncontent_repo = \"git@example.invalid:woodland/glade-root.git\"\n\n\
+         [org.oz]\nrole = \"king\"\nhandle = \"oz\"\n",
     )
     .unwrap();
     path

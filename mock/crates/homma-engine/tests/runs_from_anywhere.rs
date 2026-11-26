@@ -29,8 +29,8 @@ fn workspace_named(name: &str) -> tempfile::TempDir {
     std::fs::write(
         dir.path().join("homma.toml"),
         format!(
-            "content_repo = \"clause-dev\"\n\n[workspace]\nname = \"{name}\"\n\n\
-             [org.op]\nrole = \"king\"\nhandle = \"op\"\n\n\
+            "content_repo = \"glade-root\"\n\n[workspace]\nname = \"{name}\"\n\n\
+             [org.oz]\nrole = \"king\"\nhandle = \"oz\"\n\n\
              [org.{name}]\nrole = \"hand\"\nhandle = \"{name}\"\ndomain = \"{name}\"\n"
         ),
     )

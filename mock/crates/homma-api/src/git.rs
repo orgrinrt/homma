@@ -269,11 +269,11 @@ mod tests {
 
     #[test]
     fn same_puts_one_pair_in_both_roles() {
-        let it = CommitIdentity::same("op", "op@example.test").unwrap();
-        assert_eq!(it.author_name(), "op");
-        assert_eq!(it.author_email(), "op@example.test");
-        assert_eq!(it.committer_name(), "op");
-        assert_eq!(it.committer_email(), "op@example.test");
+        let it = CommitIdentity::same("oz", "oz@example.test").unwrap();
+        assert_eq!(it.author_name(), "oz");
+        assert_eq!(it.author_email(), "oz@example.test");
+        assert_eq!(it.committer_name(), "oz");
+        assert_eq!(it.committer_email(), "oz@example.test");
     }
 
     #[test]
@@ -281,11 +281,11 @@ mod tests {
         // The control on the delegation: `same` must not become a way past the
         // check by handing one value to two slots.
         assert_eq!(
-            CommitIdentity::same("", "op@example.test"),
+            CommitIdentity::same("", "oz@example.test"),
             Err(EmptyPart(Part::AuthorName))
         );
         assert_eq!(
-            CommitIdentity::same("op", ""),
+            CommitIdentity::same("oz", ""),
             Err(EmptyPart(Part::AuthorEmail))
         );
     }
@@ -295,11 +295,11 @@ mod tests {
         // The case the split exists for, and the assertion that would fail if
         // `split` quietly collapsed to `same`.
         let it =
-            CommitIdentity::split("op", "op@example.test", "crew", "op+crew@example.test").unwrap();
-        assert_eq!(it.author_name(), "op");
-        assert_eq!(it.author_email(), "op@example.test");
+            CommitIdentity::split("oz", "oz@example.test", "crew", "oz+crew@example.test").unwrap();
+        assert_eq!(it.author_name(), "oz");
+        assert_eq!(it.author_email(), "oz@example.test");
         assert_eq!(it.committer_name(), "crew");
-        assert_eq!(it.committer_email(), "op+crew@example.test");
+        assert_eq!(it.committer_email(), "oz+crew@example.test");
         assert_ne!(it.author_email(), it.committer_email());
     }
 

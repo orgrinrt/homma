@@ -104,11 +104,11 @@ mod tests {
     #[test]
     fn prose_that_reads_back_the_same_stays_plain() {
         for plain in [
-            "the kaski coordinator, who dispatches helpers",
-            "Paja, who works on tooling.",
+            "the kiosk coordinator, who dispatches helpers",
+            "Pike, who works on tooling.",
             "keeps a file-size limit of 500 lines",
             "reads rules/skills (and the canon)",
-            "Op's right hand",
+            "Oz's right hand",
             "yes and no",
             "ends with a digit 1",
         ] {

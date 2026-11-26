@@ -135,17 +135,17 @@ mod tests {
     const ORG: &str = r#"
 content_repo = "git@example.invalid:someone/content.git"
 
-[org.op]
+[org.oz]
 role = "king"
-handle = "op"
+handle = "oz"
 
-[org.paja]
+[org.pike]
 role = "hand"
 staffed = true
-handle = "paja"
-git_name = "paja"
-git_email = "paja@example.invalid"
-workspace = "/tmp/paja"
+handle = "pike"
+git_name = "pike"
+git_email = "pike@example.invalid"
+workspace = "/tmp/pike"
 
 [org.nameless]
 role = "hand"
@@ -175,7 +175,7 @@ handle = "proof"
             .iter()
             .map(|i| i.handle.clone())
             .collect();
-        assert_eq!(hands, vec!["nameless", "paja", "rendering"]);
+        assert_eq!(hands, vec!["nameless", "pike", "rendering"]);
         assert_eq!(r.in_role(Role::King).len(), 1);
         assert_eq!(r.in_role(Role::General).len(), 0);
     }
@@ -212,14 +212,14 @@ handle = "proof"
         let w = ws();
         let r = OrgRegistry::new(&w);
         assert_eq!(
-            r.agent_at("paja@example.invalid")
+            r.agent_at("pike@example.invalid")
                 .map(|i| i.handle.as_str()),
-            Some("paja")
+            Some("pike")
         );
         assert_eq!(
-            r.agent_at("Paja+review-pass@EXAMPLE.invalid")
+            r.agent_at("Pike+review-pass@EXAMPLE.invalid")
                 .map(|i| i.handle.as_str()),
-            Some("paja"),
+            Some("pike"),
             "a sub-agent commits as its launcher's address with a tag"
         );
         assert_eq!(
@@ -228,7 +228,7 @@ handle = "proof"
             "a human is no agent"
         );
         assert_eq!(
-            r.agent_at("pajax@example.invalid"),
+            r.agent_at("pikex@example.invalid"),
             None,
             "an exact match, not a prefix"
         );
@@ -237,21 +237,21 @@ handle = "proof"
     #[test]
     fn the_king_is_never_matched_as_an_agent() {
         let text = ORG.replace(
-            "role = \"king\"\nhandle = \"op\"",
-            "role = \"king\"\nhandle = \"op\"\ngit_email = \"op@example.invalid\"",
+            "role = \"king\"\nhandle = \"oz\"",
+            "role = \"king\"\nhandle = \"oz\"\ngit_email = \"oz@example.invalid\"",
         );
         let w = Workspace::parse(&text).unwrap();
         let r = OrgRegistry::new(&w);
-        assert_eq!(r.agent_at("op@example.invalid"), None);
-        assert!(r.agent_addresses().iter().all(|(_, i)| i.handle != "op"));
+        assert_eq!(r.agent_at("oz@example.invalid"), None);
+        assert!(r.agent_addresses().iter().all(|(_, i)| i.handle != "oz"));
     }
 
     #[test]
     fn a_committer_address_is_an_agent_address_too_listed_once_when_it_repeats() {
         let both = |committer: &str| {
             let text = ORG.replace(
-                "git_email = \"paja@example.invalid\"",
-                &format!("git_email = \"paja@example.invalid\"\ncommitter_email = \"{committer}\""),
+                "git_email = \"pike@example.invalid\"",
+                &format!("git_email = \"pike@example.invalid\"\ncommitter_email = \"{committer}\""),
             );
             Workspace::parse(&text).unwrap()
         };
@@ -259,25 +259,25 @@ handle = "proof"
             OrgRegistry::new(w)
                 .agent_addresses()
                 .into_iter()
-                .filter(|(_, i)| i.handle == "paja")
+                .filter(|(_, i)| i.handle == "pike")
                 .map(|(a, _)| a)
                 .collect()
         };
         // A distinct committer address is listed and matched.
-        let w = both("paja-commits@example.invalid");
+        let w = both("pike-commits@example.invalid");
         assert_eq!(addresses(&w), vec![
-            "paja@example.invalid",
-            "paja-commits@example.invalid"
+            "pike@example.invalid",
+            "pike-commits@example.invalid"
         ]);
         assert_eq!(
             OrgRegistry::new(&w)
-                .agent_at("Paja-Commits@example.invalid")
+                .agent_at("Pike-Commits@example.invalid")
                 .map(|i| i.handle.as_str()),
-            Some("paja")
+            Some("pike")
         );
         // One that normalises to the author's is the same address, listed once.
-        assert_eq!(addresses(&both("paja+c@example.invalid")), vec![
-            "paja@example.invalid"
+        assert_eq!(addresses(&both("pike+c@example.invalid")), vec![
+            "pike@example.invalid"
         ]);
     }
 

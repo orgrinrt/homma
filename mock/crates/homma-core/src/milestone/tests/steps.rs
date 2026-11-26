@@ -192,8 +192,8 @@ fn a_row_of_the_old_shape_is_read_as_it_is_and_its_sha_is_its_tip() {
     fx.commit("a.txt", "2\n");
     // written by hand: a comment, a key out of order and a key the shape does not name
     let old = format!(
-        "# picked by op\n[[milestone]]\n# hand-numbered\nat = \"2026-10-27\"\nsha = \"{c1}\"\nn = \
-         1\nnote = \"picked by op\"\n"
+        "# picked by oz\n[[milestone]]\n# hand-numbered\nat = \"2026-10-27\"\nsha = \"{c1}\"\nn = \
+         1\nnote = \"picked by oz\"\n"
     );
     std::fs::create_dir_all(fx.root().join(".homma")).unwrap();
     std::fs::write(fx.root().join(RECORD_PATH), &old).unwrap();

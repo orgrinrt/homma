@@ -13,10 +13,10 @@ use homma_core::{Config, ForgeKind};
 fn minimal_parse() {
     let src = r#"
 [workspace]
-name = "clause-dev"
+name = "glade-root"
 "#;
     let config = Config::parse(src).unwrap();
-    assert_eq!(config.workspace.name, "clause-dev");
+    assert_eq!(config.workspace.name, "glade-root");
     assert_eq!(config.workspace.path, PathBuf::from("."));
     assert_eq!(config.defaults.license, "MPL-2.0");
     assert_eq!(config.defaults.public_branch, "main");
@@ -29,8 +29,8 @@ name = "clause-dev"
 fn full_parse() {
     let src = r#"
 [workspace]
-name = "clause-dev"
-path = "/Users/example/Dev/clause-dev"
+name = "glade-root"
+path = "/Users/example/Dev/glade-root"
 
 [defaults]
 license = "MPL-2.0"
@@ -52,10 +52,10 @@ token_env = "CODEBERG_TOKEN"
 "#;
     let config = Config::parse(src).unwrap();
 
-    assert_eq!(config.workspace.name, "clause-dev");
+    assert_eq!(config.workspace.name, "glade-root");
     assert_eq!(
         config.workspace.path,
-        PathBuf::from("/Users/example/Dev/clause-dev")
+        PathBuf::from("/Users/example/Dev/glade-root")
     );
 
     let gh = config.forge("github").expect("github forge present");
@@ -81,10 +81,10 @@ fn a_manifest_that_still_declares_repos_is_refused_rather_than_half_read() {
 [workspace]
 name = "demo"
 
-[repos.notko]
+[repos.notch]
 forge = "github"
-owner = "orgrinrt"
-local_path = "notko"
+owner = "woodland"
+local_path = "notch"
 "#;
     let err = Config::parse(src).expect_err("a [repos] table must be refused");
     // Down the chain, because the outer message says which file and the toml
@@ -104,7 +104,7 @@ fn unknown_field_rejected() {
     // `deny_unknown_fields` should reject typos to catch mis-spelled keys early.
     let src = r#"
 [workspace]
-name = "clause-dev"
+name = "glade-root"
 nmae = "typo"
 "#;
     assert!(Config::parse(src).is_err());

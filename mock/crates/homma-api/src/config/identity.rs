@@ -226,8 +226,8 @@ mod tests {
     #[test]
     fn a_complete_hand_is_staffed() {
         let w = Workspace::parse(WITH_ORG).unwrap();
-        assert_eq!(w.org["paja"].staffing(), Staffing::Staffed);
-        assert!(w.org["paja"].staffing().can_stand_up());
+        assert_eq!(w.org["pike"].staffing(), Staffing::Staffed);
+        assert!(w.org["pike"].staffing().can_stand_up());
     }
 
     #[test]
@@ -281,7 +281,7 @@ handle = "silent"
         // Setting the flag on a King must not manufacture a path to staffing
         // one up, since the role is what decides whether a workspace exists at
         // all and the flag only says whether one is intended.
-        let mut king = Identity::new(Role::King, "op");
+        let mut king = Identity::new(Role::King, "oz");
         king.staffed = true;
         assert_eq!(king.staffing(), Staffing::NoWorkspace);
     }

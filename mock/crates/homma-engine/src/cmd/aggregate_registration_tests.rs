@@ -76,10 +76,10 @@ fn a_hook_a_registration_runs_through_a_program_is_carried_without_an_execute_bi
     assert_eq!(registrations(&v), vec![(
         "PreToolUse".to_string(),
         Some("Bash".to_string()),
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/arvo--check.sh --strict".to_string()
+        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--check.sh --strict".to_string()
     )]);
 
-    let wrapper = ws.path().join(".claude/hooks/arvo--check.sh");
+    let wrapper = ws.path().join(".claude/hooks/acre--check.sh");
     let payload = format!(
         r#"{{"cwd":"{}","tool_input":{{"command":"ls"}}}}"#,
         repo.display()
@@ -103,7 +103,7 @@ fn a_hook_two_registrations_run_two_ways_is_reported_and_not_carried() {
     let (a, v) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
     assert!(
-        a.problems[0].contains("arvo/.claude/hooks/check.sh"),
+        a.problems[0].contains("acre/.claude/hooks/check.sh"),
         "{:?}",
         a.problems
     );
@@ -112,12 +112,12 @@ fn a_hook_two_registrations_run_two_ways_is_reported_and_not_carried() {
         "{:?}",
         a.problems
     );
-    assert!(!ws.path().join(".claude/hooks/arvo--check.sh").exists());
+    assert!(!ws.path().join(".claude/hooks/acre--check.sh").exists());
     // The control: a hook every registration runs one way is carried.
     assert_eq!(registrations(&v), vec![reg(
         "PreToolUse",
         Some("Edit"),
-        "arvo--other.sh"
+        "acre--other.sh"
     )]);
 }
 
@@ -135,17 +135,17 @@ fn a_hook_run_through_a_line_of_shell_is_reported_and_not_carried() {
     let (a, v) = regen(ws.path(), &repo);
     assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
     assert!(
-        a.problems[0].contains("arvo/.claude/hooks/check.sh")
+        a.problems[0].contains("acre/.claude/hooks/check.sh")
             && a.problems[0].contains("a line of shell"),
         "{:?}",
         a.problems
     );
-    assert!(!ws.path().join(".claude/hooks/arvo--check.sh").exists());
+    assert!(!ws.path().join(".claude/hooks/acre--check.sh").exists());
     // The control: the hook run through a program beside it is carried.
     assert_eq!(registrations(&v), vec![reg(
         "PreToolUse",
         Some("Edit"),
-        "arvo--other.sh"
+        "acre--other.sh"
     )]);
 }
 
@@ -160,5 +160,5 @@ fn a_hidden_file_among_the_hooks_is_neither_carried_nor_reported() {
     let (a, _) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
     assert_eq!(a.hooks, 1);
-    assert!(!ws.path().join(".claude/hooks/arvo--.guard.sh.swp").exists());
+    assert!(!ws.path().join(".claude/hooks/acre--.guard.sh.swp").exists());
 }

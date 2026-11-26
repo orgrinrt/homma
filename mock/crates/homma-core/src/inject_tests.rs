@@ -140,10 +140,10 @@ fn a_bare_program_name_is_left_for_the_path() {
     // everything". A bare name is what PATH is for, and anchoring it would make
     // `git` mean `<root>/git`, which does not exist.
     let mut cfg = StatusConfig {
-        inject: vec![one(&["agenda"])],
+        inject: vec![one(&["docket"])],
     };
     settle(&mut cfg, Path::new("/srv/ws"));
-    assert_eq!(cfg.inject[0].tool.words()[0], "agenda");
+    assert_eq!(cfg.inject[0].tool.words()[0], "docket");
 }
 
 #[test]
@@ -430,11 +430,11 @@ fn a_block_with_no_title_takes_the_programs_file_name() {
 #[test]
 fn a_bare_program_name_is_its_own_title() {
     let got = run(Inject {
-        tool:   Argv::One("agenda".into()),
+        tool:   Argv::One("docket".into()),
         title:  None,
         format: None,
     });
-    assert_eq!(got.title, "agenda");
+    assert_eq!(got.title, "docket");
 }
 
 #[test]

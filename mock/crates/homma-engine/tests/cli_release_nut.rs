@@ -12,7 +12,7 @@ use predicates::prelude::*;
 use support::{bin, clone_at, git_in, minimal_config_toml};
 
 fn committed_nut(root: &std::path::Path, name: &str) {
-    clone_at(root, name, Some("https://github.com/orgrinrt/x.git"));
+    clone_at(root, name, Some("https://github.com/woodland/x.git"));
     let path = root.join(name);
     std::fs::write(
         path.join("nut.toml"),

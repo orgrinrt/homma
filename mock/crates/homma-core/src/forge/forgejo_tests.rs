@@ -24,7 +24,7 @@ fn cfg() -> ForgeConfig {
 fn create_path_user_owner() {
     let c = ForgejoClient::anonymous("https://codeberg.org/api/v1");
     assert_eq!(
-        c.create_path("orgrinrt", OwnerKind::User),
+        c.create_path("woodland", OwnerKind::User),
         "https://codeberg.org/api/v1/user/repos"
     );
 }
@@ -33,8 +33,8 @@ fn create_path_user_owner() {
 fn create_path_org_owner() {
     let c = ForgejoClient::anonymous("https://codeberg.org/api/v1");
     assert_eq!(
-        c.create_path("hiisi", OwnerKind::Org),
-        "https://codeberg.org/api/v1/orgs/hiisi/repos"
+        c.create_path("meadow", OwnerKind::Org),
+        "https://codeberg.org/api/v1/orgs/meadow/repos"
     );
 }
 
@@ -42,8 +42,8 @@ fn create_path_org_owner() {
 fn repo_path_composes_api_url() {
     let c = ForgejoClient::anonymous("https://codeberg.org/api/v1");
     assert_eq!(
-        c.repo_path("orgrinrt", "homma"),
-        "https://codeberg.org/api/v1/repos/orgrinrt/homma"
+        c.repo_path("woodland", "homma"),
+        "https://codeberg.org/api/v1/repos/woodland/homma"
     );
 }
 
@@ -82,7 +82,7 @@ fn auth_header_absent_when_anonymous() {
 
 #[test]
 fn map_status_404_is_repo_not_found() {
-    let e = map_status(404, "orgrinrt", "homma", "not found".into());
+    let e = map_status(404, "woodland", "homma", "not found".into());
     assert!(matches!(e, ForgeError::RepoNotFound { .. }));
 }
 
@@ -100,7 +100,7 @@ fn map_status_401_403_are_unauthorized() {
 
 #[test]
 fn map_status_409_is_repo_already_exists() {
-    let e = map_status(409, "orgrinrt", "homma", "conflict".into());
+    let e = map_status(409, "woodland", "homma", "conflict".into());
     assert!(matches!(e, ForgeError::RepoAlreadyExists { .. }));
 }
 
@@ -169,18 +169,18 @@ fn forgejo_repo_into_metadata_public() {
     let wire = ForgejoRepo {
         name:           "homma".into(),
         owner:          ForgejoOwner {
-            login: "orgrinrt".into(),
+            login: "woodland".into(),
         },
         description:    Some("workspace tooling".into()),
         default_branch: "dev".into(),
         private:        false,
         internal:       false,
         archived:       false,
-        clone_url:      "https://codeberg.org/orgrinrt/homma.git".into(),
+        clone_url:      "https://codeberg.org/woodland/homma.git".into(),
         topics:         vec!["rust".into()],
     };
     let m = wire.into_metadata();
-    assert_eq!(m.owner, "orgrinrt");
+    assert_eq!(m.owner, "woodland");
     assert_eq!(m.name, "homma");
     assert_eq!(m.default_branch, "dev");
     assert_eq!(m.visibility, Visibility::Public);
@@ -288,21 +288,21 @@ fn forgejo_create_body_serializes_without_nulls() {
 
 #[test]
 fn forgejo_repo_deserializes_realistic_payload() {
-    // Captured shape of GET /repos/orgrinrt/homma response (minus fields
+    // Captured shape of GET /repos/woodland/homma response (minus fields
     // we don't use). Sanity check that serde can parse a full payload.
     let payload = r#"{
         "id": 12345,
         "name": "homma",
-        "full_name": "orgrinrt/homma",
-        "owner": { "id": 7, "login": "orgrinrt", "username": "orgrinrt" },
+        "full_name": "woodland/homma",
+        "owner": { "id": 7, "login": "woodland", "username": "woodland" },
         "description": "workspace tooling",
         "default_branch": "dev",
         "private": false,
         "internal": false,
         "archived": false,
-        "clone_url": "https://codeberg.org/orgrinrt/homma.git",
-        "ssh_url": "git@codeberg.org:orgrinrt/homma.git",
-        "html_url": "https://codeberg.org/orgrinrt/homma",
+        "clone_url": "https://codeberg.org/woodland/homma.git",
+        "ssh_url": "git@codeberg.org:woodland/homma.git",
+        "html_url": "https://codeberg.org/woodland/homma",
         "topics": ["rust", "workspace"],
         "size": 4096,
         "stars_count": 0

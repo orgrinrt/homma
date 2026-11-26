@@ -13,7 +13,7 @@ const NOON: &str = "2026-11-23T12:00:00Z";
 
 fn held_by(session: &str, expires: &str) -> Lease {
     Lease {
-        handle:   "ikku".into(),
+        handle:   "inge".into(),
         session:  session.into(),
         job:      "identity-lane".into(),
         taken:    at("2026-11-23T11:00:00Z"),
@@ -32,11 +32,11 @@ fn take<'a>(session: &'a str, replaces: Option<&'a str>) -> Ask<'a> {
 
 #[test]
 fn a_free_identity_is_taken_for_the_asking_session() {
-    let out = decide(None, "ikku", take("s1", None), at(NOON), 120).unwrap();
+    let out = decide(None, "inge", take("s1", None), at(NOON), 120).unwrap();
     assert_eq!(
         out,
         Outcome::Write(Lease {
-            handle:   "ikku".into(),
+            handle:   "inge".into(),
             session:  "s1".into(),
             job:      "next-job".into(),
             taken:    at(NOON),
@@ -49,7 +49,7 @@ fn a_free_identity_is_taken_for_the_asking_session() {
 #[test]
 fn a_live_lease_of_another_session_refuses_a_take_and_names_the_holder() {
     let held = held_by("s1", "2026-11-23T13:00:00Z");
-    let err = decide(Some(&held), "ikku", take("s2", None), at(NOON), 120).unwrap_err();
+    let err = decide(Some(&held), "inge", take("s2", None), at(NOON), 120).unwrap_err();
     assert_eq!(err, Refusal::Held {
         holder:  "s1".into(),
         job:     "identity-lane".into(),
@@ -62,7 +62,7 @@ fn a_live_lease_of_another_session_refuses_a_take_and_names_the_holder() {
 fn a_takeover_of_a_live_lease_names_the_holder_it_replaces() {
     let held = held_by("s1", "2026-11-23T13:00:00Z");
     let Outcome::Write(l) =
-        decide(Some(&held), "ikku", take("s2", Some("s1")), at(NOON), 60).unwrap()
+        decide(Some(&held), "inge", take("s2", Some("s1")), at(NOON), 60).unwrap()
     else {
         panic!("a named takeover writes a record");
     };
@@ -79,7 +79,7 @@ fn a_takeover_naming_somebody_other_than_the_holder_is_refused() {
     // mismatch says the asker's picture is out of date.
     for expires in ["2026-11-23T13:00:00Z", "2026-11-23T11:30:00Z"] {
         let held = held_by("s1", expires);
-        let err = decide(Some(&held), "ikku", take("s2", Some("s9")), at(NOON), 60).unwrap_err();
+        let err = decide(Some(&held), "inge", take("s2", Some("s9")), at(NOON), 60).unwrap_err();
         assert_eq!(err, Refusal::ReplacesAnother {
             named:  "s9".into(),
             holder: "s1".into(),
@@ -90,7 +90,7 @@ fn a_takeover_naming_somebody_other_than_the_holder_is_refused() {
 #[test]
 fn a_lapsed_lease_is_taken_over_and_the_record_says_whose_it_was() {
     let held = held_by("s1", "2026-11-23T11:59:59Z");
-    let Outcome::Write(l) = decide(Some(&held), "ikku", take("s2", None), at(NOON), 60).unwrap()
+    let Outcome::Write(l) = decide(Some(&held), "inge", take("s2", None), at(NOON), 60).unwrap()
     else {
         panic!("a lapsed lease is free to take");
     };
@@ -108,7 +108,7 @@ fn a_lease_lapses_at_its_expiry_exactly() {
 #[test]
 fn the_holder_taking_again_renews_and_keeps_when_it_took_it() {
     let held = held_by("s1", "2026-11-23T12:30:00Z");
-    let Outcome::Write(l) = decide(Some(&held), "ikku", take("s1", None), at(NOON), 120).unwrap()
+    let Outcome::Write(l) = decide(Some(&held), "inge", take("s1", None), at(NOON), 120).unwrap()
     else {
         panic!("the holder's take is a renewal");
     };
@@ -122,7 +122,7 @@ fn a_renewal_is_the_holders_alone() {
     let held = held_by("s1", "2026-11-23T12:30:00Z");
     let Outcome::Write(l) = decide(
         Some(&held),
-        "ikku",
+        "inge",
         Ask::Renew {
             session: "s1",
         },
@@ -137,7 +137,7 @@ fn a_renewal_is_the_holders_alone() {
     assert_eq!(
         decide(
             Some(&held),
-            "ikku",
+            "inge",
             Ask::Renew {
                 session: "s2",
             },
@@ -152,7 +152,7 @@ fn a_renewal_is_the_holders_alone() {
     assert_eq!(
         decide(
             None,
-            "ikku",
+            "inge",
             Ask::Renew {
                 session: "s1",
             },
@@ -172,7 +172,7 @@ fn a_release_removes_the_holders_record_and_refuses_anybody_elses() {
     assert_eq!(
         decide(
             Some(&held),
-            "ikku",
+            "inge",
             Ask::Release {
                 session: "s1",
             },
@@ -184,7 +184,7 @@ fn a_release_removes_the_holders_record_and_refuses_anybody_elses() {
     assert_eq!(
         decide(
             Some(&held),
-            "ikku",
+            "inge",
             Ask::Release {
                 session: "s2",
             },
@@ -198,7 +198,7 @@ fn a_release_removes_the_holders_record_and_refuses_anybody_elses() {
     assert_eq!(
         decide(
             None,
-            "ikku",
+            "inge",
             Ask::Release {
                 session: "s1",
             },
