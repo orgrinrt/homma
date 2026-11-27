@@ -1,0 +1,50 @@
+0f3ef6a chore: lock src changelist 202611270331
+df26dd9 chore: regenerate generated files
+29e62d6 fix: hand an old entrypoint's event to git-shook and fail closed
+3d6f81e chore: lock doc changelist 202611270330
+9309ed5 docs: an old entrypoint hands the event on, and the parses run in order
+d54bb99 docs: open the round handing an old entrypoint on to git-shook
+bbe4181 Merge remote-tracking branch 'origin/dev' into work/homma-shook-1
+e7ec640 feat: a manifest entry an engine does not know is named
+97fd3b8 feat: a manifest entry an engine does not know is named
+5625233 chore: record the test history of the unread entries fix
+0349218 chore: regenerate generated files
+2dc9996 chore: close design round 202611270134
+4012867 chore: lock src changelist 202611270135
+8e8dd76 fix: refuse retired and misspelt manifest entries and say unread ones
+75dbc16 chore: lock doc changelist 202611270134
+2613181 docs: refuse retired and misspelt entries and say the rest on stderr
+f319d17 docs: open the round fixing the unread entries a review found
+e4ec30b chore: record the test history of the git hooks move
+3ad3722 chore: regenerate generated files
+f2a828a chore: close design round 202611270101
+350041c chore: lock src changelist 202611270104
+24b906d chore: drop glob from the launcher lock with the hooks table
+8ac0062 feat: register git hooks with git-shook and name a retired [hooks]
+240d17f chore: lock doc changelist 202611270101
+f00d56f docs: declare git hooks in shook.toml and keep the gate homma's
+d761e10 docs: open the round taking git hooks out of the manifest
+f8bc30a feat: the engine takes the launcher's renki
+a526c54 feat: the engine takes the launcher's renki
+4a03e18 chore: record the test history of the one renki
+cdc2bc4 chore: regenerate generated files
+c8f3b45 chore: close design round 202611270023
+b4f3388 chore: lock src changelist 202611270023
+551a171 fix: take the launcher's renki in the engine as well
+6da8de2 chore: lock doc changelist 202611270023
+2e85e77 docs: give the engine and the launcher one renki
+7b618b2 docs: open the round on one renki for the engine and the launcher
+7bf9d4b chore: record the test history of the unread entries
+796c339 chore: regenerate generated files
+0d68ef3 chore: close design round 202611270005
+cf96db7 chore: lock src changelist 202611270006
+a47e155 feat: take a manifest entry an engine does not know out of the parse
+d302161 chore: lock doc changelist 202611270005
+7309408 docs: take a manifest entry an engine does not know out of the parse
+c66411c docs: open the round on a manifest entry an engine does not know
+d605465 feat: brief an agent once on what bears on its work
+b85caa6 feat: brief an agent once on what bears on its work
+10f51b7 chore: record the test history of the brief fix
+c560196 chore: regenerate generated files
+e334bd4 chore: close design round 202611262325
+0c371dd chore: lock src changelist 202611262326

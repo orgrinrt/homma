@@ -324,6 +324,11 @@ pub mod regen {
     /// Split out from [`run_with`] so a test can assert on the per-repo results
     /// instead of parsing them back out of stdout.
     pub fn regen(cfg: &Config, repo: Option<&str>, opts: Opts) -> Result<RegenReport> {
+        // The registrations are written from the whole of `[agent]`; written without an
+        // entry this engine does not know, they would drop what a newer engine registered.
+        if let Some(why) = cfg.unread_refusal("agent") {
+            anyhow::bail!("{why}");
+        }
         if let Some(name) = repo {
             if cfg.repo(name).is_none() {
                 return Err(util::no_such_member(cfg, name));

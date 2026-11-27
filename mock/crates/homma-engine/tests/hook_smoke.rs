@@ -88,7 +88,7 @@ fn install_where_git_shook_does_not_hold_the_hooks_path_refuses_and_says_what_to
 #[test]
 fn a_git_hooks_table_left_in_the_manifest_is_named_by_doctor_and_status_and_not_refused() {
     let (_d, root, _member) = workspace(&format!(
-        "{MANIFEST}\n[[hooks.pre-commit]]\nrun = \"vibecheck check {{paths}}\"\npaths = [\"*.md\"]\n"
+        "{MANIFEST}\n[[hooks.pre-commit]]\nrun = \"lintwhistle check {{paths}}\"\npaths = [\"*.md\"]\n"
     ));
     homma(&root)
         .args(["hook", "doctor"])
@@ -175,19 +175,95 @@ fn doctor_with_a_repository_names_the_hooks_path_and_what_an_older_homma_left() 
 }
 
 #[test]
-fn an_older_entrypoint_at_pre_push_runs_the_release_gate_with_gits_arguments_and_stdin() {
-    let (_d, root, member) = workspace(MANIFEST);
+fn an_older_entrypoint_where_git_shook_does_not_hold_the_path_fails_closed_and_runs_nothing() {
+    for (event, stdin) in
+        [("pre-commit", ""), ("pre-push", "refs/heads/main abc refs/heads/main def\n")]
+    {
+        let (_d, root, member) = workspace(MANIFEST);
+        let (bin, log) = recorder("homma", 0);
+        homma(&root)
+            .current_dir(&member)
+            .env("PATH", path_with(bin.path()))
+            .args(["hook", "run", event])
+            .write_stdin(stdin)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(format!(
+                "the {event} hook did not run"
+            )))
+            .stderr(predicate::str::contains("git-shook does not hold"));
+        assert!(!log.exists(), "{event}: something ran");
+    }
+}
+
+/// A clone git-shook holds, with a manifest of somebody else's and no install
+/// of homma's yet, and `GIT_SHOOK`'s directory and `bin` on the `PATH`.
+fn held_clone(shook_dir: &Path, bin: &Path) -> (tempfile::TempDir, PathBuf, PathBuf, String) {
+    let (d, root, member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("shook.toml"),
+        "name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"sh\", \"-c\", \"echo PROSE-CHECKED \\\"$@\\\"\", \"x\", \"{paths}\"]\npaths = [\"*.md\"]\n",
+    )
+    .unwrap();
+    let path = format!("{}:{}", bin.display(), path_with(shook_dir));
+    std::fs::create_dir_all(member.join(".git/shook/manifests")).unwrap();
+    std::fs::write(
+        member.join(".git/shook/manifests/other.toml"),
+        "name = \"other\"\n\n[hooks.post-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let adopted = git()
+        .args(["shook", "install", "--yes"])
+        .current_dir(&member)
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(adopted.status.success(), "{adopted:?}");
+    (d, root, member, path)
+}
+
+/// An older entrypoint's call installs and hands the event to git-shook: the
+/// workspace's check runs at `pre-commit` on what is staged, and the gate at
+/// `pre-push` with git's arguments and stdin. Needs `GIT_SHOOK`.
+#[test]
+fn an_older_entrypoint_installs_and_hands_the_event_to_git_shook() {
+    let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK names no git-shook script");
+        return;
+    };
     let (bin, log) = recorder("homma", 0);
+    let (_d, root, member, path) = held_clone(script.parent().unwrap(), bin.path());
+    std::fs::write(member.join("notes.md"), "x").unwrap();
+    assert!(
+        git()
+            .args(["add", "notes.md"])
+            .current_dir(&member)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let out = homma(&root)
+        .current_dir(&member)
+        .env("PATH", &path)
+        .args(["hook", "run", "pre-commit"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("PROSE-CHECKED notes.md"),
+        "{out:?}"
+    );
+    assert!(
+        member.join(".git/shook/manifests/homma.toml").is_file(),
+        "the install ran"
+    );
     homma(&root)
         .current_dir(&member)
-        .env("PATH", path_with(bin.path()))
+        .env("PATH", &path)
         .args(["hook", "run", "pre-push", "origin", "https://example.invalid/r"])
         .write_stdin("refs/heads/main abc refs/heads/main def\n")
         .assert()
-        .success()
-        .stderr(predicate::str::contains(
-            "`homma hook install <repo>` moves it onto git-shook",
-        ));
+        .success();
     assert_eq!(
         std::fs::read_to_string(&log).unwrap().trim(),
         "release gate --hook origin https://example.invalid/r"
@@ -199,33 +275,23 @@ fn an_older_entrypoint_at_pre_push_runs_the_release_gate_with_gits_arguments_and
     );
 }
 
+/// The control: a gate that refuses refuses the push through the same hand-on.
+/// Needs `GIT_SHOOK`.
 #[test]
-fn a_gate_that_refuses_refuses_the_push() {
-    let (_d, root, member) = workspace(MANIFEST);
+fn a_gate_that_refuses_refuses_the_push_after_the_hand_on() {
+    let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK names no git-shook script");
+        return;
+    };
     let (bin, _log) = recorder("homma", 1);
+    let (_d, root, member, path) = held_clone(script.parent().unwrap(), bin.path());
     homma(&root)
         .current_dir(&member)
-        .env("PATH", path_with(bin.path()))
-        .args(["hook", "run", "pre-push"])
+        .env("PATH", &path)
+        .args(["hook", "run", "pre-push", "origin", "https://example.invalid/r"])
         .write_stdin("")
         .assert()
         .failure();
-}
-
-#[test]
-fn an_older_entrypoint_at_any_other_event_runs_nothing_and_passes() {
-    let (_d, root, member) = workspace(MANIFEST);
-    let (bin, log) = recorder("homma", 1);
-    homma(&root)
-        .current_dir(&member)
-        .env("PATH", path_with(bin.path()))
-        .args(["hook", "run", "pre-commit"])
-        .assert()
-        .success()
-        .stderr(predicate::str::contains(
-            "the pre-commit hook was written by an older homma",
-        ));
-    assert!(!log.exists(), "nothing ran");
 }
 
 /// The whole chain once, through the binary: git-shook holds the key, `hook
@@ -395,4 +461,56 @@ fn a_sweep_puts_back_what_was_removed_or_edited_and_is_silent_otherwise() {
         .args(["hook", "doctor", "r"])
         .assert()
         .success();
+}
+
+/// Under a git-shook whose doctor takes any name under `--only` and answers all
+/// good, the sweep does not take that word: a hand-edited entry is put back,
+/// with the line saying git-shook is older than the doctor this needs. Needs
+/// `GIT_SHOOK_OLDER` naming such a git-shook.
+#[test]
+fn a_sweep_under_an_older_git_shook_puts_a_hand_edit_back_and_says_why() {
+    let Some(script) = std::env::var_os("GIT_SHOOK_OLDER").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK_OLDER names no older git-shook script");
+        return;
+    };
+    let path = path_with(script.parent().unwrap());
+    let (_d, root, member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("shook.toml"),
+        "name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(member.join(".git/shook/manifests")).unwrap();
+    std::fs::write(
+        member.join(".git/shook/manifests/other.toml"),
+        "name = \"other\"\n\n[hooks.post-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let adopted = git()
+        .args(["shook", "install", "--yes"])
+        .current_dir(&member)
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(adopted.status.success(), "{adopted:?}");
+    let sweep = || {
+        homma(&root)
+            .env("PATH", &path)
+            .args(["hook", "install"])
+            .assert()
+    };
+    sweep().success();
+    std::fs::write(
+        member.join(".git/shook/entries/pre-commit/prose"),
+        "\nsh\n-c\necho tampered\n",
+    )
+    .unwrap();
+    sweep()
+        .success()
+        .stdout(predicate::str::contains("takes any name under --only"))
+        .stdout(predicate::str::contains("registered with git-shook"));
+    assert_eq!(
+        std::fs::read_to_string(member.join(".git/shook/entries/pre-commit/prose")).unwrap(),
+        "\ntrue\n"
+    );
 }

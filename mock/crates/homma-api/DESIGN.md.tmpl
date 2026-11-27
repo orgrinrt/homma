@@ -76,7 +76,9 @@ not list, sorted; the status is what reads it, and the workspace keeps no copy.
 Nothing is refused for such a key yet, so a manifest whose other programs keep
 keys there parses and goes on working while they move them out; a later release
 refuses such a key as every other table does.
-`[agent]` holds two tables and nothing else: `hooks`, read as `AgentHooks`, and
+`[agent]` holds two tables and nothing else that this engine reads, an entry a
+newer engine reads being taken out before `AgentTable` sees it, as the design's
+section on a manifest entry an engine does not know says: `hooks`, read as `AgentHooks`, and
 `nudges`, read as `Nudges`, a list of `Nudge` rows each checked whole when it
 loads. A `Nudge` is built through `Nudge::new` from a `NudgeRow` and nowhere
 else, so a row whose regular expressions do not compile, whose program climbs

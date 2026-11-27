@@ -59,8 +59,9 @@ pub fn take(table: &mut toml::Table, file: &str) -> Vec<Retired> {
 ///
 /// The strict parse runs first, and a manifest it takes carries nothing
 /// retired. Only where it refuses is the text read as a raw table, the retired
-/// ones taken out and the rest parsed strictly. Where nothing was retired, the
-/// first refusal is returned as it was, with its line.
+/// ones named and their lines blanked, and what is left handed to the probe
+/// for entries this engine does not read, as a manifest with nothing retired
+/// is handed to it whole.
 pub(super) fn parse(text: &str) -> Result<Config, ConfigError> {
     let refused = match toml::from_str::<Config>(text) {
         Ok(cfg) => return Ok(cfg),
@@ -71,11 +72,12 @@ pub(super) fn parse(text: &str) -> Result<Config, ConfigError> {
     };
     let retired = take(&mut raw, MANIFEST);
     if retired.is_empty() {
-        return Err(ConfigError::Parse(refused));
+        return super::unread::parse(text);
     }
-    let mut cfg: Config = toml::Value::Table(raw)
-        .try_into()
-        .map_err(ConfigError::Parse)?;
+    // blanked rather than taken out of the parsed value, so what the probe
+    // refuses after it still names its line as written
+    let names: Vec<String> = retired.iter().map(|r| r.table.clone()).collect();
+    let mut cfg = super::unread::parse(&super::unread::blank::blank(text, &names))?;
     cfg.retired = retired;
     Ok(cfg)
 }
