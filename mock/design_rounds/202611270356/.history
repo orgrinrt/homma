@@ -1,0 +1,50 @@
+fdf5506 chore: lock src changelist 202611270356
+efe4741 test: read claude-shook's registration as it is now
+f1fbced chore: lock doc changelist 202611270356
+4f42c1e docs: no document change for the registration's shape
+c4f901b docs: open the round reading claude-shook's registration as it is
+c029ff2 chore: record the test history after merging the fixes
+a2ed007 Merge branch 'work/homma-shook-2' into work/homma-shook-3
+047bac6 chore: record the test history of the doctor probe
+bab76f2 chore: close design round 202611270340
+a39ddbf chore: lock src changelist 202611270340
+b839238 chore: regenerate generated files
+b510d30 fix: take no all good from a git-shook doctor that checks no name
+5a5d75c chore: lock doc changelist 202611270340
+da3006d docs: find an older git-shook by a doctor probe
+d71fbb9 docs: open the round finding an older git-shook by a probe
+948857e Merge branch 'work/homma-shook-1' into work/homma-shook-2
+418a386 chore: record the test history of the hand-on fix
+2662999 chore: close design round 202611270330
+0f3ef6a chore: lock src changelist 202611270331
+df26dd9 chore: regenerate generated files
+29e62d6 fix: hand an old entrypoint's event to git-shook and fail closed
+3d6f81e chore: lock doc changelist 202611270330
+9309ed5 docs: an old entrypoint hands the event on, and the parses run in order
+d54bb99 docs: open the round handing an old entrypoint on to git-shook
+bbe4181 Merge remote-tracking branch 'origin/dev' into work/homma-shook-1
+cdc9788 chore: record the test history of the agent hooks move
+f483b6c chore: regenerate generated files
+cd399fd chore: close design round 202611270250
+b73c583 chore: lock src changelist 202611270252
+177f8e4 chore: regenerate generated files
+c611bff feat: run the agent hooks on claude-shook, one call per event
+4f1a582 chore: lock doc changelist 202611270250
+076c49b docs: the agent hooks run on claude-shook, one call per event
+1ab6c9f docs: open the round moving the agent hooks onto claude-shook
+e7ec640 feat: a manifest entry an engine does not know is named
+97fd3b8 feat: a manifest entry an engine does not know is named
+05f6806 chore: record the test history of the git hooks sweep
+39ddca2 chore: regenerate generated files
+a71888c chore: close design round 202611270155
+94260c8 chore: lock src changelist 202611270156
+53119f8 feat: sweep every member's git hooks back where they are not current
+35c4906 chore: lock doc changelist 202611270155
+6845560 docs: sweep every member's git hooks back at a session start
+b6b130e docs: open the round putting git hooks back at every session start
+5625233 chore: record the test history of the unread entries fix
+0349218 chore: regenerate generated files
+2dc9996 chore: close design round 202611270134
+4012867 chore: lock src changelist 202611270135
+8e8dd76 fix: refuse retired and misspelt manifest entries and say unread ones
+75dbc16 chore: lock doc changelist 202611270134
