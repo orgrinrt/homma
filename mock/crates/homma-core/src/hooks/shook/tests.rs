@@ -166,6 +166,35 @@ fn a_workspace_with_no_manifest_registers_the_gate_alone() {
     );
 }
 
+/// A seat whose manifest names a file that is not there: the install writes no
+/// workspace manifest, and one of another name already in the member stays as
+/// it was, neither put back nor taken out.
+#[test]
+fn a_workspace_with_no_manifest_leaves_another_manifest_in_the_member_as_it_was() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    let log = bin.path().join("log");
+    fake_shook(bin.path(), &log);
+    let manifests = manifests_dir(d.path()).unwrap();
+    std::fs::create_dir_all(&manifests).unwrap();
+    let earlier = "name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n";
+    std::fs::write(manifests.join("prose.toml"), earlier).unwrap();
+
+    let i = install_with(d.path(), None, Some(bin.path())).unwrap();
+
+    assert_eq!(i.registered, vec!["homma"]);
+    let mut names: Vec<String> = std::fs::read_dir(&manifests)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["homma.toml", "prose.toml"]);
+    assert_eq!(
+        std::fs::read_to_string(manifests.join("prose.toml")).unwrap(),
+        earlier
+    );
+}
+
 #[test]
 fn an_install_where_git_shook_does_not_hold_the_path_refuses_and_changes_nothing() {
     let d = repo();

@@ -1,0 +1,50 @@
+17c753b chore: lock src changelist 202611270541
+86b52cf test: pin where git_hooks is read and what an install leaves
+f5a0f7c chore: lock doc changelist 202611270540
+a2fd5ca docs: say where git_hooks is read and what an install leaves
+d320235 docs: open the round on what an install copies where no file is named
+04ff374 chore: record the test history of the chain entry fix
+d3a15c2 chore: close design round 202611270400
+9737887 chore: lock src changelist 202611270401
+812a846 chore: regenerate generated files
+94d6563 fix: hand nothing on from an old entry in git-shook's chain
+5c92a7f chore: lock doc changelist 202611270400
+cb20e05 docs: an old chain entry installs and runs the gate, handing nothing on
+76e8c4d docs: open the round not handing an old chain entry on
+418a386 chore: record the test history of the hand-on fix
+2662999 chore: close design round 202611270330
+0f3ef6a chore: lock src changelist 202611270331
+df26dd9 chore: regenerate generated files
+29e62d6 fix: hand an old entrypoint's event to git-shook and fail closed
+3d6f81e chore: lock doc changelist 202611270330
+9309ed5 docs: an old entrypoint hands the event on, and the parses run in order
+d54bb99 docs: open the round handing an old entrypoint on to git-shook
+bbe4181 Merge remote-tracking branch 'origin/dev' into work/homma-shook-1
+e7ec640 feat: a manifest entry an engine does not know is named
+97fd3b8 feat: a manifest entry an engine does not know is named
+5625233 chore: record the test history of the unread entries fix
+0349218 chore: regenerate generated files
+2dc9996 chore: close design round 202611270134
+4012867 chore: lock src changelist 202611270135
+8e8dd76 fix: refuse retired and misspelt manifest entries and say unread ones
+75dbc16 chore: lock doc changelist 202611270134
+2613181 docs: refuse retired and misspelt entries and say the rest on stderr
+f319d17 docs: open the round fixing the unread entries a review found
+e4ec30b chore: record the test history of the git hooks move
+3ad3722 chore: regenerate generated files
+f2a828a chore: close design round 202611270101
+350041c chore: lock src changelist 202611270104
+24b906d chore: drop glob from the launcher lock with the hooks table
+8ac0062 feat: register git hooks with git-shook and name a retired [hooks]
+240d17f chore: lock doc changelist 202611270101
+f00d56f docs: declare git hooks in shook.toml and keep the gate homma's
+d761e10 docs: open the round taking git hooks out of the manifest
+f8bc30a feat: the engine takes the launcher's renki
+a526c54 feat: the engine takes the launcher's renki
+4a03e18 chore: record the test history of the one renki
+cdc2bc4 chore: regenerate generated files
+c8f3b45 chore: close design round 202611270023
+b4f3388 chore: lock src changelist 202611270023
+551a171 fix: take the launcher's renki in the engine as well
+6da8de2 chore: lock doc changelist 202611270023
+2e85e77 docs: give the engine and the launcher one renki

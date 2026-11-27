@@ -247,13 +247,16 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     })
 }
 
-/// What an older homma's entrypoint calls. It installs the clone git ran it
-/// in, then hands the event to the dispatcher git-shook wrote for it, with
-/// git's arguments and stdin, and fails closed where the install refuses.
+/// What an older homma's entry in git-shook's chain calls. It installs the
+/// clone git ran it in and, at the gate's event, runs the gate with git's
+/// arguments and stdin; the chain runs its other entries. It fails closed where
+/// the install refuses.
 fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outcome> {
     // FIXME(remove_homma_hook_run_once_no_clone_carries_an_older_entrypo): the
     // verb answers only what an older homma installed, and goes once no clone has one.
-    eprintln!("homma: the {event} hook was written by an older homma; moving it onto git-shook");
+    eprintln!(
+        "homma: the {event} hook was written by an older homma; moving it onto git-shook, whose entries new to this clone run from the next event"
+    );
     // a refusal fails closed: a hook that ran nothing must not read as passed
     let refused = |why: String| -> Result<Outcome> {
         eprintln!("homma: the {event} hook did not run: {why}");
@@ -276,16 +279,18 @@ fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outc
     if let Err(e) = hooks::install(&root, workspace.as_ref()) {
         return refused(e.to_string());
     }
-    // the dispatcher the install had git-shook write, with git's arguments and
-    // its stdin; an event git-shook has none for registers nothing
-    let dispatcher = hooks::shook::hooks_dir(&root)?.join(event);
-    if !dispatcher.is_file() {
+    // the install held, so git-shook holds the path and this was an entry of its
+    // chain, which runs its other entries itself: nothing is handed on, which
+    // would run them twice, and only the gate the running entry was is run here
+    if event != hooks::GATE_EVENT {
         return finish(cli, Report {
             ok:    true,
             lines: Vec::new(),
         });
     }
-    let status = Command::new(&dispatcher)
+    let (program, gate) = hooks::GATE.split_first().expect("the gate names a program");
+    let status = Command::new(program)
+        .args(gate)
         .args(args)
         .current_dir(&root)
         .status()?;
