@@ -1,0 +1,50 @@
+b73c583 chore: lock src changelist 202611270252
+177f8e4 chore: regenerate generated files
+c611bff feat: run the agent hooks on claude-shook, one call per event
+4f1a582 chore: lock doc changelist 202611270250
+076c49b docs: the agent hooks run on claude-shook, one call per event
+1ab6c9f docs: open the round moving the agent hooks onto claude-shook
+05f6806 chore: record the test history of the git hooks sweep
+39ddca2 chore: regenerate generated files
+a71888c chore: close design round 202611270155
+94260c8 chore: lock src changelist 202611270156
+53119f8 feat: sweep every member's git hooks back where they are not current
+35c4906 chore: lock doc changelist 202611270155
+6845560 docs: sweep every member's git hooks back at a session start
+b6b130e docs: open the round putting git hooks back at every session start
+e4ec30b chore: record the test history of the git hooks move
+3ad3722 chore: regenerate generated files
+f2a828a chore: close design round 202611270101
+350041c chore: lock src changelist 202611270104
+24b906d chore: drop glob from the launcher lock with the hooks table
+8ac0062 feat: register git hooks with git-shook and name a retired [hooks]
+240d17f chore: lock doc changelist 202611270101
+f00d56f docs: declare git hooks in shook.toml and keep the gate homma's
+d761e10 docs: open the round taking git hooks out of the manifest
+d605465 feat: brief an agent once on what bears on its work
+b85caa6 feat: brief an agent once on what bears on its work
+10f51b7 chore: record the test history of the brief fix
+c560196 chore: regenerate generated files
+e334bd4 chore: close design round 202611262325
+0c371dd chore: lock src changelist 202611262326
+b0db6d9 fix: say a brief once a ttl, keep whole lines and bound its size
+509c7d8 chore: lock doc changelist 202611262325
+5f85d32 docs: say a brief once a ttl, keep whole lines and bound its size
+1269710 docs: open a round on saying a brief once and bounding it
+0a76387 chore: record the test history of the merged tree
+2befa4e Merge remote-tracking branch 'origin/dev' into work/homma-nudges
+2471783 chore: regenerate generated files
+f335a86 chore: close design round 202611262245
+98887b2 chore: lock src changelist 202611262246
+e7ff685 feat: brief a unit of work on what bears on it
+43de91c feat: declare a nudge as a row of the agent table
+9221faa feat: declare a nudge as a row of the agent table
+4d39599 chore: lock doc changelist 202611262245
+a7464bc docs: design a brief of what bears on a unit of work
+1ddc5d4 docs: open the round on a brief of what bears on the work
+859636a chore: record the test history of the fix
+ea23a9b chore: regenerate generated files
+dd1ca44 chore: close design round 202611262230
+d42a2cb chore: lock src changelist 202611262231
+c76f9d3 fix: let a marker answer only in its two exact shapes
+f29c87e chore: lock doc changelist 202611262230
