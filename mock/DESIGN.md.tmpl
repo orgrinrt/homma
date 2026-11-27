@@ -1612,7 +1612,11 @@ where none was unread the first refusal is returned as it was, with its line. Th
 second parse reads the manifest's own text with each unread entry's lines
 blanked, so a refusal of what is left keeps its line too; an entry whose shape
 the line reading does not follow, a value over several lines, is taken out of
-the parsed value instead, as before.
+the parsed value instead, as before. A retired table comes out before any of
+this: where the strict parse refuses and the manifest carries `[hooks]`, its
+lines are blanked and it is named in `retired`, and the probe then reads what is
+left, so `[hooks]` keeps its own words and is never read as an unread entry or
+as a misspelling of one.
 
 `homma agent regen` writes the agent host's registrations from the whole of
 `[agent]`, so it refuses while any entry under `[agent]` is unread, rather than
