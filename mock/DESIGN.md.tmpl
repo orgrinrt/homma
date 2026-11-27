@@ -921,7 +921,10 @@ once.
 
 The engine and the launcher take one renki: renki and renki-dirs at the
 published version the launcher takes, so one renki is built for both and a fix
-to it reaches both halves at once. The two move to a newer renki together.
+to it reaches both halves at once. Each manifest requires the renki crates
+exactly, `=x.y.z`, since a bare prerelease number is a caret requirement and
+would take newer releases without the number moving, and a test holds each
+manifest to it. The two move to a newer renki together.
 
 renki builds on unix only, so the tools are a part of homma that exists on unix
 only. Off unix the engine builds without them, and every command that would
