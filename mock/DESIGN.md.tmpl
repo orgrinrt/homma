@@ -919,6 +919,12 @@ sits, and nothing else is a tool. Two checks are homma's own, because renki does
 not make them: the descriptor's name is its directory's, and a verb is named
 once.
 
+The engine and the launcher take one renki: renki and renki-dirs at the source
+and revision the launcher takes, so one renki is built for both and a fix to it
+reaches both halves at once. While that source is renki's git, the engine,
+which is not published, takes it as well, and the two move to a published
+renki together.
+
 renki builds on unix only, so the tools are a part of homma that exists on unix
 only. Off unix the engine builds without them, and every command that would
 reach a tool, `homma tools`, `homma tools check`, `homma tools run`, a built-in
