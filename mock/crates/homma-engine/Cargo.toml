@@ -47,10 +47,10 @@ muisti = { git = "ssh://git@github.com/orgrinrt/muisti", branch = "dev", default
 # with, since `renki` keeps its own resolution of that root to itself. renki builds on unix only, and
 # so the engine reaches all three there only; elsewhere the tools are refused.
 [target.'cfg(unix)'.dependencies]
-# renki and renki-dirs at the version the launcher takes, so the two halves build one renki;
+# renki and renki-dirs at the exact version the launcher takes, so the two halves build one renki;
 # `tests/one_renki.rs` fails while they differ.
-renki = "0.0.5-rc.4"
-renki-dirs = "0.0.2"
+renki = "=0.0.5-rc.4"
+renki-dirs = "=0.0.2"
 notko = { version = "0.0.1", default-features = false }
 # A child the engine may have to end leads a process group, and the group is ended by a signal sent
 # from homma, never by whatever `kill` is on `PATH`.
