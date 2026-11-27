@@ -498,7 +498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2627,8 +2627,9 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "renki"
-version = "0.0.5-rc.3"
-source = "git+https://github.com/orgrinrt/renki?rev=15b1dd2#15b1dd277d50368386f4d2aaca254b86bf930c75"
+version = "0.0.5-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97dd3c97f63e5a2c051a6c7798bb715870261efec91f1e9a2f1a4b1ca1937990"
 dependencies = [
  "notko",
  "renki-config",
@@ -2641,7 +2642,8 @@ dependencies = [
 [[package]]
 name = "renki-config"
 version = "0.0.2"
-source = "git+https://github.com/orgrinrt/renki?rev=15b1dd2#15b1dd277d50368386f4d2aaca254b86bf930c75"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51f398fb4ec01ac3416363e09d238e9bd0fd563230330bd6ba1fa92840146be"
 dependencies = [
  "notko",
 ]
@@ -2649,7 +2651,8 @@ dependencies = [
 [[package]]
 name = "renki-dirs"
 version = "0.0.2"
-source = "git+https://github.com/orgrinrt/renki?rev=15b1dd2#15b1dd277d50368386f4d2aaca254b86bf930c75"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250b59018b615caeafde41cade76b67c87be88ba525a73ef8a3e5a93ba0d29e2"
 dependencies = [
  "notko",
 ]
@@ -2758,7 +2761,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2817,7 +2820,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3112,10 +3115,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3696,7 +3699,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
