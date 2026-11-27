@@ -222,11 +222,11 @@ fn held_clone(shook_dir: &Path, bin: &Path) -> (tempfile::TempDir, PathBuf, Path
     (d, root, member, path)
 }
 
-/// An older entrypoint's call installs and hands the event to git-shook: the
-/// workspace's check runs at `pre-commit` on what is staged, and the gate at
-/// `pre-push` with git's arguments and stdin. Needs `GIT_SHOOK`.
+/// An older chain entry's call installs and hands nothing on: at `pre-commit`
+/// the workspace's check, new to the clone, does not run in this event, and at
+/// `pre-push` the gate runs with git's arguments and stdin. Needs `GIT_SHOOK`.
 #[test]
-fn an_older_entrypoint_installs_and_hands_the_event_to_git_shook() {
+fn an_older_chain_entry_installs_and_runs_the_gate_and_hands_nothing_on() {
     let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
         eprintln!("skipped: GIT_SHOOK names no git-shook script");
         return;
@@ -250,8 +250,8 @@ fn an_older_entrypoint_installs_and_hands_the_event_to_git_shook() {
         .unwrap();
     assert!(out.status.success(), "{out:?}");
     assert!(
-        String::from_utf8_lossy(&out.stdout).contains("PROSE-CHECKED notes.md"),
-        "{out:?}"
+        !String::from_utf8_lossy(&out.stdout).contains("PROSE-CHECKED"),
+        "an entry new to the clone ran in the event that registered it: {out:?}"
     );
     assert!(
         member.join(".git/shook/manifests/homma.toml").is_file(),
@@ -512,5 +512,94 @@ fn a_sweep_under_an_older_git_shook_puts_a_hand_edit_back_and_says_why() {
     assert_eq!(
         std::fs::read_to_string(member.join(".git/shook/entries/pre-commit/prose")).unwrap(),
         "\ntrue\n"
+    );
+}
+
+/// The double run the hand-on made: an older homma's clone-local manifest entry
+/// calling `homma hook run pre-commit`, beside a member's own entry, on a real
+/// commit under this engine. The member's entry runs once. Needs `GIT_SHOOK`.
+#[test]
+fn the_first_commit_after_the_upgrade_runs_each_entry_once() {
+    let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK names no git-shook script");
+        return;
+    };
+    let (_d, root, member) = workspace(MANIFEST);
+    let ran = member.join(".git/ran");
+    std::fs::write(
+        member.join("shook.toml"),
+        format!(
+            "name = \"m\"\n\n[hooks.pre-commit]\nrun = [\"sh\", \"-c\", \"echo A-RAN >> {}\"]\n",
+            ran.display()
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(member.join(".git/shook/manifests")).unwrap();
+    std::fs::write(
+        member.join(".git/shook/manifests/homma.toml"),
+        "name = \"homma\"\n\n[hooks.pre-commit]\nrun = [\"homma\", \"hook\", \"run\", \"pre-commit\"]\n",
+    )
+    .unwrap();
+    // `homma` on the chain's PATH is this engine, at this workspace
+    let bin = tempfile::tempdir().unwrap();
+    homma_fixture::script(
+        &bin.path().join("homma"),
+        &format!(
+            "#!/bin/sh\nexec '{}' --dir '{}' \"$@\"\n",
+            assert_cmd::cargo::cargo_bin("homma-engine").display(),
+            root.display()
+        ),
+        0o755,
+    );
+    let path = format!(
+        "{}:{}",
+        bin.path().display(),
+        path_with(script.parent().unwrap())
+    );
+    // git-shook reads a tracked shook.toml, so the member's is committed before the install
+    assert!(
+        git()
+            .args(["add", "shook.toml"])
+            .current_dir(&member)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git()
+            .args(["commit", "-qm", "m"])
+            .current_dir(&member)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let adopted = git()
+        .args(["shook", "install", "--yes"])
+        .current_dir(&member)
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(adopted.status.success(), "{adopted:?}");
+    std::fs::write(member.join("a.txt"), "x").unwrap();
+    assert!(
+        git()
+            .args(["add", "."])
+            .current_dir(&member)
+            .env("PATH", &path)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let committed = git()
+        .args(["commit", "-qm", "one"])
+        .current_dir(&member)
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(committed.status.success(), "{committed:?}");
+    assert_eq!(
+        std::fs::read_to_string(&ran).unwrap(),
+        "A-RAN\n",
+        "the member's entry ran more than once"
     );
 }
