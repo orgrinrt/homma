@@ -256,9 +256,8 @@ pub mod regen {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub needs_a_human:     Vec<String>,
         /// Agent hooks no session opened at the root will run: a repository
-        /// hook nothing registers or the host could not run, a declared row
-        /// naming nothing it can run, and a hook whose wrapper would land on a
-        /// file homma did not write. **Each fails the run.**
+        /// hook nothing registers, the host could not run or a row could not
+        /// run as words, and a declared row naming nothing it can run. **Each fails the run.**
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub hooks_not_carried: Vec<String>,
         /// The workspace's own rules, skills and personas, rendered by the
@@ -305,9 +304,9 @@ pub mod regen {
     /// Full pipeline runner. Stage 1 runs `cargo mock` in each member
     /// repo; stage 2 compares and places the shared tool configs; stage 3
     /// aggregates per-repo rules and hooks into the workspace `.claude/`.
-    /// After the per-repo loop it writes the workspace gate and merges the hook
-    /// entries into the clone's `settings.local.json`, sweeping its own out of
-    /// `settings.json`.
+    /// After the per-repo loop it writes every agent hook as a row of the
+    /// manifest claude-shook registers, and sweeps the registrations and
+    /// wrappers an older homma wrote.
     pub fn run_with(
         cfg: &Config,
         repo: Option<&str>,
@@ -350,6 +349,11 @@ pub mod regen {
                 cfg.layer_errors.join("\n")
             ));
         }
+
+        // The agent hooks move only where claude-shook can take them: asked
+        // before anything under `.claude/` is written or removed.
+        let front = if opts.skip_aggregate { None } else { crate::cmd::agent_shook::front() };
+        let hooks_refused = !opts.skip_aggregate && front.is_none();
 
         let workspace = &cfg.workspace.path;
 
@@ -410,10 +414,9 @@ pub mod regen {
             }
         };
 
-        let mut settings_entries: Vec<aggregate::HookEntry> = Vec::new();
-        // The repos whose hooks this run actually aggregated. A repo the
-        // manifest declares but this workspace has not cloned is absent, and
-        // its existing registrations are left alone rather than swept.
+        let mut rows: Vec<aggregate::Row> = Vec::new();
+        // The repos whose hooks this run aggregated in its own pass; the rest
+        // are read as they stand once the loop is done.
         let mut visited: Vec<String> = Vec::new();
         let mut results = Vec::new();
         let mut had_failure = false;
@@ -503,6 +506,12 @@ pub mod regen {
             let claude_present = local.join(".claude").is_dir();
             let (aggregated_hooks, aggregate_stage, stage_failed) = if opts.skip_aggregate {
                 (0, StageStatus::Skipped("--skip-aggregate".into()), false)
+            } else if hooks_refused {
+                (
+                    0,
+                    StageStatus::Skipped("claude-shook is not on PATH".into()),
+                    false,
+                )
             } else if !claude_present {
                 (
                     0,
@@ -510,7 +519,7 @@ pub mod regen {
                     false,
                 )
             } else {
-                match aggregate::aggregate_repo(&root, name, &local, &mut settings_entries) {
+                match aggregate::aggregate_repo(&root, name, &local, &mut rows) {
                     Ok(a) => {
                         visited.push(name.clone());
                         // Failed, and still not a reason to stop: the hooks
@@ -551,12 +560,36 @@ pub mod regen {
             }
         }
 
-        // After the loop: write the workspace-level mockspace gate hook and
-        // merge all entries (per-repo aggregated + workspace gate) into
-        // settings.local.json.
-        if !opts.skip_aggregate {
+        // After the loop: the workspace gate, every member, the declared rows,
+        // the nudges and the git hooks' sweep, as one manifest for claude-shook.
+        if !opts.skip_aggregate && !hooks_refused {
             let known_repos: Vec<&str> = cfg.repos.keys().map(String::as_str).collect();
-            let visited_repos: Vec<&str> = visited.iter().map(String::as_str).collect();
+            // The one manifest carries every member, so a member this run did
+            // not aggregate, by a filter, a failed `cargo mock` or a stop, is
+            // read as its hooks stand on disk. One that cannot be read leaves
+            // the agent hooks as they were, since writing without it would take
+            // its guards out of the clone.
+            let mut incomplete: Option<String> = None;
+            for (name, repo_cfg) in &cfg.repos {
+                if visited.contains(name) {
+                    continue;
+                }
+                let local = util::resolve_local_path(workspace, &repo_cfg.local_path);
+                if !local.join(".claude").is_dir() {
+                    continue;
+                }
+                match aggregate::aggregate_repo(&root, name, &local, &mut rows) {
+                    Ok(a) => {
+                        if !a.problems.is_empty() {
+                            had_failure = true;
+                        }
+                        hooks_not_carried.extend(a.problems);
+                    },
+                    Err(e) => {
+                        incomplete.get_or_insert(format!("{name}: {e:#}"));
+                    },
+                }
+            }
             // The manifest's own `local_path`, workspace-relative, rather than
             // the absolute form this run resolved. An absolute path in the
             // gate script names where the clone sat when it generated, and
@@ -566,76 +599,57 @@ pub mod regen {
                 .iter()
                 .map(|(name, rc)| (name.clone(), rc.local_path.to_string_lossy().to_string()))
                 .collect();
-            let gate_entry = match crate::cmd::gates::install_workspace_gate(&root, &repo_paths) {
-                Ok(e) => Some(e),
+            let mut all: Vec<aggregate::Row> = Vec::new();
+            match crate::cmd::gates::install_workspace_gate(&root, &repo_paths) {
+                Ok(row) => all.push(row),
                 Err(e) => {
-                    had_failure = true;
-                    results.push(RegenResult {
-                        repo:             "(workspace gate)".into(),
-                        cargo_mock:       StageStatus::Skipped("not a repo".into()),
-                        configs:          Vec::new(),
-                        aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
-                        aggregated_hooks: 0,
-                    });
-                    None
+                    incomplete.get_or_insert(format!("the workspace gate: {e:#}"));
                 },
-            };
+            }
+            all.append(&mut rows);
+            let declared =
+                crate::cmd::declared::declared_rows(&root, &cfg.agent, &repo_paths, &cfg.scope);
+            if !declared.problems.is_empty() {
+                had_failure = true;
+            }
+            hooks_not_carried.extend(declared.problems);
+            all.extend(declared.rows);
+            all.push(crate::cmd::hook::sweep_row());
+            let all = crate::cmd::agent_shook::numbered(all);
 
-            // The manifest's own rows, under the same mark as everything above,
-            // so they are kept and removed by the same rule. Installed on every
-            // run, a one-repository run included, since the merge below sweeps
-            // their registrations and writes back only what it is handed.
-            //
-            // **A failure here leaves both settings files as they were**: the merge
-            // would sweep the rows' registrations and have none to write back.
-            let declared_ok = match crate::cmd::declared::install_declared(
-                &root,
-                &cfg.agent,
-                &repo_paths,
-                &cfg.scope,
-            ) {
-                Ok(d) => {
-                    if !d.problems.is_empty() {
-                        had_failure = true;
-                    }
-                    hooks_not_carried.extend(d.problems);
-                    settings_entries.extend(d.entries);
-                    true
+            // Registered first, swept after: a failure between the two leaves
+            // a hook registered twice rather than nowhere.
+            let moved = match (incomplete, front.as_deref()) {
+                (Some(why), _) => Err(anyhow!("{why}; the agent hooks are left as they were")),
+                (None, Some(front)) => {
+                    crate::cmd::agent_shook::install(&root, front, &all)
+                        .and_then(|()| {
+                            aggregate::retire_wrappers(&root, crate::cmd::gates::GATE_SCRIPT_NAME)
+                        })
+                        .and_then(|()| aggregate::merge_settings(&root, &known_repos))
                 },
-                Err(e) => {
-                    had_failure = true;
-                    results.push(RegenResult {
-                        repo:             "(declared hooks)".into(),
-                        cargo_mock:       StageStatus::Skipped("not a repo".into()),
-                        configs:          Vec::new(),
-                        aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
-                        aggregated_hooks: 0,
-                    });
-                    false
-                },
+                (None, None) => Err(anyhow!(crate::cmd::agent_shook::no_front())),
             };
-
-            let merged = if declared_ok {
-                aggregate::merge_settings(
-                    &root,
-                    &known_repos,
-                    &visited_repos,
-                    &settings_entries,
-                    gate_entry.as_ref(),
-                )
-            } else {
-                Ok(())
-            };
-            if let Err(e) = merged {
+            if let Err(e) = moved {
                 had_failure = true;
                 results.push(RegenResult {
-                    repo:             "(settings)".into(),
+                    repo:             "(agent hooks)".into(),
                     cargo_mock:       StageStatus::Skipped("not a repo".into()),
                     configs:          Vec::new(),
                     aggregate:        StageStatus::Failed(truncate(format!("{e:#}"), 256)),
                     aggregated_hooks: 0,
                 });
             }
+        }
+        if hooks_refused {
+            had_failure = true;
+            results.push(RegenResult {
+                repo:             "(agent hooks)".into(),
+                cargo_mock:       StageStatus::Skipped("not a repo".into()),
+                configs:          Vec::new(),
+                aggregate:        StageStatus::Failed(crate::cmd::agent_shook::no_front()),
+                aggregated_hooks: 0,
+            });
         }
 
         if let Some(e) = templates_err {

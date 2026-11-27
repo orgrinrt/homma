@@ -175,6 +175,10 @@ api_url = "https://api.github.com"
 
     bin()
         .env("HOME", &home)
+        .env(
+            "PATH",
+            homma_fixture::front_on_path(&dir.path().join("bin")),
+        )
         .args(["--config", cfg.to_str().unwrap(), "agent", "regen"])
         .args(["--skip-cargo-mock"])
         .assert()
@@ -296,6 +300,10 @@ workspace = "{}"
 
     let out = bin()
         .env("HOME", &home)
+        .env(
+            "PATH",
+            homma_fixture::front_on_path(&dir.path().join("bin")),
+        )
         .args(["--config", cfg.to_str().unwrap(), "agent", "regen"])
         .output()
         .expect("the binary runs");
@@ -309,8 +317,8 @@ workspace = "{}"
     );
     // and it wrote, rather than succeeding by finding nothing to do.
     assert!(
-        mine.join(".claude").join("settings.local.json").is_file(),
-        "the pass reported success and wrote no settings: {stderr}"
+        mine.join(".claude/shook/manifests/homma.toml").is_file(),
+        "the pass reported success and wrote no manifest: {stderr}"
     );
 }
 
@@ -623,6 +631,10 @@ api_url = "https://api.github.com"
 
     let out = bin()
         .env("HOME", &home)
+        .env(
+            "PATH",
+            homma_fixture::front_on_path(&dir.path().join("bin")),
+        )
         .args(["--config", cfg.to_str().unwrap(), "agent", "regen"])
         .args(["--skip-cargo-mock"])
         .output()

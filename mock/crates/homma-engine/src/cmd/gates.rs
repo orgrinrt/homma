@@ -35,13 +35,14 @@
 
 use anyhow::{Context, Result};
 
-use crate::cmd::aggregate::HookEntry;
+use crate::cmd::agent_shook::{self, ROOT, Row};
 
-/// File name for the generated workspace gate script.
-const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
+/// File name for the generated workspace gate script, which the sweep of an
+/// older homma's wrappers leaves, since the gate's row runs it.
+pub(crate) const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 
-/// Generate the workspace mockspace gate script and return the
-/// `settings.local.json` entry registering it.
+/// Generate the workspace mockspace gate script and return the row running
+/// it.
 ///
 /// The script is written to `<workspace>/.claude/hooks/`. The returned
 /// entry is appended to `hooks.PreToolUse[]` with matcher `Bash` so it
@@ -57,7 +58,7 @@ const GATE_SCRIPT_NAME: &str = "_workspace--mockspace-gate.sh";
 pub(crate) fn install_workspace_gate(
     root: &homma_api::Root,
     repos: &[(String, String)],
-) -> Result<HookEntry> {
+) -> Result<Row> {
     // Proven, like every other write this pass performs. This one installs an
     // executable the agent harness then runs on every tool call, which is the
     // write with the largest consequence in the program.
@@ -95,15 +96,23 @@ pub(crate) fn install_workspace_gate(
         .with_context(|| format!("writing {}", target.as_path().display()))?;
     #[cfg(unix)]
     root.set_executable(&target)?;
-    // `${CLAUDE_PROJECT_DIR}`, for the same reason the per-repo wrappers use
-    // it: the host substitutes the project root regardless of the working
-    // directory the hook runs in, so the registration stays right when the
-    // clone is moved or copied.
-    Ok(HookEntry {
-        event:   "PreToolUse".to_string(),
-        matcher: "Bash".to_string(),
-        command: format!("\"${{CLAUDE_PROJECT_DIR}}\"/.claude/hooks/{GATE_SCRIPT_NAME}"),
-    })
+    // By `{root}`, which the front reads as the workspace root wherever the
+    // clone is moved.
+    Ok(gate_row())
+}
+
+/// The gate's row: first at `PreToolUse` for `Bash`, running the script.
+pub(crate) fn gate_row() -> Row {
+    Row {
+        event:    "PreToolUse".to_string(),
+        name:     GATE_SCRIPT_NAME.trim_end_matches(".sh").to_string(),
+        run:      vec![format!("{ROOT}/.claude/hooks/{GATE_SCRIPT_NAME}")],
+        matcher:  "Bash".to_string(),
+        paths:    Vec::new(),
+        at_root:  false,
+        timeout:  agent_shook::DEFAULT_TIMEOUT,
+        filtered: false,
+    }
 }
 
 /// True if a single hook command string points at the workspace-gate

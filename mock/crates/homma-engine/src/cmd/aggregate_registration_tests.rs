@@ -8,8 +8,8 @@
 
 use std::fs;
 
-use super::chains_tests::{QUIET, plant_repo, reg, regen, registrations, run_with_payload};
-use super::wrapper::HookCall;
+use super::call::HookCall;
+use super::chains_tests::{QUIET, hook, plant_repo, regen, shapes};
 use super::*;
 
 #[test]
@@ -52,100 +52,78 @@ fn a_registration_keeps_the_program_before_the_hook_and_the_arguments_after_it()
         }
     );
 }
-
 #[test]
 fn a_hook_a_registration_runs_through_a_program_is_carried_without_an_execute_bit() {
     let ws = tempfile::tempdir().unwrap();
-    let marker = ws.path().join("fired");
     let repo = plant_repo(
         ws.path(),
         &[],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash .claude/hooks/check.sh --strict"}]}]}}"#,
     );
     // No shebang and no execute bit: only `bash` runs this.
-    fs::write(
-        repo.join(".claude/hooks/check.sh"),
-        format!(
-            "cat > /dev/null\nprintf '%s' \"$*\" > '{}'\n",
-            marker.display()
-        ),
-    )
-    .unwrap();
-    let (a, v) = regen(ws.path(), &repo);
+    fs::write(repo.join(".claude/hooks/check.sh"), "cat > /dev/null\n").unwrap();
+    let (a, rows) = regen(ws.path(), &repo);
     assert!(a.problems.is_empty(), "{:?}", a.problems);
-    assert_eq!(registrations(&v), vec![(
+    assert_eq!(shapes(&rows), vec![(
         "PreToolUse".to_string(),
-        Some("Bash".to_string()),
-        "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--check.sh --strict".to_string()
+        "Bash".to_string(),
+        vec!["bash".to_string(), hook("check.sh"), "--strict".to_string()],
     )]);
-
-    let wrapper = ws.path().join(".claude/hooks/acre--check.sh");
-    let payload = format!(
-        r#"{{"cwd":"{}","tool_input":{{"command":"ls"}}}}"#,
-        repo.display()
-    );
-    run_with_payload(&wrapper, &payload, &["--strict"]);
-    assert_eq!(fs::read_to_string(&marker).unwrap(), "--strict");
 }
 
 #[test]
-fn a_hook_two_registrations_run_two_ways_is_reported_and_not_carried() {
+fn a_hook_two_registrations_run_two_ways_is_a_row_for_each() {
     let ws = tempfile::tempdir().unwrap();
     let repo = plant_repo(
         ws.path(),
-        &[("check.sh", QUIET), ("other.sh", QUIET)],
+        &[("check.sh", QUIET)],
         r#"{"hooks":{"PreToolUse":[
-            {"matcher":"Bash","hooks":[{"type":"command","command":"bash .claude/hooks/check.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":".claude/hooks/check.sh"}]},
-            {"matcher":"Edit","hooks":[{"type":"command","command":"sh .claude/hooks/other.sh"}]}
+            {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/check.sh"}]},
+            {"matcher":"Edit","hooks":[{"type":"command","command":"bash .claude/hooks/check.sh"}]}
         ]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
-    assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
-    assert!(
-        a.problems[0].contains("acre/.claude/hooks/check.sh"),
-        "{:?}",
-        a.problems
-    );
-    assert!(
-        a.problems[0].contains("itself and `bash`"),
-        "{:?}",
-        a.problems
-    );
-    assert!(!ws.path().join(".claude/hooks/acre--check.sh").exists());
-    // The control: a hook every registration runs one way is carried.
-    assert_eq!(registrations(&v), vec![reg(
-        "PreToolUse",
-        Some("Edit"),
-        "acre--other.sh"
-    )]);
+    let (a, rows) = regen(ws.path(), &repo);
+    assert!(a.problems.is_empty(), "{:?}", a.problems);
+    assert_eq!(shapes(&rows), vec![
+        ("PreToolUse".to_string(), "Bash".to_string(), vec![hook(
+            "check.sh"
+        )]),
+        ("PreToolUse".to_string(), "Edit".to_string(), vec![
+            "bash".to_string(),
+            hook("check.sh")
+        ]),
+    ]);
 }
 
 #[test]
-fn a_hook_run_through_a_line_of_shell_is_reported_and_not_carried() {
+fn a_hook_run_through_a_line_of_shell_or_quoted_arguments_is_reported_and_not_carried() {
     let ws = tempfile::tempdir().unwrap();
     let repo = plant_repo(
         ws.path(),
-        &[("check.sh", QUIET), ("other.sh", QUIET)],
+        &[("check.sh", QUIET), ("quoted.sh", QUIET), ("other.sh", QUIET)],
         r#"{"hooks":{"PreToolUse":[
             {"matcher":"Bash","hooks":[{"type":"command","command":"cd . && .claude/hooks/check.sh"}]},
+            {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/quoted.sh 'a b'"}]},
             {"matcher":"Edit","hooks":[{"type":"command","command":"bash .claude/hooks/other.sh"}]}
         ]}}"#,
     );
-    let (a, v) = regen(ws.path(), &repo);
-    assert_eq!(a.problems.len(), 1, "{:?}", a.problems);
+    let (a, rows) = regen(ws.path(), &repo);
+    assert_eq!(a.problems.len(), 2, "{:?}", a.problems);
     assert!(
-        a.problems[0].contains("acre/.claude/hooks/check.sh")
-            && a.problems[0].contains("a line of shell"),
-        "{:?}",
         a.problems
+            .iter()
+            .any(|p| p.contains("check.sh") && p.contains("a line of shell"))
     );
-    assert!(!ws.path().join(".claude/hooks/acre--check.sh").exists());
-    // The control: the hook run through a program beside it is carried.
-    assert_eq!(registrations(&v), vec![reg(
-        "PreToolUse",
-        Some("Edit"),
-        "acre--other.sh"
+    assert!(
+        a.problems
+            .iter()
+            .any(|p| p.contains("quoted.sh") && p.contains("would not be what the host"))
+    );
+    // The control: the hook run through a program beside them is carried.
+    assert_eq!(shapes(&rows), vec![(
+        "PreToolUse".to_string(),
+        "Edit".to_string(),
+        vec!["bash".to_string(), hook("other.sh")],
     )]);
 }
 
@@ -157,8 +135,8 @@ fn a_hidden_file_among_the_hooks_is_neither_carried_nor_reported() {
         &[("guard.sh", QUIET), (".guard.sh.swp", QUIET)],
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/guard.sh"}]}]}}"#,
     );
-    let (a, _) = regen(ws.path(), &repo);
-    assert!(a.problems.is_empty(), "{:?}", a.problems);
+    let (a, rows) = regen(ws.path(), &repo);
     assert_eq!(a.hooks, 1);
-    assert!(!ws.path().join(".claude/hooks/acre--.guard.sh.swp").exists());
+    assert!(a.problems.is_empty());
+    assert_eq!(rows.len(), 1);
 }

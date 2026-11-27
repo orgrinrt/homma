@@ -4,10 +4,10 @@
 //--------------------------------------------------------------------------------------------------
 //! The agent hooks table: what a workspace declares for the agent host, one
 //! array per host event, under `[agent.hooks]` in `homma.toml`. No I/O;
-//! `homma-engine` writes a wrapper per row and registers it.
+//! `homma-engine` writes each into the manifest claude-shook registers.
 //!
-//! The git hooks table in [`crate::hooks`] is the other kind of hook and
-//! shares nothing with this one but the manifest.
+//! The git hooks are the other kind of hook, declared for git-shook in
+//! `shook.toml` and not here.
 
 use std::collections::BTreeMap;
 use std::fmt;

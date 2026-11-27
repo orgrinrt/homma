@@ -34,13 +34,9 @@ fn install_writes_executable_script_and_returns_entry() {
     let entry = install_workspace_gate(&test_root(workspace), &repos).unwrap();
     assert_eq!(entry.matcher, "Bash");
     assert_eq!(
-        entry.command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/_workspace--mockspace-gate.sh",
-        "the registered command must name the host's project-root placeholder",
-    );
-    assert!(
-        !entry.command.contains(workspace.to_str().unwrap()),
-        "the command named the workspace that generated it: {}",
-        entry.command,
+        entry.run,
+        ["{root}/.claude/hooks/_workspace--mockspace-gate.sh"],
+        "the row runs the gate by the front's root, never the workspace that generated it",
     );
 
     let script = workspace.join(".claude/hooks/_workspace--mockspace-gate.sh");

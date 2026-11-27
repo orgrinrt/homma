@@ -156,37 +156,19 @@ fn aggregate_repo_end_to_end_against_synthetic_workspace() {
         "homma no longer aggregates per-repo rules"
     );
 
-    let hook = fs::read_to_string(workspace.join(".claude/hooks/acre--no-alloc.sh")).unwrap();
-    assert!(hook.contains("REPO_REL='acre'"));
-    assert!(hook.contains("ORIG_HOOK="));
-    assert!(
-        !hook.contains(workspace.to_str().unwrap()),
-        "the wrapper baked the generating workspace's path"
-    );
-
+    // No wrapper: the row runs the hook by `{root}`, so nothing in it names
+    // the generating workspace.
+    assert!(!workspace.join(".claude/hooks/acre--no-alloc.sh").exists());
     assert_eq!(settings.len(), 1);
     assert_eq!(settings[0].event, "PreToolUse");
     assert_eq!(settings[0].matcher, "Edit");
-    assert_eq!(
-        settings[0].command, "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--no-alloc.sh",
-        "the registered command must name the host's project-root placeholder rather \
-         than this run's workspace",
-    );
+    assert_eq!(settings[0].run, ["{root}/acre/.claude/hooks/no-alloc.sh"]);
+    assert_eq!(settings[0].paths, ["acre"]);
     assert!(
-        !settings[0].command.contains(workspace.to_str().unwrap()),
-        "expected no generating-workspace path in the command, got: {}",
-        settings[0].command,
-    );
-
-    merge_settings(&test_root(workspace), &["acre"], &["acre"], &settings, None).unwrap();
-    let written = fs::read_to_string(workspace.join(".claude/settings.local.json")).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&written).unwrap();
-    let arr = v["hooks"]["PreToolUse"].as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["matcher"], "Edit");
-    let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
-    assert!(
-        cmd.ends_with("/.claude/hooks/acre--no-alloc.sh"),
-        "expected absolute path, got: {cmd}",
+        !settings[0]
+            .run
+            .concat()
+            .contains(workspace.to_str().unwrap()),
+        "the row names the generating workspace"
     );
 }

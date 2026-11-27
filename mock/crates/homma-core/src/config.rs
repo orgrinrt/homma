@@ -144,7 +144,7 @@ pub struct Config {
 
     /// `[agent]`: the hooks a workspace declares for the agent host, one array
     /// per host event under `[agent.hooks]`. `homma agent regen` writes a
-    /// wrapper for each row and registers it; see `homma_api::AgentHooks`. The
+    /// row of the manifest claude-shook registers for each; see `homma_api::AgentHooks`. The
     /// nudges under `[agent.nudges]`, run by `homma agent nudge`; see
     /// `homma_api::Nudges`.
     #[serde(default)]

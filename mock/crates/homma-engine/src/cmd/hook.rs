@@ -264,3 +264,19 @@ fn run_cmd(cli: &Cli, event: &str, args: &[String]) -> Result<Outcome> {
         lines: Vec::new(),
     })
 }
+
+/// The row that puts the git hooks back at every session start: this verb's
+/// sweep, from the workspace root, saying nothing where every member is
+/// current.
+pub(crate) fn sweep_row() -> crate::cmd::agent_shook::Row {
+    crate::cmd::agent_shook::Row {
+        event:    "SessionStart".to_string(),
+        name:     "_git-hooks".to_string(),
+        run:      vec!["homma".into(), "hook".into(), "install".into()],
+        matcher:  String::new(),
+        paths:    Vec::new(),
+        at_root:  true,
+        timeout:  crate::cmd::agent_shook::DEFAULT_TIMEOUT,
+        filtered: false,
+    }
+}

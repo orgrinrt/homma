@@ -121,7 +121,7 @@ mod tests {
 /// Render a path with its no-op `.` components dropped, using `/` separators.
 ///
 /// A `.` carries no information and every consumer downstream compares
-/// textually: the aggregated wrapper's scope check, the workspace gate's
+/// textually: the `paths` of a row the front narrows by, the workspace gate's
 /// repo-table lookup, and anything else that joins the value to a root. So
 /// `./acre` joined to `/ws` gives `/ws/./acre`, which is not a textual prefix
 /// of `/ws/acre/src/lib.rs`, and the check that was supposed to fire does not.
@@ -182,7 +182,7 @@ mod relative_str_tests {
 
     #[test]
     fn an_absolute_path_keeps_its_leading_separator() {
-        // Both the wrapper and the gate branch on that separator to decide
+        // Both the front and the gate branch on that separator to decide
         // whether to join against the workspace, so losing it silently changes
         // which arm runs.
         assert_eq!(

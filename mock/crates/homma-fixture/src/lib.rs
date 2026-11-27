@@ -63,3 +63,15 @@ pub fn passed(out: &Output) {
 
 #[cfg(test)]
 mod tests;
+
+/// A `PATH` with a stand-in `claude-shook` under `dir` ahead of the caller's:
+/// one that takes every install, so a test of what the agent hooks' regen does
+/// around the front runs without the front.
+pub fn front_on_path(dir: &Path) -> String {
+    script(&dir.join("claude-shook"), "#!/bin/sh\nexit 0\n", 0o755);
+    format!(
+        "{}:{}",
+        dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    )
+}

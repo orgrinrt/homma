@@ -496,8 +496,9 @@ pub enum AgentOp {
     ///
     /// Reads the payload the host hands a hook on stdin and prints nothing
     /// where no row applies, the host's deny where a row stops the call, and
-    /// added context where a reminder is due. The wrapper the regen writes for
-    /// each event the rows name is what calls it.
+    /// added context where a reminder is due. The row the regen writes for
+    /// each event the rows name, in the manifest claude-shook registers, is
+    /// what calls it.
     Nudge {
         /// The host event, as the host names it.
         event: String,
@@ -547,7 +548,7 @@ pub enum AgentOp {
         skip_aggregate:    bool,
         /// Skip rendering the workspace's own rules, skills and personas
         /// through the command `agent_surfaces` under `[paths]` names. That
-        /// command passes it when it runs the regen for the hook wrappers.
+        /// command passes it when it runs the regen for the agent hooks.
         #[arg(long)]
         skip_surfaces:     bool,
     },

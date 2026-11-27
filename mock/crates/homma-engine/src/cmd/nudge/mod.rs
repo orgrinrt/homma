@@ -11,7 +11,7 @@
 
 mod brief;
 pub(crate) mod record;
-mod wrapper;
+mod row;
 
 use std::io::{Read as _, Write as _};
 use std::path::Path;
@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 
 use homma_api::{Nudge, Nudges, Strength};
 use regex::Regex;
-pub(crate) use wrapper::{NUDGES_PREFIX, install_wrappers};
+pub(crate) use row::{NUDGES_PREFIX, rows};
 
 use self::record::{Answered, Entry, Record, Stopped, Store};
 

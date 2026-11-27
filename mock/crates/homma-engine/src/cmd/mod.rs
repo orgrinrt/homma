@@ -32,6 +32,7 @@ use crate::cli::{
 };
 
 pub mod agent;
+pub(crate) mod agent_shook;
 pub mod agents;
 pub mod aggregate;
 pub mod answers;
