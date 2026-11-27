@@ -1,0 +1,50 @@
+cf96db7 chore: lock src changelist 202611270006
+a47e155 feat: take a manifest entry an engine does not know out of the parse
+d302161 chore: lock doc changelist 202611270005
+7309408 docs: take a manifest entry an engine does not know out of the parse
+c66411c docs: open the round on a manifest entry an engine does not know
+d605465 feat: brief an agent once on what bears on its work
+b85caa6 feat: brief an agent once on what bears on its work
+10f51b7 chore: record the test history of the brief fix
+c560196 chore: regenerate generated files
+e334bd4 chore: close design round 202611262325
+0c371dd chore: lock src changelist 202611262326
+b0db6d9 fix: say a brief once a ttl, keep whole lines and bound its size
+509c7d8 chore: lock doc changelist 202611262325
+5f85d32 docs: say a brief once a ttl, keep whole lines and bound its size
+1269710 docs: open a round on saying a brief once and bounding it
+0a76387 chore: record the test history of the merged tree
+2befa4e Merge remote-tracking branch 'origin/dev' into work/homma-nudges
+2471783 chore: regenerate generated files
+f335a86 chore: close design round 202611262245
+98887b2 chore: lock src changelist 202611262246
+e7ff685 feat: brief a unit of work on what bears on it
+43de91c feat: declare a nudge as a row of the agent table
+9221faa feat: declare a nudge as a row of the agent table
+4d39599 chore: lock doc changelist 202611262245
+a7464bc docs: design a brief of what bears on a unit of work
+1ddc5d4 docs: open the round on a brief of what bears on the work
+859636a chore: record the test history of the fix
+ea23a9b chore: regenerate generated files
+dd1ca44 chore: close design round 202611262230
+d42a2cb chore: lock src changelist 202611262231
+c76f9d3 fix: let a marker answer only in its two exact shapes
+f29c87e chore: lock doc changelist 202611262230
+fa01caa docs: let a marker count only in its two exact shapes
+cdfa836 docs: open the round on what a marked call may carry
+8fb2114 chore: record the test history of the merged tree
+a61672e chore: record `regex` in the root lockfile
+08ea541 Merge remote-tracking branch 'origin/dev' into work/homma-nudges
+79acead chore: close design round 202611262158
+edcee98 chore: lock src changelist 202611262200
+964827e feat: run declared nudges through `homma agent nudge`
+1d9f08d chore: regenerate generated files
+1ce6f88 chore: lock doc changelist 202611262158
+820fbee design: declare a nudge as a row of the agent table
+720a04f design: open the round on a nudge as a declared row
+54d2012 fix: name the command that rebuilds a member index of another format
+b5d98a6 fix: name the command that rebuilds a member index of another format
+2066a4d chore: record the test history of the merged tree
+bc22b23 Merge remote-tracking branch 'origin/dev' into work/homma-answers-2
+072e368 chore: regenerate generated files
+e4ad070 chore: close design round 202611262124
