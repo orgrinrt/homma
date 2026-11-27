@@ -308,7 +308,7 @@ skills render` and `homma agents render` into a slot the session is not reading
 and swaps it in whole; homma stays the writer and the staging stays with the
 thing that owns it. Where it is unset the stage is skipped and says so, and
 `--skip-surfaces` skips it, which the command's own hook path passes when it runs
-the regen for the hook wrappers, so the regen never waits on the render lock its
+the regen for the agent hooks, so the regen never waits on the render lock its
 caller holds. A failed render fails the run.
 
 `homma search <words>` asks one question of every index the workspace holds and
@@ -1235,49 +1235,82 @@ those hooks that git-shook owes to git's: every one of them keeps running, at
 the event and for the tools it was written for, and nothing homma did not write
 is replaced or removed.
 
+homma registers none of these hooks itself. It writes every one it carries as
+a row of one manifest for claude-shook, the Claude Code front of shook that
+lives beside the shook base in git-shook's repository, at
+`.claude/shook/manifests/homma.toml`, and runs `claude-shook install` at the
+workspace root, which writes one registration per hook event into
+`.claude/settings.local.json`. At a call the host runs that one registration,
+and the front runs the event's entries as a chain on the base: in order, each
+in the session's directory with the payload as the host sent it, the ones whose
+matcher and `paths` take the call and no other, an entry exiting `2` blocking
+and stopping the chain, one failing another way or running past its timeout
+named to the person while the chain goes on, and the answers folded into the
+one the host reads as it would have folded hooks run side by side. The chain's
+order, its conditions and how a failure propagates are the front's and the
+base's; homma decides only what the rows are. The entries run one after another
+rather than side by side, which is what one call per event costs, and the
+narrowing means a call starts only the entries it lands in.
+
 What the regen writes belongs to the clone it ran in, since a clone holds
-whichever members it holds and the hooks follow them. So its registrations go
-to `.claude/settings.local.json`, which the host reads per checkout and merges
-over `settings.json`, and its wrappers to `.claude/hooks/`, and a workspace
-tracks neither. Two clones with different members then write two different
-sets and neither can take the other's away. `settings.json` stays what every
-clone shares, written by hand, and the regen writes nothing into it: a
-registration of its own that it finds there is one an earlier regen put in the
-shared file, and it is swept, whichever member it names and whether or not
-this clone holds it, while every other one is kept as it is. A registration
-is homma's by its name: a hook under `.claude/hooks/` named `<repo>--<rest>`,
-with something on both sides, is in homma's namespace whether or not its file
-is present, and one somebody wrote by hand takes another name or another
-directory, since a file homma did not write under such a name is the only
-thing that keeps it. Nothing in
-`settings.local.json` that is not homma's is touched, since that file also
-holds what the person at that clone allowed and prefers. Both files are read
-and swept before either is written, so one that does not parse leaves both as
-they were, and the local file is written first, so a failure between the two
-writes leaves a registration twice rather than nowhere.
+whichever members it holds and the hooks follow them. The manifest is under
+the clone's `.claude/`, which a workspace does not track, and claude-shook
+writes into `settings.local.json`, which the host reads per checkout and merges
+over `settings.json`, keeping every hook it did not write. `settings.json`
+stays what every clone shares, written by hand, and nothing is written into it.
 
-The host runs every hook registered for an event, in parallel, and runs a
-handler named twice only once. So the dispatcher git needs, one program at an
-event fanning out to many, is not needed here, and one registration per hook is
-what homma writes. A dispatcher would put a homma process in front of every
-tool call and serialise hooks the host already runs side by side, to buy an
-order nothing here depends on.
-
-What is homma's is decided by what homma wrote. Every file it writes under
+A registration homma wrote itself, before its hooks moved onto claude-shook,
+is swept from both files, whichever member it names and whether or not this
+clone holds it, with the wrapper it ran, since homma now registers nothing and
+keeping one would only run a hook twice. A registration is of homma's shape by
+its name: a hook under `.claude/hooks/` named `<repo>--<rest>`, with something
+on both sides, is in homma's namespace whether or not its file is present, and
+one somebody wrote by hand takes another name or another directory, since a
+file homma did not write under such a name is the only thing that keeps it.
+What is homma's is decided by what homma wrote: every file it writes under
 `.claude/hooks/` carries a line saying it was written by `homma agent regen`,
-and a registration is homma's only when the file it names carries that line.
-Anything else is kept exactly as it is, and a file homma would have to overwrite
-to write its own is refused by path, with the regen reporting it and exiting
-`1`. A name alone decides nothing, since a hand-written hook can carry any name.
+a registration naming a file that is there and does not carry that line is
+kept exactly as it is, and a file homma would have to overwrite to write its
+own is refused by path, with the regen reporting it and exiting `1`. Both
+files are read and swept before either is written, so one that does not parse
+leaves both as they were.
 
-Each repository hook is registered under every event and matcher its
-repository's `settings.json` gives it, and under the matchers its own
-`@matchers:` line names where the repository gives none. A hook that has
-neither is not written as a wrapper nobody calls: it is reported by path, and
-the regen exits `1`. Any executable file under the repository's `.claude/hooks/`
-is a hook, whatever language it is in, and a file there that is not executable
-and that no registration runs through a program is reported the same way, since
-the host could not run it either.
+The move happens only where claude-shook can take the hooks. Before it writes
+anything the hooks stage asks for `claude-shook` on `PATH`; where there is none
+it refuses with one line saying to install it, and every registration, wrapper
+and file stays as it was, so a clone keeps the hooks it had. The sweep runs
+only after `claude-shook install` has written its registrations, so no call
+finds the clone between the two with neither. A clone whose regen ran before
+claude-shook was installed moves on the first regen after.
+
+Each repository hook is a row under every event and matcher its repository's
+`settings.json` gives it, and under the matchers its own `@matchers:` line
+names where the repository gives none, one row for each. A hook that has
+neither is not written as a row nothing would call: it is reported by path,
+and the regen exits `1`. Any executable file under the repository's
+`.claude/hooks/` is a hook, whatever language it is in, and a file there that
+is not executable and that no registration runs through a program is reported
+the same way, since the host could not run it either. A file whose name starts
+with a dot is an editor's or a filesystem's, and is neither carried nor
+reported.
+
+A row is named `<repo>--<hook>`, a second registration of the hook at the same
+event taking a number after it, and runs its hook by `{root}`, which the front
+reads as the workspace root, so the manifest stays right when the clone is
+moved: `{root}/<repo>/.claude/hooks/<hook>`. A registration names its hook by
+the first word of its command that reaches into `.claude/hooks/`. Whatever
+precedes that word is the program the host runs it with, as in `bash
+.claude/hooks/check.sh`, and whatever follows is its arguments, and the row
+runs the same words around the hook's path. A hook run through a program does
+not have to be executable. A row is an argument list, so a program that is a
+line of shell rather than words, an assignment in front of the hook or a
+separator before it, is reported by path and not carried, since `cd dir &&
+.claude/hooks/x.sh` would run a `cd` binary and report its success as the
+hook's; arguments carrying a quote or a shell character are reported the same
+way, since split into words they would not be what the host was handed.
+
+A row takes the timeout its registration gave, else 600 seconds, the host's
+own default, so no hook that ran before is cut off by the move.
 
 A workspace declares hooks of its own in the manifest, under `[agent.hooks]`,
 one array per event named as the host names it:
@@ -1291,17 +1324,17 @@ repos   = ["engine"]
 
 `run` is a path under the workspace, and `repos` narrows the hook to calls
 landing in those repositories, the way every aggregated hook is narrowed to its
-own. Without it the hook sees every call. homma writes a wrapper for each row
-beside the aggregated ones, carrying the same line, so the rows are kept and
-removed by the same rule, and a guard a workspace wants in every session is a
+own. Without it the hook sees every call. Each row is a row of the manifest,
+named `_declared--<slug>` after its `run`, running `{root}/<run>` with its
+repositories under `paths`, so a guard a workspace wants in every session is a
 line in the manifest rather than a hand edit to a generated file.
 
 The table is read from layers: the manifest, then each overlay file its
 `layers` key names, `homma.local.toml` where the key is absent. A row in an
 overlay is appended after the manifest's for its event and replaces none of
-them, so a clone adds a guard of its own and cannot remove a shared one. A
-registration written from an overlay row is the clone's, which is where the
-regen already writes, so it lands in `settings.local.json` like every other.
+them, so a clone adds a guard of its own and cannot remove a shared one. The
+manifest homma writes is the clone's, so a row from an overlay lands there like
+every other.
 The layers are a declared list and not a glob because a hook is code that runs
 on every tool call, so the set of files that can add one is a decision someone
 made, an editor's copy of an overlay is not read, and the order is the list and
@@ -1315,16 +1348,28 @@ since it writes back only the rows it has and a layer missing from them would
 remove that layer's guards from the clone with no error; `homma local` and
 `hook doctor` still run, since they are how the file is repaired and found.
 
-A call is narrowed by where it lands, and a hook sees it when any place it
-lands is under the hook's repository. For a tool writing a file that is the
-file's path, and a path that climbs with `..` lands everywhere. For a shell call it is the directory the host says the session is
-in, and every path the command names as well, read relative to that directory,
-since `cargo test --manifest-path engine/Cargo.toml` typed at the workspace
-root lands in `engine` whatever directory it was typed in. Where the host says
-nothing about a directory, the hook process's own working directory stands in,
-and that is the workspace root whatever the session did.
+The workspace gate is a row too, `_workspace--mockspace-gate` at `PreToolUse`
+for `Bash`, running the gate script homma writes under `.claude/hooks/`, since
+that script is the gate. The nudges are one row per event the nudge rows name,
+`_nudges`, running `homma agent nudge <Event>` from the workspace root. And the
+git hooks' sweep is a row at `SessionStart`, `_git-hooks`, running `homma hook
+install` from the workspace root, so every session start puts back the git
+hooks a member lost and says nothing where none did. In a chain the gate comes
+first, then the members in the manifest's order, then the declared rows, the
+nudges and the sweep.
 
-A wrapper is not a shell, so it reads a command by splitting it on everything
+A call is narrowed by where it lands, which the front reads once for every
+entry, and a hook sees it when any place it lands is under the hook's
+repository. For a tool writing a file that is the file's path, and a path that
+climbs with `..` lands everywhere. For a shell call it is the directory the
+host says the session is in, and every path the command names as well, read
+relative to that directory, since `cargo test --manifest-path
+engine/Cargo.toml` typed at the workspace root lands in `engine` whatever
+directory it was typed in. Where the host says nothing about a directory, the
+front's own working directory stands in, and that is the workspace root
+whatever the session did.
+
+The front is not a shell, so it reads a command by splitting it on everything
 that cannot be part of a path, which takes quotes, separators, redirections and
 the `=` in `--flag=path` apart, and reading each piece as a path. It also looks
 for a repository's absolute root anywhere in the command, and a piece that
@@ -1333,44 +1378,29 @@ the guard is for. A guard run once too often costs a process where the guard
 only observes. Where it denies, it costs a false refusal: a bare word equal to a
 repository's path, as in `echo engine`, lands there, and a guard that denies on
 anything it is handed denies a call that touched nothing of its repository.
-What the wrapper cannot see is a relative path with a space in it, a path
+What the front cannot see is a relative path with a space in it, a path
 spelled through a variable, and whatever a script the command runs goes on to
 do. A guard that needs those reads the command itself.
 
-A hook the wrapper runs is run in the directory the session is in, and handed
-the payload exactly as the host sent it. Running it from its repository's root
-instead would satisfy a hook that asks its own working directory where it is,
-and would break every hook that reads a relative path out of the payload, since
-that path is relative to the session's directory. So the wrapper reaching a hook
-decides only that the hook runs, and what it then allows is the hook's own
-reading of the payload. A hook that scopes itself by its working directory
-declines a call typed elsewhere that names its repository by path, however the
-wrapper routed it, and scoping by the payload's directory and the command's
-paths is what makes it see one.
+A hook is run in the directory the session is in, and handed the payload
+exactly as the host sent it. Running it from its repository's root instead
+would satisfy a hook that asks its own working directory where it is, and would
+break every hook that reads a relative path out of the payload, since that path
+is relative to the session's directory. So the narrowing decides only that the
+hook runs, and what it then allows is the hook's own reading of the payload. A
+hook that scopes itself by its working directory declines a call typed
+elsewhere that names its repository by path, however the front routed it, and
+scoping by the payload's directory and the command's paths is what makes it see
+one. A member's hook that is not there when a call reaches it, its member
+removed since the regen, is named to the person by the front, and the next
+regen leaves it out.
 
-A registration names its hook by the first word of its command that reaches
-into `.claude/hooks/`. Whatever precedes that word is the program the host runs
-it with, as in `bash .claude/hooks/check.sh`, and whatever follows is its
-arguments, both of which the wrapper carries. A hook run through a program does
-not have to be executable. A hook that two registrations run through two
-different programs is reported by path and not carried, since one wrapper can
-only run it one way. So is a hook whose program is a line of shell rather than a
-program, an assignment in front of it or a separator before it, since the
-wrapper runs a program with arguments and a shell line would run as something
-else: `cd dir && .claude/hooks/x.sh` would run a `cd` binary and report its
-success as the hook's.
-
-A file under a repository's `.claude/hooks/` whose name starts with a dot is an
-editor's or a filesystem's, and is neither carried nor reported. A registration
-in the workspace naming a file homma writes, where that file is no longer
-there, is removed on the next regen, since nothing it could run exists.
-
-Every wrapper, aggregated or declared, runs its hook through
-`tools/hookdedup/hookdedup run` when the workspace has that file executable, so
-a notice already said in the session within the time to live is not said again.
-The tool leaves the hook's status, its stderr and any block or deny alone, and a
-workspace without it runs the hook as before. There is no key for it: the
-file's presence is the switch.
+Every member's and declared row runs its hook through
+`{root}/tools/hookdedup/hookdedup run` when the workspace has that file
+executable at the regen, so a notice already said in the session within the
+time to live is not said again. The tool leaves the hook's status, its stderr
+and any block or deny alone, and a workspace without it runs the hook as
+before. There is no key for it: the file's presence is the switch.
 
 ## A nudge
 
@@ -1481,14 +1511,13 @@ answer, refusal, refused evidence and failed predicate, with the time, session,
 row, call text and reason, so a row's taken answers list where whatever its
 marker stands for fell short. Both are the clone's and neither is tracked.
 
-`homma agent regen` writes, for each event the rows name, one wrapper
-`_nudges--<Event>.sh` beside the declared ones, carrying the same line, so it is
-kept and swept by the same rule. Its matcher is the rows' `tools` joined, every
-tool where any row has none, and it runs `homma agent nudge <Event>` from the
-workspace root with the payload on stdin. A workspace declaring no nudge gets no
-wrapper. The nudge wrapper alone does not run through `tools/hookdedup`: a row's
-`ttl` is that rule for its own text, and two rules on when a line is due again
-would disagree.
+`homma agent regen` writes, for each event the rows name, one row `_nudges` of
+the manifest it writes for claude-shook. Its matcher is the rows' `tools`
+joined, every tool where any row has none, and it runs `homma agent nudge
+<Event>` from the workspace root with the payload on stdin. A workspace
+declaring no nudge gets no row. The nudge row alone does not run through
+`tools/hookdedup`: a row's `ttl` is that rule for its own text, and two rules
+on when a line is due again would disagree.
 
 ## What a status answers
 
