@@ -204,11 +204,9 @@ pub enum Command {
         op: MilestoneOp,
     },
 
-    /// The git hooks: one entrypoint per event in the repository's own hooks
-    /// directory, or an entry registered with git-shook where that owns the
-    /// hooks path, running the entries `[hooks]` in `homma.toml` and in the
-    /// overlay files its `layers` key names, the release gate on `pre-push`
-    /// among them whether or not the table is written.
+    /// The git hooks, all registered with git-shook: homma's release gate on
+    /// `pre-push`, and the workspace's own git hooks, the git-shook manifest
+    /// `git_hooks` under `[paths]` names. homma declares none in its config.
     Hook {
         #[command(subcommand)]
         op: HookOp,
@@ -1101,30 +1099,31 @@ pub enum MilestoneOp {
 /// `hook` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum HookOp {
-    /// Write one entrypoint per event the `[hooks]` table names into the
-    /// repository's own hooks directory, or refuse and say why. Where the
-    /// repository's hooks path is git-shook's, register a manifest generated
-    /// from every layer with it instead, and run `git shook install --yes --only homma`,
-    /// so the yes covers that manifest and no tracked `shook.toml`.
+    /// Place homma's release gate and a copy of the workspace's git hooks
+    /// manifest in the repository as clone-local git-shook manifests, and run
+    /// `git shook install --yes --only` for those two, so the yes covers them
+    /// and no tracked `shook.toml`. Refuses where git-shook does not hold the
+    /// hooks path, and removes what an older homma left.
     Install {
         /// The repository's directory name under the workspace root.
         repo: String,
     },
-    /// Which `homma.*.toml` files the hooks are read from, which are named and
-    /// absent, and which are present and named by nothing, never read. With a
-    /// repository, whether git reaches each of its events. Exits non-zero
-    /// when anything needs looking at.
+    /// Where the workspace's git hooks are declared, a `[hooks]` no longer
+    /// read, and which `homma.*.toml` overlays the agent tables are read from.
+    /// With a repository, whether git-shook holds its hooks path and what an
+    /// older homma left there. Exits non-zero when anything needs looking at.
     Doctor {
         /// A repository's directory name under the workspace root.
         repo: Option<String>,
     },
-    /// What an entrypoint calls: run the event's entries, in order, against
-    /// what the event touched, and exit with the first refusal.
+    /// What an entrypoint an older homma wrote calls: the release gate at
+    /// `pre-push`, nothing at any other event, and a line saying to install
+    /// again.
     Run {
         /// The git event, `pre-commit`, `pre-push`, `commit-msg` and the rest.
         event: String,
-        /// What git hands the hook after its own name, passed on to every
-        /// entry. Hidden, since only an entrypoint passes them.
+        /// What git hands the hook after its own name, passed on to the
+        /// release gate. Hidden, since only an entrypoint passes them.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
         args:  Vec<String>,
     },

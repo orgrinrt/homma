@@ -1,10 +1,6 @@
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use homma_api::HookEntry;
-
 use super::*;
-use crate::hooks::install::{HookError, Reach, install};
 
 fn repo() -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
@@ -16,14 +12,18 @@ fn repo() -> tempfile::TempDir {
     d
 }
 
-fn table(events: &[&str]) -> Hooks {
-    let mut declared = BTreeMap::new();
-    for e in events {
-        declared.insert(e.to_string(), vec![
-            HookEntry::new("true", Vec::new()).unwrap(),
-        ]);
-    }
-    Hooks::new(declared).unwrap()
+/// `repo`, with git-shook holding its hooks path.
+fn held() -> tempfile::TempDir {
+    let d = repo();
+    let dir = hooks_dir(d.path()).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    let set = sh::run(d.path(), "git", &[
+        "config",
+        "core.hooksPath",
+        dir.to_str().unwrap(),
+    ]);
+    assert!(set.unwrap().ok());
+    d
 }
 
 fn executable(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -33,278 +33,254 @@ fn executable(dir: &Path, name: &str, body: &str) -> PathBuf {
 }
 
 /// A stand-in for git-shook that records what it was called with and
-/// registers, for every `[hooks.<event>]` in the local manifest, the entry
+/// registers, for every `[hooks.<event>]` of each local manifest, the entry
 /// file the real one would write.
 fn fake_shook(bin: &Path, log: &Path) {
     executable(
         bin,
         "git-shook",
         &format!(
-            "#!/bin/sh\nprintf '%s|' \"$*\" >> '{log}'\npwd >> '{log}'\n\
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{log}'\n\
              g=$(git rev-parse --path-format=absolute --git-common-dir)\n\
-             for e in $(sed -n 's/^\\[hooks\\.\\(.*\\)\\]$/\\1/p' \"$g/shook/manifests/homma.toml\"); do\n\
-             mkdir -p \"$g/shook/entries/$e\"; : > \"$g/shook/entries/$e/homma\"\ndone\n",
+             for m in \"$g\"/shook/manifests/*.toml; do n=$(basename \"$m\" .toml)\n\
+             for e in $(sed -n 's/^\\[hooks\\.\\(.*\\)\\]$/\\1/p' \"$m\"); do\n\
+             mkdir -p \"$g/shook/entries/$e\"; : > \"$g/shook/entries/$e/$n\"\ndone; done\n",
             log = log.display()
         ),
     );
 }
 
+fn the_workspace(text: &str) -> (tempfile::TempDir, WorkspaceHooks) {
+    let ws = tempfile::tempdir().unwrap();
+    std::fs::write(ws.path().join("shook.toml"), text).unwrap();
+    let found = workspace_hooks(ws.path(), Path::new("shook.toml"))
+        .unwrap()
+        .unwrap();
+    (ws, found)
+}
+
 #[test]
-fn the_manifest_names_every_event_the_table_does_with_the_command_that_runs_it() {
-    let text = manifest(&table(&["pre-commit", "post-merge"]));
-    let parsed: toml::Table = toml::from_str(&text).unwrap();
+fn the_gate_manifest_runs_the_release_gate_at_pre_push_and_nothing_else() {
+    let parsed: toml::Table = toml::from_str(&gate_manifest()).unwrap();
     assert_eq!(parsed["name"].as_str(), Some("homma"));
     let hooks = parsed["hooks"].as_table().unwrap();
-    assert_eq!(
-        hooks.keys().map(String::as_str).collect::<Vec<_>>(),
-        vec!["post-merge", "pre-commit", "pre-push"],
-        "the gate's event is in every table"
-    );
-    for (event, row) in hooks {
-        let run: Vec<&str> = row["run"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
-        assert_eq!(run, vec!["homma", "hook", "run", event.as_str()]);
-    }
+    assert_eq!(hooks.keys().collect::<Vec<_>>(), vec!["pre-push"]);
+    let run: Vec<&str> = hooks["pre-push"]["run"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(run, vec!["homma", "release", "gate", "--hook"]);
 }
 
 #[test]
-fn an_install_writes_the_manifest_and_has_git_shook_register_it() {
-    let d = repo();
-    let bin = tempfile::tempdir().unwrap();
-    let log = bin.path().join("log");
-    fake_shook(bin.path(), &log);
+fn the_workspace_manifest_is_named_by_its_name_or_by_its_root() {
+    let (_ws, named) = the_workspace("name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n");
+    assert_eq!(named.name, "prose");
+    assert!(named.text.contains("[hooks.pre-commit]"));
 
-    let i = install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).unwrap();
+    let ws = tempfile::tempdir().unwrap();
+    let root = ws.path().join("the-workspace");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(
+        root.join("shook.toml"),
+        "[hooks.pre-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let unnamed = workspace_hooks(&root, Path::new("shook.toml"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(unnamed.name, "the-workspace");
+}
 
-    let common = d.path().canonicalize().unwrap().join(".git");
+#[test]
+fn a_workspace_with_no_manifest_has_none_and_a_broken_one_is_refused() {
+    let ws = tempfile::tempdir().unwrap();
     assert_eq!(
-        std::fs::read_to_string(common.join("shook/manifests/homma.toml")).unwrap(),
-        manifest(&table(&["post-merge"]))
+        workspace_hooks(ws.path(), Path::new("shook.toml")).unwrap(),
+        None
     );
-    let called = std::fs::read_to_string(&log).unwrap();
-    assert!(
-        called.starts_with("install --yes --only homma|"),
-        "the consent covers homma's manifest only: {called}"
-    );
-    assert!(
-        called
-            .trim_end()
-            .ends_with(d.path().canonicalize().unwrap().to_str().unwrap()),
-        "run from the repository: {called}"
-    );
-    let events: Vec<&str> = i.written.iter().map(|w| w.event.as_str()).collect();
-    assert_eq!(events, vec!["post-merge", "pre-push"]);
-    for w in &i.written {
-        assert_eq!(
-            w.path,
-            common.join("shook/entries").join(&w.event).join("homma")
+    std::fs::write(ws.path().join("shook.toml"), "name = [\n").unwrap();
+    assert!(matches!(
+        workspace_hooks(ws.path(), Path::new("shook.toml")),
+        Err(HookError::Manifest { .. })
+    ));
+}
+
+#[test]
+fn a_workspace_manifest_named_for_the_gate_or_a_path_is_refused() {
+    for name in ["homma", "../escaped", ".."] {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::write(ws.path().join("shook.toml"), format!("name = \"{name}\"\n")).unwrap();
+        let got = workspace_hooks(ws.path(), Path::new("shook.toml"));
+        assert!(
+            matches!(got, Err(HookError::Name { name: ref n, .. }) if n == name),
+            "{name}: {got:?}"
         );
-        assert_eq!(w.reach, Reach::Shook(w.path.clone()));
     }
-    assert!(i.reached());
 }
 
 #[test]
-fn registering_leaves_the_entrypoint_this_tool_wrote_and_records_it_as_declined() {
-    let d = repo();
+fn an_install_places_both_manifests_and_has_git_shook_register_those_two() {
+    let d = held();
     let bin = tempfile::tempdir().unwrap();
-    fake_shook(bin.path(), &bin.path().join("log"));
-    let own = crate::hooks::hooks_dir(d.path()).unwrap();
-    std::fs::create_dir_all(&own).unwrap();
-    // ours, byte for byte, at one event; someone else's at another
-    std::fs::write(own.join("post-merge"), crate::hooks::script("post-merge")).unwrap();
-    std::fs::write(own.join("pre-push"), "#!/bin/sh\necho theirs\n").unwrap();
+    let log = bin.path().join("log");
+    fake_shook(bin.path(), &log);
+    let (_ws, w) = the_workspace("name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n");
 
-    install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).unwrap();
+    let i = install_with(d.path(), Some(&w), Some(bin.path())).unwrap();
 
-    assert!(
-        own.join("post-merge").is_file(),
-        "ours stays, so git still finds the table once git-shook gives the key up"
-    );
-    let declined = d.path().canonicalize().unwrap().join(".git/shook/declined");
+    let manifests = manifests_dir(d.path()).unwrap();
     assert_eq!(
-        std::fs::read_to_string(declined.join("post-merge")).unwrap(),
-        crate::hooks::script("post-merge"),
-        "and it is recorded as declined, which is what the gate's chain reads to skip it"
+        std::fs::read_to_string(manifests.join("homma.toml")).unwrap(),
+        gate_manifest()
     );
-    assert!(
-        own.join("pre-push").is_file(),
-        "a hook that is not ours stays"
+    assert_eq!(
+        std::fs::read_to_string(manifests.join("prose.toml")).unwrap(),
+        w.text,
+        "the copy is the workspace's file byte for byte"
     );
-    assert!(
-        !declined.join("pre-push").exists(),
-        "and is not recorded: the chain must still run it"
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap().trim(),
+        "install --yes --only homma --only prose"
     );
+    assert_eq!(i.registered, vec!["homma", "prose"]);
 }
 
 #[test]
-fn the_copy_git_shook_kept_of_the_entrypoint_goes_too_and_a_foreign_one_stays() {
-    let d = repo();
+fn a_workspace_with_no_manifest_registers_the_gate_alone() {
+    let d = held();
     let bin = tempfile::tempdir().unwrap();
-    fake_shook(bin.path(), &bin.path().join("log"));
-    let registry = d.path().canonicalize().unwrap().join(".git/shook");
-    // what git-shook leaves when it adopts a hook: the copy and the entry that
-    // runs it. Ours at post-merge, somebody else's at pre-push.
-    for (event, text) in [
-        ("post-merge", crate::hooks::script("post-merge")),
-        ("pre-push", "#!/bin/sh\necho theirs\n".to_string()),
-    ] {
-        std::fs::create_dir_all(registry.join("kept")).unwrap();
-        std::fs::create_dir_all(registry.join("entries").join(event)).unwrap();
-        std::fs::write(registry.join("kept").join(event), text).unwrap();
-        std::fs::write(
-            registry.join("entries").join(event).join("00-existing"),
-            "x",
-        )
-        .unwrap();
-    }
+    let log = bin.path().join("log");
+    fake_shook(bin.path(), &log);
 
-    install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).unwrap();
+    let i = install_with(d.path(), None, Some(bin.path())).unwrap();
 
-    assert!(!registry.join("kept/post-merge").exists());
-    assert!(!registry.join("entries/post-merge/00-existing").exists());
-    assert!(
-        registry.join("entries/post-merge/homma").is_file(),
-        "the registered entry itself stays"
+    assert_eq!(i.registered, vec!["homma"]);
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap().trim(),
+        "install --yes --only homma"
     );
-    assert!(
-        registry.join("kept/pre-push").is_file(),
-        "a foreign kept hook stays"
-    );
-    assert!(registry.join("entries/pre-push/00-existing").is_file());
 }
 
 #[test]
-fn install_routes_to_git_shook_only_where_it_holds_the_hooks_path() {
+fn an_install_where_git_shook_does_not_hold_the_path_refuses_and_changes_nothing() {
     let d = repo();
     let bin = tempfile::tempdir().unwrap();
     let log = bin.path().join("log");
     fake_shook(bin.path(), &log);
-    let shook_dir = hooks_dir(d.path()).unwrap();
-    std::fs::create_dir_all(&shook_dir).unwrap();
+
+    let got = install_with(d.path(), None, Some(bin.path()));
+
+    assert!(matches!(got, Err(HookError::NotShook(_))), "{got:?}");
     assert!(
-        sh::run(d.path(), "git", &[
-            "config",
-            "core.hooksPath",
-            shook_dir.to_str().unwrap()
-        ])
-        .unwrap()
-        .ok()
+        got.unwrap_err()
+            .to_string()
+            .contains("run `git shook install` there")
     );
+    assert!(!log.exists(), "git-shook was not called");
+    assert!(!manifests_dir(d.path()).unwrap().exists());
 
-    let i = crate::hooks::install::install_on(d.path(), &table(&["post-merge"]), Some(bin.path()))
-        .unwrap();
-
-    assert!(log.is_file(), "git-shook was called");
-    assert!(i.written.iter().all(|w| matches!(w.reach, Reach::Shook(_))));
+    // a hooks path somebody else holds is not git-shook's either
+    let other = d.path().join("elsewhere");
+    std::fs::create_dir(&other).unwrap();
+    let set = sh::run(d.path(), "git", &[
+        "config",
+        "core.hooksPath",
+        other.to_str().unwrap(),
+    ]);
+    assert!(set.unwrap().ok());
+    assert!(!holds_path(d.path()).unwrap());
 }
 
 #[test]
-fn git_shook_registering_less_than_the_manifest_declares_is_an_error_naming_the_event() {
-    let d = repo();
-    let bin = tempfile::tempdir().unwrap();
-    executable(bin.path(), "git-shook", "#!/bin/sh\nexit 0\n");
-    let err = install_with(d.path(), &table(&[]), Some(bin.path())).unwrap_err();
-    assert!(
-        matches!(&err, HookError::Shook(s) if s.contains("registered nothing for pre-push")),
-        "{err}"
-    );
-}
-
-#[test]
-fn a_refusal_gives_the_manifest_back_as_it_was() {
-    let d = repo();
-    let bin = tempfile::tempdir().unwrap();
-    executable(bin.path(), "git-shook", "#!/bin/sh\nexit 1\n");
-    let file = d
-        .path()
-        .canonicalize()
-        .unwrap()
-        .join(".git/shook/manifests/homma.toml");
-
-    // none before: none after
-    assert!(install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).is_err());
-    assert!(
-        !file.exists(),
-        "a refusal left a manifest where there was none"
-    );
-
-    // one before: the same text after
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-    std::fs::write(&file, "name = \"homma\"\n# old\n").unwrap();
-    assert!(install_with(d.path(), &table(&["post-merge"]), Some(bin.path())).is_err());
-    assert_eq!(
-        std::fs::read_to_string(&file).unwrap(),
-        "name = \"homma\"\n# old\n"
-    );
-}
-
-#[test]
-fn a_git_shook_that_refuses_is_reported_with_what_it_said() {
-    let d = repo();
+fn a_refusal_gives_each_manifest_back_as_it_was() {
+    let d = held();
     let bin = tempfile::tempdir().unwrap();
     executable(
         bin.path(),
         "git-shook",
-        "#!/bin/sh\necho 'git-shook: no thanks' >&2\nexit 1\n",
+        "#!/bin/sh\necho refused >&2\nexit 1\n",
     );
-    let err = install_with(d.path(), &table(&[]), Some(bin.path())).unwrap_err();
-    assert!(err.to_string().contains("no thanks"), "{err}");
+    let manifests = manifests_dir(d.path()).unwrap();
+    std::fs::create_dir_all(&manifests).unwrap();
+    std::fs::write(manifests.join("homma.toml"), "the text before\n").unwrap();
+    let (_ws, w) = the_workspace("name = \"prose\"\n");
+
+    let got = install_with(d.path(), Some(&w), Some(bin.path()));
+
+    assert!(got.unwrap_err().to_string().contains("refused"));
+    assert_eq!(
+        std::fs::read_to_string(manifests.join("homma.toml")).unwrap(),
+        "the text before\n"
+    );
+    assert!(!manifests.join("prose.toml").exists());
+}
+
+#[test]
+fn git_shook_registering_no_gate_is_an_error() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    executable(bin.path(), "git-shook", "#!/bin/sh\nexit 0\n");
+
+    let got = install_with(d.path(), None, Some(bin.path()));
+
     assert!(
-        err.to_string().contains("install --yes --only homma"),
-        "the refusal names the command that was run: {err}"
+        got.unwrap_err()
+            .to_string()
+            .contains("registered no release gate")
     );
 }
 
 #[test]
 fn git_without_the_subcommand_says_git_shook_is_not_installed() {
-    let d = repo();
-    let bin = tempfile::tempdir().unwrap();
-    // git itself, found through the real PATH, answers for a subcommand it
-    // has no program for; the fake dir carries no git-shook, so on a machine
-    // that has none either this is what a missing install looks like
-    if sh::run(d.path(), "git", &["shook", "version"])
-        .map(|o| o.ok())
-        .unwrap_or(false)
+    let d = held();
+    let empty = tempfile::tempdir().unwrap();
+    // a PATH with git and nothing called git-shook
+    let git = sh::run(d.path(), "sh", &["-c", "command -v git"]).unwrap();
+    let git_dir = Path::new(git.stdout.trim()).parent().unwrap().to_path_buf();
+    let path = format!("{}:{}", empty.path().display(), git_dir.display());
+    if sh::run_with_env(d.path(), "sh", &["-c", "command -v git-shook"], &[(
+        "PATH", &path,
+    )])
+    .unwrap()
+    .ok()
     {
+        eprintln!("skipped: git-shook sits beside git, so it cannot be left off PATH here");
         return;
     }
-    let err = install_with(d.path(), &table(&[]), Some(bin.path())).unwrap_err();
-    assert!(
-        err.to_string().contains("git-shook is not installed"),
-        "{err}"
-    );
+    let out = sh::run_with_env(d.path(), "git", &["shook", "install"], &[("PATH", &path)]).unwrap();
+    assert!(out.stderr.contains("not a git command"));
 }
 
 #[test]
-fn install_writes_entrypoints_and_registers_nothing_where_git_shook_holds_no_key() {
-    let d = repo();
-    // an empty table would make the all-Direct assertion vacuous, so it names
-    // an event, and the entrypoint it writes is the control
-    let i = install(d.path(), &table(&["pre-commit"])).unwrap();
-    assert!(i.written.iter().any(|w| w.event == "pre-commit"));
-    assert!(i.written.iter().all(|w| w.reach == Reach::Direct));
-    assert!(!d.path().join(".git/shook").exists());
+fn an_install_takes_away_what_an_older_homma_left() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    fake_shook(bin.path(), &bin.path().join("log"));
+    let own = common_dir(d.path()).unwrap().join("hooks");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("pre-push"), legacy::entrypoint("pre-push")).unwrap();
+    std::fs::write(own.join("pre-commit"), "#!/bin/sh\necho somebody's\n").unwrap();
+
+    let i = install_with(d.path(), None, Some(bin.path())).unwrap();
+
+    assert_eq!(i.removed, vec![own.join("pre-push")]);
+    assert!(own.join("pre-commit").is_file(), "somebody's hook stays");
 }
 
-/// Set only in the child the test below starts: the clone to install into.
 const INSTALL_IN_CHILD: &str = "HOMMA_TEST_SHOOK_INSTALL_IN_CHILD";
 
-/// The end to end: the real git-shook, a layer-only hook, and a commit that
-/// runs it. Needs `GIT_SHOOK` pointing at the git-shook script, since git-shook
-/// is a separate program the machine may not have; without it the test says so
-/// and returns.
+/// The real git-shook, named by `GIT_SHOOK`: the gate and the workspace's
+/// manifest registered through it, run on a real commit and a real push.
 ///
-/// The install writes and modes the entrypoints in the process that calls it,
-/// and the commit then executes them, so the install runs in a child of this
-/// test binary that runs only this test: no thread of this process can carry a
-/// descriptor of an entrypoint open for writing into a fork.
+/// The install writes the manifests in the process that calls it and the
+/// commit then executes git-shook's dispatchers, so the install runs in a child
+/// of this test binary that runs only this test: no thread of this process can
+/// carry a descriptor of a file open for writing into a fork.
 #[test]
-fn a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit() {
+fn the_gate_and_the_workspace_hooks_run_through_a_real_git_shook() {
     let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
         eprintln!("skipped: GIT_SHOOK names no git-shook script");
         return;
@@ -312,33 +288,54 @@ fn a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit() {
     let shook_dir = script.parent().unwrap().to_path_buf();
     if let Some(root) = std::env::var_os(INSTALL_IN_CHILD) {
         let root = PathBuf::from(root);
-        let cfg = crate::Config::from_path(&root.join("homma.toml")).unwrap();
-        let i = install_with(&root, &cfg.hooks, Some(&shook_dir)).unwrap();
-        assert!(i.reached());
-        let events: Vec<&str> = i.written.iter().map(|w| w.event.as_str()).collect();
-        assert_eq!(events, vec!["pre-commit", "pre-push"]);
+        let w = workspace_hooks(&root.join("ws"), Path::new("shook.toml"))
+            .unwrap()
+            .unwrap();
+        let i = install_with(&root.join("member"), Some(&w), Some(&shook_dir)).unwrap();
+        assert_eq!(i.registered, vec!["homma", "prose"]);
         return;
     }
-    let d = repo();
-    // the layer: a hook the manifest does not have, in a file only this clone has
-    std::fs::write(d.path().join("homma.toml"), "[workspace]\nname = \"w\"\n").unwrap();
+    let top = tempfile::tempdir().unwrap();
+    let ws = top.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
     std::fs::write(
-        d.path().join("homma.local.toml"),
-        "[instance]\nwork = \"x\"\n[[hooks.pre-commit]]\nrun = \"true\"\n",
+        ws.join("shook.toml"),
+        "name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"homma\", \"prose\", \"{paths}\"]\npaths = [\"*.md\"]\n",
     )
     .unwrap();
-    let cfg = crate::Config::from_path(&d.path().join("homma.toml")).unwrap();
-    assert_eq!(
-        cfg.hooks.entries("pre-commit").len(),
-        1,
-        "the layer reached the table"
+    let member = top.path().join("member");
+    std::fs::create_dir(&member).unwrap();
+    for args in [&["init", "--quiet", "-b", "main"][..], &["config", "user.name", "t"], &[
+        "config",
+        "user.email",
+        "t@t",
+    ]] {
+        assert!(sh::run(&member, "git", args).unwrap().ok());
+    }
+    // git-shook takes the hooks path first, as the install asks of a clone
+    let path = format!(
+        "{}:{}",
+        shook_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
     );
+    let manifests = manifests_dir(&member).unwrap();
+    std::fs::create_dir_all(&manifests).unwrap();
+    std::fs::write(
+        manifests.join("first.toml"),
+        "name = \"first\"\n\n[hooks.post-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let took = sh::run_with_env(&member, "git", &["shook", "install", "--yes"], &[(
+        "PATH", &path,
+    )])
+    .unwrap();
+    assert!(took.ok(), "{}", took.log());
 
     let installed = homma_fixture::alone(
         module_path!(),
-        "a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit",
+        "the_gate_and_the_workspace_hooks_run_through_a_real_git_shook",
     )
-    .env(INSTALL_IN_CHILD, d.path())
+    .env(INSTALL_IN_CHILD, top.path())
     .output()
     .unwrap();
     homma_fixture::passed(&installed);
@@ -351,31 +348,75 @@ fn a_hook_declared_only_in_a_layer_is_registered_and_runs_on_a_real_commit() {
         "homma",
         &format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n", log.display()),
     );
-    std::fs::write(d.path().join("f"), "x").unwrap();
-    let path = format!(
-        "{}:{}:{}",
-        bin.path().display(),
-        shook_dir.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
+    let path = format!("{}:{path}", bin.path().display());
+    std::fs::write(member.join("notes.md"), "x").unwrap();
+    std::fs::write(member.join("code.rs"), "x").unwrap();
     assert!(
-        sh::run_with_env(d.path(), "git", &["add", "f"], &[("PATH", &path)])
+        sh::run_with_env(&member, "git", &["add", "."], &[("PATH", &path)])
             .unwrap()
             .ok()
     );
-    let committed = sh::run_with_env(d.path(), "git", &["commit", "-qm", "one"], &[(
+    let committed = sh::run_with_env(&member, "git", &["commit", "-qm", "one"], &[(
         "PATH", &path,
     )])
     .unwrap();
     assert!(committed.ok(), "{}", committed.log());
     assert_eq!(
         std::fs::read_to_string(&log).unwrap().trim(),
-        "hook run pre-commit",
-        "the dispatcher ran homma for the event the layer declared"
+        "prose notes.md",
+        "the workspace's entry ran for the markdown it selected and nothing else"
     );
 
-    // and the registration agrees with the declarations
-    let doctor =
-        sh::run_with_env(d.path(), "git", &["shook", "doctor"], &[("PATH", &path)]).unwrap();
-    assert!(doctor.ok(), "{}", doctor.log());
+    let remote = top.path().join("remote.git");
+    assert!(
+        sh::run(top.path(), "git", &[
+            "init",
+            "--quiet",
+            "--bare",
+            remote.to_str().unwrap()
+        ])
+        .unwrap()
+        .ok()
+    );
+    let pushed = sh::run_with_env(
+        &member,
+        "git",
+        &["push", "--quiet", remote.to_str().unwrap(), "main"],
+        &[("PATH", &path)],
+    )
+    .unwrap();
+    assert!(pushed.ok(), "{}", pushed.log());
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        calls.lines().any(|l| l.starts_with("release gate --hook")),
+        "the push ran the release gate: {calls}"
+    );
+}
+
+#[test]
+fn a_refusal_puts_back_what_an_older_homma_left() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    executable(
+        bin.path(),
+        "git-shook",
+        "#!/bin/sh\necho refused >&2\nexit 1\n",
+    );
+    let own = common_dir(d.path()).unwrap().join("hooks");
+    std::fs::create_dir_all(&own).unwrap();
+    let left = own.join("pre-push");
+    homma_fixture::script(&left, &legacy::entrypoint("pre-push"), 0o755);
+
+    assert!(install_with(d.path(), None, Some(bin.path())).is_err());
+
+    assert_eq!(
+        std::fs::read_to_string(&left).unwrap(),
+        legacy::entrypoint("pre-push"),
+        "the old gate is back where git reads it"
+    );
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(&left).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
 }

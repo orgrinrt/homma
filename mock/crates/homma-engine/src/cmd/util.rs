@@ -202,23 +202,6 @@ mod relative_str_tests {
     }
 }
 
-/// The clone `dir` is in, when the scope leaves that clone out of the members.
-///
-/// A clone directly under the workspace root whose name the scope does not admit: the case where
-/// the manifest lists no clone for the working directory and refusing would lock the clone out
-/// of its own git hooks. The workspace repository, a clone elsewhere, and a directory the scope
-/// admits but detection missed are not it, and keep their refusal.
-pub(crate) fn out_of_scope_clone(cfg: &Config, dir: &Path) -> Option<PathBuf> {
-    let clone = clone_of(dir)?;
-    let root = cfg.workspace.path.canonicalize().ok()?;
-    let name = clone.strip_prefix(&root).ok()?;
-    let mut parts = name.components();
-    let first = parts.next()?;
-    let direct = parts.next().is_none();
-    let name = first.as_os_str().to_str()?;
-    (direct && !cfg.scope.admits(name)).then_some(clone)
-}
-
 /// The clone `dir` sits in or hangs off, found through git rather than through the manifest.
 ///
 /// A worktree sits beside the clones rather than under one, and a hook runs with it as the

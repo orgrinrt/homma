@@ -39,6 +39,10 @@ pub struct Paths {
     /// workspace root after its aggregate. Unset, the regen renders none of
     /// them and says so.
     pub agent_surfaces: Option<RelPath>,
+    /// The git-shook manifest declaring the workspace's own git hooks, which
+    /// `homma hook install` places in each member for git-shook to register
+    /// beside homma's release gate. homma reads its `name` and nothing more.
+    pub git_hooks:      RelPath,
     /// The rendered index of every agent address, one line each: the address,
     /// the handle and the role, tab-separated.
     pub identities:     RelPath,
@@ -86,6 +90,7 @@ impl Default for Paths {
             forge_route:    None,
             history_scan:   None,
             agent_surfaces: None,
+            git_hooks:      rel("shook.toml"),
             identities:     rel(".shared/.index/identities.tsv"),
             leases:         rel(".shared/state/leases"),
         }

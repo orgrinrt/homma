@@ -1,24 +1,15 @@
 # What homma wants run at a git event, for a plain `git shook install` to
-# register in a clone that has never run `homma hook install`.
+# register in a clone that has never run `homma hook install`: the release gate,
+# which every push of a workspace goes through.
 #
-# Where homma is installed, `homma hook install <repo>` writes the fuller
-# declaration itself: a manifest named `homma` in the git directory's
-# `shook/manifests/`, with one `homma hook run <event>` for every event the
-# hooks table names once `homma.toml` and the overlay files its `layers` key
-# lists are read together. git-shook registers that manifest in place of this
-# file, since a clone-local manifest replaces a tracked one of the same name,
-# so a hook declared only in `homma.local.toml` is installed and this file
-# cannot be the reason it is not.
-#
-# `homma hook run <event>` reads the layers again when the event fires to decide
-# what that event runs, so this changes who calls it and nothing about what it
-# does. `git shook install` shows what each entry would run and registers them
-# only once the operator agrees.
+# Where homma is installed, `homma hook install <repo>` writes the same manifest
+# into the git directory's `shook/manifests/` under the same name, beside a copy
+# of the workspace's own git hooks manifest, and git-shook registers that one in
+# place of this file, since a clone-local manifest replaces a tracked one of the
+# same name. `git shook install` shows what each entry would run and registers
+# them only once the operator agrees.
 
 name = "homma"
 
-[hooks.pre-commit]
-run = ["homma", "hook", "run", "pre-commit"]
-
 [hooks.pre-push]
-run = ["homma", "hook", "run", "pre-push"]
+run = ["homma", "release", "gate", "--hook"]

@@ -1,27 +1,25 @@
 //--------------------------------------------------------------------------------------------------
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
-//--------------------------------------------------------------------------------------------------
-//! The git hooks homma has a hand in: one entrypoint per event written into
-//! the repository's own hooks directory, and the entries the table runs when
-//! git calls it. The table itself is `homma_api::Hooks`.
+//! The git hooks homma has a hand in, every one of them registered with
+//! git-shook: homma's own release gate, and the workspace's git hooks manifest
+//! carried into each member. homma declares no git hook in its config and runs
+//! no chain of them; git-shook runs every event's entries on its base.
 
-pub mod install;
-mod reach_kind;
-pub mod run;
+mod error;
+pub mod legacy;
 pub mod shook;
 
-pub use install::{
-    HookError,
+pub use error::HookError;
+pub use shook::{
+    GATE,
+    GATE_EVENT,
     Installed,
-    MOCKSPACE_MARKER,
-    Reach,
-    Written,
-    hooks_dir,
-    hooks_path,
+    NAME,
+    WorkspaceHooks,
+    gate_manifest,
+    holds_path,
     install,
-    is_installed,
-    reach,
-    script,
+    install_with,
+    workspace_hooks,
 };
-pub use run::{Ran, run, touched};

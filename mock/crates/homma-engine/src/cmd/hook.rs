@@ -2,11 +2,13 @@
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
-//! `homma hook`: the entrypoints, one per event the table names, and what an
-//! entrypoint calls. The logic is `homma_core::hooks`; this wires it to the
-//! manifest and the terminal.
+//! `homma hook`: the git hooks registered with git-shook, homma's release gate
+//! and the workspace's git hooks manifest, and what an older homma's
+//! entrypoints call until a clone is installed again. The logic is
+//! `homma_core::hooks`; this wires it to the manifest and the terminal.
 
-use std::io::{IsTerminal, Read};
+use std::path::PathBuf;
+use std::process::Command;
 
 use anyhow::Result;
 use homma_core::{Config, hooks};
@@ -27,51 +29,66 @@ pub fn run(cli: &Cli, cfg: &Config, op: &HookOp) -> Result<Outcome> {
         HookOp::Run {
             event,
             args,
-        } => run_cmd(cli, cfg, event, args),
+        } => run_cmd(cli, event, args),
     }
 }
 
-/// The report a hook verb gives instead of acting while a layer `layers`
-/// names could not be read. The load goes on past a broken overlay so
-/// `homma local` can repair one; what the verbs must not do is install or run
-/// the table with a layer's hooks missing from it, since a check that did not
-/// run looks the same as one that passed.
-fn refused_for_layers(cfg: &Config) -> Option<Report> {
-    if cfg.layer_errors.is_empty() {
-        return None;
-    }
-    let mut lines = cfg.layer_errors.clone();
-    lines.push("the hooks table is incomplete without it, so nothing is installed or run".into());
-    Some(Report {
-        ok: false,
-        lines,
-    })
+/// The workspace's git hooks manifest, by `git_hooks` under `[paths]`.
+fn git_hooks_file(cfg: &Config) -> Result<PathBuf> {
+    Ok(crate::cmd::identity::paths_of(cfg)?
+        .git_hooks
+        .as_path()
+        .to_path_buf())
 }
 
 fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
-    if let Some(report) = refused_for_layers(cfg) {
-        return finish(cli, report);
-    }
     let (_, _, root) = resolve_repo(cfg, Some(repo))?;
-    match hooks::install(&root, &cfg.hooks) {
+    let file = git_hooks_file(cfg)?;
+    let workspace = match hooks::workspace_hooks(&cfg.workspace.path, &file) {
+        Ok(w) => w,
+        Err(e) => {
+            return finish(cli, Report {
+                ok:    false,
+                lines: vec![e.to_string()],
+            });
+        },
+    };
+    match hooks::install(&root, workspace.as_ref()) {
         Ok(i) => {
-            // one line per entrypoint, with how git reaches it; one that
-            // nothing reaches makes the exit non-zero like a refusal, so a
-            // sweep across the workspace goes on and the operator sees which
-            // repositories and events git will not run
-            let lines: Vec<String> = i
-                .written
-                .iter()
-                .map(|w| format!("wrote {}: {}", w.path.display(), w.reach))
-                .collect();
+            let mut lines = vec![format!(
+                "registered with git-shook in {}: {}",
+                root.display(),
+                i.registered.join(", ")
+            )];
+            if workspace.is_none() {
+                lines.push(format!(
+                    "the workspace declares no git hooks of its own: there is no {} at its root, so the release gate alone is registered",
+                    file.display()
+                ));
+            }
+            for gone in &i.removed {
+                lines.push(format!(
+                    "removed {}, which an older homma left",
+                    gone.display()
+                ));
+            }
             finish(cli, Report {
-                ok: i.reached(),
+                ok: true,
                 lines,
             })
         },
         // a refusal is reported, a line and a non-zero exit, so a sweep
         // across the workspace goes on to the next repo
-        Err(e @ (hooks::HookError::HookExists(_) | hooks::HookError::Shook(_))) => {
+        Err(
+            e @ (hooks::HookError::NotShook(_)
+            | hooks::HookError::Shook(_)
+            | hooks::HookError::Manifest {
+                ..
+            }
+            | hooks::HookError::Name {
+                ..
+            }),
+        ) => {
             finish(cli, Report {
                 ok:    false,
                 lines: vec![e.to_string()],
@@ -86,9 +103,33 @@ fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
 fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     let mut ok = true;
     let mut lines = Vec::new();
+    let file = git_hooks_file(cfg)?;
+    match hooks::workspace_hooks(&cfg.workspace.path, &file) {
+        Ok(Some(w)) => {
+            lines.push(format!(
+                "git hooks are declared in {}, registered as {}",
+                w.path.display(),
+                w.name
+            ));
+        },
+        Ok(None) => {
+            lines.push(format!(
+                "git hooks: no {} at the workspace root, so only the release gate is registered",
+                file.display()
+            ));
+        },
+        Err(e) => {
+            ok = false;
+            lines.push(format!("error     {e}"));
+        },
+    }
+    for retired in &cfg.retired {
+        ok = false;
+        lines.push(format!("retired   {}", retired.said(&file)));
+    }
     let survey = homma_core::layers::survey(&cfg.layers_dir, &cfg.layers)?;
     lines.push(format!(
-        "hooks are read from homma.toml, then {}",
+        "agent hooks and nudges are read from homma.toml, then {}",
         if cfg.layers.names().is_empty() {
             "no layers".to_string()
         } else {
@@ -107,7 +148,7 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     }
     if survey.own_unlisted {
         lines.push(format!(
-            "note      {} is not named in `layers`, so its hooks tables are not read; its own tables still are, so it stays",
+            "note      {} is not named in `layers`, so its agent tables are not read; its own tables still are, so it stays",
             homma_api::layers::DEFAULT_LAYER
         ));
     }
@@ -123,10 +164,22 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     }
     if let Some(repo) = repo {
         let (_, _, root) = resolve_repo(cfg, Some(repo))?;
-        for event in cfg.hooks.events() {
-            let reach = hooks::reach(&root, event)?;
-            ok &= reach.reached();
-            lines.push(format!("{event}: {reach}"));
+        if hooks::holds_path(&root)? {
+            lines.push(format!(
+                "{repo}: git-shook holds the hooks path; `git shook list` shows what it registered"
+            ));
+        } else {
+            ok = false;
+            lines.push(format!(
+                "{repo}: git-shook does not hold the hooks path, so nothing homma registers runs; run `git shook install` there, then `homma hook install {repo}`"
+            ));
+        }
+        for left in hooks::legacy::left_behind(&root)? {
+            ok = false;
+            lines.push(format!(
+                "{repo}: {} was left by an older homma; `homma hook install {repo}` removes it",
+                left.display()
+            ));
         }
     }
     finish(cli, Report {
@@ -135,35 +188,25 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     })
 }
 
-fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outcome> {
-    if let Some(report) = refused_for_layers(cfg) {
-        return finish(cli, report);
+/// What an older homma's entrypoint calls. At the gate's event it runs the
+/// release gate, with git's arguments and stdin, as the old table's first row
+/// did; at every event it says to install again; at any other it runs nothing.
+fn run_cmd(cli: &Cli, event: &str, args: &[String]) -> Result<Outcome> {
+    // FIXME(remove_homma_hook_run_once_no_clone_carries_an_older_entrypo): the
+    // verb answers only what an older homma installed, and goes once no clone has one.
+    eprintln!(
+        "homma: the {event} hook was written by an older homma; `homma hook install <repo>` moves it onto git-shook"
+    );
+    if event != hooks::GATE_EVENT {
+        return finish(cli, Report {
+            ok:    true,
+            lines: Vec::new(),
+        });
     }
-    // the entrypoint runs with the repository as its working directory, and
-    // a worktree's clone is found through its common git directory
-    //
-    // a clone outside the scope is not a member, and it still carries the entrypoint:
-    // refusing its commits and pushes over a key the gate has no business with would
-    // lock it out, so the clone is found through git instead
-    let root = match resolve_repo(cfg, None) {
-        Ok((_, _, root)) => root,
-        Err(e) => {
-            let here = std::env::current_dir()?;
-            crate::cmd::util::out_of_scope_clone(cfg, &here).ok_or(e)?
-        },
-    };
-    // git hands some events their input on stdin; read it once, for those
-    // events and no other, and replay it to every entry. A hook for any other
-    // event may be handed an open pipe by whatever wraps git, and a read there
-    // would wait on it; a terminal is never read either, so a person typing
-    // the verb by hand is not left waiting on input git would have closed.
-    let mut stdin = String::new();
-    if homma_api::hooks::STDIN_EVENTS.contains(&event) && !std::io::stdin().is_terminal() {
-        std::io::stdin().read_to_string(&mut stdin)?;
-    }
-    let ran = hooks::run(&root, &cfg.hooks, event, args, &stdin)?;
+    let (program, gate) = hooks::GATE.split_first().expect("the gate names a program");
+    let status = Command::new(program).args(gate).args(args).status()?;
     finish(cli, Report {
-        ok:    ran.ok,
-        lines: ran.lines,
+        ok:    status.success(),
+        lines: Vec::new(),
     })
 }

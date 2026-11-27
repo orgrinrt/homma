@@ -2,9 +2,9 @@
 // Copyright (c) 2026                   orgrinrt                 ort@hiisi.digital
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
-//! The layers: the overlay files beside `homma.toml` that the hooks tables are
+//! The layers: the overlay files beside `homma.toml` that the agent tables are
 //! also read from, `layers` in `homma.toml`. A declared list rather than a glob
-//! of `homma.*.toml`, because a hook is code run on every commit and the files
+//! of `homma.*.toml`, because a hook is code run on every tool call and the files
 //! that may add one are a decision somebody made. No I/O; `homma-core` reads
 //! the files.
 

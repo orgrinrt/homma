@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: MPL-2.0     https://mozilla.org/MPL/2.0        contact@hiisi.digital
 //--------------------------------------------------------------------------------------------------
 //! The layers: the overlay files `layers` in `homma.toml` names, read for the
-//! two hooks tables and the nudges, and nothing else. `homma.toml` is the base, each overlay
+//! agent hooks and the nudges, and nothing else. `homma.toml` is the base, each overlay
 //! appends to it in list order, and no layer replaces another's entries.
 //!
 //! An overlay is `homma.<name>.toml` beside the manifest. `homma.local.toml`
 //! has a reader of its own for its own tables, so for that file the tables
 //! this module does not read are left to it; any other overlay carries the two
-//! hooks tables only, and a table beside them is refused by name, since
+//! agent tables only, and a table beside them is refused by name, since
 //! nothing would read it and a setting silently ignored is worse than a
 //! command that refuses.
 
@@ -17,15 +17,16 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use homma_api::layers::{DEFAULT_LAYER, MANIFEST};
-use homma_api::{AgentHooks, AgentTable, Hooks, InvalidNudge, Layers, Nudges};
+use homma_api::{AgentHooks, AgentTable, InvalidNudge, Layers, Nudges};
 
 use crate::local::{Local, LocalError};
 
 /// What one overlay file declares.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Overlay {
-    pub hooks: Hooks,
-    pub agent: AgentTable,
+    /// The retired tables the file still carries, taken out unread.
+    pub retired: Vec<crate::config::Retired>,
+    pub agent:   AgentTable,
 }
 
 /// Why an overlay was not read.
@@ -92,7 +93,7 @@ impl fmt::Display for LayerError {
                 write!(
                     f,
                     "the layer {} carries `[{table}]`, which nothing reads from an overlay; an \
-                     overlay holds `[hooks]`, `[agent.hooks]` and `[agent.nudges]`",
+                     overlay holds `[agent.hooks]` and `[agent.nudges]`",
                     path.display()
                 )
             },
@@ -173,10 +174,13 @@ pub fn parse(path: &Path, text: &str, own_tables: bool) -> Result<Overlay, Layer
         }
     };
     let mut table: toml::Table = toml::from_str(text).map_err(parse_err)?;
-    let hooks = match table.remove("hooks") {
-        Some(v) => v.try_into::<Hooks>().map_err(parse_err)?,
-        None => Hooks::default(),
-    };
+    // A `[hooks]` left from when git hooks were declared here is named, not
+    // refused, the same as in the manifest.
+    let file = path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let retired = crate::config::retired::take(&mut table, &file);
     let agent = match table.remove("agent") {
         Some(toml::Value::Table(mut a)) => {
             let hooks = match a.remove("hooks") {
@@ -214,7 +218,7 @@ pub fn parse(path: &Path, text: &str, own_tables: bool) -> Result<Overlay, Layer
         }
     }
     Ok(Overlay {
-        hooks,
+        retired,
         agent,
     })
 }
@@ -276,42 +280,47 @@ pub fn read(dir: &Path, name: &str) -> Result<Option<Overlay>, LayerError> {
     parse(&path, &text, name == DEFAULT_LAYER).map(Some)
 }
 
-/// Append every named overlay in `dir` to the two tables, in list order, and
-/// return the ones that could not be read, in the same order.
+/// What applying the overlays came to.
+#[derive(Debug, Default)]
+pub struct Applied {
+    /// The overlays that could not be read, in list order.
+    pub failed:  Vec<LayerError>,
+    /// The retired tables the overlays that were read still carry.
+    pub retired: Vec<crate::config::Retired>,
+}
+
+/// Append every named overlay in `dir` to the agent tables, in list order, and
+/// return the ones that could not be read, in the same order, with the retired
+/// tables the rest still carry.
 ///
 /// An overlay that fails contributes nothing and does not stop the others. The
 /// load that calls this keeps going on the failures, since every command loads
 /// the manifest and `homma local` has to run to repair a broken
-/// `homma.local.toml`; what must not go on is a hook run or an install, which
-/// refuse while any failure is on the config, because a hook silently dropped
-/// is a check that did not happen.
-pub fn apply(
-    dir: &Path,
-    layers: &Layers,
-    hooks: &mut Hooks,
-    agent: &mut AgentTable,
-) -> Vec<LayerError> {
-    let mut failed = Vec::new();
+/// `homma.local.toml`; what must not go on is `agent regen`, which refuses
+/// while any failure is on the config, because a hook silently dropped is a
+/// check that did not happen.
+pub fn apply(dir: &Path, layers: &Layers, agent: &mut AgentTable) -> Applied {
+    let mut out = Applied::default();
     for name in layers.names() {
         match read(dir, name) {
             Ok(Some(overlay)) => {
                 // the nudges are checked first, so a layer refused for them adds
                 // nothing at all rather than its hooks without its nudges
                 if let Err(source) = agent.nudges.append(&overlay.agent.nudges) {
-                    failed.push(LayerError::Nudges {
+                    out.failed.push(LayerError::Nudges {
                         path: dir.join(name),
                         source,
                     });
                     continue;
                 }
-                hooks.append(&overlay.hooks);
                 agent.hooks.append(&overlay.agent.hooks);
+                out.retired.extend(overlay.retired);
             },
             Ok(None) => {},
-            Err(e) => failed.push(e),
+            Err(e) => out.failed.push(e),
         }
     }
-    failed
+    out
 }
 
 /// Which of the `homma.*.toml` files beside the manifest are read, which are

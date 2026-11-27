@@ -92,6 +92,12 @@ pub struct WorkspaceLine {
     /// The keys under `[paths]` this engine does not read, sorted; empty
     /// where there is none, or where `[paths]` is not a table.
     pub unread_paths:           Vec<String>,
+    /// The tables this engine no longer reads that the manifest or an overlay
+    /// still carries, each with its file; empty where there is none.
+    pub retired:                Vec<homma_core::config::Retired>,
+    /// What each of `retired` moved to and how, one line each.
+    #[serde(skip)]
+    pub retired_said:           Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -226,6 +232,17 @@ fn build_report(
         .as_ref()
         .and_then(|raw| homma_api::Paths::unread(raw).ok())
         .unwrap_or_default();
+    // where the git hooks moved, which a `[paths]` this engine cannot read
+    // leaves at its default
+    let git_hooks = crate::cmd::identity::paths_of(cfg)
+        .map(|p| p.git_hooks.as_path().to_path_buf())
+        .unwrap_or_else(|_| {
+            homma_api::Paths::default()
+                .git_hooks
+                .as_path()
+                .to_path_buf()
+        });
+    let retired_said = cfg.retired.iter().map(|r| r.said(&git_hooks)).collect();
     let workspace = WorkspaceLine {
         name: cfg.workspace.name.to_string(),
         path: cfg.workspace.path.display().to_string(),
@@ -234,6 +251,8 @@ fn build_report(
         reads,
         reads_unknown,
         unread_paths,
+        retired: cfg.retired.clone(),
+        retired_said,
     };
     let forges = cfg
         .forges
@@ -345,6 +364,9 @@ impl StatusReport {
                 "  not read under [paths]: {}",
                 self.workspace.unread_paths.join(" ")
             )?;
+        }
+        for said in &self.workspace.retired_said {
+            writeln!(out, "  {said}")?;
         }
         if let Some(i) = &self.instance {
             match &i.title {

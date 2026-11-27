@@ -107,24 +107,25 @@ pub struct Config {
     #[serde(default)]
     pub markers: homma_api::Markers,
 
-    /// `[hooks]`: one array of entries per git event, what each entrypoint
-    /// homma installs runs. The release gate on `pre-push` is present whether
-    /// or not the table is written; see `homma_api::Hooks`.
-    #[serde(default)]
-    pub hooks: homma_api::Hooks,
+    /// The tables this engine no longer reads that the manifest or an overlay
+    /// still carries, each with the file it is in. Taken out before the parse
+    /// rather than refused, since a running workspace's manifest has one; see
+    /// [`Retired`].
+    #[serde(skip)]
+    pub retired: Vec<Retired>,
 
-    /// `layers`: the overlay files beside the manifest that `[hooks]`,
+    /// `layers`: the overlay files beside the manifest that
     /// `[agent.hooks]` and `[agent.nudges]` are also read from, appended after this file's own in
     /// list order. A declared list and not a glob of `homma.*.toml`; see
     /// [`crate::layers`]. [`Config::from_path`] applies them, so a caller
-    /// reading `hooks` or `agent` from a loaded config has the merged tables.
+    /// reading `agent` from a loaded config has the merged tables.
     #[serde(default)]
     pub layers: homma_api::Layers,
 
     /// The overlays `layers` names that could not be read, one line each, set
     /// by [`Config::from_path`]. The load goes on past them, so a broken
-    /// `homma.local.toml` does not lock out `homma local`; a hook run and a
-    /// hook install refuse while any is here.
+    /// `homma.local.toml` does not lock out `homma local`; `agent regen`
+    /// refuses while any is here.
     #[serde(skip)]
     pub layer_errors: Vec<String>,
 
@@ -193,7 +194,7 @@ impl Config {
     /// [`core::str::FromStr::from_str`]; a matching `FromStr` impl is also
     /// provided, so `"...".parse::<Config>()` works too.
     pub fn parse(s: &str) -> Result<Self, ConfigError> {
-        toml::from_str(s).map_err(ConfigError::Parse)
+        retired::parse(s)
     }
 
     /// Parse `homma.toml` from a filesystem path.
@@ -259,8 +260,10 @@ impl Config {
         cfg.settle_token_commands(beside);
         cfg.settle_deny(beside);
         // beside the manifest, since the overlays are files next to it
-        let failed = crate::layers::apply(beside, &cfg.layers, &mut cfg.hooks, &mut cfg.agent);
-        cfg.layer_errors = failed
+        let applied = crate::layers::apply(beside, &cfg.layers, &mut cfg.agent);
+        cfg.retired.extend(applied.retired);
+        cfg.layer_errors = applied
+            .failed
             .iter()
             .map(crate::layers::LayerError::report)
             .collect();
@@ -728,4 +731,8 @@ mod keys_tests;
 mod tests;
 
 mod keys;
+pub(crate) mod retired;
+pub use retired::Retired;
+#[cfg(test)]
+mod retired_tests;
 pub use keys::{KeysUnread, keys};
