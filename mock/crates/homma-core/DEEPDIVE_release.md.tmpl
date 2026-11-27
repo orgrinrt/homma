@@ -211,6 +211,16 @@ A workspace that has no such file registers the gate alone, and the install says
 so. A name of `homma` is refused, naming the file, since the copy would replace
 the gate.
 
+`git_hooks` is read from the manifest and from nowhere else: `homma.local.toml`
+has no `[paths]` and refuses a table it does not know, and any other overlay
+carries the agent tables only. So every seat of a workspace names the same file,
+and only the manifest can name one that is not there, for every seat at once.
+Where the named file is not there, the install writes no workspace manifest into
+the member, and a manifest of another name already in the member stays as it
+was: the install neither puts it back nor takes it out, which is whoever wrote
+it. A seat whose manifest names a file that is not there therefore never gets
+the workspace's manifest back from an install, whatever an earlier run left.
+
 `homma hook install <repo>` writes both into the member's common git directory
 under `shook/manifests/`, as `homma.toml` and `<name>.toml`, and runs `git shook
 install --yes --only homma --only <name>`. The operator running the verb is the
@@ -251,7 +261,9 @@ it reaches it, so each runs once, as the install left it. The verb hands the
 event on to nothing, which would run them twice; at `pre-push`, where the entry
 running was the gate's, it runs the release gate itself with git's arguments
 and stdin. An entry the install registers for the first time is not in the list
-the running chain made, and runs from the next event on. At every event it first
+the running chain made, and runs from the next event on: the workspace's
+manifest is registered in a member before that member's first event, or that
+event runs no new entry. At every event it first
 says once on stderr that the hook was written by an older homma.
 
 `homma hook doctor` says where the workspace's git hooks are declared and
