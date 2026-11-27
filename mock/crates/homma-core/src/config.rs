@@ -34,8 +34,8 @@ pub struct Config {
     /// [`Config::from_path`] does at the load.
     ///
     /// `skip_deserializing` rather than `default`, so a manifest still
-    /// carrying a `[repos]` table meets `deny_unknown_fields` and fails
-    /// instead of being quietly half-read. Not `skip`, which would take the
+    /// carrying a `[repos]` table has it named in [`Config::unread`] rather
+    /// than quietly half-read. Not `skip`, which would take the
     /// serialising half with it, and that half is what the template context
     /// reads: a document looping over the workspace's repositories would find
     /// none and render an empty list rather than an error.
@@ -128,6 +128,12 @@ pub struct Config {
     #[serde(skip)]
     pub layer_errors: Vec<String>,
 
+    /// The entries of the top level and of `[agent]` this engine reads no key
+    /// under, by dotted name and sorted, taken out by [`Config::parse`] so the
+    /// rest is read. See [`unread`].
+    #[serde(skip)]
+    pub unread: Vec<String>,
+
     /// The directory the layers were read from: beside the manifest, set by
     /// [`Config::from_path`] and empty for a config built from a string. What
     /// `homma hook doctor` surveys for overlays nobody named.
@@ -193,7 +199,7 @@ impl Config {
     /// [`core::str::FromStr::from_str`]; a matching `FromStr` impl is also
     /// provided, so `"...".parse::<Config>()` works too.
     pub fn parse(s: &str) -> Result<Self, ConfigError> {
-        toml::from_str(s).map_err(ConfigError::Parse)
+        unread::parse(s)
     }
 
     /// Parse `homma.toml` from a filesystem path.
@@ -726,6 +732,9 @@ impl std::error::Error for ConfigError {
 mod keys_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod unread_tests;
 
 mod keys;
+mod unread;
 pub use keys::{KeysUnread, keys};

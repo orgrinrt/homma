@@ -58,7 +58,7 @@ fn agent_state(repo: &str, state: AgentState, all: bool) -> RepoAgentState {
     }
 }
 
-fn rendered(report: &StatusReport) -> String {
+pub(super) fn rendered(report: &StatusReport) -> String {
     let mut out = Vec::new();
     report
         .render_human(&mut out)
@@ -654,7 +654,7 @@ fn the_workspace_line_lists_every_key_this_engine_reads() {
     );
 }
 
-fn report_of(manifest: &str) -> StatusReport {
+pub(super) fn report_of(manifest: &str) -> StatusReport {
     let cfg = Config::parse(manifest).expect("the manifest parses");
     build_report(&cfg, Vec::new(), Vec::new(), empty_configs(), Vec::new())
 }

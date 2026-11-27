@@ -167,8 +167,19 @@ fn a_malformed_file_does_not_stop_the_manifest_load() {
 }
 
 #[test]
-fn a_manifest_carrying_a_local_table_is_still_refused() {
-    assert!(Config::parse("[workspace]\nname = \"w\"\n[local]\nwork = \"k\"\n").is_err());
+fn a_manifest_carrying_a_local_table_has_it_named_and_never_read() {
+    // The instance is the local file's, never the committed manifest's: a
+    // `[local]` there is taken out and named as unread, so the status reports
+    // it and nothing reads it as the instance.
+    let cfg = Config::parse("[workspace]\nname = \"w\"\n[local]\nwork = \"k\"\n").unwrap();
+    assert_eq!(cfg.unread, ["local"]);
+    // Failing control: the manifest without it has nothing unread.
+    assert!(
+        Config::parse("[workspace]\nname = \"w\"\n")
+            .unwrap()
+            .unread
+            .is_empty()
+    );
 }
 
 // ---------------------------------------------------------------------------

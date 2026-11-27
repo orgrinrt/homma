@@ -261,3 +261,30 @@ fn skipping_all_four_stages_is_refused() {
     let err = regen(&cfg, None, surfaces_only(true)).unwrap_err();
     assert!(err.to_string().contains("would do nothing"), "got {err}");
 }
+
+#[test]
+fn an_agent_entry_this_engine_does_not_read_stops_the_regen_and_says_what_to_do() {
+    let skip_all = Opts {
+        skip_cargo_mock: true,
+        skip_configs: true,
+        skip_aggregate: true,
+        skip_surfaces: true,
+        ..Opts::default()
+    };
+    let later = homma_core::Config::parse(
+        "homma_branch = \"dev\"\n[workspace]\nname = \"w\"\n[[agent.later]]\na = 1\n",
+    )
+    .unwrap();
+    let why = format!("{:#}", regen(&later, None, skip_all).unwrap_err());
+    assert!(why.contains("`agent.later`"), "{why}");
+    assert!(why.contains("the branch `dev`"), "{why}");
+    // Failing control: an entry of the top level alone is read by no regen, so whatever the
+    // regen says of a run that skips every stage, it is not this.
+    let top = homma_core::Config::parse(
+        "homma_branch = \"dev\"\n[workspace]\nname = \"w\"\n[later]\nx = 1\n",
+    )
+    .unwrap();
+    if let Err(e) = regen(&top, None, skip_all) {
+        assert!(!format!("{e:#}").contains("does not read"), "{e:#}");
+    }
+}
