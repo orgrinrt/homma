@@ -2195,8 +2195,9 @@ checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
 
 [[package]]
 name = "renki"
-version = "0.0.5-rc.3"
-source = "git+https://github.com/orgrinrt/renki?rev=15b1dd2#15b1dd277d50368386f4d2aaca254b86bf930c75"
+version = "0.0.5-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97dd3c97f63e5a2c051a6c7798bb715870261efec91f1e9a2f1a4b1ca1937990"
 dependencies = [
  "notko",
  "renki-config",
@@ -2209,7 +2210,8 @@ dependencies = [
 [[package]]
 name = "renki-config"
 version = "0.0.2"
-source = "git+https://github.com/orgrinrt/renki?rev=15b1dd2#15b1dd277d50368386f4d2aaca254b86bf930c75"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51f398fb4ec01ac3416363e09d238e9bd0fd563230330bd6ba1fa92840146be"
 dependencies = [
  "notko",
 ]
@@ -2217,7 +2219,8 @@ dependencies = [
 [[package]]
 name = "renki-dirs"
 version = "0.0.2"
-source = "git+https://github.com/orgrinrt/renki?rev=15b1dd2#15b1dd277d50368386f4d2aaca254b86bf930c75"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250b59018b615caeafde41cade76b67c87be88ba525a73ef8a3e5a93ba0d29e2"
 dependencies = [
  "notko",
 ]
