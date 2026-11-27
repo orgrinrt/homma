@@ -219,7 +219,7 @@ fn with_the_real_front_one_call_runs_the_members_hook_only_where_the_call_lands_
         .filter(|g| {
             g["hooks"][0]["command"]
                 .as_str()
-                .is_some_and(|c| c.contains("exec claude-shook run"))
+                .is_some_and(|c| c.contains("claude-shook") && c.contains("run PreToolUse"))
         })
         .collect();
     assert_eq!(ours.len(), 1, "one registration for the event: {settings}");

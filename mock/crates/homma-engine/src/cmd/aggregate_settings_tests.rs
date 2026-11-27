@@ -74,7 +74,7 @@ fn hommas_registrations_are_swept_from_both_files_and_everything_else_kept() {
         "PreToolUse":[
             {"matcher":"Edit","hooks":[{"type":"command","command":"\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/acre--old.sh"}]},
             {"matcher":"Bash","hooks":[{"type":"command","command":".claude/hooks/mine.sh"}]},
-            {"matcher":"Bash","hooks":[{"type":"command","command":"command -v claude-shook >/dev/null 2>&1 || { echo x >&2; exit 1; }; exec claude-shook run PreToolUse"}]}
+            {"matcher":"Bash","hooks":[{"type":"command","command":"f='/opt/bin/claude-shook'; [ -x \"$f\" ] || f=$(command -v claude-shook) || { echo x >&2; exit 1; }; exec \"$f\" run PreToolUse"}]}
         ],
         "Stop":[{"hooks":[{"type":"command","command":".claude/hooks/_declared--Stop--scripts_x.sh"}]}],
         "UserPromptSubmit":[{"hooks":[{"type":"command","command":".claude/hooks/_nudges--UserPromptSubmit.sh"}]}],
@@ -89,7 +89,7 @@ fn hommas_registrations_are_swept_from_both_files_and_everything_else_kept() {
         let cmds = commands(&v);
         assert_eq!(cmds.len(), 2, "{cmds:?}");
         assert_eq!(cmds[0], ".claude/hooks/mine.sh");
-        assert!(cmds[1].contains("exec claude-shook run PreToolUse"));
+        assert!(cmds[1].contains("run PreToolUse") && cmds[1].contains("claude-shook"));
         assert_eq!(v["env"]["A"], "1");
         assert_eq!(v["permissions"]["allow"][0], "Artifact");
         for gone in ["Stop", "UserPromptSubmit", "SessionStart"] {
