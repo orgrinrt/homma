@@ -3,14 +3,14 @@
   "flavour": "",
   "member": "homma-fixture",
   "green": {
-    "full": "374b887ce206be55352e176ee40c9732eb52eafc5cd001fcd0815ce06bbecfc9",
+    "full": "7bf63c0ddbe5e0d7e666428161caec888c0537df93a0b9e1ea05e44abe80632e",
     "own": {
-      "homma-fixture": "7dd08181dd5fa0ef21c309401160ec11ead9657772170264d59338415ea5c4e9"
+      "homma-fixture": "4cbf169ad3ef082b455adc9bf5775e065f515533bec775e5d42014f13c509c72"
     }
   },
   "tests": {},
   "bins": {
-    "homma-fixture": "e6d0e3339d077b0920de574b35ab6495c45e48282c5326c375ad00a5f17c8aae",
-    "homma-fixture::alone_at_the_root": "862bbd7ee71bcaa75062138127a4c7052b5c56dd561229838a74a0cd018b1736"
+    "homma-fixture": "0bc4caed0924875e446079f0ad466d8e6ad7b9c6a6a502bcc91d0f56d3b00929",
+    "homma-fixture::alone_at_the_root": "206d8d2f75c3c9ba8b62dd5f26516b59686ab403ea98d57be9367c147bcf13eb"
   }
 }
