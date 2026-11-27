@@ -88,6 +88,11 @@ fn sweep(cli: &Cli, cfg: &Config, workspace: Option<&hooks::WorkspaceHooks>) -> 
         if stale.is_empty() {
             continue;
         }
+        // said once for the sweep, since it is about git-shook and not a member
+        let older = hooks::shook::OLDER_SHOOK.to_string();
+        if stale.contains(&older) && !lines.contains(&older) {
+            lines.push(older);
+        }
         ok &= install_one(&root, workspace, &mut lines)?;
     }
     // every member current: a session start hears nothing, not even a blank line

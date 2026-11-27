@@ -462,3 +462,55 @@ fn a_sweep_puts_back_what_was_removed_or_edited_and_is_silent_otherwise() {
         .assert()
         .success();
 }
+
+/// Under a git-shook whose doctor takes any name under `--only` and answers all
+/// good, the sweep does not take that word: a hand-edited entry is put back,
+/// with the line saying git-shook is older than the doctor this needs. Needs
+/// `GIT_SHOOK_OLDER` naming such a git-shook.
+#[test]
+fn a_sweep_under_an_older_git_shook_puts_a_hand_edit_back_and_says_why() {
+    let Some(script) = std::env::var_os("GIT_SHOOK_OLDER").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK_OLDER names no older git-shook script");
+        return;
+    };
+    let path = path_with(script.parent().unwrap());
+    let (_d, root, member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("shook.toml"),
+        "name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(member.join(".git/shook/manifests")).unwrap();
+    std::fs::write(
+        member.join(".git/shook/manifests/other.toml"),
+        "name = \"other\"\n\n[hooks.post-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let adopted = git()
+        .args(["shook", "install", "--yes"])
+        .current_dir(&member)
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(adopted.status.success(), "{adopted:?}");
+    let sweep = || {
+        homma(&root)
+            .env("PATH", &path)
+            .args(["hook", "install"])
+            .assert()
+    };
+    sweep().success();
+    std::fs::write(
+        member.join(".git/shook/entries/pre-commit/prose"),
+        "\nsh\n-c\necho tampered\n",
+    )
+    .unwrap();
+    sweep()
+        .success()
+        .stdout(predicate::str::contains("takes any name under --only"))
+        .stdout(predicate::str::contains("registered with git-shook"));
+    assert_eq!(
+        std::fs::read_to_string(member.join(".git/shook/entries/pre-commit/prose")).unwrap(),
+        "\ntrue\n"
+    );
+}

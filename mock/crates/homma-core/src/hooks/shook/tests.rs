@@ -42,6 +42,7 @@ fn fake_shook(bin: &Path, log: &Path) {
         &format!(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{log}'\n\
              g=$(git rev-parse --path-format=absolute --git-common-dir)\n\
+             if [ \"$1\" = doctor ] && [ ! -f \"$g/doctor-old\" ]; then case \"$*\" in *homma-no-such-manifest*) exit 1;; esac; fi\n\
              if [ \"$1\" = doctor ]; then [ -f \"$g/doctor-says\" ] || exit 0; cat \"$g/doctor-says\"; exit 1; fi\n\
              for m in \"$g\"/shook/manifests/*.toml; do n=$(basename \"$m\" .toml)\n\
              for e in $(sed -n 's/^\\[hooks\\.\\(.*\\)\\]$/\\1/p' \"$m\"); do\n\
@@ -487,4 +488,23 @@ fn a_registration_where_git_shook_does_not_hold_the_path_is_the_refusal() {
     let d = repo();
     let got = registration(d.path(), None, None);
     assert!(matches!(got, Err(HookError::NotShook(_))), "{got:?}");
+}
+
+#[test]
+fn a_doctor_that_takes_any_name_is_not_believed_and_the_member_is_not_current() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    fake_shook(bin.path(), &bin.path().join("log"));
+    install_with(d.path(), None, Some(bin.path())).unwrap();
+    // the control: a doctor that checks names, all good, is current
+    assert_eq!(
+        registration(d.path(), None, Some(bin.path())).unwrap(),
+        Vec::<String>::new()
+    );
+    // an older doctor answers all good to a name no manifest has
+    std::fs::write(common_dir(d.path()).unwrap().join("doctor-old"), "").unwrap();
+    assert_eq!(
+        registration(d.path(), None, Some(bin.path())).unwrap(),
+        vec![OLDER_SHOOK.to_string()]
+    );
 }

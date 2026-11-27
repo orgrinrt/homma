@@ -23,6 +23,14 @@ use crate::release::sh;
 /// replaced by the clone-local one, so the registry holds one entry and not two.
 pub const NAME: &str = "homma";
 
+/// A name no manifest has, which a git-shook whose doctor checks names refuses
+/// under `--only`.
+pub const PROBE: &str = "homma-no-such-manifest";
+
+/// What a registration says where git-shook's doctor takes any name.
+pub const OLDER_SHOOK: &str = "git shook doctor: takes any name under --only, so it checks no entry; every \
+                               entry is written again until git-shook is one whose doctor checks names";
+
 /// The event the release gate runs on.
 pub const GATE_EVENT: &str = "pre-push";
 
@@ -200,6 +208,13 @@ pub fn registration(
     }
     for left in legacy::left_behind(root)? {
         out.push(format!("{} was left by an older homma", left.display()));
+    }
+    // a doctor that takes any name under `--only` checks no entry, so its
+    // all good is not taken: the member is not current
+    let probe = run_git(root, &["shook", "doctor", "--only", PROBE], on_path)?;
+    if probe.ok() {
+        out.push(OLDER_SHOOK.to_string());
+        return Ok(out);
     }
     let mut args = vec!["shook", "doctor"];
     for (name, _) in &files {
