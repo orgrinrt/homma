@@ -1117,9 +1117,9 @@ pub enum HookOp {
         /// A repository's directory name under the workspace root.
         repo: Option<String>,
     },
-    /// What an entrypoint an older homma wrote calls: the release gate at
-    /// `pre-push`, nothing at any other event, and a line saying to install
-    /// again.
+    /// What an entrypoint an older homma wrote calls: installs the clone, then
+    /// hands the event to the dispatcher git-shook wrote, and fails closed where
+    /// the install refuses.
     Run {
         /// The git event, `pre-commit`, `pre-push`, `commit-msg` and the rest.
         event: String,

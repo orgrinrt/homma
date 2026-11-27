@@ -2,15 +2,7 @@
   "version": 2,
   "flavour": "",
   "member": "homma-store",
-  "green": {
-    "full": "bb2963bb12067c5dbb4a9dcaa4aec2f1d4fcff456eaf8f091059f96d8f041f2b",
-    "own": {
-      "homma-api": "386696229acb3b079c37601a4d5e00c3274b6adc64a9ff1e7f81e009d444a681",
-      "homma-store": "d2c07f2820b15ba71457a6a44b54cd4d82d540e1378d5535738cfdf0e3130df5"
-    }
-  },
+  "green": null,
   "tests": {},
-  "bins": {
-    "homma-store": "63eb9bea1b0d651b374c540ff7ab58f66edf22c2d713e650f53c7c597b846dfd"
-  }
+  "bins": {}
 }

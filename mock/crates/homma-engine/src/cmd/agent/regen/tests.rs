@@ -261,3 +261,48 @@ fn skipping_all_four_stages_is_refused() {
     let err = regen(&cfg, None, surfaces_only(true)).unwrap_err();
     assert!(err.to_string().contains("would do nothing"), "got {err}");
 }
+
+#[test]
+fn an_agent_entry_this_engine_does_not_read_stops_the_regen_and_says_what_to_do() {
+    let skip_all = Opts {
+        skip_cargo_mock: true,
+        skip_configs: true,
+        skip_aggregate: true,
+        skip_surfaces: true,
+        ..Opts::default()
+    };
+    let later = homma_core::Config::parse(
+        "homma_branch = \"dev\"\n[workspace]\nname = \"w\"\n[[agent.later]]\na = 1\n",
+    )
+    .unwrap();
+    let why = format!("{:#}", regen(&later, None, skip_all).unwrap_err());
+    assert!(why.contains("`agent.later`"), "{why}");
+    assert!(why.contains("the branch `dev`"), "{why}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unread_entry_of_the_top_level_alone_leaves_the_regen_to_run() {
+    // Failing control of the refusal above: with one stage on, a regen over a manifest whose
+    // only unread entry is outside `[agent]` runs that stage and passes.
+    let dir = tempfile::tempdir().unwrap();
+    homma_fixture::script(
+        &dir.path().join("bin/render"),
+        &format!("#!/bin/sh\n{RECORDING}\n"),
+        0o755,
+    );
+    let cfg = homma_core::Config::parse(&format!(
+        "content_repo = \"c\"\n[workspace]\nname = \"w\"\npath = {:?}\n[paths]\nagent_surfaces = \
+         \"bin/render\"\n[later]\nx = 1\n",
+        dir.path().display().to_string()
+    ))
+    .unwrap();
+    assert_eq!(cfg.unread, ["later"]);
+    let report = regen(&cfg, None, surfaces_only(false)).unwrap();
+    assert!(
+        matches!(report.surfaces, StageStatus::Success),
+        "{:?}",
+        report.surfaces
+    );
+    assert!(report.ok);
+}

@@ -15,7 +15,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use notko::{Maybe, Outcome};
-use renki_dirs::{Cache, EnvName, Host, Kind, Namespace, Root, Short, Sources};
+use renki_dirs::{Cache, DirKind, EnvName, Host, Namespace, Root, Short, Sources};
 
 /// The namespace and the short name, which are the launcher's own.
 const NAME: &str = "homma";

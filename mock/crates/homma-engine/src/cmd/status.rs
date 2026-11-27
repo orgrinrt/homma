@@ -98,6 +98,15 @@ pub struct WorkspaceLine {
     /// What each of `retired` moved to and how, one line each.
     #[serde(skip)]
     pub retired_said:           Vec<String>,
+    /// The entries of the manifest's top level and of `[agent]` this engine
+    /// does not read, sorted; empty where there is none. An engine older than
+    /// this field refuses a manifest with such an entry, so the field being
+    /// there is what a manifest's owner checks before adding one.
+    pub unread:                 Vec<String>,
+    /// What to do about `unread`, by the manifest's engine pin; none where
+    /// nothing is unread.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unread_advice:          Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -253,6 +262,8 @@ fn build_report(
         unread_paths,
         retired: cfg.retired.clone(),
         retired_said,
+        unread: cfg.unread.clone(),
+        unread_advice: cfg.unread_advice(),
     };
     let forges = cfg
         .forges
@@ -367,6 +378,16 @@ impl StatusReport {
         }
         for said in &self.workspace.retired_said {
             writeln!(out, "  {said}")?;
+        }
+        if !self.workspace.unread.is_empty() {
+            writeln!(
+                out,
+                "  not read by this engine: {}",
+                self.workspace.unread.join(" ")
+            )?;
+            if let Some(advice) = &self.workspace.unread_advice {
+                writeln!(out, "  {advice}")?;
+            }
         }
         if let Some(i) = &self.instance {
             match &i.title {
@@ -623,3 +644,6 @@ impl HumanRender for StatusReport {
 #[cfg(test)]
 #[path = "status_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "status_unread_tests.rs"]
+mod unread_tests;
