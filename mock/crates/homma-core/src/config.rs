@@ -201,7 +201,6 @@ impl Config {
     /// provided, so `"...".parse::<Config>()` works too.
     pub fn parse(s: &str) -> Result<Self, ConfigError> {
         retired::parse(s)
-        unread::parse(s)
     }
 
     /// Parse `homma.toml` from a filesystem path.

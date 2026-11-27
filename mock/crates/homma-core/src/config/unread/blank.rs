@@ -12,7 +12,7 @@
 /// entry, with the lines of its value where that value runs on: an array or an
 /// inline table until its brackets close, a string in triple quotes until it
 /// does. A shape this does not follow is the caller's to fall back from.
-pub(super) fn blank(text: &str, unread: &[String]) -> String {
+pub(in crate::config) fn blank(text: &str, unread: &[String]) -> String {
     let mut out: Vec<&str> = Vec::new();
     let mut table: Vec<String> = Vec::new();
     let mut in_unread = false;

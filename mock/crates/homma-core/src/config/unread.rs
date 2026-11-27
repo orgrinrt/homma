@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 
 use super::{Config, ConfigError};
 
-mod blank;
+pub(super) mod blank;
 mod near;
 
 /// The tables whose entries are each a feature: the top level, named by the

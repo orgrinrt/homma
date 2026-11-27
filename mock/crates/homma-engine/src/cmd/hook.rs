@@ -29,7 +29,7 @@ pub fn run(cli: &Cli, cfg: &Config, op: &HookOp) -> Result<Outcome> {
         HookOp::Run {
             event,
             args,
-        } => run_cmd(cli, event, args),
+        } => run_cmd(cli, cfg, event, args),
     }
 }
 
@@ -188,23 +188,48 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     })
 }
 
-/// What an older homma's entrypoint calls. At the gate's event it runs the
-/// release gate, with git's arguments and stdin, as the old table's first row
-/// did; at every event it says to install again; at any other it runs nothing.
-fn run_cmd(cli: &Cli, event: &str, args: &[String]) -> Result<Outcome> {
+/// What an older homma's entrypoint calls. It installs the clone git ran it
+/// in, then hands the event to the dispatcher git-shook wrote for it, with
+/// git's arguments and stdin, and fails closed where the install refuses.
+fn run_cmd(cli: &Cli, cfg: &Config, event: &str, args: &[String]) -> Result<Outcome> {
     // FIXME(remove_homma_hook_run_once_no_clone_carries_an_older_entrypo): the
     // verb answers only what an older homma installed, and goes once no clone has one.
-    eprintln!(
-        "homma: the {event} hook was written by an older homma; `homma hook install <repo>` moves it onto git-shook"
-    );
-    if event != hooks::GATE_EVENT {
+    eprintln!("homma: the {event} hook was written by an older homma; moving it onto git-shook");
+    // a refusal fails closed: a hook that ran nothing must not read as passed
+    let refused = |why: String| -> Result<Outcome> {
+        eprintln!("homma: the {event} hook did not run: {why}");
+        finish(cli, Report {
+            ok:    false,
+            lines: Vec::new(),
+        })
+    };
+    let out = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()?;
+    if !out.status.success() {
+        return refused("this is not a repository git can name".to_string());
+    }
+    let root = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    let workspace = match hooks::workspace_hooks(&cfg.workspace.path, &git_hooks_file(cfg)?) {
+        Ok(w) => w,
+        Err(e) => return refused(e.to_string()),
+    };
+    if let Err(e) = hooks::install(&root, workspace.as_ref()) {
+        return refused(e.to_string());
+    }
+    // the dispatcher the install had git-shook write, with git's arguments and
+    // its stdin; an event git-shook has none for registers nothing
+    let dispatcher = hooks::shook::hooks_dir(&root)?.join(event);
+    if !dispatcher.is_file() {
         return finish(cli, Report {
             ok:    true,
             lines: Vec::new(),
         });
     }
-    let (program, gate) = hooks::GATE.split_first().expect("the gate names a program");
-    let status = Command::new(program).args(gate).args(args).status()?;
+    let status = Command::new(&dispatcher)
+        .args(args)
+        .current_dir(&root)
+        .status()?;
     finish(cli, Report {
         ok:    status.success(),
         lines: Vec::new(),
