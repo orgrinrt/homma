@@ -21,5 +21,6 @@ pub use shook::{
     holds_path,
     install,
     install_with,
+    registration,
     workspace_hooks,
 };

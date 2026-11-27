@@ -300,3 +300,99 @@ fn the_workspace_hooks_installed_through_git_shook_run_on_a_real_commit() {
         .collect();
     assert_eq!(checked, vec!["PROSE-CHECKED notes.md"], "{said}");
 }
+
+#[test]
+fn a_sweep_over_a_member_git_shook_does_not_hold_says_so_and_fails() {
+    let (_d, root, _member) = workspace(MANIFEST);
+    homma(&root)
+        .args(["hook", "install"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("run `git shook install` there"));
+}
+
+#[test]
+fn a_sweep_over_no_members_says_nothing() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("homma.toml"), MANIFEST).unwrap();
+    homma(d.path())
+        .args(["hook", "install"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// The sweep a session start runs, through a real git-shook: silent where the
+/// member is current, and a removed or a hand-edited entry put back with a line.
+/// Needs `GIT_SHOOK` naming a git-shook whose doctor takes `--only`.
+#[test]
+fn a_sweep_puts_back_what_was_removed_or_edited_and_is_silent_otherwise() {
+    let Some(script) = std::env::var_os("GIT_SHOOK").map(PathBuf::from) else {
+        eprintln!("skipped: GIT_SHOOK names no git-shook script");
+        return;
+    };
+    let path = path_with(script.parent().unwrap());
+    let (_d, root, member) = workspace(MANIFEST);
+    std::fs::write(
+        root.join("shook.toml"),
+        "name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(member.join(".git/shook/manifests")).unwrap();
+    std::fs::write(
+        member.join(".git/shook/manifests/other.toml"),
+        "name = \"other\"\n\n[hooks.post-commit]\nrun = [\"true\"]\n",
+    )
+    .unwrap();
+    let adopted = git()
+        .args(["shook", "install", "--yes"])
+        .current_dir(&member)
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(adopted.status.success(), "{adopted:?}");
+
+    let sweep = || {
+        homma(&root)
+            .env("PATH", &path)
+            .args(["hook", "install"])
+            .assert()
+    };
+    sweep()
+        .success()
+        .stdout(predicate::str::contains("registered with git-shook"));
+    sweep().success().stdout(predicate::str::is_empty());
+
+    // a removed entry
+    std::fs::remove_file(member.join(".git/shook/entries/pre-push/homma")).unwrap();
+    homma(&root)
+        .env("PATH", &path)
+        .args(["hook", "doctor", "r"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("git shook doctor:"));
+    sweep()
+        .success()
+        .stdout(predicate::str::contains("registered with git-shook"));
+    assert!(member.join(".git/shook/entries/pre-push/homma").is_file());
+    sweep().success().stdout(predicate::str::is_empty());
+
+    // a hand-edited entry of the workspace's
+    std::fs::write(
+        member.join(".git/shook/entries/pre-commit/prose"),
+        "\nsh\n-c\necho tampered\n",
+    )
+    .unwrap();
+    sweep()
+        .success()
+        .stdout(predicate::str::contains("registered with git-shook"));
+    assert_eq!(
+        std::fs::read_to_string(member.join(".git/shook/entries/pre-commit/prose")).unwrap(),
+        "\ntrue\n"
+    );
+    homma(&root)
+        .env("PATH", &path)
+        .args(["hook", "doctor", "r"])
+        .assert()
+        .success();
+}

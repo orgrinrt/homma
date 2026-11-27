@@ -1105,8 +1105,9 @@ pub enum HookOp {
     /// and no tracked `shook.toml`. Refuses where git-shook does not hold the
     /// hooks path, and removes what an older homma left.
     Install {
-        /// The repository's directory name under the workspace root.
-        repo: String,
+        /// The repository's directory name under the workspace root. Without it, every
+        /// member not already current, silent where all are: what a session start runs.
+        repo: Option<String>,
     },
     /// Where the workspace's git hooks are declared, a `[hooks]` no longer
     /// read, and which `homma.*.toml` overlays the agent tables are read from.

@@ -41,8 +41,7 @@ fn git_hooks_file(cfg: &Config) -> Result<PathBuf> {
         .to_path_buf())
 }
 
-fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
-    let (_, _, root) = resolve_repo(cfg, Some(repo))?;
+fn install_cmd(cli: &Cli, cfg: &Config, repo: &Option<String>) -> Result<Outcome> {
     let file = git_hooks_file(cfg)?;
     let workspace = match hooks::workspace_hooks(&cfg.workspace.path, &file) {
         Ok(w) => w,
@@ -53,29 +52,74 @@ fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
             });
         },
     };
-    match hooks::install(&root, workspace.as_ref()) {
+    let Some(repo) = repo else {
+        return sweep(cli, cfg, workspace.as_ref());
+    };
+    let (_, _, root) = resolve_repo(cfg, Some(repo))?;
+    let mut lines = Vec::new();
+    let ok = install_one(&root, workspace.as_ref(), &mut lines)?;
+    if ok && workspace.is_none() {
+        lines.push(format!(
+            "the workspace declares no git hooks of its own: there is no {} at its root, so the release gate alone is registered",
+            file.display()
+        ));
+    }
+    finish(cli, Report {
+        ok,
+        lines,
+    })
+}
+
+/// Every member whose registration is not current installed again, one line
+/// for each; nothing written or said for one that is.
+fn sweep(cli: &Cli, cfg: &Config, workspace: Option<&hooks::WorkspaceHooks>) -> Result<Outcome> {
+    let mut ok = true;
+    let mut lines = Vec::new();
+    for name in cfg.repos.keys() {
+        let (_, _, root) = resolve_repo(cfg, Some(name))?;
+        let stale = match hooks::registration(&root, workspace, None) {
+            Ok(stale) => stale,
+            Err(hooks::HookError::NotShook(_)) => {
+                ok &= install_one(&root, workspace, &mut lines)?;
+                continue;
+            },
+            Err(e) => return Err(e.into()),
+        };
+        if stale.is_empty() {
+            continue;
+        }
+        ok &= install_one(&root, workspace, &mut lines)?;
+    }
+    // every member current: a session start hears nothing, not even a blank line
+    if ok && lines.is_empty() && matches!(cli.output, crate::cli::OutputFormat::Human) {
+        return Ok(Outcome::Ok);
+    }
+    finish(cli, Report {
+        ok,
+        lines,
+    })
+}
+
+/// Install at `root`, saying what was done or why not; whether it went.
+fn install_one(
+    root: &std::path::Path,
+    workspace: Option<&hooks::WorkspaceHooks>,
+    lines: &mut Vec<String>,
+) -> Result<bool> {
+    match hooks::install(root, workspace) {
         Ok(i) => {
-            let mut lines = vec![format!(
+            lines.push(format!(
                 "registered with git-shook in {}: {}",
                 root.display(),
                 i.registered.join(", ")
-            )];
-            if workspace.is_none() {
-                lines.push(format!(
-                    "the workspace declares no git hooks of its own: there is no {} at its root, so the release gate alone is registered",
-                    file.display()
-                ));
-            }
+            ));
             for gone in &i.removed {
                 lines.push(format!(
                     "removed {}, which an older homma left",
                     gone.display()
                 ));
             }
-            finish(cli, Report {
-                ok: true,
-                lines,
-            })
+            Ok(true)
         },
         // a refusal is reported, a line and a non-zero exit, so a sweep
         // across the workspace goes on to the next repo
@@ -89,10 +133,8 @@ fn install_cmd(cli: &Cli, cfg: &Config, repo: &str) -> Result<Outcome> {
                 ..
             }),
         ) => {
-            finish(cli, Report {
-                ok:    false,
-                lines: vec![e.to_string()],
-            })
+            lines.push(e.to_string());
+            Ok(false)
         },
         // named, so a refusal added later has no arm here and does not
         // compile, rather than aborting a sweep as an error
@@ -180,6 +222,18 @@ fn doctor_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
                 "{repo}: {} was left by an older homma; `homma hook install {repo}` removes it",
                 left.display()
             ));
+        }
+        // what git-shook says of the two manifests, where it holds the path to say it
+        let workspace = hooks::workspace_hooks(&cfg.workspace.path, &file)
+            .ok()
+            .flatten();
+        if let Ok(stale) = hooks::registration(&root, workspace.as_ref(), None) {
+            for line in stale.iter().filter(|l| l.starts_with("git shook doctor:")) {
+                ok = false;
+                lines.push(format!(
+                    "{repo}: {line}; `homma hook install {repo}` puts it back"
+                ));
+            }
         }
     }
     finish(cli, Report {

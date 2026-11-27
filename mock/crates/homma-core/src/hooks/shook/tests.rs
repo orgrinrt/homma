@@ -42,6 +42,7 @@ fn fake_shook(bin: &Path, log: &Path) {
         &format!(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{log}'\n\
              g=$(git rev-parse --path-format=absolute --git-common-dir)\n\
+             if [ \"$1\" = doctor ]; then [ -f \"$g/doctor-says\" ] || exit 0; cat \"$g/doctor-says\"; exit 1; fi\n\
              for m in \"$g\"/shook/manifests/*.toml; do n=$(basename \"$m\" .toml)\n\
              for e in $(sed -n 's/^\\[hooks\\.\\(.*\\)\\]$/\\1/p' \"$m\"); do\n\
              mkdir -p \"$g/shook/entries/$e\"; : > \"$g/shook/entries/$e/$n\"\ndone; done\n",
@@ -419,4 +420,71 @@ fn a_refusal_puts_back_what_an_older_homma_left() {
         std::fs::metadata(&left).unwrap().permissions().mode() & 0o777,
         0o755
     );
+}
+
+#[test]
+fn a_registration_just_installed_is_current() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    let log = bin.path().join("log");
+    fake_shook(bin.path(), &log);
+    let (_ws, w) = the_workspace("name = \"prose\"\n\n[hooks.pre-commit]\nrun = [\"true\"]\n");
+    install_with(d.path(), Some(&w), Some(bin.path())).unwrap();
+
+    assert_eq!(
+        registration(d.path(), Some(&w), Some(bin.path())).unwrap(),
+        Vec::<String>::new()
+    );
+    assert!(
+        std::fs::read_to_string(&log)
+            .unwrap()
+            .contains("doctor --only homma --only prose"),
+        "git-shook was asked of the two manifests"
+    );
+}
+
+#[test]
+fn a_manifest_edited_a_leftover_or_what_git_shook_names_is_not_current() {
+    let d = held();
+    let bin = tempfile::tempdir().unwrap();
+    fake_shook(bin.path(), &bin.path().join("log"));
+    let (_ws, w) = the_workspace("name = \"prose\"\n");
+    install_with(d.path(), Some(&w), Some(bin.path())).unwrap();
+    let manifests = manifests_dir(d.path()).unwrap();
+
+    std::fs::write(manifests.join("prose.toml"), "name = \"prose\"\n# edited\n").unwrap();
+    let stale = registration(d.path(), Some(&w), Some(bin.path())).unwrap();
+    assert_eq!(stale.len(), 1, "{stale:?}");
+    assert!(
+        stale[0].contains("prose.toml is not what homma writes"),
+        "{stale:?}"
+    );
+    std::fs::write(manifests.join("prose.toml"), &w.text).unwrap();
+
+    let own = common_dir(d.path()).unwrap().join("hooks");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("pre-commit"), legacy::entrypoint("pre-commit")).unwrap();
+    let stale = registration(d.path(), Some(&w), Some(bin.path())).unwrap();
+    assert!(
+        stale.iter().any(|l| l.contains("left by an older homma")),
+        "{stale:?}"
+    );
+    std::fs::remove_file(own.join("pre-commit")).unwrap();
+
+    std::fs::write(
+        common_dir(d.path()).unwrap().join("doctor-says"),
+        "the pre-push entry of homma differs from what homma.toml declares\n",
+    )
+    .unwrap();
+    let stale = registration(d.path(), Some(&w), Some(bin.path())).unwrap();
+    assert_eq!(stale, vec![
+        "git shook doctor: the pre-push entry of homma differs from what homma.toml declares"
+    ]);
+}
+
+#[test]
+fn a_registration_where_git_shook_does_not_hold_the_path_is_the_refusal() {
+    let d = repo();
+    let got = registration(d.path(), None, None);
+    assert!(matches!(got, Err(HookError::NotShook(_))), "{got:?}");
 }

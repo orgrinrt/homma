@@ -174,6 +174,68 @@ pub struct Installed {
     pub removed:    Vec<PathBuf>,
 }
 
+/// What is not as the install would leave it at `root`, one line each, or
+/// nothing where the registration is current: the manifests in place byte for
+/// byte, nothing an older homma left, and git-shook's own doctor over the two
+/// manifests, whose lines are passed on. Only where git-shook holds the path.
+pub fn registration(
+    root: &Path,
+    workspace: Option<&WorkspaceHooks>,
+    on_path: Option<&Path>,
+) -> Result<Vec<String>, HookError> {
+    if !holds_path(root)? {
+        return Err(HookError::NotShook(root.to_path_buf()));
+    }
+    let dir = manifests_dir(root)?;
+    let mut out = Vec::new();
+    let mut files = vec![(NAME.to_string(), gate_manifest())];
+    if let Some(w) = workspace {
+        files.push((w.name.clone(), w.text.clone()));
+    }
+    for (name, text) in &files {
+        let file = dir.join(format!("{name}.toml"));
+        if std::fs::read_to_string(&file).ok().as_deref() != Some(text.as_str()) {
+            out.push(format!("{} is not what homma writes", file.display()));
+        }
+    }
+    for left in legacy::left_behind(root)? {
+        out.push(format!("{} was left by an older homma", left.display()));
+    }
+    let mut args = vec!["shook", "doctor"];
+    for (name, _) in &files {
+        args.push("--only");
+        args.push(name);
+    }
+    let said = run_git(root, &args, on_path)?;
+    if !said.ok() {
+        out.extend(
+            said.stdout
+                .lines()
+                .chain(said.stderr.lines())
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(|l| format!("git shook doctor: {l}")),
+        );
+    }
+    Ok(out)
+}
+
+/// `git <args>` at `root`, with `on_path` ahead of the caller's `PATH`.
+fn run_git(root: &Path, args: &[&str], on_path: Option<&Path>) -> Result<sh::Output, HookError> {
+    let path = on_path.map(|p| {
+        let rest = std::env::var_os("PATH").unwrap_or_default();
+        let mut joined = std::ffi::OsString::from(p);
+        joined.push(":");
+        joined.push(rest);
+        joined.to_string_lossy().into_owned()
+    });
+    match &path {
+        Some(path) => sh::run_with_env(root, "git", args, &[("PATH", path.as_str())]),
+        None => sh::run(root, "git", args),
+    }
+    .map_err(|e| HookError::Shook(format!("could not run git: {e}")))
+}
+
 /// Place the manifests in `root` and have git-shook register them.
 pub fn install(root: &Path, workspace: Option<&WorkspaceHooks>) -> Result<Installed, HookError> {
     install_with(root, workspace, None)
@@ -234,13 +296,6 @@ fn register(
             names.push(stem.to_string_lossy().into_owned());
         }
     }
-    let path = on_path.map(|p| {
-        let rest = std::env::var_os("PATH").unwrap_or_default();
-        let mut joined = std::ffi::OsString::from(p);
-        joined.push(":");
-        joined.push(rest);
-        joined.to_string_lossy().into_owned()
-    });
     // `--only`, once per name: running this verb is the consent for these two
     // manifests, and not for a tracked `shook.toml` that arrived through a
     // merge and has not been looked at
@@ -249,11 +304,7 @@ fn register(
         args.push("--only");
         args.push(n);
     }
-    let out = match &path {
-        Some(path) => sh::run_with_env(root, "git", &args, &[("PATH", path.as_str())]),
-        None => sh::run(root, "git", &args),
-    }
-    .map_err(|e| HookError::Shook(format!("could not run git: {e}")))?;
+    let out = run_git(root, &args, on_path)?;
     if !out.ok() {
         let said = out.stderr.trim();
         return Err(HookError::Shook(if said.contains("not a git command") {
