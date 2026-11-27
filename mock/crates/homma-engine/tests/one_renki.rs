@@ -53,3 +53,35 @@ fn the_check_tells_two_renkis_apart() {
     assert_ne!(resolved(one, "renki"), resolved(other, "renki"));
     assert_eq!(resolved(one, "renki"), ["0.0.3 registry+x"]);
 }
+
+// The launcher owns the rule that renki is required exactly, and the engine takes the same renki,
+// so its manifest is held to the same predicate, read from the launcher's tests by path.
+#[path = "../../../../launcher/tests/support/renki_requirements.rs"]
+mod renki_requirements;
+
+const ENGINE_MANIFEST: &str = include_str!("../Cargo.toml");
+
+#[test]
+fn the_engine_takes_its_renki_crates_exactly() {
+    assert!(
+        renki_requirements::names_renki(ENGINE_MANIFEST),
+        "the engine stopped depending on renki, so the check below would pass over an empty set"
+    );
+    let loose = renki_requirements::loose_renki(ENGINE_MANIFEST);
+    assert!(
+        loose.is_empty(),
+        "a renki requirement that is not `=x.y.z` takes newer releases than the launcher's: \
+         {loose:#?}"
+    );
+}
+
+#[test]
+fn the_engine_check_flags_a_caret_requirement_under_the_unix_target() {
+    // Failing control: the shape the engine's manifest has, in its loose form.
+    let caret =
+        "[target.'cfg(unix)'.dependencies]\nrenki = \"0.0.5-rc.4\"\nrenki-dirs = \"0.0.2\"\n";
+    assert_eq!(renki_requirements::loose_renki(caret), vec![
+        ("renki".to_string(), "0.0.5-rc.4".to_string()),
+        ("renki-dirs".to_string(), "0.0.2".to_string()),
+    ]);
+}
