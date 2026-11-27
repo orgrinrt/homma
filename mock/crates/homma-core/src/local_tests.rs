@@ -777,3 +777,10 @@ fn a_copied_array_of_tables_equal_to_the_stores_is_dropped_by_the_migration() {
     let m = migrate(copy, base, "k").unwrap();
     assert_eq!(m.kept, ["hooks.post-merge"]);
 }
+
+#[test]
+fn a_paths_table_is_refused() {
+    assert!(
+        Local::parse("[instance]\nwork = \"k\"\n[paths]\ngit_hooks = \"absent.toml\"\n").is_err()
+    );
+}

@@ -154,6 +154,24 @@ fn doctor_says_where_the_git_hooks_are_declared() {
         ));
 }
 
+/// `git_hooks` is the manifest's alone: a clone's own file naming another one
+/// changes nothing, so every seat names the same file.
+#[test]
+fn a_clones_own_file_does_not_change_where_the_git_hooks_are_declared() {
+    let (_d, root, _member) = workspace(MANIFEST);
+    std::fs::write(root.join("shook.toml"), "name = \"prose\"\n").unwrap();
+    std::fs::write(
+        root.join("homma.local.toml"),
+        "[instance]\nwork = \"k\"\n\n[paths]\ngit_hooks = \"absent.toml\"\n",
+    )
+    .unwrap();
+    homma(&root)
+        .args(["hook", "doctor"])
+        .assert()
+        .stdout(predicate::str::contains("registered as prose"))
+        .stdout(predicate::str::contains("absent.toml").not());
+}
+
 #[test]
 fn doctor_with_a_repository_names_the_hooks_path_and_what_an_older_homma_left() {
     let (_d, root, member) = workspace(MANIFEST);
