@@ -89,3 +89,70 @@ fn only_an_entry_under_the_table_asked_for_refuses() {
     let near = parsed("[agentish]\nx = 1\n").unwrap();
     assert_eq!(near.unread_refusal("agent"), None);
 }
+
+#[test]
+fn an_entry_one_edit_from_a_name_this_engine_reads_is_refused_as_a_misspelling() {
+    // a swap, a swap, and a letter dropped, each in its own table
+    for (text, name) in [
+        ("[defualts]\npublic_branch = \"x\"\n", "defualts"),
+        ("homma_brnach = \"dev\"\n", "homma_brnach"),
+        ("[[agent.nudge]]\nname = \"n\"\n", "nudge"),
+    ] {
+        let Err(ConfigError::Parse(e)) = Config::parse(&format!("{text}{BASE}")) else {
+            panic!("{name} was taken as unread");
+        };
+        assert!(e.to_string().contains(name), "{name}: {e}");
+    }
+    // Failing control: two edits away is a name this engine does not know.
+    let cfg = parsed("[defualtss]\nx = 1\n").unwrap();
+    assert_eq!(cfg.unread, ["defualtss"]);
+    // and a name under `[agent]` is compared with `[agent]`'s, not the top level's
+    let cfg = parsed("[[agent.workspac]]\nx = 1\n").unwrap();
+    assert_eq!(cfg.unread, ["agent.workspac"]);
+}
+
+#[test]
+fn repos_and_local_are_refused_whatever_else_is_unread() {
+    for table in ["repos", "local"] {
+        let got = parsed(&format!("[later]\nx = 1\n[{table}.a]\nx = 1\n"));
+        let Err(ConfigError::Parse(e)) = got else {
+            panic!("[{table}] was taken as unread: {got:?}");
+        };
+        assert!(e.to_string().contains(table), "{table}: {e}");
+        assert!(e.to_string().contains("line 6"), "{table}: {e}");
+    }
+    // Failing control: the unread entry alone is taken.
+    assert_eq!(parsed("[later]\nx = 1\n").unwrap().unread, ["later"]);
+}
+
+#[test]
+fn a_refusal_of_what_is_left_after_an_unread_entry_keeps_its_line() {
+    let Err(ConfigError::Parse(e)) =
+        parsed("[later]\nx = 1\n[defaults]\npublc_branch = \"main\"\n")
+    else {
+        panic!("a misspelt key beside an unread entry is refused as a parse error");
+    };
+    assert!(e.to_string().contains("publc_branch"), "{e}");
+    assert!(e.to_string().contains("line 7"), "{e}");
+}
+
+#[test]
+fn an_unread_entry_whose_value_runs_over_lines_is_still_taken() {
+    let top = |rest: &str| Config::parse(&format!("homma_branch = \"dev\"\n{rest}{BASE}"));
+    let cfg = top("later = [\n  1,\n  2,\n]\nlater_text = \"\"\"\nx\n\"\"\"\n").unwrap();
+    assert_eq!(cfg.unread, ["later", "later_text"]);
+    // and a dotted key at the top level is the entry it starts with
+    let cfg = top("later.x = 1\n[agent]\nlater = 2\n").unwrap();
+    assert_eq!(cfg.unread, ["agent.later", "later"]);
+}
+
+#[test]
+fn an_unread_entry_the_line_reading_misses_is_taken_out_of_the_parsed_value() {
+    // an inline `agent` table holds its entries on the key's own line, which the
+    // blanking keeps, so the value is where the entry comes out
+    let cfg = Config::parse(&format!(
+        "homma_branch = \"dev\"\nagent = {{ later = 1 }}\n{BASE}"
+    ))
+    .unwrap();
+    assert_eq!(cfg.unread, ["agent.later"]);
+}

@@ -7,15 +7,24 @@
 //! The manifest's top level and `[agent]` hold entries that are each a feature
 //! of their own, so an entry there under which this engine reads no key is a
 //! newer engine's: it is taken out before the strict parse and kept by name.
-//! Every other table refuses an unknown key as before.
+//! Every other table refuses an unknown key as before, and so do two kinds of
+//! entry here: `repos` and `local`, which no engine reads, and one an edit away
+//! from a name this engine reads, which is a misspelling.
 
 use std::collections::BTreeSet;
 
 use super::{Config, ConfigError};
 
+mod blank;
+mod near;
+
 /// The tables whose entries are each a feature: the top level, named by the
 /// empty path, and `[agent]`.
 const GROUPS: [&str; 2] = ["", "agent"];
+
+/// Top-level entries refused whatever the key probe says: `repos` is retired
+/// with its per-repository settings, and `local` belongs to the local file.
+const REFUSED: [&str; 2] = ["repos", "local"];
 
 /// [`Config::parse`]: strict first, and only a manifest that refuses is read
 /// again with its unread entries taken out.
@@ -32,38 +41,89 @@ pub(super) fn parse(text: &str) -> Result<Config, ConfigError> {
     let Ok(keys) = super::keys() else {
         return Err(ConfigError::Parse(refused));
     };
-    let unread = take_unread(&mut raw, keys.read());
+    let unread = find_unread(&raw, keys.read());
     if unread.is_empty() {
         return Err(ConfigError::Parse(refused));
     }
-    let mut cfg: Config = raw.try_into().map_err(ConfigError::Parse)?;
-    cfg.unread = unread;
-    Ok(cfg)
+    // The text itself with the unread entries' lines blanked, so a refusal of
+    // what is left names its line.
+    let blanked = match toml::from_str::<Config>(&blank::blank(text, &unread)) {
+        Ok(mut cfg) => {
+            cfg.unread = unread;
+            return Ok(cfg);
+        },
+        Err(e) => e,
+    };
+    // An entry whose shape the line reading did not follow is taken out of the
+    // parsed value; where that refuses as well, the refusal with a line stands.
+    take(&mut raw, &unread);
+    match raw.try_into::<Config>() {
+        Ok(mut cfg) => {
+            cfg.unread = unread;
+            Ok(cfg)
+        },
+        Err(_) => Err(ConfigError::Parse(blanked)),
+    }
 }
 
-/// Take out of `raw` every entry of a group table under which `read` lists no
-/// key, and give their dotted names, sorted.
-fn take_unread(raw: &mut toml::Value, read: &BTreeSet<String>) -> Vec<String> {
+/// Every entry of a group table under which `read` lists no key, as a dotted
+/// name, sorted: neither one of [`REFUSED`] nor one edit from a name `read`
+/// lists in the same table.
+fn find_unread(raw: &toml::Value, read: &BTreeSet<String>) -> Vec<String> {
     let mut unread = Vec::new();
     for group in GROUPS {
+        let table = if group.is_empty() {
+            raw.as_table()
+        } else {
+            raw.get(group).and_then(toml::Value::as_table)
+        };
+        let Some(table) = table else { continue };
+        let known = names_in(group, read);
+        for name in table.keys() {
+            let path = if group.is_empty() { name.clone() } else { format!("{group}.{name}") };
+            if known.contains(name.as_str()) {
+                continue;
+            }
+            if group.is_empty() && REFUSED.contains(&name.as_str()) {
+                continue;
+            }
+            if known.iter().any(|k| near::one_edit(name, k)) {
+                continue;
+            }
+            unread.push(path);
+        }
+    }
+    unread.sort();
+    unread
+}
+
+/// The names `read` lists directly under `group`: the first step of each key
+/// at the top level, the second of each key under `[agent]`.
+fn names_in<'a>(group: &str, read: &'a BTreeSet<String>) -> BTreeSet<&'a str> {
+    read.iter()
+        .filter_map(|k| {
+            if group.is_empty() {
+                k.split('.').next()
+            } else {
+                k.strip_prefix(group)?.strip_prefix('.')?.split('.').next()
+            }
+        })
+        .collect()
+}
+
+/// Take each of `unread` out of `raw`.
+fn take(raw: &mut toml::Value, unread: &[String]) {
+    for path in unread {
+        let (group, name) = path.split_once('.').unwrap_or(("", path));
         let table = if group.is_empty() {
             raw.as_table_mut()
         } else {
             raw.get_mut(group).and_then(toml::Value::as_table_mut)
         };
-        let Some(table) = table else { continue };
-        let names: Vec<String> = table.keys().cloned().collect();
-        for name in names {
-            let path = if group.is_empty() { name.clone() } else { format!("{group}.{name}") };
-            let under = format!("{path}.");
-            if !read.iter().any(|k| *k == path || k.starts_with(&under)) {
-                table.remove(&name);
-                unread.push(path);
-            }
+        if let Some(table) = table {
+            table.remove(name);
         }
     }
-    unread.sort();
-    unread
 }
 
 impl Config {

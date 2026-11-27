@@ -72,11 +72,11 @@ token_env = "CODEBERG_TOKEN"
 }
 
 #[test]
-fn a_manifest_that_still_declares_repos_is_named_as_unread_rather_than_half_read() {
+fn a_manifest_that_still_declares_repos_is_refused_rather_than_half_read() {
     // The table is gone, not optional. A manifest carrying one has an idea of
-    // membership that homma no longer holds, so none of it is read: the table
-    // is taken out whole and named as unread, which the status reports, and the
-    // members come from the tree as for any manifest.
+    // membership that homma no longer holds, and reading it as far as the
+    // first unknown key would leave the operator with a workspace that looks
+    // configured and is not.
     let src = r#"
 [workspace]
 name = "demo"
@@ -86,14 +86,16 @@ forge = "github"
 owner = "woodland"
 local_path = "notch"
 "#;
-    let config =
-        Config::parse(src).expect("an entry this engine does not read leaves the rest read");
-    assert_eq!(config.unread, ["repos"]);
-    assert!(config.repos.is_empty(), "nothing of the table is read");
-    let note = config.unread_note().expect("an unread table is said");
+    let err = Config::parse(src).expect_err("a [repos] table must be refused");
+    // Down the chain, because the outer message says which file and the toml
+    // error under it says which key. Reading only the outer one passed while
+    // the outer one was a copy of the inner.
+    let under = std::error::Error::source(&err)
+        .expect("a parse failure carries the toml error under it")
+        .to_string();
     assert!(
-        note.contains("`repos`"),
-        "the note does not name it: {note}"
+        under.contains("repos"),
+        "the refusal does not name what is wrong: {under}"
     );
 }
 
@@ -146,8 +148,7 @@ fn a_config_error_says_what_went_wrong_once_and_not_twice() {
     // one message, and the second copy is what the reader gives up on.
     use std::error::Error;
 
-    let err = Config::parse("[workspace]\nname = \"w\"\n[defaults]\npublc_branch = \"main\"\n")
-        .expect_err("a misspelt key is refused");
+    let err = Config::parse("[repos.a]\nforge = \"gh\"\n").expect_err("a [repos] table is refused");
     let head = format!("{err}");
     let under = err
         .source()
@@ -165,7 +166,7 @@ fn a_config_error_says_what_went_wrong_once_and_not_twice() {
         "the message does not name the file: {head}"
     );
     assert!(
-        under.contains("publc_branch"),
+        under.contains("repos"),
         "the source does not name the bad key: {under}"
     );
 }
