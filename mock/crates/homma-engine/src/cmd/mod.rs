@@ -695,14 +695,45 @@ pub(crate) fn manifest_path(
 /// Resolve the config path and parse it.
 pub(crate) fn load_config(cli: &Cli) -> Result<Config> {
     let path = config_path(cli);
-    Config::from_path(&path).with_context(|| format!("loading config from {}", path.display()))
+    let cfg = Config::from_path(&path)
+        .with_context(|| format!("loading config from {}", path.display()))?;
+    say_unread(cli, &cfg);
+    Ok(cfg)
 }
 
 /// [`load_config`] with every clone of the workspace a member, whatever `repos` the local file names.
 pub(crate) fn load_config_whole(cli: &Cli) -> Result<Config> {
     let path = config_path(cli);
-    Config::from_path_whole(&path)
-        .with_context(|| format!("loading config from {}", path.display()))
+    let cfg = Config::from_path_whole(&path)
+        .with_context(|| format!("loading config from {}", path.display()))?;
+    say_unread(cli, &cfg);
+    Ok(cfg)
+}
+
+/// The unread entries said once on stderr, by every verb but the two that say
+/// them themselves: `status`, in its report, and `agent regen` where it refuses
+/// over them.
+fn say_unread(cli: &Cli, cfg: &Config) {
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let says_itself = match &cli.command {
+        Command::Status {
+            ..
+        } => true,
+        Command::Agent {
+            op: AgentOp::Regen {
+                ..
+            },
+        } => cfg.unread_refusal("agent").is_some(),
+        _ => false,
+    };
+    if says_itself {
+        return;
+    }
+    if let Some(note) = cfg.unread_note() {
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("homma: {note}");
+        }
+    }
 }
 
 #[cfg(test)]

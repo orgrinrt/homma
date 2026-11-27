@@ -2,12 +2,7 @@
   "version": 2,
   "flavour": "",
   "member": "homma-api",
-  "green": {
-    "full": "717ebcaf4bd2a040ad02b5a1c98baf8d6b4573f9b0a557d82c02ac8a69db9ab0",
-    "own": {
-      "homma-api": "72a61e4dcdc417dadea3a484736d364282addd876273ebb701818e1dc482d999"
-    }
-  },
+  "green": null,
   "tests": {
     "homma-api::compile_fail": {
       "a_relative_path_cannot_reach_the_git_contract": {
@@ -17,15 +12,5 @@
       }
     }
   },
-  "bins": {
-    "homma-api": "438a8934bbfa248b4d0b05614e980dc519e447816b4f18684edcf174eaf934e1",
-    "homma-api::compile_fail": "f218856dada2e2221fbd8b406d3f17fb06868d99298e9d05ecb7a3b098f5b9fc",
-    "homma-api::frontmatter": "7d770066b231ec54432e96e1d2e3c9c25e5f96e6a234c13b9bbda77adc200bba",
-    "homma-api::keys": "a1881e39f67d02b23ad4b5452d62c7afb50b86033c5c5f784a05de31ff6d7ec7",
-    "homma-api::paths_unread": "ae03c677048759990c747297292eac8ac6facca94689ea89520a4a958aa9976b",
-    "homma-api::rule_meta": "ee95e4d3f3c44503dce53fb38d2dfad9c2d4000d7bc11e9fc3b32d5a14173306",
-    "homma-api::session": "5b1b38063c74ff51b1d9381e1bf1276bf2b3b64ff36e4cc5d429363ecc8f2e17",
-    "homma-api::skill_meta": "f06435740a58d877814716cc002041025dfe8cccadddc1578b14c76d43a9b16b",
-    "homma-api::the_home_must_be_known": "ab9735756f7e7b4f03df3e82b49b7859291b5d85d9e672c1998ddbb08ab0a105"
-  }
+  "bins": {}
 }

@@ -2,24 +2,7 @@
   "version": 2,
   "flavour": "",
   "member": "homma-org",
-  "green": {
-    "full": "2e6ab7a41b03c18f670c2c953480c9e24dac764b10aba666273ea8b7adc73c9a",
-    "own": {
-      "homma-api": "386696229acb3b079c37601a4d5e00c3274b6adc64a9ff1e7f81e009d444a681",
-      "homma-core": "aa671cb801b11e36231a1ff7a5d8743a0b70c4825e7bbdd386e1c33e004dbfbb",
-      "homma-org": "725731895e680ab39d34417325cc16fd9cc503a17588225af82486790df4b64a"
-    }
-  },
+  "green": null,
   "tests": {},
-  "bins": {
-    "homma-org": "3ca011ba0a6733c4257c4f0935479487a67ced1cef42966625c7de701c4298be",
-    "homma-org::agents_corpus": "7c4e03f62d68f9b94a633214c5b313f9f0d871dfee22881a223f4fbb4f3c7fc1",
-    "homma-org::character_places": "c00543575d759f32c61c23fa4da81c158c2c1d51141c620f2dbc6d3cd3c08810",
-    "homma-org::characters": "5956d1a25a846b580a20888c2572babdd0404ebfc60c01125776fafb4f1a9c5d",
-    "homma-org::modes_corpus": "419a196d187d661d64dbfb77978f7df8d646444508f3785df9835b62cf613699",
-    "homma-org::principles_corpus": "5c5b311c590541df999e32d93ed8fec4e7d1c8a5bb2c39fe51ed407cc68181fb",
-    "homma-org::provisioned_commit": "cb1224a2336d2ec2bc5c2120502c8ea2766cb0ea45073efbfa7ba129e4a524af",
-    "homma-org::rules_corpus": "9c3009cd5dc78bd33db47addf4c1b20acacd8b1a1b0b600fb92b14db18852362",
-    "homma-org::skills_corpus": "97d2f1659f87cc1949aa60915130dea19bce7d5231b97105b05d84e29cc758b0"
-  }
+  "bins": {}
 }
