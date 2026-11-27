@@ -264,16 +264,19 @@ and stays.
 installed again; an engine can change under a running session. It installs
 first, doing what `homma hook install` does for the clone git ran the hook in,
 which registers the gate and the workspace's manifest with git-shook and clears
-the older homma's entrypoints. It then hands the event to the dispatcher
-git-shook generated for it, `<common git dir>/shook/hooks/<event>`, with git's
-arguments and its stdin, and exits as that does, so the release gate at
-`pre-push` and the workspace's checks at every other event run from the first
-event on; an event git-shook has no dispatcher for registers nothing, and the
-verb passes there. Where the install refuses, because git-shook does not hold
-the hooks path, is not installed, or refuses a manifest, the verb fails with the
-install's words and says the hook did not run: a commit or a push in such a
-clone stops until git-shook holds the path. At every event it first says once on
-stderr that the hook was written by an older homma.
+the older homma's entrypoints. Where the install refuses, because git-shook does
+not hold the hooks path, is not installed, or refuses a manifest, the verb fails
+with the install's words and says the hook did not run: a commit or a push in
+such a clone stops until git-shook holds the path. Where git-shook holds the
+path, git runs its dispatcher and never git's own hooks directory, so the verb
+was called by an entry of git-shook's chain, and that chain goes on to its other
+entries itself: the base lists a chain's entries once and reads each file when
+it reaches it, so each runs once, as the install left it. The verb hands the
+event on to nothing, which would run them twice; at `pre-push`, where the entry
+running was the gate's, it runs the release gate itself with git's arguments
+and stdin. An entry the install registers for the first time is not in the list
+the running chain made, and runs from the next event on. At every event it first
+says once on stderr that the hook was written by an older homma.
 
 `homma hook doctor` says where the workspace's git hooks are declared and
 whether that file is there, names a `[hooks]` still in the manifest or an overlay
@@ -302,8 +305,8 @@ The order of landings, since nothing moves for a running workspace:
 2. The workspace writes its git hooks into its root `shook.toml` and keeps
    `[hooks]` meanwhile: an older engine runs the table, this one never reads it.
 3. This engine lands, and each clone runs `homma hook install <repo>` per member.
-   Until then an old entrypoint calls `homma hook run`, which installs and hands
-   the event to git-shook, or fails closed where git-shook does not hold the path.
+   Until then an old entry calls `homma hook run`, which installs, runs the gate
+   at pre-push, or fails closed where git-shook does not hold the path.
 4. The workspace takes `[hooks]` out of its manifest once every engine in every
    clone and container answers
    `homma --output json status | jq -e '.workspace | has("retired")'`.
@@ -762,7 +765,7 @@ homma release auth [<verb>]               the publish credentials, proven live; 
 homma release versions [<repo>] | --all   the version timeline; `plan`, `tag`, `retag [--apply]` beside it
 homma release estate [jumps|missing]      every package against its tags and registry; `--json <path>`
 homma hook install [<repo>]               place homma's gate and the workspace's shook.toml as clone-local manifests and have git-shook register them, or refuse where git-shook does not hold the hooks path; with no repository, every member not already current, silent where all are
-homma hook run <event> [args...]          what an entrypoint an older homma wrote calls: installs, then hands the event to git-shook; fails closed where it cannot
+homma hook run <event> [args...]          what an entry an older homma wrote calls: installs, runs the gate at pre-push; fails closed where it cannot
 homma hook doctor [<repo>]                where the git hooks are declared, a retired [hooks], the overlay files, and with a repository whether git-shook holds the hooks path and what an older homma left
 ```
 
