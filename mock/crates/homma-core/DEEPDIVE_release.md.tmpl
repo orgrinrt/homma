@@ -637,7 +637,9 @@ touch anything outside the own lines' directories, which are what the repo's
 block lists, and the crates that are not on own lines, which publish at the
 repo's version or ride as before. What a commit touches is read against its
 first parent, so a merge counts by what it brought onto the line it was merged
-into, and a pull request's merge keeps its subject and number in the block. A
+into, and a pull request's merge keeps its subject and number in the block. The
+range is read once, every commit with the paths it changed, in one walk of the
+log, whatever the number of lines. A
 commit touching both an own line's directory and the rest is on both lines.
 The root `Cargo.lock` is the one file outside the own lines that moving an own
 line's version changes by itself: a change to it is the repo's only where it
