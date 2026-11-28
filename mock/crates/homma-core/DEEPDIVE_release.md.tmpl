@@ -333,7 +333,8 @@ version is `man.version.matches`. That a tag is annotated (`tag.annotated`),
 named `vX.Y.Z` or `X.Y.Z` consistently within the repo (`tag.prefix`), alone on
 its commit (`tag.dupes`) and fetched (`tag.local`) is hygiene, reported at warn.
 
-`main` holds nothing unreleased: the newest release tag is the tip of `main`, or
+`main` holds nothing unreleased: the newest release tag of any line, the repo's or a
+member's own, is the tip of `main`, or
 what lies between is a hotpatch named as such (`main.unreleased`, the one id
 the catalogue did not have, since it never read `main`). The manifest version at a tag
 equals the tag (`man.version.matches`), and the working version is above the
@@ -368,7 +369,7 @@ was last touched (`branch.unmerged`), a local branch whose upstream is gone
 (`branch.orphan`), and a `pushurl` on the remote, printed with whatever sits
 between `//` and `@` hidden, since those carry tokens (`remote.pushurl`).
 
-The tags and refs: a tag that names no version (`tag.stray`), a version the
+The tags and refs: a tag that names no version and no member's own line (`tag.stray`), a version the
 manifest was set to at more than one commit of the timeline below
 (`tag.bump.once`), version tags whose commit dates run against their version
 order (`tag.order.matches`), and `refs/original` or `refs/replace` left behind by
@@ -400,8 +401,11 @@ that need a forge listing are in the backlog.
 ## The run
 
 `homma release run <repo> --level <patch|minor|major>` is the release, and the
-level is required: a run without one refuses, and the tool never reads a level
-off the commits. `--version <X.Y.Z[-pre]>` stands in for it, exactly one of the
+level is required wherever the repo's own line has anything to release: a run
+without one refuses there, and the tool never reads a level off the commits.
+Where the repo's line has nothing since its last tag and a member on a line of
+its own moves, a run with no level releases those lines alone, as the section
+on such members says. `--version <X.Y.Z[-pre]>` stands in for it, exactly one of the
 two, and names the next version outright, which is how a pre-release is cut,
 since no level makes one. It must be one step above the last tag in the sense
 `semver.gaps` reads, or for a first release the manifest's version or one step
@@ -606,6 +610,61 @@ published (`reg.unpublished`), its working version is not below its published
 one (`man.current.forward`), and its registry versions ascend and skip nothing
 (`order.ascends`, `semver.gaps`).
 
+## A member on a line of its own
+
+A cargo member keeps a version line of its own where its directory holds a
+`release.toml` with `shared-version = false`, cargo-release's key for the same
+thing. Nothing else declares one, and a member without it stays on the repo's
+line. It can be any member of a single-version repo or any rider of a virtual
+workspace; a primary declared so refuses the plan by name (`man.primary`),
+since its line is the repo's.
+
+An own line is tagged `<crate>-v<version>`, an annotated tag on the commit of
+`main` its release made, and its last tag is its newest tag of that shape. The
+repo's tags never read one, since none names a version as the repo's tags do,
+so the repo's last tag and its steps are what they were without it. Its
+version is its manifest's, set by hand on `dev` as a rider's is. It moves
+where the manifest at the head differs from its version at its last own tag,
+one step above it as `semver.gaps` reads it, or the plan refuses with both
+numbers; with no own tag yet its manifest's version is its first release as it
+stands. A moving line's block is written into `CHANGELOG.md` in the member's
+own directory, from the commits since its last own tag that touch that
+directory, and the forge release on its tag takes that block.
+
+The repo's own line is the rest: the commits since the repo's last tag that
+touch anything outside the own lines' directories, which are what the repo's
+block lists, and the crates that are not on own lines, which publish at the
+repo's version or ride as before. A member on its own line whose directory
+changed since its last own tag while its version did not refuses the plan,
+naming it, since that change would reach `main` with no release carrying it.
+
+A run with a level or a version releases the repo's line and every own line
+that moves, in one: one bump commit carrying every manifest and every block
+the run writes, one merge onto `main`, and each line's tag on that merge, the
+repo's first. A run with neither is taken where the repo's line has no commit
+since its last tag: the repo's version stays, no repo tag is made, and only
+the own lines that move are released. A plan with nothing on the repo's line
+and no own line moving has nothing to release and says so. A level the repo's
+line has nothing for is refused the same way, rather than making a version of
+nothing. The publish orders every crate the run releases by dependency, own
+lines with the rest, each at its own version.
+
+The bump and the merge are named by the release's name: the repo's next
+version where its line moves, else each moving own line as `<crate>
+<version>`, joined by `, `, in name order. The bump commit's subject is
+`chore: release <name>`, the merge's `release: <name>`, and a bump the trunk
+refuses is pushed as `release/<repo>-<name>`, every space and comma made a
+`-`. A run that stopped is read back by that name, as the steps above read it
+back by the version.
+
+The check reads each own line against its own tags: every version of it a
+registry holds has an own tag (`reg.orphan`), its newest own tag is published
+(`reg.unpublished`), and its working version is not below what is published
+(`man.current.forward`). The checks over the repo's tags leave own lines out,
+as they leave riders out, and an own tag is no stray tag. `main.unreleased`
+reads `main` against its newest tag of any line, so `main` at the merge of a
+release of own lines alone holds nothing unreleased.
+
 ## The version timeline
 
 `homma release versions <repo>` reads a repo's version history off its commits,
@@ -762,8 +821,9 @@ homma release gate [<repo>] [--sha <sha>] run the gate now, record it, post the 
 homma release gate --hook                 what the pre-push entry runs
 homma release gate --post <sha>           post a recorded run's status again
 homma release gate --post <sha> --await   the same, once the forge knows the commit; the hook's poster, with `--config`
-homma release plan [<repo>] --level <l>   the plan and nothing else; `--version <v>` for a level
+homma release plan [<repo>] --level <l>   the plan and nothing else; `--version <v>` for a level, neither for own lines alone
 homma release run [<repo>] --level <l>    the release, or every unreleased repo
+homma release run <repo>                  the members on lines of their own that move, where the repo's line has nothing
 homma release badges <repo>               rewrite the badges branch from the newest record
 homma release auth [<verb>]               the publish credentials, proven live; the verbs under Credentials
 homma release versions [<repo>] | --all   the version timeline; `plan`, `tag`, `retag [--apply]` beside it
