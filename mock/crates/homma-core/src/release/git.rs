@@ -196,6 +196,29 @@ pub fn subjects_touching(
 /// parent touches `path`, newest first. A merge counts where the merge
 /// brought the change in, which is how a bump made on the trunk shows on
 /// the release line.
+/// The paths `sha` changed against its first parent, every path for a root
+/// commit, so a merge counts by what it brought onto the line it was merged
+/// into.
+pub fn changed_paths(cwd: &Path, sha: &str) -> Result<Vec<String>, GitError> {
+    let out = if parent_count(cwd, sha)? == 0 {
+        trimmed(cwd, &[
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "--root",
+            sha,
+        ])?
+    } else {
+        trimmed(cwd, &["diff", "--name-only", &format!("{sha}^1"), sha])?
+    };
+    Ok(out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
 /// Whether anything under `path` differs between `from` and `to`.
 pub fn changed_between(cwd: &Path, from: &str, to: &str, path: &str) -> Result<bool, GitError> {
     let out = trimmed(cwd, &["diff", "--name-only", from, to, "--", path])?;

@@ -279,9 +279,15 @@ pub fn plan(
     let last = last_tag(root)?;
     // the repo's own line is what lies outside the own lines; with none, every
     // commit, read as it always was
-    let outside = if own.is_empty() { Vec::new() } else { lines::outside(&own) };
-    let commits =
-        git::subjects_touching(root, last.as_ref().map(|(t, _)| t.as_str()), head, &outside)?;
+    let from = last.as_ref().map(|(t, _)| t.as_str());
+    let commits = if own.is_empty() {
+        match from {
+            Some(f) => git::subjects(root, f, head)?,
+            None => git::subjects_to(root, head)?,
+        }
+    } else {
+        lines::repo_commits(root, &own, from, head)?
+    };
     let lines = lines::moving(root, &own, head, date)?;
     let target = match aim {
         Aim::Repo(_) if commits.is_empty() && !own.is_empty() => return Err(PlanError::Nothing),

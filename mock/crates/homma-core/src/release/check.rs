@@ -111,8 +111,29 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
             format!("{bare} of {} tags lack the `v`", versioned.len()),
         );
     }
-    let mut by_target: BTreeMap<String, Vec<&str>> = BTreeMap::new();
-    for (t, _) in &versioned {
+    // every release tag, the repo's and each own line's, with the line it is
+    // of: the repo's is the empty name
+    let repo_kind = kind::detect(root, inputs.markers).ok();
+    let own = match repo_kind {
+        Some(k) if k.has_crate() => super::lines::own(root),
+        _ => Vec::new(),
+    };
+    let own_names: Vec<String> = own.iter().map(|m| m.name.clone()).collect();
+    let line_of = |t: &str| -> Option<String> {
+        if tag_version(t).is_some() {
+            return Some(String::new());
+        }
+        own_names
+            .iter()
+            .find(|n| super::lines::tag_version(n, t).is_some())
+            .cloned()
+    };
+    let release_tags: Vec<(String, String)> = tags
+        .iter()
+        .filter_map(|t| line_of(t).map(|l| (t.clone(), l)))
+        .collect();
+    let mut by_target: BTreeMap<(String, String), Vec<&str>> = BTreeMap::new();
+    for (t, line) in &release_tags {
         if !git::tag_is_annotated(root, t)? {
             push(
                 "tag.annotated",
@@ -128,9 +149,11 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                 format!("`{t}` is not on `{}`", inputs.release),
             );
         }
-        by_target.entry(target).or_default().push(t);
+        by_target.entry((target, line.clone())).or_default().push(t);
     }
-    for (target, names) in &by_target {
+    // two tags of one line on one commit; a release's one merge carries one
+    // tag of each line it moved
+    for ((target, _), names) in &by_target {
         if names.len() > 1 {
             push(
                 "tag.dupes",
@@ -144,7 +167,7 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         }
     }
     let remote_tags = git::remote_tags(root, inputs.remote)?;
-    for (t, _) in &versioned {
+    for (t, _) in &release_tags {
         match remote_tags.iter().find(|(n, _)| n == t) {
             None => {
                 push(
@@ -165,7 +188,7 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
         }
     }
     for (name, _) in &remote_tags {
-        if tag_version(name).is_some() && !tags.contains(name) {
+        if line_of(name).is_some() && !tags.contains(name) {
             push(
                 "tag.local",
                 CheckSeverity::Warn,
@@ -178,12 +201,6 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     // unreleased commits are what the release is for, so nothing to hold. The
     // newest tag is that of any line, the repo's or a member's own, since a
     // release of own lines alone tags `main` with theirs
-    let repo_kind = kind::detect(root, inputs.markers).ok();
-    let own = match repo_kind {
-        Some(k) if k.has_crate() => super::lines::own(root),
-        _ => Vec::new(),
-    };
-    let own_names: Vec<String> = own.iter().map(|m| m.name.clone()).collect();
     let release_sha = git::sha(root, inputs.release).ok();
     let newest_any = match &release_sha {
         Some(_) => newest_on(root, &tags, &versioned, &own_names, inputs.release)?,

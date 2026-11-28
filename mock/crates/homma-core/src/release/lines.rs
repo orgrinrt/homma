@@ -127,14 +127,117 @@ pub fn strip(layout: Layout, own: &[Member]) -> (Layout, Option<String>) {
     }
 }
 
-/// The pathspec of everything outside the own lines' directories.
-pub fn outside(own: &[Member]) -> Vec<String> {
-    let mut out = vec![".".to_string()];
-    out.extend(
-        own.iter()
-            .map(|m| format!(":(exclude){}", dir_of(&m.manifest))),
-    );
-    out
+/// The root lockfile, the one file outside the own lines that moving an own
+/// line's version changes by itself.
+const LOCK: &str = "Cargo.lock";
+
+/// Whether `path` lies under the directory `dir`.
+fn under(path: &str, dir: &str) -> bool {
+    path.strip_prefix(dir)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The commits of `from..head`, or of everything `head` reaches with no
+/// `from`, newest first, that `keep` takes by the paths each changed against
+/// its first parent.
+fn commits_where(
+    root: &Path,
+    from: Option<&str>,
+    head: &str,
+    keep: impl Fn(&str, &[String]) -> Result<bool, GitError>,
+) -> Result<Vec<Subject>, GitError> {
+    let all = match from {
+        Some(f) => git::subjects(root, f, head)?,
+        None => git::subjects_to(root, head)?,
+    };
+    let mut out = Vec::new();
+    for s in all {
+        if keep(&s.sha, &git::changed_paths(root, &s.sha)?)? {
+            out.push(s);
+        }
+    }
+    Ok(out)
+}
+
+/// The repo's own line's commits: each that changed a path under no own
+/// line's directory, the root lockfile counting only where it changed a
+/// package on no own line.
+pub fn repo_commits(
+    root: &Path,
+    own: &[Member],
+    from: Option<&str>,
+    head: &str,
+) -> Result<Vec<Subject>, GitError> {
+    commits_where(root, from, head, |sha, paths| {
+        let rest: Vec<&String> = paths
+            .iter()
+            .filter(|p| !own.iter().any(|m| under(p, dir_of(&m.manifest))))
+            .collect();
+        if rest.iter().any(|p| p.as_str() != LOCK) {
+            return Ok(true);
+        }
+        if rest.is_empty() {
+            return Ok(false);
+        }
+        lock_changes_repo(root, sha, own)
+    })
+}
+
+/// An own line's commits: each that changed a path under its directory.
+fn own_commits(
+    root: &Path,
+    dir: &str,
+    from: Option<&str>,
+    head: &str,
+) -> Result<Vec<Subject>, GitError> {
+    commits_where(root, from, head, |_, paths| {
+        Ok(paths.iter().any(|p| under(p, dir)))
+    })
+}
+
+/// Whether `sha`'s change to the root lockfile changed a package on no own
+/// line: the lock before and after, with the own lines' packages and every
+/// reference to them taken out, differ. A lock that does not read counts as
+/// the repo's.
+fn lock_changes_repo(root: &Path, sha: &str, own: &[Member]) -> Result<bool, GitError> {
+    if git::parent_count(root, sha)? == 0 {
+        return Ok(true);
+    }
+    let names: Vec<&str> = own.iter().map(|m| m.name.as_str()).collect();
+    let rest = |text: Option<String>| -> Option<Vec<toml::Value>> {
+        let doc = toml::from_str::<toml::Value>(&text?).ok()?;
+        let packages = doc.get("package")?.as_array()?;
+        Some(
+            packages
+                .iter()
+                .filter(|p| {
+                    !p.get("name")
+                        .and_then(toml::Value::as_str)
+                        .is_some_and(|n| names.contains(&n))
+                })
+                .map(|p| {
+                    let mut p = p.clone();
+                    if let Some(deps) = p
+                        .get_mut("dependencies")
+                        .and_then(toml::Value::as_array_mut)
+                    {
+                        deps.retain(|d| {
+                            !d.as_str()
+                                .and_then(|d| d.split(' ').next())
+                                .is_some_and(|n| names.contains(&n))
+                        });
+                    }
+                    p
+                })
+                .collect(),
+        )
+    };
+    let before = rest(git::show(root, &format!("{sha}^1"), LOCK)?);
+    let after = rest(git::show(root, sha, LOCK)?);
+    Ok(match (before, after) {
+        (Some(b), Some(a)) => b != a,
+        _ => true,
+    })
 }
 
 /// Each own line at `head`, with its block dated `date`.
@@ -145,15 +248,15 @@ pub fn read(root: &Path, own: &[Member], head: &str, date: &str) -> Result<Vec<L
         let to = workspace::version_in_tree(root, m)
             .ok_or_else(|| ReadError::NoVersion(m.name.clone()))?;
         let last = last_tag(&tags, &m.name);
-        let dir = vec![dir_of(&m.manifest).to_string()];
+        let dir = dir_of(&m.manifest);
         let (from, commits) = match &last {
             Some((t, _)) => {
                 (
                     workspace::version_at(root, t, &m.manifest)?,
-                    git::subjects_touching(root, Some(t), head, &dir)?,
+                    own_commits(root, dir, Some(t), head)?,
                 )
             },
-            None => (None, git::subjects_touching(root, None, head, &dir)?),
+            None => (None, own_commits(root, dir, None, head)?),
         };
         out.push(Line {
             name: m.name.clone(),

@@ -375,3 +375,134 @@ fn a_primary_on_a_line_of_its_own_refuses_by_name() {
         "{err}"
     );
 }
+
+/// A root `Cargo.lock` naming `t`, which depends on `t-p`, and `t-s`, at the
+/// given versions of `t-p` and `t-s`.
+fn lock(p: &str, s: &str) -> String {
+    format!(
+        "version = 4\n\n[[package]]\nname = \"t\"\nversion = \"0.1.0\"\ndependencies = [\n \"t-p\",\n]\n\n[[package]]\nname = \"t-p\"\nversion = \"{p}\"\n\n[[package]]\nname = \"t-s\"\nversion = \"{s}\"\n"
+    )
+}
+
+#[test]
+fn a_lock_change_that_only_follows_an_own_lines_move_is_that_lines_alone() {
+    // Mutation: any change to `Cargo.lock` read as the repo's, so a release of own lines alone always refuses.
+    let r = Repo::new();
+    r.write("Cargo.lock", &lock("0.0.1-rc.1", "0.1.0"));
+    r.commit("chore: lock the workspace");
+    released(&r);
+    // the lock is released on the repo's line too, so only what follows is new
+    r.git(&["tag", "-a", "v0.1.1", "-m", "v0.1.1", "main"]);
+    r.own_member("0.0.1-rc.2", true);
+    r.write("t-p/lib.rs", "// p, moved\n");
+    r.write("Cargo.lock", &lock("0.0.1-rc.2", "0.1.0"));
+    r.commit("chore: move `t-p` to 0.0.1-rc.2");
+    let p = r.plan(Aim::OwnLines).unwrap();
+    assert_eq!(p.name(), "t-p 0.0.1-rc.2");
+    // control: a lock change to a package on no own line is the repo's
+    r.write("Cargo.lock", &lock("0.0.1-rc.2", "0.1.1"));
+    r.commit("chore: take `t-s` 0.1.1");
+    let err = r.plan(Aim::OwnLines).unwrap_err();
+    assert!(matches!(err, PlanError::RepoUnreleased(1)), "{err}");
+}
+
+#[test]
+fn a_pull_requests_merge_keeps_its_subject_in_the_repos_block_beside_own_lines() {
+    // Mutation: the repo's commits read through a pathspec walk, which drops a merge the same as its second parent.
+    let r = Repo::new();
+    r.git(&["switch", "--quiet", "-c", "feature"]);
+    r.write("lib.rs", "// t, from the pull request\n");
+    r.commit("fix: a thing");
+    r.git(&["switch", "--quiet", "dev"]);
+    r.git(&[
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "-m",
+        "Merge pull request #7 from o/feature",
+        "feature",
+    ]);
+    let p = r.plan(Level::Patch).unwrap();
+    let repo: Vec<&str> = p.commits.iter().map(|c| c.subject.as_str()).collect();
+    assert_eq!(repo, [
+        "Merge pull request #7 from o/feature",
+        "fix: a thing"
+    ]);
+    assert!(p.changelog.contains("#7"), "{}", p.changelog);
+    // the own line's own commit stays its alone
+    let own: Vec<&str> = p.lines[0]
+        .commits
+        .iter()
+        .map(|c| c.subject.as_str())
+        .collect();
+    assert!(!own.contains(&"fix: a thing"), "{own:?}");
+}
+
+/// The check's findings on the repo as it stands, everything it names published.
+fn found(r: &Repo) -> Vec<(String, String)> {
+    let mut published = crate::release::check::Published::default();
+    for (n, v) in [("t", "0.1.0"), ("t-s", "0.1.0"), ("t-p", "0.0.1-rc.1")] {
+        published
+            .versions
+            .insert((Registry::CratesIo, n.into()), vec![v.parse().unwrap()]);
+    }
+    crate::release::check::check(&crate::release::check::Inputs {
+        root:      r.root(),
+        repo:      "t",
+        remote:    "origin",
+        trunk:     "dev",
+        release:   "main",
+        target:    None,
+        published: &published,
+        markers:   homma_api::Markers::defaults(),
+    })
+    .unwrap()
+    .into_iter()
+    .map(|f| (f.id, f.message))
+    .collect()
+}
+
+#[test]
+fn an_own_tag_is_checked_as_a_release_tag_on_main_annotated_and_pushed() {
+    // Mutation: the tag checks read the repo's version tags alone, so an own tag off `main`, lightweight or unpushed goes unsaid.
+    let r = Repo::new();
+    r.git(&["tag", "t-p-v0.0.1-rc.1", "dev"]);
+    let ids = found(&r);
+    let about = |id: &str| {
+        ids.iter()
+            .any(|(i, m)| i == id && m.contains("t-p-v0.0.1-rc.1"))
+    };
+    assert!(about("tag.reachable"), "{ids:?}");
+    assert!(about("tag.annotated"), "{ids:?}");
+    assert!(about("tag.pushed"), "{ids:?}");
+    // control: released as a release makes it, nothing of the three is said of it
+    r.git(&["tag", "-d", "t-p-v0.0.1-rc.1"]);
+    released(&r);
+    r.git(&["push", "--quiet", "origin", "main", "dev", "refs/tags/t-p-v0.0.1-rc.1"]);
+    let ids = found(&r);
+    let about = |id: &str| {
+        ids.iter()
+            .any(|(i, m)| i == id && m.contains("t-p-v0.0.1-rc.1"))
+    };
+    assert!(
+        !about("tag.reachable") && !about("tag.annotated") && !about("tag.pushed"),
+        "{ids:?}"
+    );
+}
+
+#[test]
+fn the_repos_tag_beside_an_own_tag_on_one_merge_is_no_duplicate_and_two_of_one_line_are() {
+    // Mutation: `tag.dupes` reads every tag on a commit alike, so a release of two lines is named a duplicate.
+    let r = Repo::new();
+    released(&r);
+    r.git(&["tag", "-a", "v0.1.1", "-m", "v0.1.1", "main"]);
+    let dupes = |r: &Repo| {
+        found(r)
+            .into_iter()
+            .filter(|(i, _)| i == "tag.dupes")
+            .count()
+    };
+    assert_eq!(dupes(&r), 0, "{:?}", found(&r));
+    r.git(&["tag", "-a", "t-p-v0.0.1-rc.2", "-m", "t-p-v0.0.1-rc.2", "main"]);
+    assert_eq!(dupes(&r), 1, "{:?}", found(&r));
+}
