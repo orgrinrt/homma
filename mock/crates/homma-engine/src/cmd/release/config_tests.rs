@@ -132,3 +132,33 @@ fn the_sweep_that_names_no_repository_stays_in_the_scope() {
         ["inside"]
     );
 }
+
+/// What a release command line asks to release, or why it refuses.
+fn aim_of(args: &[&str]) -> std::result::Result<Aim, String> {
+    let mut argv = vec!["homma-engine", "release"];
+    argv.extend_from_slice(args);
+    let cli = Cli::try_parse_from(argv).expect("these arguments should parse");
+    let Command::Release {
+        op: ReleaseOp::Run {
+            repo,
+            target,
+            ..
+        },
+    } = &cli.command
+    else {
+        panic!("a release run parsed as something else");
+    };
+    aimed(repo.as_deref(), target).map_err(|e| e.to_string())
+}
+
+#[test]
+fn a_named_repo_with_no_level_releases_its_own_lines_and_a_sweep_names_a_level() {
+    // Mutation: a run over every repo taken with no level, or a named one refused for having none.
+    assert_eq!(aim_of(&["run", "tomlfuse"]), Ok(Aim::OwnLines));
+    assert_eq!(
+        aim_of(&["run", "tomlfuse", "--level", "patch"]),
+        Ok(Aim::Repo(homma_api::Target::Level(homma_api::Level::Patch)))
+    );
+    let err = aim_of(&["run"]).unwrap_err();
+    assert!(err.contains("name a `--level`"), "{err}");
+}

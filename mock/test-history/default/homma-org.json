@@ -3,23 +3,23 @@
   "flavour": "",
   "member": "homma-org",
   "green": {
-    "full": "8e33063a1179b95dd258655c71539a381776631b8b99309c2f0df3de94da13f3",
+    "full": "10283bd069e110423250a1b14f49c9705ced6e2f6480f9ac6969f75586584ae2",
     "own": {
       "homma-api": "a2da7145053cce433c5a45d7ddd0d16a91cdd2c246feac0335e27aa76080ccef",
-      "homma-core": "a4806dd708637d2b149734de9f2e71b4afc5f166f2ddd5ee01cf984c1a77a62d",
+      "homma-core": "4fbe05bfae8e43e8faaea665e16a39c0bcaf7912844cc61115a02d9ce6fff5e2",
       "homma-org": "725731895e680ab39d34417325cc16fd9cc503a17588225af82486790df4b64a"
     }
   },
   "tests": {},
   "bins": {
-    "homma-org": "4b9b027f46948d6bf27f582fe69803df9aa0d3320a4906934aa55bb14dcd1e37",
-    "homma-org::agents_corpus": "c75aa279ab9f101a6ca4c4624eac7ebd32aba2ccce9b645cf546ae689751e65a",
-    "homma-org::character_places": "e820ffad41eb9f108e6dfa922c50f2828dcbc46d1b89c4869b708db2d72c0b51",
-    "homma-org::characters": "5f554088762190e6fc30b68be2d649db0e4522c97945caf6c2ec3eb91fdb3525",
-    "homma-org::modes_corpus": "b7c034fab4327e1529429229d8e487b977719c4497b9e374d0bccc4a4dd7a9f9",
-    "homma-org::principles_corpus": "a352bd542bed7caa6ef29ec5dace65550690896ae2f87d43a3d05f433d662334",
-    "homma-org::provisioned_commit": "15876b69c269a0df6d725e2cb5670e387e94e31008add6bc68ecbc34cfcf8e78",
-    "homma-org::rules_corpus": "f783414e52bec5f04e86d0792caa0b84948daf936432cf70b74922a1b9be450b",
-    "homma-org::skills_corpus": "771852367680a478ee87004370d20681cc3cef2b61fb0faecb9eb7537a2bd9c0"
+    "homma-org": "195d36775bbebf1718e8dca025a841ba6a0a6f45f2069d1edb4de3c149f20798",
+    "homma-org::agents_corpus": "dc72dd2e06ba0e5ab02aa87cf207988aedad6f26175d7798834fd20c59cbec75",
+    "homma-org::character_places": "119c56afe842d064eb77339c301788b044530d9ae66d39545966ff83449a3eec",
+    "homma-org::characters": "d915e285b9479c355447378579f6945d8a243a5b587c6841a620c7a096c1093e",
+    "homma-org::modes_corpus": "ca69a4027b203fa42601aab9a2ce0c62b2ee0c426aa87309a0029c4d730faf42",
+    "homma-org::principles_corpus": "6b69db9808a0442952ceb7735f4838723144433a0667006df38b8fcb57ff42ed",
+    "homma-org::provisioned_commit": "254f1fb54532a63c82f8a8d2031015df54b4ffb2e0c7833adcc9c2f2b7e2aa9b",
+    "homma-org::rules_corpus": "5eaa37130a485ba2879090d4d73015949970ff129e9cf2edfad6ab54cfbe2451",
+    "homma-org::skills_corpus": "095b4240315003def934e2027dfdcf98a15eab3f7090454ae660a102f6911efd"
   }
 }

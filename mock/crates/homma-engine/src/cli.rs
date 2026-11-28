@@ -850,9 +850,11 @@ pub enum LeaseOp {
     },
 }
 
-/// What a release moves to: a level, or a version named outright, exactly one.
+/// What a release moves the repo's own line to: a level, or a version named
+/// outright, at most one. With neither, a named repo releases its members on
+/// lines of their own alone, where its own line has nothing to release.
 #[derive(Debug, Clone, clap::Args)]
-#[group(required = true, multiple = false)]
+#[group(required = false, multiple = false)]
 pub struct TargetArgs {
     /// `patch`, `minor` or `major`; never inferred.
     #[arg(long)]
@@ -864,7 +866,7 @@ pub struct TargetArgs {
 }
 
 impl TargetArgs {
-    /// The one the command line named; clap refuses a line naming neither.
+    /// The one the command line named, or none; clap refuses a line naming both.
     pub fn target(&self) -> Option<homma_api::Target> {
         self.version
             .clone()
@@ -1487,7 +1489,7 @@ mod tests {
     }
 
     #[test]
-    fn a_release_takes_a_level_or_a_version_and_exactly_one() {
+    fn a_release_takes_a_level_or_a_version_at_most_one_and_neither_is_none() {
         let target = |args: &[&str]| {
             let mut all = vec!["homma", "release"];
             all.extend_from_slice(args);
@@ -1503,21 +1505,22 @@ mod tests {
                                 target,
                                 ..
                             },
-                    } => target.target().expect("clap requires one"),
+                    } => target.target(),
                     other => panic!("{other:?}"),
                 }
             })
         };
         assert_eq!(
             target(&["run", "renki", "--version", "0.0.5-rc.2", "--dry-run"]).unwrap(),
-            homma_api::Target::Version("0.0.5-rc.2".parse().unwrap())
+            Some(homma_api::Target::Version("0.0.5-rc.2".parse().unwrap()))
         );
         assert_eq!(
             target(&["plan", "renki", "--level", "patch"]).unwrap(),
-            homma_api::Target::Level(homma_api::Level::Patch)
+            Some(homma_api::Target::Level(homma_api::Level::Patch))
         );
         assert!(target(&["run", "renki", "--level", "patch", "--version", "0.1.0"]).is_err());
-        assert!(target(&["plan", "renki"]).is_err());
+        // neither is a run of the members on lines of their own alone
+        assert_eq!(target(&["plan", "renki"]).unwrap(), None);
         assert!(target(&["plan", "renki", "--version", "next"]).is_err());
     }
 }

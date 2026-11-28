@@ -13,6 +13,7 @@ use anyhow::{Result, anyhow};
 use homma_api::{GateRun, Target};
 use homma_core::forge::token;
 use homma_core::release::gate::{Real, Runner};
+use homma_core::release::plan::Aim;
 use homma_core::release::registry::Registry;
 use homma_core::release::run::Setup;
 use homma_core::release::writes::{ByClient, ByRoute, ReleaseForge};
@@ -210,12 +211,20 @@ pub fn run(cli: &Cli, op: &ReleaseOp) -> Result<Outcome> {
         ReleaseOp::Plan {
             repo,
             target,
-        } => plan_cmd(cli, &cfg, repo.as_deref(), named(target)?),
+        } => plan_cmd(cli, &cfg, repo.as_deref(), aimed(repo.as_deref(), target)?),
         ReleaseOp::Run {
             repo,
             target,
             dry_run,
-        } => run_cmd(cli, &cfg, repo.as_deref(), named(target)?, *dry_run),
+        } => {
+            run_cmd(
+                cli,
+                &cfg,
+                repo.as_deref(),
+                aimed(repo.as_deref(), target)?,
+                *dry_run,
+            )
+        },
         ReleaseOp::Badges {
             repo,
         } => badges_cmd(cli, &cfg, repo),
@@ -286,20 +295,25 @@ fn check_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>) -> Result<Outcome> {
     })
 }
 
-/// The level or version the command line named.
-fn named(t: &crate::cli::TargetArgs) -> Result<Target> {
-    t.target()
-        .ok_or_else(|| anyhow!("name a `--level` or a `--version`"))
+/// What the command line asks to release: the level or version it named, or
+/// with neither, for one repo, its members on lines of their own alone. A run
+/// over every repo names a level.
+fn aimed(repo: Option<&str>, t: &crate::cli::TargetArgs) -> Result<Aim> {
+    match (t.target(), repo) {
+        (Some(target), _) => Ok(Aim::Repo(target)),
+        (None, Some(_)) => Ok(Aim::OwnLines),
+        (None, None) => Err(anyhow!("name a `--level` or a `--version`")),
+    }
 }
 
-fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, target: Target) -> Result<Outcome> {
+fn plan_cmd(cli: &Cli, cfg: &Config, repo: Option<&str>, aim: Aim) -> Result<Outcome> {
     let (name, _, root) = resolve_repo(cfg, repo)?;
     let p = plan::plan(
         &root,
         name,
         &cfg.markers,
         branches_checked(cfg, &root)?.0,
-        target,
+        aim,
         &clock::today(),
     )?;
     finish(cli, Report {
@@ -312,11 +326,11 @@ fn run_cmd(
     cli: &Cli,
     cfg: &Config,
     repo: Option<&str>,
-    target: Target,
+    aim: Aim,
     dry_run: bool,
 ) -> Result<Outcome> {
     // a version named outright is one repo's next version, never every repo's
-    if repo.is_none() && matches!(target, Target::Version(_)) {
+    if repo.is_none() && matches!(aim, Aim::Repo(Target::Version(_))) {
         return Err(anyhow!(
             "`--version` names one repository's next version; name the repository, or \
              sweep with `--level`"
@@ -344,7 +358,7 @@ fn run_cmd(
                 name,
                 &cfg.markers,
                 trunk,
-                target.clone(),
+                aim.clone(),
                 &clock::today(),
             );
             match sweep::verdict(name, p)? {
@@ -412,7 +426,7 @@ fn run_cmd(
         match run::release(
             &setup,
             root,
-            target.clone(),
+            aim.clone(),
             run::ByLookup(|sha: &str| {
                 record::newest_for(&store, name, sha)
                     .map_err(|e| run::ReleaseError::from(std::io::Error::other(e)))
@@ -421,9 +435,14 @@ fn run_cmd(
         ) {
             Ok(Ok(done)) => {
                 lines.push(format!(
-                    "{name}: released {} as `{}` at {}",
-                    done.plan.next,
-                    done.plan.tag,
+                    "{name}: released {} as {} at {}",
+                    done.plan.name(),
+                    done.plan
+                        .tags()
+                        .iter()
+                        .map(|t| format!("`{t}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     &done.tag_sha[.. 7]
                 ));
             },
