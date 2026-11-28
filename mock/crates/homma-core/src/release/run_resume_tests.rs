@@ -255,9 +255,9 @@ fn putting_a_bump_back_that_cannot_be_reset_to_says_so() {
     // Mutation: the reset's error dropped, the trunk left set aside unsaid.
     let f = Fixture::new();
     let pending = landing::Pending {
-        sha:     "0123456789012345678901234567890123456789".into(),
-        version: Version::new(0, 1, 1),
-        landed:  landing::Landed::Local,
+        sha:    "0123456789012345678901234567890123456789".into(),
+        name:   "0.1.1".into(),
+        landed: landing::Landed::Local,
     };
     let err = landing::put_back(f.root(), Some(&pending)).unwrap_err();
     assert!(
@@ -272,9 +272,9 @@ fn a_bump_that_cannot_be_put_back_is_reported_with_the_refusal_that_stopped_the_
     // Mutation: the put-back's failure returned in place of the refusal.
     let f = Fixture::new();
     let pending = landing::Pending {
-        sha:     "0123456789012345678901234567890123456789".into(),
-        version: Version::new(0, 1, 1),
-        landed:  landing::Landed::Local,
+        sha:    "0123456789012345678901234567890123456789".into(),
+        name:   "0.1.1".into(),
+        landed: landing::Landed::Local,
     };
     let stopped: Result<(), ReleaseError> = Err(ReleaseError::NoPullRequest("main".into()));
     let err = landing::put_back_after(f.root(), Some(&pending), stopped).unwrap_err();

@@ -24,17 +24,26 @@ pub fn refused(e: &GitError) -> bool {
     matches!(e, GitError::Failed { stderr, .. } if stderr.contains("[remote rejected]"))
 }
 
-/// What a bump commit's subject opens with, the version after it.
+/// What a bump commit's subject opens with, the release's name after it.
 const BUMP: &str = "chore: release ";
 
-/// The subject of the bump commit for `version`.
-pub fn bump_subject(version: &Version) -> String {
-    format!("{BUMP}{version}")
+/// The subject of the bump commit for the release named `name`: the repo's
+/// next version, or each own line that moves as `<crate> <version>`.
+pub fn bump_subject(name: &str) -> String {
+    format!("{BUMP}{name}")
 }
 
-/// The branch a bump is pushed as when the trunk takes no push.
-pub fn bump_branch(repo: &str, version: &Version) -> String {
-    format!("release/{repo}-{version}")
+/// The branch a bump is pushed as when the trunk takes no push, every space
+/// and comma of the name made a `-`.
+pub fn bump_branch(repo: &str, name: &str) -> String {
+    let mut slug = String::new();
+    for c in name.chars() {
+        let c = if c == ' ' || c == ',' { '-' } else { c };
+        if !(c == '-' && slug.ends_with('-')) {
+            slug.push(c);
+        }
+    }
+    format!("release/{repo}-{slug}")
 }
 
 /// Step 4's landing of the bump commit `sha` on the trunk, and the trunk's
@@ -53,7 +62,7 @@ pub fn push_bump(
     setup: &Setup<'_>,
     root: &Path,
     sha: &str,
-    version: &Version,
+    name: &str,
 ) -> Result<String, ReleaseError> {
     if git::fetch_branch(root, setup.remote, setup.trunk)
         .ok()
@@ -67,7 +76,7 @@ pub fn push_bump(
         Err(e) if refused(&e) => {},
         Err(e) => return Err(e.into()),
     }
-    let head = bump_branch(setup.repo, version);
+    let head = bump_branch(setup.repo, name);
     let before = git::sha(root, &format!("{sha}^"))?;
     git::push(
         root,
@@ -77,7 +86,7 @@ pub fn push_bump(
     )?;
     if let Err(e) = setup
         .forge
-        .land(root, &head, setup.trunk, &bump_subject(version), sha)
+        .land(root, &head, setup.trunk, &bump_subject(name), sha)
     {
         if matches!(e, ReleaseError::NoPullRequest(_)) {
             let _ = setup.forge.drop_branch(root, &head, sha);
@@ -112,18 +121,14 @@ fn is_merge_onto(root: &Path, merge: &str, onto: &str, bump: &str) -> Result<boo
 /// The clone's release line takes that commit once it is checked to be a
 /// merge of the tip onto where the line was with the tree the two make
 /// together, the tree the gate measured, and it is returned for the tag.
-pub fn land_release(
-    setup: &Setup<'_>,
-    root: &Path,
-    version: &Version,
-) -> Result<String, ReleaseError> {
+pub fn land_release(setup: &Setup<'_>, root: &Path, name: &str) -> Result<String, ReleaseError> {
     let tip = git::sha(root, setup.trunk)?;
     let before = git::sha(root, setup.release)?;
     setup.forge.land(
         root,
         setup.trunk,
         setup.release,
-        &format!("release: {version}"),
+        &format!("release: {name}"),
         &tip,
     )?;
     let landed = git::fetch_branch(root, setup.remote, setup.release)?;
@@ -166,39 +171,46 @@ pub enum Landed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
     /// The bump as the trunk is to hold it.
-    pub sha:     String,
-    /// The version its subject names.
-    pub version: Version,
-    pub landed:  Landed,
+    pub sha:    String,
+    /// The release name its subject names.
+    pub name:   String,
+    pub landed: Landed,
 }
 
-/// The version a bump's subject names: `chore: release <version>` with a
-/// version that reads as one.
-fn subject_version(subject: &str) -> Option<Version> {
-    subject
-        .strip_prefix(BUMP)
-        .and_then(|v| v.parse::<Version>().ok())
+/// The release name a bump's subject names: `chore: release <name>`, the name a
+/// version, or `<crate> <version>` pairs joined by `, `.
+pub fn subject_name(subject: &str) -> Option<String> {
+    let name = subject.strip_prefix(BUMP)?;
+    let reads = |part: &str| {
+        match part.split_once(' ') {
+            None => part.parse::<Version>().is_ok(),
+            Some((krate, v)) => {
+                !krate.is_empty() && !krate.contains(' ') && v.parse::<Version>().is_ok()
+            },
+        }
+    };
+    name.split(", ").all(reads).then(|| name.to_string())
 }
 
-/// The version a bump commit carries: one parent, and the subject
-/// `chore: release <version>` with a version that reads as one.
-fn bump_version(root: &Path, rev: &str) -> Result<Option<Version>, ReleaseError> {
+/// The release name a bump commit carries: one parent, and the subject
+/// `chore: release <name>` with a name that reads as one.
+fn bump_name(root: &Path, rev: &str) -> Result<Option<String>, ReleaseError> {
     if git::parent_count(root, rev)? != 1 {
         return Ok(None);
     }
-    Ok(subject_version(&git::subject(root, rev)?))
+    Ok(subject_name(&git::subject(root, rev)?))
 }
 
-/// The version of a bump a pull request landed as a merge commit: two parents,
-/// the same subject, and a second parent that is a bump of that version.
-fn landed_version(root: &Path, rev: &str) -> Result<Option<Version>, ReleaseError> {
+/// The name of a bump a pull request landed as a merge commit: two parents,
+/// the same subject, and a second parent that is a bump of that name.
+fn landed_name(root: &Path, rev: &str) -> Result<Option<String>, ReleaseError> {
     if git::parent_count(root, rev)? != 2 {
         return Ok(None);
     }
-    let Some(version) = subject_version(&git::subject(root, rev)?) else {
+    let Some(name) = subject_name(&git::subject(root, rev)?) else {
         return Ok(None);
     };
-    Ok((bump_version(root, &format!("{rev}^2"))?.as_ref() == Some(&version)).then_some(version))
+    Ok((bump_name(root, &format!("{rev}^2"))?.as_ref() == Some(&name)).then_some(name))
 }
 
 /// The bump the remote's trunk `merge` landed by a pull request, set aside: the
@@ -214,7 +226,7 @@ fn set_aside_landed(
     merge: &str,
     tip: &str,
 ) -> Result<Option<Pending>, ReleaseError> {
-    let Some(version) = landed_version(root, merge)? else {
+    let Some(name) = landed_name(root, merge)? else {
         return Ok(None);
     };
     let first = git::sha(root, &format!("{merge}^1"))?;
@@ -230,7 +242,7 @@ fn set_aside_landed(
     git::reset_hard(root, &first)?;
     Ok(Some(Pending {
         sha: merge.to_string(),
-        version,
+        name,
         landed,
     }))
 }
@@ -256,7 +268,7 @@ pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, Rele
     if let Some(landed) = set_aside_landed(setup, root, &remote, &tip)? {
         return Ok(Some(landed));
     }
-    let Some(version) = bump_version(root, &tip)? else {
+    let Some(name) = bump_name(root, &tip)? else {
         return Ok(None);
     };
     let parent = git::sha(root, &format!("{tip}^"))?;
@@ -264,7 +276,7 @@ pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, Rele
         git::reset_hard(root, &remote)?;
         return Ok(Some(Pending {
             sha: tip,
-            version,
+            name,
             landed: Landed::Local,
         }));
     }
@@ -275,7 +287,7 @@ pub fn set_aside(setup: &Setup<'_>, root: &Path) -> Result<Option<Pending>, Rele
     git::reset_hard(root, &parent)?;
     Ok(Some(Pending {
         sha: tip,
-        version,
+        name,
         landed,
     }))
 }
@@ -341,30 +353,30 @@ pub fn put_back_after<T>(
 }
 
 /// Step 4 with a pending bump: refused, the bump put back, where it is
-/// another version than the plan's; else taken back, and pushed or landed
+/// another release than the plan's; else taken back, and pushed or landed
 /// where only the clone held it. A merge a pull request landed has its branch
 /// dropped where the remote still holds it.
 pub fn resume_bump(
     setup: &Setup<'_>,
     root: &Path,
     pending: &Pending,
-    next: &Version,
+    name: &str,
 ) -> Result<String, ReleaseError> {
-    if pending.version != *next {
+    if pending.name != name {
         return put_back_after(
             root,
             Some(pending),
             Err(ReleaseError::PendingBump {
-                found:   bump_subject(&pending.version),
-                planned: next.to_string(),
+                found:   bump_subject(&pending.name),
+                planned: name.to_string(),
             }),
         );
     }
     git::fast_forward(root, &pending.sha)?;
     match pending.landed {
-        Landed::Local => push_bump(setup, root, &pending.sha, next),
+        Landed::Local => push_bump(setup, root, &pending.sha, name),
         _ => {
-            drop_landed_branch(setup, root, &pending.sha, next);
+            drop_landed_branch(setup, root, &pending.sha, name);
             Ok(pending.sha.clone())
         },
     }
@@ -376,11 +388,11 @@ pub fn resume_bump(
 /// parent, and never on what the branch holds now, so a branch pushed on past
 /// the bump is left and no commit is lost. A failure does not stop the run: the
 /// route queued the deletion where it could.
-fn drop_landed_branch(setup: &Setup<'_>, root: &Path, merge: &str, version: &Version) {
+fn drop_landed_branch(setup: &Setup<'_>, root: &Path, merge: &str, name: &str) {
     if git::parent_count(root, merge).ok() != Some(2) {
         return;
     }
-    let branch = bump_branch(setup.repo, version);
+    let branch = bump_branch(setup.repo, name);
     if git::fetch_branch(root, setup.remote, &branch).is_err() {
         return;
     }

@@ -150,26 +150,34 @@ pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool,
 /// The subjects of the commits in `from..to`, newest first, with the pull
 /// request number when the subject is a merge of one.
 pub fn subjects(cwd: &Path, from: &str, to: &str) -> Result<Vec<Subject>, GitError> {
-    let range = format!("{from}..{to}");
-    let out = trimmed(cwd, &["log", "--format=%h%x09%s", &range])?;
-    Ok(out
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|line| {
-            let (sha, subject) = line.split_once('\t').unwrap_or((line, ""));
-            Subject {
-                sha:     sha.to_string(),
-                subject: subject.to_string(),
-                pr:      pr_number(subject),
-            }
-        })
-        .collect())
+    subjects_touching(cwd, Some(from), to, &[])
 }
 
 /// Every subject reachable from `to`, newest first, for a repo with no tag
 /// yet, where the first release carries its whole history.
 pub fn subjects_to(cwd: &Path, to: &str) -> Result<Vec<Subject>, GitError> {
-    let out = trimmed(cwd, &["log", "--format=%h%x09%s", to])?;
+    subjects_touching(cwd, None, to, &[])
+}
+
+/// The subjects of `from..to`, or of everything `to` reaches with no `from`,
+/// newest first, of the commits that touch `pathspec`; every commit where it is
+/// empty. A pathspec is git's, so `:(exclude)dir` leaves a directory out.
+pub fn subjects_touching(
+    cwd: &Path,
+    from: Option<&str>,
+    to: &str,
+    pathspec: &[String],
+) -> Result<Vec<Subject>, GitError> {
+    let range = match from {
+        Some(f) => format!("{f}..{to}"),
+        None => to.to_string(),
+    };
+    let mut args = vec!["log", "--format=%h%x09%s", range.as_str()];
+    if !pathspec.is_empty() {
+        args.push("--");
+        args.extend(pathspec.iter().map(String::as_str));
+    }
+    let out = trimmed(cwd, &args)?;
     Ok(out
         .lines()
         .filter(|l| !l.is_empty())

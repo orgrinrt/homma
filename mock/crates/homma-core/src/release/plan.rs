@@ -5,18 +5,54 @@
 //! The plan a release prints before it moves anything: the commits since the
 //! last tag, the version the level or the named version makes, the changelog
 //! block, and what publishes where, in dependency order. A virtual workspace
-//! plans its primary's version and names each rider as staying or moving.
+//! plans its primary's version and names each rider as staying or moving, and
+//! a member on a line of its own is planned against its own tags.
 
 use std::fmt;
 use std::path::Path;
 
-use homma_api::{Markers, RepoKind, Target, Version};
+use homma_api::{Level, Markers, RepoKind, Target, Version};
 
 use super::check::{self, Packages};
 use super::git::{self, GitError, Subject};
+use super::lines::{self, Line};
 use super::registry::Registry;
-use super::workspace::{self, Layout, NoPrimary};
+use super::workspace::{self, Layout};
 use super::{changelog, kind, publish, version};
+
+/// What a run is asked to release: the repo's line at a target, every own
+/// line that moves riding it, or the own lines alone, the repo's staying.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Aim {
+    Repo(Target),
+    OwnLines,
+}
+
+impl From<Target> for Aim {
+    fn from(t: Target) -> Self {
+        Aim::Repo(t)
+    }
+}
+
+impl From<Level> for Aim {
+    fn from(l: Level) -> Self {
+        Aim::Repo(l.into())
+    }
+}
+
+impl From<Version> for Aim {
+    fn from(v: Version) -> Self {
+        Aim::Repo(v.into())
+    }
+}
+
+impl From<Option<Target>> for Aim {
+    fn from(t: Option<Target>) -> Self {
+        t.map_or(Aim::OwnLines, Aim::Repo)
+    }
+}
+
+pub use super::plan_error::{OffLevel, PlanError};
 
 /// A member of a virtual workspace that is not its primary, with the version
 /// its manifest carried at the last tag and carries now.
@@ -40,23 +76,106 @@ impl Ride {
 /// through the steps that then do it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
-    pub repo_kind: RepoKind,
-    pub layout:    Layout,
+    pub repo_kind:  RepoKind,
+    pub layout:     Layout,
     /// The newest release tag, or none for a first release.
-    pub last_tag:  Option<String>,
-    pub current:   Version,
-    pub next:      Version,
-    pub tag:       String,
-    pub commits:   Vec<Subject>,
-    pub changelog: String,
+    pub last_tag:   Option<String>,
+    pub current:    Version,
+    pub next:       Version,
+    pub tag:        String,
+    /// Whether the repo's own line releases; where it does not, `next` is
+    /// `current` and only the own lines release.
+    pub repo_moves: bool,
+    pub commits:    Vec<Subject>,
+    pub changelog:  String,
     /// The riders of a virtual workspace; none for a single version.
-    pub riders:    Vec<Ride>,
+    pub riders:     Vec<Ride>,
+    /// The members on lines of their own that move, in name order.
+    pub lines:      Vec<Line>,
     /// What publishes, in the order it publishes, at the version it publishes.
-    pub publishes: Vec<(Registry, String, Version)>,
+    pub publishes:  Vec<(Registry, String, Version)>,
+}
+
+impl Plan {
+    /// What the bump and the merge are named by: the repo's next version where
+    /// its line moves, else each moving own line as `<crate> <version>`.
+    pub fn name(&self) -> String {
+        if self.repo_moves {
+            return self.next.to_string();
+        }
+        self.lines
+            .iter()
+            .map(|l| format!("{} {}", l.name, l.to))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Every tag the release makes, the repo's first.
+    pub fn tags(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .repo_moves
+            .then(|| self.tag.clone())
+            .into_iter()
+            .collect();
+        out.extend(self.lines.iter().map(|l| l.tag.clone()));
+        out
+    }
 }
 
 impl fmt::Display for Plan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.repo_moves {
+            writeln!(
+                f,
+                "the repo's own line has nothing since `{}` and stays at {}",
+                self.last_tag.as_deref().unwrap_or_default(),
+                self.current
+            )?;
+        } else {
+            self.fmt_repo(f)?;
+        }
+        for l in &self.lines {
+            match &l.from {
+                Some(from) if l.last_tag.is_some() => {
+                    writeln!(
+                        f,
+                        "`{}` moves from {from} to {}, tagged `{}`",
+                        l.name, l.to, l.tag
+                    )?
+                },
+                _ => {
+                    writeln!(
+                        f,
+                        "`{}` is new on its own line at {}, tagged `{}`",
+                        l.name, l.to, l.tag
+                    )?
+                },
+            }
+        }
+        if self.repo_moves {
+            writeln!(f)?;
+            f.write_str(&self.changelog)?;
+        }
+        for l in &self.lines {
+            writeln!(f)?;
+            writeln!(f, "into {}/CHANGELOG.md:", l.dir())?;
+            f.write_str(&l.changelog)?;
+        }
+        writeln!(f)?;
+        if self.publishes.is_empty() {
+            writeln!(f, "nothing publishes")?;
+        } else {
+            writeln!(f, "publishes, in order:")?;
+            for (reg, name, v) in &self.publishes {
+                writeln!(f, "  {name} {v} to {reg}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Plan {
+    fn fmt_repo(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.last_tag {
             Some(t) => writeln!(f, "{} commit(s) since `{t}`:", self.commits.len())?,
             None => {
@@ -106,112 +225,7 @@ impl fmt::Display for Plan {
                 (Some(_), false) => writeln!(f, "`{}` stays at {}", r.name, r.to)?,
             }
         }
-        writeln!(f)?;
-        f.write_str(&self.changelog)?;
-        writeln!(f)?;
-        if self.publishes.is_empty() {
-            writeln!(f, "nothing publishes")?;
-        } else {
-            writeln!(f, "publishes, in order:")?;
-            for (reg, name, v) in &self.publishes {
-                writeln!(f, "  {name} {v} to {reg}")?;
-            }
-        }
         Ok(())
-    }
-}
-
-/// Why a plan could not be made: the tree, the manifest, the version, the
-/// crate graph, a manifest that disagrees with the target, a named version no
-/// single step above the last tag, or a virtual workspace with no primary.
-#[derive(Debug)]
-pub enum PlanError {
-    Git(GitError),
-    NoManifest(kind::NoManifest),
-    Version(version::VersionError),
-    /// The publishable crates depend on each other in a cycle.
-    Cycle(String),
-    /// The manifest sits at a version that is neither the last tag's nor what
-    /// the target makes of it. Boxed, since three versions inline would make
-    /// every result carrying this error larger than the gate's clippy allows.
-    OffLevel(Box<OffLevel>),
-    /// A version that is not one step above the one before it: the release's
-    /// next against the last tag or the manifest, or a rider's move.
-    NotOneStep {
-        what: String,
-        last: Box<Version>,
-        next: Box<Version>,
-    },
-    Layout(NoPrimary),
-}
-
-/// What a manifest off the target was measured against.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffLevel {
-    pub manifest: Version,
-    pub last:     Version,
-    pub target:   Target,
-    pub next:     Version,
-}
-
-impl fmt::Display for PlanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PlanError::Git(e) => write!(f, "{e}"),
-            PlanError::NoManifest(e) => write!(f, "{e}"),
-            PlanError::Version(e) => write!(f, "{e}"),
-            PlanError::Cycle(c) => write!(f, "dependency cycle among the crates: {c}"),
-            PlanError::Layout(e) => write!(f, "{e}"),
-            PlanError::NotOneStep {
-                what,
-                last,
-                next,
-            } => {
-                write!(
-                    f,
-                    "{next} is not one step above {what} at {last}: a level's step, a \
-                     pre-release of one, or from a pre-release a later one or its release"
-                )
-            },
-            PlanError::OffLevel(o) => {
-                let OffLevel {
-                    manifest,
-                    last,
-                    target,
-                    next,
-                } = &**o;
-                // below the tag no level makes the manifest's version, so the
-                // only offer is the tag's or the target's
-                if manifest < last {
-                    write!(
-                        f,
-                        "the manifest is at {manifest}, behind the last tag {last}; set it to \
-                         {last} or to {next}, which a {target} makes"
-                    )
-                } else {
-                    write!(
-                        f,
-                        "the manifest is at {manifest} and a {target} makes {next}; set it to \
-                         {next} or pick the level that makes {manifest}, or name it with \
-                         `--version`"
-                    )
-                }
-            },
-        }
-    }
-}
-
-impl std::error::Error for PlanError {}
-
-impl From<GitError> for PlanError {
-    fn from(e: GitError) -> Self {
-        PlanError::Git(e)
-    }
-}
-
-impl From<version::VersionError> for PlanError {
-    fn from(e: version::VersionError) -> Self {
-        PlanError::Version(e)
     }
 }
 
@@ -244,26 +258,59 @@ pub fn working_version(
     }
 }
 
-/// The plan for releasing `head` to `target`, dated `date`.
+/// The plan for releasing `head` as `aim` asks, dated `date`.
 pub fn plan(
     root: &Path,
     repo: &str,
     markers: &Markers,
     head: &str,
-    target: impl Into<Target>,
+    aim: impl Into<Aim>,
     date: &str,
 ) -> Result<Plan, PlanError> {
-    let target = target.into();
+    let aim = aim.into();
     let repo_kind = kind::detect(root, markers).map_err(PlanError::NoManifest)?;
+    let own = if repo_kind.has_crate() { lines::own(root) } else { Vec::new() };
     let layout = workspace::layout(root, repo_kind, repo).map_err(PlanError::Layout)?;
+    let (layout, own_primary) = lines::strip(layout, &own);
+    if let Some(name) = own_primary {
+        return Err(PlanError::OwnPrimary(name));
+    }
     let current = working_version(root, repo_kind, &layout)?;
     let last = last_tag(root)?;
-    let commits = match &last {
-        Some((t, _)) => git::subjects(root, t, head)?,
-        None => git::subjects_to(root, head)?,
+    // the repo's own line is what lies outside the own lines; with none, every
+    // commit, read as it always was
+    let outside = if own.is_empty() { Vec::new() } else { lines::outside(&own) };
+    let commits =
+        git::subjects_touching(root, last.as_ref().map(|(t, _)| t.as_str()), head, &outside)?;
+    let lines = lines::moving(root, &own, head, date)?;
+    let target = match aim {
+        Aim::Repo(_) if commits.is_empty() && !own.is_empty() => return Err(PlanError::Nothing),
+        Aim::Repo(t) => Some(t),
+        Aim::OwnLines if !commits.is_empty() => {
+            return Err(PlanError::RepoUnreleased(commits.len()));
+        },
+        Aim::OwnLines if lines.is_empty() => return Err(PlanError::Nothing),
+        Aim::OwnLines => None,
+    };
+    let tags = git::tags(root)?;
+    let Some(target) = target else {
+        let publishes = publishes_of(root, repo_kind, &layout, &[], &lines, None)?;
+        return Ok(Plan {
+            repo_kind,
+            layout,
+            last_tag: last.map(|(t, _)| t),
+            tag: check::tag_name(&tags, &current),
+            next: current.clone(),
+            current,
+            repo_moves: false,
+            commits,
+            changelog: String::new(),
+            riders: Vec::new(),
+            lines,
+            publishes,
+        });
     };
     let next = next_version(&current, last.as_ref().map(|(_, v)| v), &target)?;
-    let tags = git::tags(root)?;
     let tag = check::tag_name(&tags, &next);
     let riders = rides(root, &layout, last.as_ref().map(|(t, _)| t.as_str()), head)?;
     // a rider moves one step, as the primary does
@@ -285,28 +332,7 @@ pub fn plan(
         .map(|r| (r.name.clone(), r.to.clone()))
         .collect();
     changelog::name_the_moves(&mut block, &moved);
-    let mut packages = check::packages(root, repo_kind);
-    if let Layout::Set {
-        primary,
-        ..
-    } = &layout
-    {
-        packages
-            .crates
-            .retain(|c| *c == primary.name || moved.iter().any(|(m, _)| m == c));
-    }
-    let publishes = publish_order(root, &packages)
-        .map_err(PlanError::Cycle)?
-        .into_iter()
-        .map(|(reg, name)| {
-            let v = moved
-                .iter()
-                .find(|(m, _)| *m == name)
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| next.clone());
-            (reg, name, v)
-        })
-        .collect();
+    let publishes = publishes_of(root, repo_kind, &layout, &moved, &lines, Some(&next))?;
     Ok(Plan {
         repo_kind,
         layout,
@@ -314,11 +340,63 @@ pub fn plan(
         current,
         next,
         tag,
+        repo_moves: true,
         commits,
         changelog: block,
         riders,
+        lines,
         publishes,
     })
+}
+
+/// What publishes and at which version: the repo's crates at `next` where its
+/// line moves, a set's primary and its moved riders, and every moving own
+/// line at its own version; in dependency order.
+fn publishes_of(
+    root: &Path,
+    repo_kind: RepoKind,
+    layout: &Layout,
+    moved: &[(String, Version)],
+    lines: &[Line],
+    next: Option<&Version>,
+) -> Result<Vec<(Registry, String, Version)>, PlanError> {
+    let mut packages = check::packages(root, repo_kind);
+    let on_line = |c: &String| lines.iter().any(|l| l.name == *c);
+    let own = lines::own(root);
+    let is_own = |c: &String| own.iter().any(|m| m.name == *c);
+    match (next, layout) {
+        (None, _) => {
+            packages.crates.retain(on_line);
+            packages.jsr = None;
+            packages.npm = None;
+        },
+        (
+            Some(_),
+            Layout::Set {
+                primary,
+                ..
+            },
+        ) => {
+            packages
+                .crates
+                .retain(|c| *c == primary.name || moved.iter().any(|(m, _)| m == c) || on_line(c));
+        },
+        (Some(_), Layout::Single) => packages.crates.retain(|c| !is_own(c) || on_line(c)),
+    }
+    Ok(publish_order(root, &packages)
+        .map_err(PlanError::Cycle)?
+        .into_iter()
+        .map(|(reg, name)| {
+            let v = moved
+                .iter()
+                .find(|(m, _)| *m == name)
+                .map(|(_, v)| v.clone())
+                .or_else(|| lines.iter().find(|l| l.name == name).map(|l| l.to.clone()))
+                .or_else(|| next.cloned())
+                .unwrap_or_else(|| Version::new(0, 0, 0));
+            (reg, name, v)
+        })
+        .collect())
 }
 
 /// The target makes the version out of the last tag's; a manifest already

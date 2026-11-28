@@ -121,7 +121,7 @@ impl Ws {
             "w",
             homma_api::Markers::defaults(),
             "dev",
-            target,
+            target.into(),
             "2026-11-16",
         )
     }

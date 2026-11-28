@@ -175,11 +175,23 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     }
 
     // main holds nothing unreleased; where the trunk is the release line the
-    // unreleased commits are what the release is for, so nothing to hold
+    // unreleased commits are what the release is for, so nothing to hold. The
+    // newest tag is that of any line, the repo's or a member's own, since a
+    // release of own lines alone tags `main` with theirs
+    let repo_kind = kind::detect(root, inputs.markers).ok();
+    let own = match repo_kind {
+        Some(k) if k.has_crate() => super::lines::own(root),
+        _ => Vec::new(),
+    };
+    let own_names: Vec<String> = own.iter().map(|m| m.name.clone()).collect();
     let release_sha = git::sha(root, inputs.release).ok();
-    if let (Some(release_sha), Some((newest, _)), true) = (
+    let newest_any = match &release_sha {
+        Some(_) => newest_on(root, &tags, &versioned, &own_names, inputs.release)?,
+        None => None,
+    };
+    if let (Some(release_sha), Some(newest), true) = (
         &release_sha,
-        versioned.last(),
+        newest_any.as_ref(),
         inputs.trunk != inputs.release,
     ) {
         let newest_target = git::tag_target(root, newest)?;
@@ -203,9 +215,18 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     // the manifest against the tags, and the working version; a virtual
     // workspace's primary reads as the repo's version, through the root
     // manifest from before the repo was a workspace and its own since
-    let repo_kind = kind::detect(root, inputs.markers).ok();
     let layout = match repo_kind.map(|k| workspace::layout(root, k, inputs.repo)) {
-        Some(Ok(l)) => Some(l),
+        Some(Ok(l)) => {
+            let (l, own_primary) = super::lines::strip(l, &own);
+            if let Some(name) = own_primary {
+                push(
+                    "man.primary",
+                    CheckSeverity::Error,
+                    super::plan::PlanError::OwnPrimary(name).to_string(),
+                );
+            }
+            Some(l)
+        },
         Some(Err(e)) => {
             push("man.primary", CheckSeverity::Error, e.to_string());
             None
@@ -308,6 +329,9 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     )? {
         push(&f.id, f.severity, f.message);
     }
+    for f in super::lines::findings(root, &own, &tags, inputs.published) {
+        push(&f.id, f.severity, f.message);
+    }
     let highest_published = match primary {
         Some(p) => {
             inputs
@@ -315,7 +339,16 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                 .get(Registry::CratesIo, &p.name)
                 .and_then(|v| v.iter().max().cloned())
         },
-        None => inputs.published.versions.values().flatten().max().cloned(),
+        None => {
+            inputs
+                .published
+                .versions
+                .iter()
+                .filter(|((_, name), _)| !own_names.contains(name))
+                .flat_map(|(_, v)| v)
+                .max()
+                .cloned()
+        },
     };
     // the working version sits at the published one, since the run bumps it
     // after this check, or already one step above it; below is always wrong,
@@ -363,7 +396,7 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
                 );
             }
         }
-        if riders.iter().any(|r| r.name == *name) {
+        if riders.iter().any(|r| r.name == *name) || own_names.contains(name) {
             continue;
         }
         for v in versions {
@@ -410,7 +443,8 @@ pub fn check(inputs: &Inputs<'_>) -> Result<Vec<Finding>, git::GitError> {
     }
 
     // the rest of the catalogue, at warn
-    let rider_names: Vec<String> = riders.iter().map(|r| r.name.clone()).collect();
+    let mut rider_names: Vec<String> = riders.iter().map(|r| r.name.clone()).collect();
+    rider_names.extend(own_names.iter().cloned());
     let manifest = super::history::manifest_for(root, None).ok().flatten();
     out.extend(super::hygiene::findings(&super::hygiene::Seen {
         root,
@@ -444,6 +478,36 @@ fn names_hotpatch(subject: &str) -> bool {
             .any(|p| p == "not" || p == "no");
         w == "hotpatch" && !negated
     })
+}
+
+/// The tag `main.unreleased` reads `release` against: the newest version tag
+/// where the repo has no own lines, else the tag of any line on `release`
+/// with the fewest commits between it and the tip.
+fn newest_on(
+    root: &Path,
+    tags: &[String],
+    versioned: &[(String, Version)],
+    own: &[String],
+    release: &str,
+) -> Result<Option<String>, git::GitError> {
+    if own.is_empty() {
+        return Ok(versioned.last().map(|(t, _)| t.clone()));
+    }
+    let mut best: Option<(usize, String)> = None;
+    for t in tags
+        .iter()
+        .filter(|t| tag_version(t).is_some() || super::lines::is_own_tag(own, t))
+    {
+        let target = git::tag_target(root, t)?;
+        if !git::is_ancestor(root, &target, release)? {
+            continue;
+        }
+        let n = git::subjects(root, t, release)?.len();
+        if best.as_ref().is_none_or(|(b, _)| n < *b) {
+            best = Some((n, t.clone()));
+        }
+    }
+    Ok(best.map(|(_, t)| t))
 }
 
 /// Whether `b` is one step above `a`, as `Version::is_one_step` reads it.

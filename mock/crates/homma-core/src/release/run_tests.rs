@@ -874,3 +874,6 @@ mod dev_resume;
 
 #[path = "run_resume_tests.rs"]
 mod resume;
+
+#[path = "run_lines_tests.rs"]
+mod own_lines;

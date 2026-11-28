@@ -28,7 +28,8 @@ pub struct Seen<'a> {
     pub tracked:   &'a [String],
     pub published: &'a Published,
     /// Package names whose versions are not the tags' (a virtual workspace's
-    /// riding members), left out of the tag-against-registry rows.
+    /// riding members, and members on lines of their own), left out of the
+    /// tag-against-registry rows; an own line's tag is no stray tag.
     pub riders:    &'a [String],
     /// The manifest the version lives in, where one does.
     pub manifest:  Option<&'a str>,
@@ -159,7 +160,11 @@ pub fn findings(s: &Seen<'_>) -> Result<Vec<Finding>, GitError> {
     }
 
     // tags and refs
-    for t in s.tags.iter().filter(|t| tag_version(t).is_none()) {
+    for t in s
+        .tags
+        .iter()
+        .filter(|t| tag_version(t).is_none() && !super::lines::is_own_tag(s.riders, t))
+    {
         warn("tag.stray", format!("`{t}` is not a version tag"));
     }
     if let Some(m) = s.manifest {

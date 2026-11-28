@@ -8,13 +8,13 @@
 use std::fmt;
 use std::path::Path;
 
-use homma_api::{Finding, GateRun, Markers, Target, Verdict};
+use homma_api::{Finding, GateRun, Markers, Verdict};
 
 use super::check::{self, Published};
 use super::gate::Runner;
 use super::git::GitError;
 use super::landing::{self, Landed, Pending};
-use super::plan::{self, Plan, PlanError};
+use super::plan::{self, Aim, Plan, PlanError};
 use super::publish::{self, PublishError, Served, TokenSource};
 use super::registry::Registry;
 use super::workspace::{self, Layout};
@@ -218,18 +218,17 @@ pub struct Released {
 }
 
 /// Step 1: the check, refusing on anything blocking.
-pub fn step_check(
-    setup: &Setup<'_>,
-    root: &Path,
-    target: &Target,
-) -> Result<Vec<Finding>, ReleaseError> {
+pub fn step_check(setup: &Setup<'_>, root: &Path, aim: &Aim) -> Result<Vec<Finding>, ReleaseError> {
     let findings = check::check(&check::Inputs {
         root,
         repo: setup.repo,
         remote: setup.remote,
         trunk: setup.trunk,
         release: setup.release,
-        target: Some(target.clone()),
+        target: match aim {
+            Aim::Repo(t) => Some(t.clone()),
+            Aim::OwnLines => None,
+        },
         published: setup.published,
         markers: setup.markers,
     })?;
@@ -280,10 +279,10 @@ pub fn step_bump(
         other => return Err(ReleaseError::NotOnTrunk(other)),
     }
     match pending {
-        Some(p) => landing::resume_bump(setup, root, p, &plan.next),
+        Some(p) => landing::resume_bump(setup, root, p, &plan.name()),
         None => {
             let sha = write_bump(setup, root, plan)?;
-            landing::push_bump(setup, root, &sha, &plan.next)
+            landing::push_bump(setup, root, &sha, &plan.name())
         },
     }
 }
@@ -295,11 +294,20 @@ pub fn step_bump(
 /// own text is never compared, since the commits since the last tag include the
 /// bump itself once a run is resumed.
 fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, ReleaseError> {
-    let has_block = changelog::holds(root, &plan.next)?;
-    if plan.current == plan.next && has_block {
+    // a repo whose line stays writes nothing of its own, its version or block
+    let has_block = !plan.repo_moves || changelog::holds(root, &plan.next)?;
+    let mut own_paths: Vec<String> = Vec::new();
+    for l in &plan.lines {
+        let dir = root.join(l.dir());
+        if !changelog::holds(&dir, &l.to)? {
+            changelog::prepend(&dir, &l.changelog)?;
+            own_paths.push(format!("{}/CHANGELOG.md", l.dir()));
+        }
+    }
+    if plan.current == plan.next && has_block && own_paths.is_empty() {
         return Ok(git::head(root)?);
     }
-    let mut paths = Vec::new();
+    let mut paths: Vec<&str> = own_paths.iter().map(String::as_str).collect();
     if plan.current != plan.next {
         match &plan.layout {
             Layout::Single => version::write(root, plan.repo_kind, &plan.next)?,
@@ -337,7 +345,7 @@ fn write_bump(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<String, Rel
     Ok(git::commit_paths(
         root,
         &paths,
-        &landing::bump_subject(&plan.next),
+        &landing::bump_subject(&plan.name()),
     )?)
 }
 
@@ -369,7 +377,7 @@ pub fn step_merge_and_tag(
         // landed and did not push cannot be aborted, only reset, and left
         // there it makes the next run refuse on the wrong cause
         let before = git::head(root)?;
-        let local = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.next))
+        let local = git::merge_no_ff(root, setup.trunk, &format!("release: {}", plan.name()))
             .and_then(|sha| git::push(root, setup.remote, setup.release, false).map(|_| sha));
         match local {
             Ok(sha) => sha,
@@ -382,14 +390,17 @@ pub fn step_merge_and_tag(
                 }
                 // the release line takes changes only through a pull request:
                 // the release pull request makes the same merge on the forge
-                landing::land_release(setup, root, &plan.next)?
+                landing::land_release(setup, root, &plan.name())?
             },
         }
     };
-    let tagged = setup
-        .forge
-        .tag(root, &plan.tag, &sha, &plan.tag)
-        .and_then(|_| step_hold_tag(setup, root, &plan.tag, &sha));
+    // every line the release moves is tagged on the one commit, the repo's first
+    let tagged = plan.tags().iter().try_for_each(|tag| {
+        setup
+            .forge
+            .tag(root, tag, &sha, tag)
+            .and_then(|_| step_hold_tag(setup, root, tag, &sha))
+    });
     if setup.trunk != setup.release {
         let back = git::switch(root, setup.trunk);
         tagged?;
@@ -432,13 +443,23 @@ pub fn step_hold_tag(
     }
 }
 
-/// Step 7: the forge release on the tag, with the block as its body.
+/// Step 7: the forge release on each tag, with its block as its body, the
+/// repo's first.
 pub fn step_forge_release(setup: &Setup<'_>, root: &Path, plan: &Plan) -> Result<(), ReleaseError> {
     // the block the file holds is the release's body: where the trunk already
     // carried it the plan's own was rebuilt over more commits and another date
-    let held = changelog::block_of(root, &plan.next)?;
-    let body = held.as_deref().unwrap_or_else(|| plan.changelog.trim_end());
-    setup.forge.release(root, &plan.tag, body)
+    let release = |dir: &Path, version: &homma_api::Version, planned: &str, tag: &str| {
+        let held = changelog::block_of(dir, version)?;
+        let body = held.as_deref().unwrap_or_else(|| planned.trim_end());
+        setup.forge.release(root, tag, body)
+    };
+    if plan.repo_moves {
+        release(root, &plan.next, &plan.changelog, &plan.tag)?;
+    }
+    for l in &plan.lines {
+        release(&root.join(l.dir()), &l.to, &l.changelog, &l.tag)?;
+    }
+    Ok(())
 }
 
 /// Step 8: publish everything the plan names, in its order.
@@ -513,17 +534,17 @@ impl<F: Fn(&str) -> Result<Option<GateRun>, ReleaseError>> GateRuns for ByLookup
 pub fn release(
     setup: &Setup<'_>,
     root: &Path,
-    target: impl Into<Target>,
+    aim: impl Into<Aim>,
     runs: impl GateRuns,
     dry_run: bool,
 ) -> Result<Result<Released, Plan>, ReleaseError> {
-    let target = target.into();
+    let aim = aim.into();
     // a bump a stopped run left is set aside, so the first three steps see
     // the commit the gate measured, and put back wherever the run stops short
     // of taking it
     let pending = landing::set_aside(setup, root)?;
     let mut newest_run = None;
-    let planned = step_check(setup, root, &target)
+    let planned = step_check(setup, root, &aim)
         .and_then(|_| {
             newest_run = runs.on(&git::sha(root, setup.trunk)?)?;
             step_gate_run(root, setup.trunk, newest_run.as_ref())
@@ -534,7 +555,7 @@ pub fn release(
                 setup.repo,
                 setup.markers,
                 setup.trunk,
-                target,
+                aim,
                 setup.date,
             )?)
         });
