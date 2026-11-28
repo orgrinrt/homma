@@ -139,20 +139,16 @@ fn under(path: &str, dir: &str) -> bool {
 
 /// The commits of `from..head`, or of everything `head` reaches with no
 /// `from`, newest first, that `keep` takes by the paths each changed against
-/// its first parent.
+/// its first parent, all read in one walk of the log.
 fn commits_where(
     root: &Path,
     from: Option<&str>,
     head: &str,
     keep: impl Fn(&str, &[String]) -> Result<bool, GitError>,
 ) -> Result<Vec<Subject>, GitError> {
-    let all = match from {
-        Some(f) => git::subjects(root, f, head)?,
-        None => git::subjects_to(root, head)?,
-    };
     let mut out = Vec::new();
-    for s in all {
-        if keep(&s.sha, &git::changed_paths(root, &s.sha)?)? {
+    for (s, paths) in git::subjects_with_paths(root, from, head)? {
+        if keep(&s.sha, &paths)? {
             out.push(s);
         }
     }

@@ -406,6 +406,35 @@ fn a_lock_change_that_only_follows_an_own_lines_move_is_that_lines_alone() {
     assert!(matches!(err, PlanError::RepoUnreleased(1)), "{err}");
 }
 
+/// The lock of `lock`, with `t`'s dependency on `t-p` carrying its version, as
+/// cargo writes one where two versions of a package are locked.
+fn versioned_lock(p: &str, s: &str) -> String {
+    lock(p, s).replace(" \"t-p\",\n", &format!(" \"t-p {p}\",\n"))
+}
+
+#[test]
+fn a_dependency_on_an_own_line_carrying_its_version_follows_that_lines_move() {
+    // Mutation: the own lines' references kept in the dependency lists, so the
+    // entry `t-p 0.0.1-rc.1` turning `t-p 0.0.1-rc.2` reads as the repo's change.
+    let r = Repo::new();
+    r.write("Cargo.lock", &versioned_lock("0.0.1-rc.1", "0.1.0"));
+    r.commit("chore: lock the workspace");
+    released(&r);
+    r.git(&["tag", "-a", "v0.1.1", "-m", "v0.1.1", "main"]);
+    r.own_member("0.0.1-rc.2", true);
+    r.write("t-p/lib.rs", "// p, moved\n");
+    r.write("Cargo.lock", &versioned_lock("0.0.1-rc.2", "0.1.0"));
+    r.commit("chore: move `t-p` to 0.0.1-rc.2");
+    assert!(
+        std::fs::read_to_string(r.root().join("Cargo.lock"))
+            .unwrap()
+            .contains("\"t-p 0.0.1-rc.2\""),
+        "the fixture writes the versioned entry"
+    );
+    let p = r.plan(Aim::OwnLines).unwrap();
+    assert_eq!(p.name(), "t-p 0.0.1-rc.2");
+}
+
 #[test]
 fn a_pull_requests_merge_keeps_its_subject_in_the_repos_block_beside_own_lines() {
     // Mutation: the repo's commits read through a pathspec walk, which drops a merge the same as its second parent.
@@ -486,6 +515,25 @@ fn an_own_tag_is_checked_as_a_release_tag_on_main_annotated_and_pushed() {
     };
     assert!(
         !about("tag.reachable") && !about("tag.annotated") && !about("tag.pushed"),
+        "{ids:?}"
+    );
+    assert!(!about("tag.sha.agrees") && !about("tag.local"), "{ids:?}");
+    // the own tag moved here after it was pushed points elsewhere on the remote
+    r.git(&["tag", "-f", "-a", "t-p-v0.0.1-rc.1", "-m", "moved", "main^1"]);
+    let ids = found(&r);
+    assert!(
+        ids.iter()
+            .any(|(i, m)| i == "tag.sha.agrees" && m.contains("t-p-v0.0.1-rc.1")),
+        "{ids:?}"
+    );
+    // an own tag on the remote and not here
+    r.git(&["tag", "-a", "t-p-v0.0.1-rc.0", "-m", "t-p-v0.0.1-rc.0", "main"]);
+    r.git(&["push", "--quiet", "origin", "refs/tags/t-p-v0.0.1-rc.0"]);
+    r.git(&["tag", "-d", "t-p-v0.0.1-rc.0"]);
+    let ids = found(&r);
+    assert!(
+        ids.iter()
+            .any(|(i, m)| i == "tag.local" && m.contains("t-p-v0.0.1-rc.0")),
         "{ids:?}"
     );
 }

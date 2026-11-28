@@ -150,72 +150,64 @@ pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool,
 /// The subjects of the commits in `from..to`, newest first, with the pull
 /// request number when the subject is a merge of one.
 pub fn subjects(cwd: &Path, from: &str, to: &str) -> Result<Vec<Subject>, GitError> {
-    subjects_touching(cwd, Some(from), to, &[])
+    subjects_to(cwd, &format!("{from}..{to}"))
 }
 
 /// Every subject reachable from `to`, newest first, for a repo with no tag
-/// yet, where the first release carries its whole history.
+/// yet, where the first release carries its whole history. `to` may be a
+/// range, which is how `subjects` reads `from..to`.
 pub fn subjects_to(cwd: &Path, to: &str) -> Result<Vec<Subject>, GitError> {
-    subjects_touching(cwd, None, to, &[])
+    let out = trimmed(cwd, &["log", "--format=%h%x09%s", to])?;
+    Ok(out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(subject_of)
+        .collect())
 }
 
-/// The subjects of `from..to`, or of everything `to` reaches with no `from`,
-/// newest first, of the commits that touch `pathspec`; every commit where it is
-/// empty. A pathspec is git's, so `:(exclude)dir` leaves a directory out.
-pub fn subjects_touching(
+/// A `%h<TAB>%s` line of the log as its subject.
+fn subject_of(line: &str) -> Subject {
+    let (sha, subject) = line.split_once('\t').unwrap_or((line, ""));
+    Subject {
+        sha:     sha.to_string(),
+        subject: subject.to_string(),
+        pr:      pr_number(subject),
+    }
+}
+
+/// The commits of `from..to`, or of everything `to` reaches with no `from`,
+/// newest first, each with the paths it changed against its first parent and
+/// every path for a root commit, so a merge counts by what it brought onto
+/// the line it was merged into. One walk of the log reads them all.
+pub fn subjects_with_paths(
     cwd: &Path,
     from: Option<&str>,
     to: &str,
-    pathspec: &[String],
-) -> Result<Vec<Subject>, GitError> {
+) -> Result<Vec<(Subject, Vec<String>)>, GitError> {
     let range = match from {
         Some(f) => format!("{f}..{to}"),
         None => to.to_string(),
     };
-    let mut args = vec!["log", "--format=%h%x09%s", range.as_str()];
-    if !pathspec.is_empty() {
-        args.push("--");
-        args.extend(pathspec.iter().map(String::as_str));
-    }
-    let out = trimmed(cwd, &args)?;
+    // each commit opens with a record separator, so a subject never reads as a path
+    let out = trimmed(cwd, &[
+        "log",
+        "--diff-merges=first-parent",
+        "--name-only",
+        "--format=%x1e%h%x09%s",
+        range.as_str(),
+    ])?;
     Ok(out
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|line| {
-            let (sha, subject) = line.split_once('\t').unwrap_or((line, ""));
-            Subject {
-                sha:     sha.to_string(),
-                subject: subject.to_string(),
-                pr:      pr_number(subject),
-            }
+        .split('\u{1e}')
+        .filter(|r| !r.trim().is_empty())
+        .map(|record| {
+            let mut lines = record.lines();
+            let subject = subject_of(lines.next().unwrap_or(""));
+            let paths = lines
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect();
+            (subject, paths)
         })
-        .collect())
-}
-
-/// The shas on `rev`'s first-parent walk whose diff against their first
-/// parent touches `path`, newest first. A merge counts where the merge
-/// brought the change in, which is how a bump made on the trunk shows on
-/// the release line.
-/// The paths `sha` changed against its first parent, every path for a root
-/// commit, so a merge counts by what it brought onto the line it was merged
-/// into.
-pub fn changed_paths(cwd: &Path, sha: &str) -> Result<Vec<String>, GitError> {
-    let out = if parent_count(cwd, sha)? == 0 {
-        trimmed(cwd, &[
-            "diff-tree",
-            "--no-commit-id",
-            "--name-only",
-            "-r",
-            "--root",
-            sha,
-        ])?
-    } else {
-        trimmed(cwd, &["diff", "--name-only", &format!("{sha}^1"), sha])?
-    };
-    Ok(out
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(str::to_string)
         .collect())
 }
 
@@ -225,6 +217,10 @@ pub fn changed_between(cwd: &Path, from: &str, to: &str, path: &str) -> Result<b
     Ok(!out.trim().is_empty())
 }
 
+/// The shas on `rev`'s first-parent walk whose diff against their first
+/// parent touches `path`, newest first. A merge counts where the merge
+/// brought the change in, which is how a bump made on the trunk shows on
+/// the release line.
 pub fn first_parent_touching(cwd: &Path, rev: &str, path: &str) -> Result<Vec<String>, GitError> {
     let out = trimmed(cwd, &[
         "log",

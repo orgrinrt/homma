@@ -2,33 +2,34 @@
   "version": 2,
   "flavour": "",
   "member": "homma-core",
-  "green": {
-    "full": "263f11dbf881a91747283962050d12a0032eb59368a285d8a3890a6c4245ad3c",
-    "own": {
-      "homma-api": "a2da7145053cce433c5a45d7ddd0d16a91cdd2c246feac0335e27aa76080ccef",
-      "homma-core": "fa6a9905daf45cb9746ea65cfbad7aa9c8442a9dcdf086c485a2be29f2f32fa6",
-      "homma-fixture": "8503b362b54d5530121eb154d779075e6ef64085900f99e9ce2c799d86864577"
-    }
-  },
+  "green": null,
   "tests": {
     "homma-core": {
       "release::history::tests::after_a_rewrite_the_tag_is_orphaned_and_relocatable": {
         "secs": 10.8,
         "passed": true,
-        "passed_at": "fe1a2e0fa1e06b15e50a8f328042dad8b6fe588c31b9af2866990262913ef0cd"
+        "passed_at": "bef613269f94ca2cb9a96b9a62dd391ab12cba0fc8926e06f510be6ea191f233"
       }
     }
   },
   "bins": {
-    "homma-core": "fe1a2e0fa1e06b15e50a8f328042dad8b6fe588c31b9af2866990262913ef0cd",
-    "homma-core::config_smoke": "ccc03c936e75d74ff3dee58c73a62ca329a10b33a114c57e00aaaad37bd296d6",
-    "homma-core::forge_smoke": "8cc9bceef36fa0da940180aefa44393263aa1820ae1766fb5246d12d5a0a2b13",
-    "homma-core::hostile_identity_env": "f74781bae73dfc60dec3378b7a577124279421344d35b56de8592d501100f0b0",
-    "homma-core::hostile_template_dir": "343aeab58b25e18b02d0f2f26b31853bddf7858b4457478245d3a9f99f66d7f2",
-    "homma-core::membership_is_detected": "3a1d62af2c3cb2194b05231d38c8ef1209e98139343472f337d755154a641020",
-    "homma-core::reads_the_local_config": "46cb92e4d9a003cc64a96018a3718bff112b8719434944861daf59383b286e4a",
-    "homma-core::repo_smoke": "db27839d7d21769855a0d2cd53668c020ee152703b369e418f4e93be0a1ad3c9",
-    "homma-core::scope_skips_the_work": "7e6ee018352125a2b95a3fd7ff0f2ead6d547dcf751c4dbdd93b83e4579b5841",
-    "homma-core::template_smoke": "21f771d289ab35773aabcdda9109605c9a23fa5ef6cbc8d6a13b7ed9d1ba0c53"
+    "homma-core::config_smoke": "cf4cf7f729ddac32a367621099a175fd3d38a52c2563c691e640e6106de5d347",
+    "homma-core::forge_smoke": "a741f54ec2d68fbb2a584920aab7cb2ab52efe1452ac6d6a442e784dd05fd34c",
+    "homma-core::hostile_identity_env": "83ecac4f5e9bd9846b2e4fcc5d146eb92b94e622c9ee26d5b61c5111c4bece32",
+    "homma-core::hostile_template_dir": "f6e52e69691a7726e73ee18bb0f4c86a10c933d31c89611ef96cdda273d89942",
+    "homma-core::membership_is_detected": "a267b325bb1d04a99eafeaba95624d7f56780cf5609ee48e46f190280b3ef8d5",
+    "homma-core::reads_the_local_config": "bdc0c1406aebe326037d5843351f122520fa782ee6345559e46fc711a9153306",
+    "homma-core::repo_smoke": "ed18f5321b2efd6df57a02b28a139874bee9b652fa386b0ef19d9e3f7bcd975d",
+    "homma-core::scope_skips_the_work": "13da41b651259146403428fce023d497f18ca87947dbf2f2c330ef124c9bf181",
+    "homma-core::template_smoke": "12d7e8bad1ca54f7fde48aaf968e8b5e44d61eba988cad0fc337a3070034652e"
+  },
+  "red": {
+    "homma-core": {
+      "at": "bef613269f94ca2cb9a96b9a62dd391ab12cba0fc8926e06f510be6ea191f233",
+      "names": [
+        "release::lines::tests::a_dependency_on_an_own_line_carrying_its_version_follows_that_lines_move"
+      ],
+      "listed": "a4dcf66a490ee377"
+    }
   }
 }
